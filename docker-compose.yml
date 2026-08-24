@@ -1,0 +1,44 @@
+# Infra local: Postgres + Redis. Referencia: docs/guia_de_configuracao_e_desenvolvimento.md §4.
+# LiveKit fica no profile "voice" — a mesa funciona sem voz.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aethertable-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: aethertable_db
+    ports: ['5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: aethertable-redis
+    restart: unless-stopped
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 10
+
+  # Opcional: so necessario para trabalhar no chat de voz.
+  #   docker compose --profile voice up -d
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: aethertable-livekit
+    profiles: ['voice']
+    command: --dev
+    environment:
+      LIVEKIT_KEYS: 'devkey: secret'
+    ports:
+      - '7880:7880'
+      - '7881:7881'
+      - '50000-50100:50000-50100/udp'
+
+volumes:
+  pgdata:

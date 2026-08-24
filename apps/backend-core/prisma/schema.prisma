@@ -1,0 +1,353 @@
+// AetherTable — schema do banco.
+// Fonte canonica: docs/modelo_de_dados.md (DOC-023).
+//
+// PRINCIPIO CENTRAL (§1.2): nao armazenamos textos, regras nem imagens de carta.
+// Guardamos estritamente o `scryfall_id`. A base do MTG tem 25.000+ oracle cards
+// e 90.000+ printings, e cresce a cada dois meses — manter copia significaria
+// manter sincronizacao, alem de levantar discussao sobre redistribuicao.
+//
+// Mapeamento: snake_case no banco, camelCase no cliente.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  MOD
+  ADMIN
+}
+
+enum Provider {
+  GOOGLE
+  DISCORD
+}
+
+// NOTA: formato NAO e enum. Ha 45+ formatos e novos surgem a cada colecao.
+// `Deck.formatId` e um VarChar que referencia `FormatPreset.id`, versionado no
+// codigo, nao no banco (DOC-037 §9.1).
+
+enum BoardType {
+  MAIN
+  SIDEBOARD
+  COMMANDER
+  MAYBEBOARD
+  SIGNATURE_SPELL
+  CUBE
+  PLANAR
+  SCHEME
+  VANGUARD
+  ATTRACTION
+  CONTRAPTION
+  STICKER
+}
+
+enum Theme {
+  DARK
+  LIGHT
+  SYSTEM
+}
+
+enum VoiceMode {
+  VAD
+  PTT
+}
+
+enum CosmeticType {
+  PLAYMAT
+  SLEEVE
+  BORDER
+  TITLE
+}
+
+enum ReportReason {
+  HARASSMENT
+  CHEATING
+  SPAM
+  HATE_SPEECH
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+// ─── Usuario e identidade ─────────────────────────────────────────────────────
+
+model User {
+  id       String @id @default(uuid()) @db.Uuid
+  email    String @unique @db.VarChar(255)
+  /// ^[a-zA-Z0-9_]{3,32}$
+  username String @unique @db.VarChar(32)
+  /// Nome exibido na mesa; cai para `username` quando nulo.
+  displayName String? @map("display_name") @db.VarChar(48)
+  /// Argon2id. NULO quando a conta e exclusivamente OAuth.
+  passwordHash    String?   @map("password_hash") @db.VarChar(255)
+  avatarUrl       String?   @map("avatar_url")
+  role            Role      @default(USER)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
+  lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz
+  /// Soft delete para LGPD: expurgo fisico em 30 dias (§7.1).
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  decks        Deck[]
+  accounts     Account[]
+  preference   UserPreference?
+  blocksMade   Block[]           @relation("blocker")
+  blocksGot    Block[]           @relation("blocked")
+  reportsMade  Report[]          @relation("reporter")
+  reportsGot   Report[]          @relation("reported")
+  cosmetics    UserCosmetic[]
+  participions MatchParticipant[]
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// Vinculo OAuth. NAO armazenamos access/refresh token do provedor: usamos OAuth
+/// apenas para identificar, nunca para agir em nome do usuario (RN11).
+model Account {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  provider          Provider
+  providerAccountId String   @map("provider_account_id") @db.VarChar(255)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Permite vincular Google E Discord a mesma conta sem duplicar usuario.
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model UserPreference {
+  userId String @id @map("user_id") @db.Uuid
+
+  /// JSONB porque o conjunto de acoes mapeaveis muda a cada versao, e nunca
+  /// filtramos por atalho — normalizar geraria migracao a cada atalho novo.
+  keybindings Json @default("{}")
+
+  theme            Theme     @default(DARK)
+  activePlaymatId  String?   @map("active_playmat_id") @db.Uuid
+  activeSleeveId   String?   @map("active_sleeve_id") @db.Uuid
+  activeBorderId   String?   @map("active_border_id") @db.Uuid
+  activeTitleId    String?   @map("active_title_id") @db.Uuid
+  voiceMode        VoiceMode @default(VAD)
+  pttKey           String?   @map("ptt_key") @db.VarChar(24)
+  /// 0..100
+  masterVolume Int    @default(100) @map("master_volume") @db.SmallInt
+  language     String @default("pt-BR") @db.VarChar(8)
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activePlaymat CosmeticItem? @relation("playmat", fields: [activePlaymatId], references: [id])
+  activeSleeve  CosmeticItem? @relation("sleeve", fields: [activeSleeveId], references: [id])
+  activeBorder  CosmeticItem? @relation("border", fields: [activeBorderId], references: [id])
+  activeTitle   CosmeticItem? @relation("title", fields: [activeTitleId], references: [id])
+
+  @@map("user_preferences")
+}
+
+// ─── Decks ────────────────────────────────────────────────────────────────────
+
+model Deck {
+  id          String  @id @default(uuid()) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  name        String  @db.VarChar(80)
+  description String?
+  /// scryfall_id do comandante.
+  commanderId String? @map("commander_id") @db.VarChar(36)
+  /// Segundo comandante (Partner / Background).
+  partnerId String? @map("partner_id") @db.VarChar(36)
+  /// Referencia FormatPreset.id. Nao e enum — ver nota no topo.
+  formatId   String   @default("commander") @map("format_id") @db.VarChar(32)
+  isPublic   Boolean  @default(false) @map("is_public")
+  isFavorite Boolean  @default(false) @map("is_favorite")
+  /// DESNORMALIZADO: soma de `quantity`. A listagem de decks e a tela mais
+  /// visitada; somar a cada carregamento e desperdicio. Atualizado na MESMA
+  /// transacao que altera as cartas.
+  cardCount     Int      @default(0) @map("card_count")
+  colorIdentity String[] @default([]) @map("color_identity")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards DeckCard[]
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@index([isPublic])
+  @@map("decks")
+}
+
+/// Exatamente o que FR-04 exige: apenas scryfall_id, quantity, is_commander e
+/// board_type. Nome, texto e imagem NUNCA aqui.
+model DeckCard {
+  id     String @id @default(uuid()) @db.Uuid
+  deckId String @map("deck_id") @db.Uuid
+  /// Referencia ABSOLUTA de impressao — define arte, edicao e idioma.
+  scryfallId String @map("scryfall_id") @db.VarChar(36)
+  /// 1..99 (CHECK aplicado por migracao manual).
+  quantity    Int       @default(1)
+  isCommander Boolean   @default(false) @map("is_commander")
+  boardType   BoardType @default(MAIN) @map("board_type")
+  sortOrder   Int       @default(0) @map("sort_order")
+
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  /// Uma linha por impressao por secao; quantidades vao em `quantity`, nunca em
+  /// linhas repetidas.
+  @@unique([deckId, scryfallId, boardType])
+  @@index([deckId])
+  @@index([scryfallId])
+  @@map("deck_cards")
+}
+
+// ─── Cache derivavel da Scryfall ──────────────────────────────────────────────
+
+/// Tabela DESCARTAVEL: um TRUNCATE nao perde nada de valor — o job de bulk data
+/// a reconstroi. Por isso nao tem FK apontando para ela e nao participa de
+/// transacoes criticas.
+model CardCache {
+  scryfallId     String   @id @map("scryfall_id") @db.VarChar(36)
+  oracleId       String   @map("oracle_id") @db.VarChar(36)
+  name           String   @db.VarChar(255)
+  setCode        String   @map("set_code") @db.VarChar(10)
+  collectorNum   String   @map("collector_num") @db.VarChar(16)
+  lang           String   @default("en") @db.VarChar(8)
+  cmc            Float    @default(0)
+  typeLine       String   @default("") @map("type_line")
+  manaCost       String   @default("") @map("mana_cost") @db.VarChar(64)
+  colorIdentity  String[] @default([]) @map("color_identity")
+  legalCommander Boolean  @default(false) @map("legal_commander")
+  layout         String   @default("normal") @db.VarChar(32)
+  imageSmall     String   @default("") @map("image_small")
+  imageNormal    String   @default("") @map("image_normal")
+  /// Faces de DFC / split / adventure. Cartas de dupla face nao tem image_uris
+  /// na raiz (DOC-035 §2.2).
+  faces     Json     @default("[]")
+  fetchedAt DateTime @default(now()) @map("fetched_at") @db.Timestamptz
+
+  @@index([oracleId])
+  @@index([name])
+  @@map("card_cache")
+}
+
+// ─── Moderacao ────────────────────────────────────────────────────────────────
+
+model Block {
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  blocker User @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  /// CHECK (blocker_id <> blocked_id) aplicado por migracao manual.
+  @@id([blockerId, blockedId])
+  @@map("blocks")
+}
+
+model Report {
+  id         String       @id @default(uuid()) @db.Uuid
+  reporterId String       @map("reporter_id") @db.Uuid
+  reportedId String       @map("reported_id") @db.Uuid
+  roomCode   String?      @map("room_code") @db.VarChar(6)
+  reason     ReportReason
+  details    String?
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  reporter User @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported User @relation("reported", fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@index([reportedId])
+  @@index([status])
+  @@map("reports")
+}
+
+// ─── Estatistica agregada ─────────────────────────────────────────────────────
+
+/// DELIBERADAMENTE POBRE. Nao guarda estado de jogo, jogadas, decks nem quem
+/// ganhou — apenas o suficiente para "partidas jogadas" no perfil (RF02).
+/// Consistente com RN12 e ADR-006. Sobrevive a exclusao de conta porque nao
+/// contem dado pessoal.
+model MatchSummary {
+  id              String   @id @default(uuid()) @db.Uuid
+  roomCode        String   @map("room_code") @db.VarChar(6)
+  playerCount     Int      @map("player_count") @db.SmallInt
+  durationSeconds Int      @map("duration_seconds")
+  endedAt         DateTime @map("ended_at") @db.Timestamptz
+
+  participants MatchParticipant[]
+
+  @@index([endedAt])
+  @@map("match_summaries")
+}
+
+/// Unica tabela que associa usuario e partida. `userId` vira NULL no expurgo de
+/// 30 dias, preservando a estatistica agregada anonimizada.
+model MatchParticipant {
+  /// PK propria em vez de @@id([matchId, userId]): `userId` PRECISA ser nullable
+  /// para o expurgo de 30 dias (§7.1), e o Prisma nao aceita campo opcional em
+  /// definicao de id.
+  id      String  @id @default(uuid()) @db.Uuid
+  matchId String  @map("match_id") @db.Uuid
+  userId  String? @map("user_id") @db.Uuid
+
+  match MatchSummary @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// No Postgres, NULLs nao colidem em UNIQUE — o que aqui e desejado: os quatro
+  /// participantes anonimizados da mesma partida coexistem apos o expurgo.
+  @@unique([matchId, userId])
+  @@index([userId])
+  @@map("match_participants")
+}
+
+// ─── Cosmeticos e monetizacao (DOC-060) ──────────────────────────────────────
+
+model CosmeticItem {
+  id          String       @id @default(uuid()) @db.Uuid
+  type        CosmeticType
+  name        String       @db.VarChar(64)
+  /// URL de imagem ou classe CSS.
+  resourceUrl String? @map("resource_url")
+  /// Nivel de apoiador necessario.
+  minTier  Int     @default(0) @map("min_tier")
+  isActive Boolean @default(true) @map("is_active")
+
+  ownedBy      UserCosmetic[]
+  asPlaymatFor UserPreference[] @relation("playmat")
+  asSleeveFor  UserPreference[] @relation("sleeve")
+  asBorderFor  UserPreference[] @relation("border")
+  asTitleFor   UserPreference[] @relation("title")
+
+  @@index([type])
+  @@map("cosmetic_items")
+}
+
+model UserCosmetic {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  cosmeticId String   @map("cosmetic_id") @db.Uuid
+  acquiredAt DateTime @default(now()) @map("acquired_at") @db.Timestamptz
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cosmetic CosmeticItem @relation(fields: [cosmeticId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cosmeticId])
+  @@index([userId])
+  @@map("user_cosmetics")
+}

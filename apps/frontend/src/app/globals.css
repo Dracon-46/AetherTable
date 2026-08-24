@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@theme {
+  /* Cores Base da Mesa (DOC-041) */
+  --color-table: #1A1C23;
+  --color-table-deep: #12141A;
+  
+  /* Cores de Painéis */
+  --color-panel: #252836;
+  --color-panel-hover: #2E3242;
+  --color-panel-border: #363B4D;
+  
+  /* Cores de Texto */
+  --color-text: #E2E8F0;
+  --color-text-muted: #94A3B8;
+  --color-text-faint: #64748B;
+  
+  /* Cores de Feedback e Estado */
+  --color-primary: #3B82F6;
+  --color-primary-hover: #2563EB;
+  --color-primary-subtle: #1E3A8A;
+  --color-danger: #EF4444;
+  --color-danger-hover: #DC2626;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-speaking: #FBBF24;
+  
+  /* Cores de Mana */
+  --color-mana-w: #F8F6D8;
+  --color-mana-u: #C1D7E9;
+  --color-mana-b: #BAB1AB;
+  --color-mana-r: #E49977;
+  --color-mana-g: #A3C095;
+  
+  /* Fontes (Inter) */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  
+  /* Configuração de Container e Tela */
+  --container-center: true;
+}
+
+/* 
+ * Utilitários Nativos
+ */
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  
+  body {
+    /* O padrão para telas fora da mesa de jogo é o fundo profundo */
+    background-color: var(--color-table-deep);
+    color: var(--color-text);
+    /* Força os números dinâmicos a não pularem na tela (DOC-041 §2.2) */
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Animação personalizada do Sopro de Fogo do Dragão */
+@keyframes fire-breathe {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(0);
+    filter: hue-rotate(0deg) brightness(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.1) translateY(-10px);
+    filter: hue-rotate(-15deg) brightness(1.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2) translateY(-20px);
+    filter: hue-rotate(0deg) brightness(1);
+  }
+}
+
+.animate-fire-breathe {
+  animation: fire-breathe 2s ease-out forwards;
+}

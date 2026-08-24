@@ -1,0 +1,57 @@
+{
+  "name": "aethertable",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AetherTable — plataforma web sandbox multiformato para Magic: The Gathering. Nao existe motor de regras: o sistema move pecas, sincroniza estado e esconde informacao.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22.0.0 <23",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "test:e2e": "pnpm --filter frontend test:e2e",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint -- --fix",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\"",
+    "db:migrate": "pnpm --filter backend-core db:migrate",
+    "db:reset": "pnpm --filter backend-core db:reset",
+    "db:seed": "pnpm --filter backend-core db:seed",
+    "db:studio": "pnpm --filter backend-core db:studio",
+    "load-test": "k6 run tools/load/room-join.js",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.7",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.1",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.10",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.21.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "overrides": {
+      "@colyseus/greeting-banner": "^3.0.8"
+    }
+  }
+}
