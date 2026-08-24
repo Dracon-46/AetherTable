@@ -1,0 +1,94 @@
+# Blueprint de infraestrutura do AetherTable (Render).
+#
+# Sobe os DOIS serviços Node do projeto no plano gratuito. O frontend NÃO está
+# aqui: ele vai para a Vercel, que serve Next.js melhor e sem hibernação.
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ O QUE O PLANO GRATUITO CUSTA                                            │
+# │                                                                         │
+# │ Serviço free hiberna após ~15 min sem tráfego. Isso NÃO derruba partida │
+# │ em andamento — o patch de 20 Hz mantém o serviço acordado. O custo é a  │
+# │ PRIMEIRA conexão depois de ocioso: ~50 s de cold start.                 │
+# │                                                                         │
+# │ O frontend trata isso mostrando "acordando o servidor" e repetindo a    │
+# │ conexão; ver apps/frontend/src/net/wake.ts.                             │
+# │                                                                         │
+# │ Para eliminar a hibernação, suba os dois serviços para o plano Starter. │
+# │ Nada mais no arquivo muda.                                             │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# O banco NÃO é criado aqui de propósito: o Postgres gratuito do Render expira.
+# Use um projeto Neon (gratuito e permanente) e cole a connection string em
+# DATABASE_URL. Ver docs/deploy_gratuito.md.
+
+services:
+  # ─── API Core (NestJS) ────────────────────────────────────────────────────
+  - type: web
+    name: aethertable-api
+    runtime: docker
+    dockerfilePath: ./apps/backend-core/Dockerfile
+    # O contexto é a RAIZ: o build precisa do lockfile e dos manifests de todos
+    # os workspaces para resolver as dependências.
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Cole a connection string POOLED do Neon (o host com "-pooler").
+      # A direta esgota conexões: o Prisma abre um pool por instância.
+      - key: DATABASE_URL
+        sync: false
+
+      # Precisa ser IDÊNTICO ao do game-server. `generateValue` cria um segredo
+      # forte uma vez; copie o valor gerado para o outro serviço.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: JWT_ACCESS_TTL
+        value: '900'
+      - key: JWT_REFRESH_TTL
+        value: '604800'
+
+      # Origem do frontend na Vercel. Com credentials: true o navegador rejeita
+      # curinga — precisa ser a origem exata.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Obrigatório pela Scryfall: sem User-Agent identificável eles bloqueiam.
+      - key: SCRYFALL_USER_AGENT
+        sync: false
+
+  # ─── Game server (Colyseus) ───────────────────────────────────────────────
+  - type: web
+    name: aethertable-game
+    runtime: docker
+    dockerfilePath: ./apps/game-server/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # MESMO valor do JWT_SECRET da API. Segredos diferentes produzem
+      # "Invalid seat token" no handshake e a mesa nunca abre.
+      - key: JWT_SECRET
+        sync: false
+
+      # Nó único: sem Redis. Presence e driver do Redis só são necessários para
+      # descoberta de sala ENTRE nós, e o plano gratuito é de um nó só.
+      - key: USE_REDIS
+        value: 'false'
+
+      - key: BACKEND_CORE_URL
+        fromService:
+          name: aethertable-api
+          type: web
+          property: host
+
+      - key: PUBLIC_WS_URL
+        sync: false

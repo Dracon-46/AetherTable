@@ -1,0 +1,28 @@
+{
+  "name": "@aethertable/scryfall-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cliente unico da Scryfall: fila serializada de 100 ms, User-Agent obrigatorio e backoff. NUNCA chamar api.scryfall.com direto de um service.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "jest --passWithNoTests",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@aethertable/shared-types": "workspace:*",
+    "undici": "^7.2.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.7.3"
+  }
+}

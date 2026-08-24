@@ -1,0 +1,20 @@
+{
+  "name": "@aethertable/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tipos de dominio compartilhados entre frontend, backend-core e game-server (ADR-007).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  }
+}

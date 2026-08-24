@@ -1,0 +1,45 @@
+# dependencias
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# turbo
+.turbo/
+
+# ambiente — NUNCA commitar segredos (DOC-051)
+.env
+.env.*
+!.env.example
+
+# prisma
+apps/backend-core/prisma/migrations/dev.db*
+
+# testes
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editores / SO
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# credenciais locais do git (conta dedicada do projeto)
+.git-credentials
