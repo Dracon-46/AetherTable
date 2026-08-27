@@ -161,7 +161,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
       else if (t.includes('instant') || t.includes('sorcery')) key = 'Mágicas';
       
       if (!groups[key]) groups[key] = [];
-      groups[key].push(card);
+      groups[key]!.push(card);
     });
     
     return groups;

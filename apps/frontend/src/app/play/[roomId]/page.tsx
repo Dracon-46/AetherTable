@@ -12,11 +12,13 @@ import * as Colyseus from 'colyseus.js';
 import { WS_URL } from '@/lib/api';
 import { AETHER_ROOM } from '@aethertable/shared-types';
 import { useRoomSync } from '@/net/useRoomSync';
+import { RoomState } from '@/net/schema/RoomState';
 import { LifePanel } from '@/overlay/LifePanel';
 import { ActionBar } from '@/overlay/ActionBar';
 import { ChatLog } from '@/overlay/ChatLog';
 import { CardInspector } from '@/overlay/CardInspector';
 import { TokenPicker } from '@/overlay/TokenPicker';
+import { ZoneInspector } from '@/overlay/ZoneInspector';
 // Konva falha no SSR, então precisamos importar o GameBoard dinamicamente
 const GameBoard = dynamic(() => import('../../../canvas/GameBoard'), { ssr: false });
 
@@ -26,7 +28,7 @@ export default function PlayRoomPage() {
   const roomId = params.roomId as string;
   const token = searchParams.get('token');
 
-  const [room, setRoom] = useState<Colyseus.Room | null>(null);
+  const [room, setRoom] = useState<Colyseus.Room<RoomState> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useRoomSync(room);
@@ -39,7 +41,7 @@ export default function PlayRoomPage() {
 
     const client = new Colyseus.Client(WS_URL);
 
-    client.joinOrCreate(AETHER_ROOM, { roomCode: roomId, seatToken: token })
+    client.joinOrCreate<RoomState>(AETHER_ROOM, { roomCode: roomId, seatToken: token }, RoomState)
       .then((joinedRoom) => {
         setRoom(joinedRoom);
       })
@@ -96,6 +98,7 @@ export default function PlayRoomPage() {
         <ChatLog room={room} />
         <CardInspector />
         <TokenPicker room={room} />
+        <ZoneInspector room={room} />
       </div>
     </div>
   );

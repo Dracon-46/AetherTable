@@ -80,6 +80,16 @@ export const UnrevealIntent = z.object({ ids: z.array(entityId).min(1).max(100) 
 
 export const TapIntent = z.object({ entityId, isTapped: z.boolean() });
 
+export const UntapAllIntent = z.object({}).strict();
+
+export const UpdatePropertyIntent = z.object({
+  entityId: z.string().uuid(),
+  property: z.enum(['isTapped', 'faceDown', 'rotation']),
+  value: z.union([z.boolean(), z.number()])
+});
+
+export const CopyCardIntent = z.object({ entityId: z.string().uuid() });
+
 export const AddCounterIntent = z.object({
   entityId,
   /**
