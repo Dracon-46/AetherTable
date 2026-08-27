@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 
 /**
@@ -19,6 +19,11 @@ export class UsersService {
         id,
         deletedAt: null, // Regra fundamental de Soft Delete (DOC-023)
       },
+      include: {
+        _count: {
+          select: { participions: true }
+        }
+      }
     });
 
     if (!user) {
@@ -45,6 +50,9 @@ export class UsersService {
         role: true,
         createdAt: true,
         // E-mail é explicitamente omitido do perfil público conforme DOC-030
+        _count: {
+          select: { participions: true }
+        }
       },
     });
 
@@ -77,5 +85,36 @@ export class UsersService {
         deletedAt: new Date(),
       },
     });
+  }
+
+  /**
+   * Atualiza os dados do usuário (perfil e preferências)
+   */
+  async updateUser(id: string, data: { username?: string; displayName?: string; language?: string }) {
+    const { username, displayName, language } = data;
+    
+    if (username) {
+      const existing = await this.prisma.user.findFirst({ where: { username, id: { not: id } } });
+      if (existing) throw new BadRequestException('Username já em uso');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(username && { username }),
+        ...(displayName !== undefined && { displayName }), // Allows clearing displayName
+      },
+      select: { id: true, username: true, displayName: true, avatarUrl: true }
+    });
+
+    if (language) {
+      await this.prisma.userPreference.upsert({
+        where: { userId: id },
+        update: { language },
+        create: { userId: id, language }
+      });
+    }
+
+    return updatedUser;
   }
 }

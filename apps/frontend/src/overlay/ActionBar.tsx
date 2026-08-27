@@ -10,11 +10,12 @@
 import React, { useState } from 'react';
 import {
   Dices, Shuffle, BookOpen, RefreshCcw, Trash2,
-  LogOut, ChevronUp, Repeat, Coins
+  LogOut, ChevronUp, Repeat, Coins, Ghost
 } from 'lucide-react';
 import type { Room } from 'colyseus.js';
 import { intents } from '../net/intents';
 import { useRouter } from 'next/navigation';
+import { useUIStore } from '../store/game.store';
 
 interface ActionBarProps {
   room: Room<any>;
@@ -24,6 +25,8 @@ const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100];
 
 export function ActionBar({ room }: ActionBarProps) {
   const router = useRouter();
+  const toggleModal = useUIStore(s => s.toggleModal);
+  
   const [showDice, setShowDice] = useState(false);
   const [drawAmount, setDrawAmount] = useState(1);
   const [showDraw, setShowDraw] = useState(false);
@@ -160,6 +163,15 @@ export function ActionBar({ room }: ActionBarProps) {
           className="p-2 text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
         >
           <Repeat className="w-4 h-4" />
+        </button>
+
+        {/* Gerar Token */}
+        <button
+          onClick={() => toggleModal('tokens')}
+          title="Gerar Token"
+          className="p-2 text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+        >
+          <Ghost className="w-4 h-4" />
         </button>
 
         {/* Limpar Tokens */}

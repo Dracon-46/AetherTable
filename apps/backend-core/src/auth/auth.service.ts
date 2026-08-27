@@ -13,6 +13,52 @@ export class AuthService {
   ) {}
 
   /**
+   * Valida e/ou cria o usuário via OAuth
+   */
+  async validateOAuthUser(provider: 'GOOGLE' | 'DISCORD', providerAccountId: string, email: string, username: string, displayName: string) {
+    // Busca a conta vinculada
+    let account = await this.prisma.account.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider,
+          providerAccountId,
+        },
+      },
+      include: { user: true },
+    });
+
+    if (account) {
+      return account.user;
+    }
+
+    // Se a conta não existe, verifica se o email já está em uso por outra conta
+    let user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (!user) {
+      // Cria o usuário
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          username: `${username}_${Math.floor(Math.random() * 1000)}`, // Evita colisão
+          displayName,
+          // Não possui senha, pois o login é OAuth
+        },
+      });
+    }
+
+    // Vincula a conta OAuth ao usuário
+    await this.prisma.account.create({
+      data: {
+        userId: user.id,
+        provider,
+        providerAccountId,
+      },
+    });
+
+    return user;
+  }
+
+  /**
    * Criptografa a senha com Argon2id, o algoritmo mais avançado e recomendado 
    * pela OWASP contra ataques de força bruta e GPU.
    */

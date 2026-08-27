@@ -1,3 +1,5 @@
+import './polyfill';
+
 import http from 'node:http';
 import express from 'express';
 import { Server } from '@colyseus/core';
@@ -55,7 +57,7 @@ const gameServer = new Server({
   ...(config.USE_REDIS ? carregarRedis() : {}),
 });
 
-gameServer.define(AETHER_ROOM, AetherRoom);
+gameServer.define(AETHER_ROOM, AetherRoom).filterBy(['roomCode']);
 
 // Bind explícito em 0.0.0.0: hosts gerenciados (Render, Fly, Koyeb) fazem o
 // health check de fora do container. Ligar só em localhost derruba o deploy.

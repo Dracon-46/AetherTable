@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Flame, LogIn, Swords, AlertCircle } from 'lucide-react';
+import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { FireCanvas } from './FireCanvas';
 import { useAuthStore } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,15 +109,24 @@ export default function LoginPage() {
                 Esqueceu?
               </a>
             </div>
-            <input 
-              type="password" 
-              required
-              disabled={isLoggingIn}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-table-deep border border-panel-border rounded-md text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50"
-              placeholder="••••••••••••"
-            />
+            <div className="relative">
+              <input 
+                type={showPassword ? "text" : "password"}
+                required
+                disabled={isLoggingIn}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-table-deep border border-panel-border rounded-md text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50 pr-12"
+                placeholder="••••••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors focus:outline-none"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
 
           <button
@@ -145,6 +155,36 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        <div className="mt-6 flex items-center justify-between">
+          <span className="w-1/5 border-b border-panel-border lg:w-1/4"></span>
+          <span className="text-xs text-center text-text-muted uppercase">ou continue com</span>
+          <span className="w-1/5 border-b border-panel-border lg:w-1/4"></span>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3">
+          <button
+            onClick={() => window.location.href = `${API_URL}/auth/google`}
+            className="w-full flex items-center justify-center gap-2 py-2 px-4 border border-panel-border rounded-md text-text hover:bg-panel-hover transition-colors text-sm"
+          >
+            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+            Google
+          </button>
+          
+          <button
+            onClick={() => window.location.href = `${API_URL}/auth/discord`}
+            className="w-full flex items-center justify-center gap-2 py-2 px-4 border border-panel-border rounded-md text-text hover:bg-panel-hover transition-colors text-sm"
+          >
+            <img src="https://www.svgrepo.com/show/353655/discord-icon.svg" alt="Discord" className="w-5 h-5" />
+            Discord
+          </button>
+
+          <div className="bg-warning/10 border border-warning/30 p-2 rounded text-[10px] text-warning text-center mt-2 flex flex-col items-center">
+            <AlertCircle className="w-4 h-4 mb-1" />
+            <span>Usando DUMMY KEYS de OAuth (ambiente local).</span>
+            <span>O login retornará erro ao redirecionar para os provedores.</span>
+          </div>
+        </div>
 
         <div className="mt-8 pt-6 border-t border-panel-border text-center">
           <p className="text-sm text-text-muted">
