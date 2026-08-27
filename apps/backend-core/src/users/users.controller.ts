@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Request, UseGuards, Patch, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service.js';
 
@@ -21,6 +21,17 @@ export class UsersController {
   async getMe(@Request() req: any) {
     // O JwtAuthGuard extrai o ID do token e coloca em req.user.sub
     return this.usersService.findById(req.user.sub);
+  }
+
+  /**
+   * Rota protegida. Atualiza o perfil e preferências do usuário.
+   */
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Atualiza o perfil do usuário' })
+  async updateMe(@Request() req: any, @Body() body: { username?: string; displayName?: string; language?: string }) {
+    return this.usersService.updateUser(req.user.sub, body);
   }
 
   /**

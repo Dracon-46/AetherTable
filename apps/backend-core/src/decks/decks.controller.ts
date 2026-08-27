@@ -9,37 +9,47 @@ export class DecksController {
 
   @Post()
   createDeck(@Request() req: any, @Body('name') name: string) {
-    return this.decksService.createDeck(req.user.id, name || 'Novo Deck');
+    return this.decksService.createDeck(req.user.sub, name || 'Novo Deck');
   }
 
   @Get()
   getDecks(@Request() req: any) {
-    return this.decksService.getDecks(req.user.id);
+    return this.decksService.getDecks(req.user.sub);
   }
 
   @Get(':id')
   getDeckById(@Request() req: any, @Param('id') id: string) {
-    return this.decksService.getDeckById(req.user.id, id);
+    return this.decksService.getDeckById(req.user.sub, id);
   }
 
   @Delete(':id')
   deleteDeck(@Request() req: any, @Param('id') id: string) {
-    return this.decksService.deleteDeck(req.user.id, id);
+    return this.decksService.deleteDeck(req.user.sub, id);
   }
 
   @Post(':id/import')
   importDeck(@Request() req: any, @Param('id') id: string, @Body('decklist') decklist: string) {
-    return this.decksService.importDeckList(req.user.id, id, decklist);
+    return this.decksService.importDeckList(req.user.sub, id, decklist);
   }
 
   @Patch(':id')
   updateDeck(@Request() req: any, @Param('id') id: string, @Body('name') name: string) {
-    return this.decksService.updateDeck(req.user.id, id, name);
+    return this.decksService.updateDeck(req.user.sub, id, name);
   }
 
   @Delete(':id/cards/:cardId')
   removeCard(@Request() req: any, @Param('id') id: string, @Param('cardId') cardId: string) {
-    return this.decksService.removeCard(req.user.id, id, cardId);
+    return this.decksService.removeCard(req.user.sub, id, cardId);
+  }
+
+  @Post(':id/cards')
+  addCard(@Request() req: any, @Param('id') id: string, @Body() body: { scryfallId: string, quantity?: number, boardType?: string }) {
+    return this.decksService.addCard(req.user.sub, id, body.scryfallId, body.quantity, body.boardType as any);
+  }
+
+  @Patch(':id/cards/:cardId/printing')
+  updatePrinting(@Request() req: any, @Param('id') id: string, @Param('cardId') cardId: string, @Body() body: { scryfallId: string }) {
+    return this.decksService.updatePrinting(req.user.sub, id, cardId, body.scryfallId);
   }
 }
 

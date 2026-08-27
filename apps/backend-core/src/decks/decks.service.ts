@@ -8,6 +8,8 @@ interface ScryCard {
   set: string;
   type_line?: string;
   legalities?: { commander?: string };
+  image_uris?: { normal?: string, small?: string };
+  card_faces?: Array<{ image_uris?: { normal?: string, small?: string } }>;
 }
 
 interface ScryResponse {
@@ -46,27 +48,37 @@ export class DecksService {
     if (deck.cards.length > 0) {
       try {
         const identifiers = deck.cards.map(c => ({ id: c.scryfallId }));
-        const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifiers })
-        });
-        const scryData = await scryRes.json() as ScryResponse;
-
-        if (scryData.data) {
-          const scryMap = new Map<string, ScryCard>(scryData.data.map(d => [d.id, d]));
-          // Injeta dados virtuais para o frontend usar (nome, legalidade, set)
-          (deck as any).cards = deck.cards.map((c) => {
-            const extra = scryMap.get(c.scryfallId);
-            return {
-              ...c,
-              name: extra ? extra.name : 'Desconhecido',
-              set: extra ? extra.set.toUpperCase() : '???',
-              typeLine: extra ? extra.type_line : '',
-              isBanned: extra ? extra.legalities?.commander === 'banned' : false,
-            };
+        const scryMap = new Map<string, ScryCard>();
+        const chunkSize = 75;
+        
+        for (let i = 0; i < identifiers.length; i += chunkSize) {
+          const chunk = identifiers.slice(i, i + chunkSize);
+          const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'User-Agent': 'AetherTable/1.0' },
+            body: JSON.stringify({ identifiers: chunk })
           });
+          const scryData = await scryRes.json() as ScryResponse;
+          
+          if (scryData.data) {
+            scryData.data.forEach(d => scryMap.set(d.id, d));
+          }
+          
+          if (identifiers.length > chunkSize) await new Promise(r => setTimeout(r, 100)); // Respect rate limits
         }
+
+        // Injeta dados virtuais para o frontend usar (nome, legalidade, set)
+        (deck as any).cards = deck.cards.map((c) => {
+          const extra = scryMap.get(c.scryfallId);
+          return {
+            ...c,
+            name: extra ? extra.name : 'Desconhecido',
+            set: extra ? extra.set.toUpperCase() : '???',
+            typeLine: extra ? extra.type_line : '',
+            isBanned: extra ? extra.legalities?.commander === 'banned' : false,
+            imageNormal: extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
+          };
+        });
       } catch (e) {
         console.error('Falha ao hidratar cartas', e);
       }
@@ -105,6 +117,54 @@ export class DecksService {
     await this.prisma.deck.update({
       where: { id: deckId },
       data: { cardCount: { decrement: card.quantity } }
+    });
+
+    return { success: true };
+  }
+
+  async addCard(userId: string, deckId: string, scryfallId: string, quantity: number = 1, boardType: BoardType = BoardType.MAIN) {
+    const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
+    if (!deck) throw new NotFoundException('Deck não encontrado');
+
+    // Verifica se a carta já existe no deck
+    const existingCard = await this.prisma.deckCard.findFirst({
+      where: { deckId, scryfallId, boardType }
+    });
+
+    if (existingCard) {
+      await this.prisma.deckCard.update({
+        where: { id: existingCard.id },
+        data: { quantity: existingCard.quantity + quantity }
+      });
+    } else {
+      await this.prisma.deckCard.create({
+        data: {
+          deckId,
+          scryfallId,
+          quantity,
+          boardType
+        }
+      });
+    }
+
+    await this.prisma.deck.update({
+      where: { id: deckId },
+      data: { cardCount: { increment: quantity } }
+    });
+
+    return { success: true };
+  }
+
+  async updatePrinting(userId: string, deckId: string, cardId: string, newScryfallId: string) {
+    const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
+    if (!deck) throw new NotFoundException('Deck não encontrado');
+
+    const card = await this.prisma.deckCard.findFirst({ where: { id: cardId, deckId } });
+    if (!card) throw new NotFoundException('Carta não encontrada no deck');
+
+    await this.prisma.deckCard.update({
+      where: { id: cardId },
+      data: { scryfallId: newScryfallId }
     });
 
     return { success: true };
@@ -157,7 +217,7 @@ export class DecksService {
       try {
         const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'User-Agent': 'AetherTable/1.0' },
           body: JSON.stringify({ identifiers: chunk })
         });
 

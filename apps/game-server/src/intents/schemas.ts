@@ -91,6 +91,16 @@ export const AddCounterIntent = z.object({
   amount: z.number().int().min(-99).max(99),
 });
 
+export const CreateTokenIntent = z.object({
+  scryfallId: z.string().optional(),
+  name: z.string().optional(),
+  power: z.string().optional(),
+  toughness: z.string().optional(),
+  amount: z.number().int().min(1).max(20).default(1),
+  x: coord,
+  y: coord,
+});
+
 // ─── Jogador ─────────────────────────────────────────────────────────────────
 
 export const SetLifeIntent = z.union([

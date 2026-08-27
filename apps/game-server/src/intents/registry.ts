@@ -26,7 +26,7 @@ import {
   type Zone,
 } from '@aethertable/shared-types';
 
-import type { Card } from '../schema/Card';
+import { Card } from '../schema/Card';
 import type { RoomState } from '../schema/RoomState';
 import { concede, revoga } from '../schema/visibility';
 import { embaralhar, girarMoeda, rolarDado } from '../services/rng';
@@ -415,6 +415,36 @@ const INTENT_PING: IntentHandler<typeof S.PingIntent> = {
   },
 };
 
+const INTENT_CREATE_TOKEN: IntentHandler<typeof S.CreateTokenIntent> = {
+  schema: S.CreateTokenIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa: (ctx, payload, fromSid) => {
+    for (let i = 0; i < payload.amount; i++) {
+      const card = new Card();
+      card.id = crypto.randomUUID();
+      card.ownerId = fromSid;
+      card.controllerId = fromSid;
+      card.zone = 'BATTLEFIELD';
+      card.x = payload.x + i * 20; // Offset multiple tokens
+      card.y = payload.y + i * 20;
+      card.isToken = true;
+      if (payload.scryfallId) {
+        card.scryfallId = payload.scryfallId;
+      }
+      if (payload.name) {
+        card.note = payload.name;
+      }
+      
+      ctx.state.cards.set(card.id, card);
+      
+      // Token on battlefield is visible to everyone
+      reconciliarCartaParaTodos(card, ctx.client.view);
+    }
+    
+    criarLog(ctx, fromSid, `criou ${payload.amount > 1 ? payload.amount + ' fichas' : 'uma ficha'}.`, 'CREATE_TOKEN');
+  }
+};
+
 // ─── Tabela ──────────────────────────────────────────────────────────────────
 
 /**
@@ -426,6 +456,7 @@ export const REGISTRY = {
   INTENT_MOVE_CARD,
   INTENT_RELEASE,
   INTENT_CHANGE_ZONE,
+  INTENT_CREATE_TOKEN,
   INTENT_DRAW,
   INTENT_SHUFFLE,
   INTENT_PEEK,

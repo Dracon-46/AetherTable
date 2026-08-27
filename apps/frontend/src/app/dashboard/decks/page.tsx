@@ -8,7 +8,7 @@ import { API_URL } from '@/lib/api';
 
 export default function DecksPage() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
+  const { accessToken, logout } = useAuthStore();
   const [decks, setDecks] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
@@ -23,7 +23,12 @@ export default function DecksPage() {
       const res = await fetch(`${API_URL}/decks`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (res.ok) setDecks(await res.json());
+      if (res.ok) {
+        setDecks(await res.json());
+      } else if (res.status === 401) {
+        logout();
+        router.push('/');
+      }
     } catch (err) {
       console.error(err);
     }
@@ -45,6 +50,9 @@ export default function DecksPage() {
       if (res.ok) {
         setNewDeckName('');
         await fetchDecks();
+      } else if (res.status === 401) {
+        logout();
+        router.push('/');
       }
     } catch (err) {
       console.error(err);

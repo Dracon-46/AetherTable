@@ -1,14 +1,24 @@
 'use client';
 
+if (typeof Symbol.metadata === 'undefined') {
+  (Symbol as any).metadata = Symbol.for('Symbol.metadata');
+}
+
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
 import * as Colyseus from 'colyseus.js';
 import { WS_URL } from '@/lib/api';
-
+import { AETHER_ROOM } from '@aethertable/shared-types';
+import { useRoomSync } from '@/net/useRoomSync';
+import { LifePanel } from '@/overlay/LifePanel';
+import { ActionBar } from '@/overlay/ActionBar';
+import { ChatLog } from '@/overlay/ChatLog';
+import { CardInspector } from '@/overlay/CardInspector';
+import { TokenPicker } from '@/overlay/TokenPicker';
 // Konva falha no SSR, então precisamos importar o GameBoard dinamicamente
-const GameBoard = dynamic(() => import('./GameBoard'), { ssr: false });
+const GameBoard = dynamic(() => import('../../../canvas/GameBoard'), { ssr: false });
 
 export default function PlayRoomPage() {
   const params = useParams();
@@ -19,6 +29,8 @@ export default function PlayRoomPage() {
   const [room, setRoom] = useState<Colyseus.Room | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useRoomSync(room);
+
   useEffect(() => {
     if (!roomId || !token) {
       setError('Sala ou Token ausente.');
@@ -27,7 +39,7 @@ export default function PlayRoomPage() {
 
     const client = new Colyseus.Client(WS_URL);
 
-    client.joinById(roomId, { seatToken: token })
+    client.joinOrCreate(AETHER_ROOM, { roomCode: roomId, seatToken: token })
       .then((joinedRoom) => {
         setRoom(joinedRoom);
       })
@@ -71,10 +83,19 @@ export default function PlayRoomPage() {
     <div className="h-screen w-full bg-[#111111] overflow-hidden relative">
       <GameBoard room={room} />
       
-      {/* UI Overlay Simples */}
-      <div className="absolute top-4 left-4 bg-panel/80 backdrop-blur border border-panel-border px-4 py-2 rounded shadow-lg flex flex-col pointer-events-none">
-        <span className="text-xs text-text-muted">SALA</span>
-        <span className="font-mono font-bold text-primary tracking-widest">{roomId}</span>
+      {/* UI Overlay (Camada 2) */}
+      <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+        {/* Info da Sala */}
+        <div className="absolute top-4 left-4 bg-panel/80 backdrop-blur border border-panel-border px-4 py-2 rounded shadow-lg flex flex-col pointer-events-auto">
+          <span className="text-xs text-text-muted">SALA</span>
+          <span className="font-mono font-bold text-primary tracking-widest">{roomId}</span>
+        </div>
+
+        <LifePanel room={room} />
+        <ActionBar room={room} />
+        <ChatLog room={room} />
+        <CardInspector />
+        <TokenPicker room={room} />
       </div>
     </div>
   );
