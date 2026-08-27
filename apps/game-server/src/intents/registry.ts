@@ -39,6 +39,7 @@ import {
   logTrocaZonaPublica,
   logVida,
   criarLog,
+  logSistema,
 } from '../services/log';
 import { limparConcessoes, reconciliarCartaParaTodos } from '../services/view-sync';
 import * as S from './schemas';
@@ -74,7 +75,7 @@ function carta(state: RoomState, id: string): Card | undefined {
 }
 
 function ordem(state: RoomState, playerId: string, zone: Zone) {
-  return state.zoneOrder.get(zoneOrderKey(playerId, zone));
+  return state.zoneOrder.get(zoneOrderKey(playerId, zone))?.items;
 }
 
 function nomeDe(state: RoomState, sid: string): string {
@@ -339,6 +340,37 @@ const INTENT_TAP: IntentHandler<typeof S.TapIntent> = {
   },
 };
 
+const INTENT_UNTAP_ALL: IntentHandler<typeof S.UntapAllIntent> = {
+  schema: S.UntapAllIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx) {
+    const sid = ctx.client.sessionId;
+    ctx.state.cards.forEach((c) => {
+      if (c.zone === 'BATTLEFIELD' && c.controllerId === sid) {
+        c.isTapped = false;
+      }
+    });
+    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} desvirou todas as suas cartas.`));
+  }
+};
+
+const INTENT_UPDATE_PROPERTY: IntentHandler<typeof S.UpdatePropertyIntent> = {
+  schema: S.UpdatePropertyIntent,
+  autoriza: 'CONTROLLER',
+  executa(ctx, { entityId, property, value }) {
+    const c = carta(ctx.state, entityId);
+    if (!c) return;
+    if (property === 'rotation' && typeof value === 'number') {
+      c.rotation = value;
+    } else if (property === 'isTapped' && typeof value === 'boolean') {
+      c.isTapped = value;
+    } else if (property === 'faceDown' && typeof value === 'boolean') {
+      c.faceDown = value;
+      reconciliarCartaParaTodos(ctx.clients, c);
+    }
+  }
+};
+
 const INTENT_ADD_COUNTER: IntentHandler<typeof S.AddCounterIntent> = {
   schema: S.AddCounterIntent,
   autoriza: 'CONTROLLER',
@@ -418,7 +450,8 @@ const INTENT_PING: IntentHandler<typeof S.PingIntent> = {
 const INTENT_CREATE_TOKEN: IntentHandler<typeof S.CreateTokenIntent> = {
   schema: S.CreateTokenIntent,
   autoriza: 'QUALQUER_JOGADOR',
-  executa: (ctx, payload, fromSid) => {
+  executa(ctx, payload) {
+    const fromSid = ctx.client.sessionId;
     for (let i = 0; i < payload.amount; i++) {
       const card = new Card();
       card.id = crypto.randomUUID();
@@ -438,10 +471,38 @@ const INTENT_CREATE_TOKEN: IntentHandler<typeof S.CreateTokenIntent> = {
       ctx.state.cards.set(card.id, card);
       
       // Token on battlefield is visible to everyone
-      reconciliarCartaParaTodos(card, ctx.client.view);
+      reconciliarCartaParaTodos(ctx.clients, card);
     }
     
-    criarLog(ctx, fromSid, `criou ${payload.amount > 1 ? payload.amount + ' fichas' : 'uma ficha'}.`, 'CREATE_TOKEN');
+    ctx.log(logSistema(fromSid, `${nomeDe(ctx.state, fromSid)} criou ${payload.amount > 1 ? payload.amount + ' fichas' : 'uma ficha'}.`));
+  }
+};
+
+const INTENT_COPY_CARD: IntentHandler<typeof S.CopyCardIntent> = {
+  schema: S.CopyCardIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx, { entityId }) {
+    const original = carta(ctx.state, entityId);
+    if (!original || original.zone !== 'BATTLEFIELD') return;
+    
+    const sid = ctx.client.sessionId;
+    const card = new Card();
+    card.id = crypto.randomUUID();
+    card.ownerId = original.ownerId;
+    card.controllerId = sid;
+    card.zone = 'BATTLEFIELD';
+    card.x = original.x + 20;
+    card.y = original.y + 20;
+    card.scryfallId = original.scryfallId;
+    card.isCopy = true;
+    card.isToken = original.isToken;
+    card.faceDown = original.faceDown;
+    card.rotation = original.rotation;
+    
+    ctx.state.cards.set(card.id, card);
+    reconciliarCartaParaTodos(ctx.clients, card);
+    
+    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} criou uma cópia de carta na mesa.`));
   }
 };
 
@@ -462,12 +523,15 @@ export const REGISTRY = {
   INTENT_PEEK,
   INTENT_CLOSE_PEEK,
   INTENT_TAP,
+  INTENT_UNTAP_ALL,
+  INTENT_UPDATE_PROPERTY,
   INTENT_ADD_COUNTER,
   INTENT_SET_LIFE,
   INTENT_ROLL_DICE,
   INTENT_FLIP_COIN,
   INTENT_CHAT,
   INTENT_PING,
+  INTENT_COPY_CARD,
 } satisfies Partial<Record<IntentType, IntentHandler<z.ZodTypeAny>>>;
 
 export type IntentImplementada = keyof typeof REGISTRY;

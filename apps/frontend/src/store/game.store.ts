@@ -138,6 +138,7 @@ interface UIState {
   contextMenuCard: string | null;
   contextMenuPos: { x: number; y: number };
   showZoneOutlines: boolean;
+  inspectedZone: 'GRAVEYARD' | 'EXILE' | null;
 
   setZoom: (z: number) => void;
   setCamera: (x: number, y: number) => void;
@@ -146,6 +147,7 @@ interface UIState {
   setSelectedCards: (ids: string[]) => void;
   setHoveredCard: (id: string | null) => void;
   setInspectedCard: (id: string | null) => void;
+  setInspectedZone: (zone: 'GRAVEYARD' | 'EXILE' | null) => void;
   openContextMenu: (cardId: string, x: number, y: number) => void;
   closeContextMenu: () => void;
 }
@@ -162,6 +164,7 @@ export const useUIStore = create<UIState>()(
       contextMenuCard: null,
       contextMenuPos: { x: 0, y: 0 },
       showZoneOutlines: true,
+      inspectedZone: null,
 
       setZoom: (zoomLevel) => set({ zoomLevel: Math.min(2.5, Math.max(0.4, zoomLevel)) }),
       setCamera: (x, y) => set({ cameraPosition: { x, y } }),
@@ -174,6 +177,7 @@ export const useUIStore = create<UIState>()(
       setSelectedCards: (selectedCardIds) => set({ selectedCardIds }),
       setHoveredCard: (hoveredCardId) => set({ hoveredCardId }),
       setInspectedCard: (inspectedCardId) => set({ inspectedCardId }),
+      setInspectedZone: (inspectedZone) => set({ inspectedZone }),
       openContextMenu: (contextMenuCard, x, y) => set({
         contextMenuCard,
         contextMenuPos: { x, y },

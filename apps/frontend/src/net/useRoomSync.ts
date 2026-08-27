@@ -9,8 +9,11 @@ import { useEffect, useRef } from 'react';
 import type { Room } from 'colyseus.js';
 import { useGameStore, type CardData, type PlayerData, type LogEntry } from '../store/game.store';
 import { preaquecer } from '../canvas/textureCache';
+import { RoomState } from './schema/RoomState';
+import { Card } from './schema/Card';
+import { Player } from './schema/Player';
 
-function snapCard(card: any): CardData {
+function snapCard(card: Card): CardData {
   return {
     id: card.id,
     ownerId: card.ownerId,
@@ -40,7 +43,7 @@ function snapCard(card: any): CardData {
   };
 }
 
-function snapPlayer(p: any): PlayerData {
+function snapPlayer(p: Player): PlayerData {
   return {
     id: p.id,
     userId: p.userId,
@@ -63,9 +66,9 @@ function snapPlayer(p: any): PlayerData {
   };
 }
 
-export function useRoomSync(room: Room | null) {
+export function useRoomSync(room: Room<RoomState> | null) {
   const store = useGameStore.getState();
-  const roomRef = useRef<Room | null>(null);
+  const roomRef = useRef<Room<RoomState> | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -81,27 +84,27 @@ export function useRoomSync(room: Room | null) {
 
     // ── Cartas ─────────────────────────────────────────────────────────────
 
-    room.state.cards.onAdd((card: any, id: string) => {
+    room.state.cards.onAdd((card: Card, id: string) => {
       card.onChange = () => {
         useGameStore.getState().upsertCard(id, snapCard(card));
       };
       useGameStore.getState().upsertCard(id, snapCard(card));
     });
 
-    room.state.cards.onRemove((_card: any, id: string) => {
+    room.state.cards.onRemove((_card: Card, id: string) => {
       useGameStore.getState().removeCard(id);
     });
 
     // ── Jogadores ──────────────────────────────────────────────────────────
 
-    room.state.players.onAdd((player: any, id: string) => {
+    room.state.players.onAdd((player: Player, id: string) => {
       player.onChange = () => {
         useGameStore.getState().upsertPlayer(id, snapPlayer(player));
       };
       useGameStore.getState().upsertPlayer(id, snapPlayer(player));
     });
 
-    room.state.players.onRemove((_p: any, id: string) => {
+    room.state.players.onRemove((_p: Player, id: string) => {
       useGameStore.getState().removePlayer(id);
     });
 

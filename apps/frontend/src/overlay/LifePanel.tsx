@@ -142,7 +142,8 @@ function PlayerCard({ player, room, isMe }: { player: PlayerData; room: Room<any
 }
 
 export function LifePanel({ room }: LifePanelProps) {
-  const players = useGameStore(s => Object.values(s.players));
+  const playersMap = useGameStore(s => s.players);
+  const players = Object.values(playersMap);
   const myId = useGameStore(s => s.mySessionId);
 
   return (

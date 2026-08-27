@@ -15,6 +15,7 @@ import { config } from '../config';
 import { Card } from '../schema/Card';
 import { Player } from '../schema/Player';
 import { RoomState } from '../schema/RoomState';
+import { ZoneOrderList } from '../schema/ZoneOrderList';
 import type { z } from 'zod';
 import {
   RateLimiter,
@@ -91,7 +92,7 @@ export class AetherRoom extends Room<RoomState> {
     }
 
     // Vinculo com a sala: um token emitido para outra sala nao serve aqui.
-    if (claims.roomId && claims.roomId !== this.roomId) {
+    if (claims.roomId && claims.roomId !== this.state.roomCode) {
       throw new Error('INVALID_TOKEN');
     }
 
@@ -115,7 +116,7 @@ export class AetherRoom extends Room<RoomState> {
 
     // Toda zona do jogador nasce com sua lista de ordem.
     for (const zone of ZONES) {
-      this.state.zoneOrder.set(zoneOrderKey(client.sessionId, zone), new ArraySchema<string>());
+      this.state.zoneOrder.set(zoneOrderKey(client.sessionId, zone), new ZoneOrderList());
     }
 
     this.provisionarDeck(client.sessionId, options.deckId);
@@ -266,9 +267,9 @@ export class AetherRoom extends Room<RoomState> {
    * de intencoes (DOC-021 §7), que precisa continuar sincrono.
    */
   private async provisionarDeck(sessionId: string, deckId: string): Promise<void> {
-    const grimorio = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'LIBRARY'));
-    const mao = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'HAND'));
-    const comando = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'COMMAND'));
+    const grimorio = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'LIBRARY'))?.items;
+    const mao = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'HAND'))?.items;
+    const comando = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'COMMAND'))?.items;
     if (!grimorio || !mao || !comando) return;
 
     if (!deckId) {

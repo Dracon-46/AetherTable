@@ -82,7 +82,8 @@ const CardNode = ({
 }: { 
   card: any, 
   room: Room<any>,
-  onContextMenu: (e: any, target: any) => void
+  onContextMenu: (e: any, target: any) => void,
+  onHover: (id: string | null) => void
 }) => {
   const [position, setPosition] = useState({ x: card.x || 0, y: card.y || 0 });
 
@@ -143,6 +144,7 @@ const CardNode = ({
   const [hoverTimeout, setHoverTimeout] = useState<any>(null);
 
   const handleMouseEnter = () => {
+    onHover(card.id);
     const timeout = setTimeout(() => {
       useUIStore.getState().setInspectedCard(card.scryfallId);
     }, 500); // 500ms long hover
@@ -150,6 +152,7 @@ const CardNode = ({
   };
 
   const handleMouseLeave = () => {
+    onHover(null);
     if (hoverTimeout) {
       clearTimeout(hoverTimeout);
       setHoverTimeout(null);
@@ -169,7 +172,7 @@ const CardNode = ({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onContextMenu={(e) => onContextMenu(e, { type: 'CARD', id: card.id, zone: card.zone, isTapped: card.isTapped })}
-      rotation={card.isTapped ? 90 : 0}
+      rotation={(card.rotation || 0) + (card.isTapped ? 90 : 0)}
       offsetX={CARD_WIDTH / 2}
       offsetY={CARD_HEIGHT / 2}
     >
@@ -189,6 +192,7 @@ export default function GameBoard({ room }: GameBoardProps) {
   const [libraryCards, setLibraryCards] = useState<any[]>([]);
   const [graveyardCards, setGraveyardCards] = useState<any[]>([]);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, target: any } | null>(null);
+  const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
 
   // Zonas ancoradas
   const LIBRARY_POS = { x: window.innerWidth - 200, y: window.innerHeight - 250 };
@@ -254,6 +258,8 @@ export default function GameBoard({ room }: GameBoardProps) {
       if (tag === 'input' || tag === 'textarea') return;
 
       const key = e.key.toLowerCase();
+      
+      // Global shortcuts
       if (key === 'd') {
         room.send('INTENT_DRAW', { amount: 1 });
       } else if (key === 's') {
@@ -261,11 +267,28 @@ export default function GameBoard({ room }: GameBoardProps) {
       } else if (key === 'escape') {
         useUIStore.getState().setInspectedCard(null);
       }
+
+      // Hover-based shortcuts
+      if (hoveredCardId) {
+        const card = cards.find(c => c.id === hoveredCardId);
+        if (!card) return;
+
+        if (key === 'f') {
+          room.send('INTENT_UPDATE_PROPERTY', { entityId: card.id, property: 'faceDown', value: !card.faceDown });
+        } else if (key === 't' && e.ctrlKey) {
+          e.preventDefault();
+          const newRot = (card.rotation || 0) === 180 ? 0 : 180;
+          room.send('INTENT_UPDATE_PROPERTY', { entityId: card.id, property: 'rotation', value: newRot });
+        } else if (key === 'c' && e.ctrlKey) {
+          e.preventDefault();
+          room.send('INTENT_COPY_CARD', { entityId: card.id });
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [room]);
+  }, [room, hoveredCardId, cards]);
 
   const handleContextMenu = (e: any, target: any) => {
     e.evt.preventDefault();
@@ -316,6 +339,9 @@ export default function GameBoard({ room }: GameBoardProps) {
               x={GRAVEYARD_POS.x} 
               y={GRAVEYARD_POS.y}
               onContextMenu={(e) => handleContextMenu(e, { type: 'ZONE', zone: 'GRAVEYARD' })}
+              onClick={(e) => {
+                if (e.evt.button === 0) useUIStore.getState().setInspectedZone('GRAVEYARD');
+              }}
             >
               <CardVisual 
                 scryfallId={graveyardCards[graveyardCards.length - 1].scryfallId} 
@@ -327,7 +353,7 @@ export default function GameBoard({ room }: GameBoardProps) {
           )}
 
           {cards.map(card => (
-            <CardNode key={card.id} card={card} room={room} onContextMenu={handleContextMenu} />
+            <CardNode key={card.id} card={card} room={room} onContextMenu={handleContextMenu} onHover={setHoveredCardId} />
           ))}
         </Layer>
       </Stage>
@@ -361,6 +387,12 @@ export default function GameBoard({ room }: GameBoardProps) {
                 onClick={() => room.send('INTENT_TAP', { entityId: contextMenu.target.id, isTapped: !contextMenu.target.isTapped })}
               >
                 Virar / Desvirar
+              </button>
+              <button 
+                className="w-full text-left px-4 py-2 text-sm text-text hover:bg-primary-subtle"
+                onClick={() => room.send('INTENT_UPDATE_PROPERTY', { entityId: contextMenu.target.id, property: 'faceDown', value: !contextMenu.target.faceDown })}
+              >
+                Virar face para baixo (F)
               </button>
               <button 
                 className="w-full text-left px-4 py-2 text-sm text-text hover:bg-primary-subtle"

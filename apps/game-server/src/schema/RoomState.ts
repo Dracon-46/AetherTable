@@ -1,6 +1,7 @@
 import { ArraySchema, MapSchema, Schema, type } from '@colyseus/schema';
 import { Card } from './Card';
 import { Player } from './Player';
+import { ZoneOrderList } from './ZoneOrderList';
 
 /**
  * Estado autoritativo da sala.
@@ -34,5 +35,5 @@ export class RoomState extends Schema {
    * ordem dos UUIDs de um grimorio nao revela nada: os UUIDs sao gerados por
    * partida e nao tem relacao com a identidade da carta (DOC-032 §3.1).
    */
-  @type({ map: ['string'] }) zoneOrder = new MapSchema<ArraySchema<string>>();
+  @type({ map: ZoneOrderList }) zoneOrder = new MapSchema<ZoneOrderList>();
 }
