@@ -239,14 +239,14 @@ export default function GameBoard({ room }: GameBoardProps) {
 
     updateCards();
 
-    room.state.cards.onAdd = (card: any) => {
-      card.onChange = () => updateCards();
+    room.state.cards.onAdd((card: any) => {
+      card.onChange(() => updateCards());
       updateCards();
-    };
-    room.state.cards.onRemove = () => updateCards();
+    });
+    room.state.cards.onRemove(() => updateCards());
     
     room.state.cards.forEach((card: any) => {
-      card.onChange = () => updateCards();
+      card.onChange(() => updateCards());
     });
 
   }, [room]);

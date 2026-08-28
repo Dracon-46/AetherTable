@@ -13,7 +13,8 @@ interface ZoneInspectorProps {
 export function ZoneInspector({ room }: ZoneInspectorProps) {
   const inspectedZone = useUIStore(s => s.inspectedZone);
   const setInspectedZone = useUIStore(s => s.setInspectedZone);
-  const cards = useGameStore(s => Object.values(s.cards));
+  const cardsMap = useGameStore(s => s.cards);
+  const cards = Object.values(cardsMap);
 
   if (!inspectedZone) return null;
 
