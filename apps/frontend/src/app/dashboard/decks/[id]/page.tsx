@@ -393,7 +393,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
               <h3 className="text-xl font-bold text-text mb-4 border-b border-panel-border pb-2 flex justify-between">
                 {groupName} 
                 <span className="text-sm font-medium text-text-muted bg-table-deep px-2 py-1 rounded">
-                  {cards.reduce((acc, c) => acc + c.quantity, 0)} Cartas
+                  {cards.reduce((acc: number, c: any) => acc + c.quantity, 0)} Cartas
                 </span>
               </h3>
               
