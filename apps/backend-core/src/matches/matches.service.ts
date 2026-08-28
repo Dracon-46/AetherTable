@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import { DecksService } from '../decks/decks.service.js';
+import { AccessToken } from 'livekit-server-sdk';
 
 @Injectable()
 export class MatchesService {
@@ -38,10 +39,32 @@ export class MatchesService {
         sub: userId,
         username,
         roomId: roomCode, // Colyseus vincula o JWT a esta sala
+        deckId, // Passado para o Colyseus provisionar o deck
       },
       { jwtid: jti, expiresIn: '15m' } // 15 minutos para tentar conectar
     );
 
     return { seatToken, roomCode };
+  }
+
+  async getVoiceToken(userId: string, username: string, roomCode: string) {
+    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
+    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: userId,
+      name: username,
+      ttl: '60s', // JWT válido por 60s (Sessão LiveKit dura o tempo da partida)
+    });
+
+    at.addGrant({
+      room: roomCode,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: false, // Dados vão pelo Colyseus
+    });
+
+    return { token: await at.toJwt() };
   }
 }

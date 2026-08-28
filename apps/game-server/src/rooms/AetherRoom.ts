@@ -49,21 +49,26 @@ interface SeatTokenClaims {
   username: string;
   roomId: string;
   jti: string;
+  deckId: string;
 }
 
 export class AetherRoom extends Room<RoomState> {
-  override maxClients = REALTIME_LIMITS.MAX_PLAYERS;
+  override maxClients: number = REALTIME_LIMITS.MAX_PLAYERS;
 
   private readonly rateLimiter = new RateLimiter();
   /** Uso unico do seat token (FR-20): jti ja consumido nesta sala. */
   private readonly jtisUsados = new Set<string>();
   private proximoAssento = 0;
 
-  override onCreate(options: { roomCode?: string }): void {
+  override onCreate(options: { roomCode?: string; maxClients?: number; gameType?: string }): void {
     this.setState(new RoomState());
     this.state.roomCode = options.roomCode ?? this.roomId.slice(0, 6).toUpperCase();
     this.state.phase = 'WAITING';
     this.state.startedAt = Date.now();
+
+    if (options.maxClients) {
+      this.maxClients = options.maxClients;
+    }
 
     // 20 Hz: mutacoes na mesma janela viram um patch. Arrastar uma carta nao
     // gera 60 pacotes por segundo.
@@ -119,7 +124,7 @@ export class AetherRoom extends Room<RoomState> {
       this.state.zoneOrder.set(zoneOrderKey(client.sessionId, zone), new ZoneOrderList());
     }
 
-    this.provisionarDeck(client.sessionId, options.deckId);
+    this.provisionarDeck(client.sessionId, auth.deckId);
 
     // O cliente precisa de uma StateView antes do primeiro patch, senao veria
     // todos os campos marcados com view().
@@ -285,6 +290,11 @@ export class AetherRoom extends Room<RoomState> {
       // `Response.json()` devolve `unknown`: sem a asserção, todo acesso abaixo
       // é erro de tipo. O formato vem de DeckCard (docs/modelo_de_dados.md §3.4).
       const deckReal = (await res.json()) as DeckPayload;
+      
+      console.log(`[${this.roomId}] Deck ${deckId} fetched. Total cards in array: ${deckReal.cards.length}`);
+      let totalQuantity = 0;
+      for (const c of deckReal.cards) totalQuantity += c.quantity;
+      console.log(`[${this.roomId}] Total quantity of cards to create: ${totalQuantity}`);
 
       const criar = (zone: Zone, dbCard: DeckCardPayload): Card => {
         const c = new Card();
@@ -312,7 +322,9 @@ export class AetherRoom extends Room<RoomState> {
 
       // Embaralhar as cartas do grimório
       const ids = embaralhar(deckCards);
-      grimorio.push(...ids);
+      for (const id of ids) {
+        grimorio.push(id);
+      }
 
       // Saca as 7 iniciais
       for (let i = 0; i < 7; i += 1) {
@@ -322,12 +334,27 @@ export class AetherRoom extends Room<RoomState> {
         if (c) c.zone = 'HAND';
         mao.push(id);
       }
+      
+      console.log(`[${this.roomId}] Provision finished. Library: ${grimorio.length}, Hand: ${mao.length}`);
+
+      this.broadcast('log', {
+        id: randomUUID(),
+        timestamp: Date.now(),
+        type: 'SYSTEM',
+        text: `DEBUG DECK: Fetched ${deckReal.cards.length} distinct cards. Library size: ${grimorio.length}, Hand size: ${mao.length}`,
+      });
 
       const player = this.state.players.get(sessionId);
       if (player) {
         player.handCount = mao.length;
         player.libraryCount = grimorio.length;
       }
+      
+      // RECONCILIAR TUDO AQUI: Garante que as cartas recém criadas e
+      // assinaladas para a mão (HAND) / comando (COMMAND) recebam a view
+      // correta e sejam visíveis para o dono!
+      reconciliarTudo(this.clients, this.state);
+
     } catch (e) {
       console.error(`[${this.roomId}] Falha ao provisionar deck ${deckId}:`, e);
     }

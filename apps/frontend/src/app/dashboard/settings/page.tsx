@@ -16,7 +16,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user) {
       setUsername(user.username || '');
-      setDisplayName(user.displayName || '');
+      setDisplayName((user as any).displayName || '');
     }
   }, [user]);
 

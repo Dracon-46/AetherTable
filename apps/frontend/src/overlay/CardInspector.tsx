@@ -10,6 +10,14 @@ export function CardInspector() {
 
   if (!inspectedCardId) return null;
 
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInspectedCard(null);
+    };
+    window.addEventListener('keydown', handleEsc, true); // true para fase capture
+    return () => window.removeEventListener('keydown', handleEsc, true);
+  }, [setInspectedCard]);
+
   return (
     <div className="absolute top-0 right-0 h-full w-80 bg-panel/95 backdrop-blur border-l border-panel-border p-4 shadow-2xl flex flex-col pointer-events-auto z-40 transform transition-transform duration-300">
       <div className="flex justify-between items-center mb-4">

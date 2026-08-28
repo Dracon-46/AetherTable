@@ -12,6 +12,7 @@ export default function DecksPage() {
   const [decks, setDecks] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
+  const [newDeckFormat, setNewDeckFormat] = useState('commander');
 
   useEffect(() => {
     fetchDecks();
@@ -45,11 +46,12 @@ export default function DecksPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}` 
         },
-        body: JSON.stringify({ name: newDeckName }),
+        body: JSON.stringify({ name: newDeckName, formatId: newDeckFormat }),
       });
       if (res.ok) {
+        const createdDeck = await res.json();
         setNewDeckName('');
-        await fetchDecks();
+        router.push(`/dashboard/decks/${createdDeck.id}`);
       } else if (res.status === 401) {
         logout();
         router.push('/');
@@ -95,9 +97,24 @@ export default function DecksPage() {
             value={newDeckName}
             onChange={(e) => setNewDeckName(e.target.value)}
             disabled={isCreating}
+            required
             placeholder="Ex: Mono Blue Control"
             className="flex-1 bg-table-deep border border-panel-border rounded-md px-4 py-2 text-text focus:outline-none focus:border-primary transition-colors"
           />
+          <select 
+            value={newDeckFormat}
+            onChange={(e) => setNewDeckFormat(e.target.value)}
+            disabled={isCreating}
+            className="bg-table-deep border border-panel-border text-text rounded-md px-4 py-2 focus:outline-none focus:border-primary transition-colors"
+          >
+            <option value="commander">Commander</option>
+            <option value="standard">Standard</option>
+            <option value="pauper">Pauper</option>
+            <option value="modern">Modern</option>
+            <option value="legacy">Legacy</option>
+            <option value="vintage">Vintage</option>
+            <option value="timeless">Timeless</option>
+          </select>
           <button 
             type="submit" 
             disabled={isCreating}
@@ -126,11 +143,18 @@ export default function DecksPage() {
 
             <div className="flex items-center gap-2 mt-auto">
               <button 
+                onClick={() => router.push(`/dashboard/decks/${deck.id}?mode=view`)}
+                className="flex-1 px-4 py-2 bg-table-deep text-text hover:text-white hover:bg-panel-border border border-panel-border rounded font-medium transition-colors flex justify-center items-center gap-2"
+              >
+                <Library className="w-4 h-4" />
+                Visualizar
+              </button>
+              <button 
                 onClick={() => router.push(`/dashboard/decks/${deck.id}`)}
                 className="flex-1 px-4 py-2 bg-table-deep text-primary hover:text-white hover:bg-primary border border-primary/30 rounded font-medium transition-colors flex justify-center items-center gap-2"
               >
                 <Edit3 className="w-4 h-4" />
-                Editar Lista
+                Editar
               </button>
               <button 
                 onClick={() => handleDeleteDeck(deck.id)}

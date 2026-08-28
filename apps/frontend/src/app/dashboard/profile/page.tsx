@@ -59,8 +59,8 @@ export default function ProfilePage() {
         setMessage({ text: 'Perfil atualizado com sucesso!', type: 'success' });
         
         // Atualiza a sessão
-        if (sessionUser) {
-          setAuth(accessToken, { ...sessionUser, username: updatedUser.username, avatarUrl: updatedUser.avatarUrl });
+        if (sessionUser && accessToken) {
+          setAuth(accessToken, { ...sessionUser, username: updatedUser.username, avatarUrl: updatedUser.avatarUrl || '' });
         }
       } else {
         const err = await res.json();
