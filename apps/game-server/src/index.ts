@@ -11,6 +11,9 @@ import { AETHER_ROOM } from '@aethertable/shared-types';
 import { config, isProd } from './config';
 import { AetherRoom } from './rooms/AetherRoom';
 import { registry } from './metrics';
+import { Encoder } from '@colyseus/schema';
+
+Encoder.BUFFER_SIZE = 100 * 1024; // 100KB for large EDH decks
 
 /**
  * Ponto de entrada do game server.

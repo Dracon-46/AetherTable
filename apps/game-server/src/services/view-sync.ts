@@ -34,6 +34,10 @@ export function reconciliarCarta(client: Client, card: Card): void {
 
   if (permitido && !inscrito) {
     view.add(card);
+    // Workaround Colyseus: setar para algo diferente primeiro para burlar o 'if (old === new) return' no setter do Schema
+    const temp = card.scryfallId;
+    card.scryfallId = 'dummy';
+    card.scryfallId = temp;
   } else if (!permitido && inscrito) {
     view.remove(card);
   }

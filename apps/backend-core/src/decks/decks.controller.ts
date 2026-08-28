@@ -8,8 +8,8 @@ export class DecksController {
   constructor(private readonly decksService: DecksService) {}
 
   @Post()
-  createDeck(@Request() req: any, @Body('name') name: string) {
-    return this.decksService.createDeck(req.user.sub, name || 'Novo Deck');
+  createDeck(@Request() req: any, @Body('name') name: string, @Body('formatId') formatId?: string) {
+    return this.decksService.createDeck(req.user.sub, name || 'Novo Deck', formatId);
   }
 
   @Get()
@@ -50,6 +50,16 @@ export class DecksController {
   @Patch(':id/cards/:cardId/printing')
   updatePrinting(@Request() req: any, @Param('id') id: string, @Param('cardId') cardId: string, @Body() body: { scryfallId: string }) {
     return this.decksService.updatePrinting(req.user.sub, id, cardId, body.scryfallId);
+  }
+
+  @Patch(':id/cards/:cardId/quantity')
+  updateCardQuantity(@Request() req: any, @Param('id') id: string, @Param('cardId') cardId: string, @Body() body: { delta: number }) {
+    return this.decksService.updateCardQuantity(req.user.sub, id, cardId, body.delta);
+  }
+
+  @Patch(':id/cards/:cardId/board-type')
+  updateBoardType(@Request() req: any, @Param('id') id: string, @Param('cardId') cardId: string, @Body() body: { boardType: string }) {
+    return this.decksService.updateBoardType(req.user.sub, id, cardId, body.boardType as any);
   }
 }
 

@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { Room } from 'colyseus.js';
+import { getStateCallbacks, type Room } from 'colyseus.js';
 import { useGameStore, type CardData, type PlayerData, type LogEntry } from '../store/game.store';
 import { preaquecer } from '../canvas/textureCache';
 import { RoomState } from './schema/RoomState';
@@ -82,37 +82,39 @@ export function useRoomSync(room: Room<RoomState> | null) {
     store.setRoomInfo(room.roomId, room.sessionId);
     store.setConnectionState('connected');
 
+    const $ = getStateCallbacks(room);
+
     // ── Cartas ─────────────────────────────────────────────────────────────
 
-    room.state.cards.onAdd((card: Card, id: string) => {
-      card.onChange(() => {
+    $(room.state).cards.onAdd((card: Card, id: string) => {
+      $(card).onChange(() => {
         useGameStore.getState().upsertCard(id, snapCard(card));
       });
       useGameStore.getState().upsertCard(id, snapCard(card));
     });
 
-    room.state.cards.onRemove((_card: Card, id: string) => {
+    $(room.state).cards.onRemove((_card: Card, id: string) => {
       useGameStore.getState().removeCard(id);
     });
 
     // ── Jogadores ──────────────────────────────────────────────────────────
 
-    room.state.players.onAdd((player: Player, id: string) => {
-      player.onChange(() => {
+    $(room.state).players.onAdd((player: Player, id: string) => {
+      $(player).onChange(() => {
         useGameStore.getState().upsertPlayer(id, snapPlayer(player));
       });
       useGameStore.getState().upsertPlayer(id, snapPlayer(player));
     });
 
-    room.state.players.onRemove((_p: Player, id: string) => {
+    $(room.state).players.onRemove((_p: Player, id: string) => {
       useGameStore.getState().removePlayer(id);
     });
 
     // ── Fase da sala ────────────────────────────────────────────────────────
 
-    room.state.onChange = () => {
-      useGameStore.getState().setPhase(room.state.phase);
-    };
+    $(room.state).onChange(() => {
+      useGameStore.getState().setPhase(room.state.phase as "WAITING" | "PLAYING" | "PAUSED" | "CLOSING");
+    });
 
     // ── Eventos efêmeros ───────────────────────────────────────────────────
 
@@ -169,7 +171,9 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     // ── Limpeza ─────────────────────────────────────────────────────────────
     return () => {
-      room.removeAllListeners();
+      // NOTA: room.removeAllListeners() foi removido pois no React StrictMode
+      // a remontagem rápida destruía permanentemente a comunicação com o Colyseus.
+      // O ciclo de vida da sala é controlado por room.leave() no page.tsx.
       useGameStore.getState().reset();
     };
   }, [room]);

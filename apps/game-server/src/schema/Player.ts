@@ -45,6 +45,7 @@ export class Player extends Schema {
    */
   @type('number') handCount = 0;
   @type('number') libraryCount = 0;
+  @type('number') mulliganCount = 0;
 
   @type('boolean') connected = true;
   /** epoch ms; 0 = conectado. Janela de reconexao: 90 s (RN10). */

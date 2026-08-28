@@ -10,12 +10,13 @@
 import React, { useState } from 'react';
 import {
   Dices, Shuffle, BookOpen, RefreshCcw, Trash2,
-  LogOut, ChevronUp, Repeat, Coins, Ghost
+  LogOut, ChevronUp, Repeat, Coins, Ghost, Mic, MicOff, Users
 } from 'lucide-react';
 import type { Room } from 'colyseus.js';
 import { intents } from '../net/intents';
 import { useRouter } from 'next/navigation';
 import { useUIStore } from '../store/game.store';
+import { useLocalParticipant } from '@livekit/components-react';
 
 interface ActionBarProps {
   room: Room<any>;
@@ -33,6 +34,21 @@ export function ActionBar({ room }: ActionBarProps) {
   // Só o setter é usado: o resultado do dado chega pelo evento 'dice' e é
   // renderizado pelo log, não por este componente.
   const [, setLastDice] = useState<{ sides: number; result?: number } | null>(null);
+
+  // LiveKit hook (pode falhar se estiver fora do LiveKitRoom)
+  let livekitActive = false;
+  let isMicEnabled = false;
+  let toggleMic = () => {};
+  try {
+    const { isMicrophoneEnabled, localParticipant } = useLocalParticipant();
+    if (localParticipant) {
+      livekitActive = true;
+      isMicEnabled = isMicrophoneEnabled;
+      toggleMic = () => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+    }
+  } catch (e) {
+    // Não está no LiveKitRoom ainda
+  }
 
   const handleDice = (sides: number) => {
     intents.rollDice(room, sides);
@@ -130,6 +146,15 @@ export function ActionBar({ room }: ActionBarProps) {
           <Coins className="w-4 h-4" />
         </button>
 
+        {/* Jogadores */}
+        <button
+          onClick={() => toggleModal('players')}
+          title="Ver jogadores"
+          className="p-2 text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+        >
+          <Users className="w-4 h-4" />
+        </button>
+
         {/* Dados */}
         <div className="relative">
           <button
@@ -184,6 +209,17 @@ export function ActionBar({ room }: ActionBarProps) {
         </button>
 
         <div className="w-px h-5 bg-panel-border mx-1" />
+
+        {/* Voz (Microfone) */}
+        {livekitActive && (
+          <button
+            onClick={toggleMic}
+            title={isMicEnabled ? "Mutar Microfone" : "Ativar Microfone"}
+            className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${isMicEnabled ? 'text-text hover:text-speaking hover:bg-speaking/20' : 'text-danger bg-danger/10 hover:bg-danger hover:text-white'}`}
+          >
+            {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+          </button>
+        )}
 
         {/* Sair */}
         <button

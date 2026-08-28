@@ -2,8 +2,8 @@
 
 import { useState, useEffect, use } from 'react';
 import { useAuthStore } from '../../../../store/auth.store';
-import { ArrowLeft, Save, AlertCircle, LibraryBig, Trash2, Edit2, X, Check, LayoutGrid, List, Search as SearchIcon, Image as ImageIcon } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { ArrowLeft, Save, AlertCircle, LibraryBig, Trash2, Edit2, X, Check, LayoutGrid, List, Search as SearchIcon, Image as ImageIcon, Plus as PlusIcon, Minus as MinusIcon, Crown, Activity } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { CardSearch } from '../../../../deckbuilder/CardSearch';
 import { PrintingPicker } from '../../../../deckbuilder/PrintingPicker';
@@ -11,6 +11,8 @@ import { PrintingPicker } from '../../../../deckbuilder/PrintingPicker';
 export default function DeckBuilderPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { id } = use(params);
+  const searchParams = useSearchParams();
+  const isReadOnly = searchParams.get('mode') === 'view';
   const { accessToken } = useAuthStore();
   
   const [deck, setDeck] = useState<any>(null);
@@ -123,7 +125,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
     }
   }
 
-  async function handleAddCard(scryfallId: string) {
+  async function handleAddCard(scryfallId: string, quantity: number = 1) {
     try {
       const res = await fetch(`${API_URL}/decks/${id}/cards`, {
         method: 'POST',
@@ -131,7 +133,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}` 
         },
-        body: JSON.stringify({ scryfallId, quantity: 1, boardType: 'MAIN' }),
+        body: JSON.stringify({ scryfallId, quantity, boardType: 'MAIN' }),
       });
       if (res.ok) {
         await fetchDeck();
@@ -144,6 +146,47 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  async function handleChangeQuantity(cardId: string, delta: number) {
+    try {
+      const res = await fetch(`${API_URL}/decks/${id}/cards/${cardId}/quantity`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}` 
+        },
+        body: JSON.stringify({ delta }),
+      });
+      if (res.ok) {
+        await fetchDeck();
+      } else {
+        alert('Falha ao alterar a quantidade.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Falha na conexão ao tentar alterar a quantidade.');
+    }
+  }
+
+  async function handleToggleBoardType(cardId: string, currentBoardType: string) {
+    const newBoardType = currentBoardType === 'COMMANDER' ? 'MAIN' : 'COMMANDER';
+    try {
+      const res = await fetch(`${API_URL}/decks/${id}/cards/${cardId}/board-type`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}` 
+        },
+        body: JSON.stringify({ boardType: newBoardType }),
+      });
+      if (res.ok) {
+        await fetchDeck();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Falha ao definir como comandante.');
+    }
+  }
+
   function getGroupedCards() {
     if (!deck?.cards) return {};
     if (groupBy === 'none') return { 'Todas as Cartas': deck.cards };
@@ -153,7 +196,8 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
       let key = 'Outros';
       const t = card.typeLine?.toLowerCase() || '';
       
-      if (t.includes('creature')) key = 'Criaturas';
+      if (card.boardType === 'COMMANDER') key = 'Comandante';
+      else if (t.includes('creature')) key = 'Criaturas';
       else if (t.includes('land')) key = 'Terrenos';
       else if (t.includes('artifact')) key = 'Artefatos';
       else if (t.includes('enchantment')) key = 'Encantamentos';
@@ -164,7 +208,34 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
       groups[key]!.push(card);
     });
     
-    return groups;
+    // Sort groups so Comandante is first
+    const sortedGroups: Record<string, any[]> = {};
+    if (groups['Comandante']) sortedGroups['Comandante'] = groups['Comandante']!;
+    Object.keys(groups).sort().forEach(k => {
+      if (k !== 'Comandante') sortedGroups[k] = groups[k]!;
+    });
+    
+    return sortedGroups;
+  }
+
+  function calculatePowerBracket(cards: any[]) {
+    if (!cards || cards.length === 0) return { label: 'Desconhecido', color: 'text-text-muted' };
+    
+    let score = 0;
+    const cEDHCards = ['Mana Crypt', "Gaea's Cradle", 'Underworld Breach', "Thassa's Oracle", 'Demonic Tutor', 'Vampiric Tutor', 'Force of Will', 'Fierce Guardianship', 'Jeweled Lotus', 'Mox Diamond', 'Chrome Mox', 'Dockside Extortionist', 'Deflecting Swat', 'Imperial Seal', 'Timetwister', "Lion's Eye Diamond"];
+    const highPowerCards = ['Sol Ring', 'Mana Vault', 'Rhystic Study', 'Mystic Remora', 'Sylvan Library', 'Cyclonic Rift', 'Smothering Tithe', "Teferi's Protection", 'Craterhoof Behemoth'];
+
+    cards.forEach(c => {
+      const name = c.name || '';
+      if (cEDHCards.some(cedh => name.includes(cedh))) score += 3;
+      else if (highPowerCards.some(hp => name.includes(hp))) score += 1;
+    });
+
+    if (score >= 10) return { label: 'Bracket 5 (cEDH / Máximo)', color: 'text-[#ef4444]' }; // Red
+    if (score >= 7) return { label: 'Bracket 4 (High Power)', color: 'text-[#f97316]' }; // Orange
+    if (score >= 4) return { label: 'Bracket 3 (Mid-High)', color: 'text-[#eab308]' }; // Yellow
+    if (score >= 2) return { label: 'Bracket 2 (Mid Power)', color: 'text-[#84cc16]' }; // Lime
+    return { label: 'Bracket 1 (Low Power / Casual)', color: 'text-[#22c55e]' }; // Green
   }
 
   if (!deck) {
@@ -172,6 +243,8 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
   }
 
   const groupedCards = getGroupedCards();
+  const totalPrice = deck.cards ? deck.cards.reduce((acc: number, c: any) => acc + (parseFloat(c.priceUsd) || 0) * c.quantity, 0).toFixed(2) : '0.00';
+  const bracket = calculatePowerBracket(deck.cards);
 
   return (
     <div className="max-w-6xl mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -204,15 +277,22 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
           ) : (
             <h1 className="text-3xl font-bold text-text flex items-center gap-3 group">
               {deck.name}
-              <button onClick={() => setIsEditingName(true)} className="opacity-0 group-hover:opacity-100 p-1 text-text-muted hover:text-primary transition-all">
-                <Edit2 className="w-5 h-5" />
-              </button>
+              {!isReadOnly && (
+                <button onClick={() => setIsEditingName(true)} className="opacity-0 group-hover:opacity-100 p-1 text-text-muted hover:text-primary transition-all">
+                  <Edit2 className="w-5 h-5" />
+                </button>
+              )}
             </h1>
           )}
         </div>
 
-        <div className="flex gap-4 text-sm text-text-muted">
-          <span className="bg-panel px-2 py-1 rounded border border-panel-border">{deck.cardCount} Cartas Totais</span>
+        <div className="flex flex-wrap gap-4 text-sm text-text-muted">
+          <span className="bg-panel px-2 py-1 rounded border border-panel-border">{deck.cardCount} Cartas</span>
+          <span className="bg-panel px-2 py-1 rounded border border-panel-border">${totalPrice} USD</span>
+          <span className="bg-panel px-2 py-1 rounded border border-panel-border">Formato: <span className="uppercase text-text font-bold">{deck.formatId}</span></span>
+          <span className={`bg-panel px-2 py-1 rounded border border-panel-border flex items-center gap-2 font-bold ${bracket.color}`}>
+            <Activity className="w-4 h-4" /> {bracket.label}
+          </span>
           <span className="bg-panel px-2 py-1 rounded border border-panel-border">Criado em {new Date(deck.createdAt).toLocaleDateString()}</span>
         </div>
       </header>
@@ -247,83 +327,84 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
 
       {viewMode === 'list' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Painel Esquerdo: Busca / Importação */}
-          <div className="lg:col-span-1">
-            <div className="bg-panel border border-panel-border p-6 rounded-xl shadow-lg h-full flex flex-col">
-              
-              <div className="flex gap-2 mb-6 border-b border-panel-border pb-2">
-                <button
-                  onClick={() => setLeftTab('search')}
-                  className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-2 rounded-t-md transition-colors ${leftTab === 'search' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:text-text'}`}
-                >
-                  <SearchIcon className="w-4 h-4" /> Buscar Cartas
-                </button>
-                <button
-                  onClick={() => setLeftTab('import')}
-                  className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-2 rounded-t-md transition-colors ${leftTab === 'import' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:text-text'}`}
-                >
-                  <Save className="w-4 h-4" /> Importação
-                </button>
+          {!isReadOnly && (
+            <div className="lg:col-span-1">
+              <div className="bg-panel border border-panel-border p-6 rounded-xl shadow-lg h-full flex flex-col">
+                
+                <div className="flex gap-2 mb-6 border-b border-panel-border pb-2">
+                  <button
+                    onClick={() => setLeftTab('search')}
+                    className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-2 rounded-t-md transition-colors ${leftTab === 'search' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:text-text'}`}
+                  >
+                    <SearchIcon className="w-4 h-4" /> Buscar Cartas
+                  </button>
+                  <button
+                    onClick={() => setLeftTab('import')}
+                    className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-2 rounded-t-md transition-colors ${leftTab === 'import' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:text-text'}`}
+                  >
+                    <Save className="w-4 h-4" /> Importação
+                  </button>
+                </div>
+
+                {leftTab === 'search' ? (
+                  <div className="flex-1 overflow-hidden flex flex-col min-h-[400px]">
+                    <CardSearch onAddCard={handleAddCard} />
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col">
+                    <p className="text-sm text-text-muted mb-4">
+                      Cole sua lista para substituir o deck atual ou iniciar do zero.
+                    </p>
+                    <form onSubmit={handleImport} className="flex flex-col flex-1">
+                      <textarea 
+                        value={rawText}
+                        onChange={(e) => setRawText(e.target.value)}
+                        disabled={isImporting}
+                        placeholder="Exemplo:\n1 Sol Ring\n1x Mana Crypt\n4 Lightning Bolt"
+                        className="w-full flex-1 min-h-[300px] bg-table-deep border border-panel-border rounded-md p-4 text-text focus:outline-none focus:border-primary transition-colors resize-none mb-4 font-mono text-sm"
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={isImporting || !rawText.trim()}
+                        className="w-full py-3 bg-primary text-white font-medium rounded-md hover:bg-primary-hover active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Save className="w-5 h-5" />
+                        {isImporting ? 'Lendo Runas na Scryfall...' : 'Substituir por Importação'}
+                      </button>
+                    </form>
+
+                    {importResult && (
+                      <div className={`mt-4 p-4 rounded-md border text-sm ${importResult.success ? 'bg-success/10 border-success/30 text-success' : 'bg-danger/10 border-danger/30 text-danger'}`}>
+                        {importResult.success ? (
+                          <>
+                            <p className="font-semibold mb-1">✓ {importResult.count} cartas únicas importadas.</p>
+                            {importResult.notFound?.length > 0 && (
+                              <div className="mt-2 text-warning">
+                                <p className="font-semibold">⚠️ Não encontradas:</p>
+                                <ul className="list-disc pl-4 text-xs mt-1 max-h-24 overflow-y-auto">
+                                  {importResult.notFound.map((name: string, i: number) => (
+                                    <li key={i}>{name}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5" />
+                            <span>{importResult.error}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-
-              {leftTab === 'search' ? (
-                <div className="flex-1 overflow-hidden flex flex-col min-h-[400px]">
-                  <CardSearch onAddCard={handleAddCard} />
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col">
-                  <p className="text-sm text-text-muted mb-4">
-                    Cole sua lista para substituir o deck atual ou iniciar do zero.
-                  </p>
-                  <form onSubmit={handleImport} className="flex flex-col flex-1">
-                    <textarea 
-                      value={rawText}
-                      onChange={(e) => setRawText(e.target.value)}
-                      disabled={isImporting}
-                      placeholder="Exemplo:\n1 Sol Ring\n1x Mana Crypt\n4 Lightning Bolt"
-                      className="w-full flex-1 min-h-[300px] bg-table-deep border border-panel-border rounded-md p-4 text-text focus:outline-none focus:border-primary transition-colors resize-none mb-4 font-mono text-sm"
-                    />
-                    <button 
-                      type="submit" 
-                      disabled={isImporting || !rawText.trim()}
-                      className="w-full py-3 bg-primary text-white font-medium rounded-md hover:bg-primary-hover active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Save className="w-5 h-5" />
-                      {isImporting ? 'Lendo Runas na Scryfall...' : 'Substituir por Importação'}
-                    </button>
-                  </form>
-
-                  {importResult && (
-                    <div className={`mt-4 p-4 rounded-md border text-sm ${importResult.success ? 'bg-success/10 border-success/30 text-success' : 'bg-danger/10 border-danger/30 text-danger'}`}>
-                      {importResult.success ? (
-                        <>
-                          <p className="font-semibold mb-1">✓ {importResult.count} cartas únicas importadas.</p>
-                          {importResult.notFound?.length > 0 && (
-                            <div className="mt-2 text-warning">
-                              <p className="font-semibold">⚠️ Não encontradas:</p>
-                              <ul className="list-disc pl-4 text-xs mt-1 max-h-24 overflow-y-auto">
-                                {importResult.notFound.map((name: string, i: number) => (
-                                  <li key={i}>{name}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <AlertCircle className="w-5 h-5" />
-                          <span>{importResult.error}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
-          </div>
+          )}
 
           {/* Painel Direito: Cartas (List) */}
-          <div className="lg:col-span-2">
+          <div className={isReadOnly ? "lg:col-span-3" : "lg:col-span-2"}>
             <div className="bg-panel border border-panel-border p-6 rounded-xl shadow-lg h-full flex flex-col">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-text">Lista de Cartas</h2>
@@ -347,13 +428,18 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
 
               {deck.cards?.length > 0 ? (
                 <div className="space-y-2 flex-1 overflow-y-auto pr-2 min-h-[400px]">
-                  {deck.cards.map((card: any) => (
-                    <div key={card.id} className="flex items-center justify-between bg-table-deep border border-panel-border p-3 rounded-lg hover:border-primary transition-colors group">
-                      <div className="flex items-center gap-3 cursor-pointer overflow-hidden" onClick={() => setEditingPrintingCard(card)}>
+                  {deck.cards.sort((a: any, b: any) => {
+                     if (a.boardType === 'COMMANDER' && b.boardType !== 'COMMANDER') return -1;
+                     if (b.boardType === 'COMMANDER' && a.boardType !== 'COMMANDER') return 1;
+                     return a.name.localeCompare(b.name);
+                  }).map((card: any) => (
+                    <div key={card.id} className={`flex items-center justify-between border p-3 rounded-lg hover:border-primary transition-colors group ${card.boardType === 'COMMANDER' ? 'bg-primary/5 border-primary/30' : 'bg-table-deep border-panel-border'}`}>
+                      <div className="flex items-center gap-3 overflow-hidden cursor-pointer flex-1" onClick={() => !isReadOnly && setEditingPrintingCard(card)}>
                         <span className="text-primary font-bold w-6 text-right">{card.quantity}x</span>
-                        <div className="flex flex-col truncate">
-                          <span className={`font-semibold text-sm truncate flex items-center gap-2 ${card.isBanned ? 'text-danger line-through' : 'text-text'} group-hover:text-primary transition-colors`}>
+                        <div className="flex flex-col truncate flex-1">
+                          <span className={`font-semibold text-sm truncate flex items-center gap-2 ${card.isBanned ? 'text-danger line-through' : card.boardType === 'COMMANDER' ? 'text-primary' : 'text-text'} group-hover:text-primary transition-colors`}>
                             {card.name || 'Resolvendo...'}
+                            {card.boardType === 'COMMANDER' && <Crown className="w-3.5 h-3.5 text-primary" />}
                             {card.isBanned && <span className="text-[10px] bg-danger text-white px-1.5 py-0.5 rounded uppercase">Banida</span>}
                             <ImageIcon className="w-3 h-3 text-text-faint opacity-0 group-hover:opacity-100 transition-opacity" />
                           </span>
@@ -364,13 +450,40 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                         <span className="text-[10px] font-mono text-primary px-2 py-1 bg-primary/10 rounded">
                           [{card.set}]
                         </span>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleRemoveCard(card.id); }}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 bg-danger/10 text-danger hover:bg-danger hover:text-white rounded transition-all"
-                          title="Remover Carta"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!isReadOnly && (
+                          <div className="flex items-center gap-1 bg-table-deep border border-panel-border rounded overflow-hidden">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleToggleBoardType(card.id, card.boardType); }}
+                              className={`p-1 transition-colors ${card.boardType === 'COMMANDER' ? 'bg-primary text-white' : 'text-text-muted hover:text-primary hover:bg-primary/10'}`}
+                              title={card.boardType === 'COMMANDER' ? "Remover do Comando" : "Tornar Comandante"}
+                            >
+                              <Crown className="w-3.5 h-3.5" />
+                            </button>
+                            <div className="w-[1px] h-4 bg-panel-border mx-0.5"></div>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleChangeQuantity(card.id, -1); }}
+                              className="p-1 hover:bg-danger/20 hover:text-danger text-text-muted transition-colors"
+                              title="Diminuir"
+                            >
+                              <MinusIcon className="w-3 h-3" />
+                            </button>
+                            <span className="text-xs font-bold text-text px-1 w-4 text-center">{card.quantity}</span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleChangeQuantity(card.id, 1); }}
+                              className="p-1 hover:bg-success/20 hover:text-success text-text-muted transition-colors"
+                              title="Aumentar"
+                            >
+                              <PlusIcon className="w-3 h-3" />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleRemoveCard(card.id); }}
+                              className="p-1 ml-1 bg-danger/10 text-danger hover:bg-danger hover:text-white transition-colors"
+                              title="Remover Todas"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -390,8 +503,11 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
         <div className="bg-panel border border-panel-border p-6 rounded-xl shadow-lg min-h-[500px]">
           {Object.entries(groupedCards).map(([groupName, cards]) => (
             <div key={groupName} className="mb-8">
-              <h3 className="text-xl font-bold text-text mb-4 border-b border-panel-border pb-2 flex justify-between">
-                {groupName} 
+              <h3 className="text-xl font-bold text-text mb-4 border-b border-panel-border pb-2 flex justify-between items-center">
+                <span className="flex items-center gap-2">
+                  {groupName === 'Comandante' && <Crown className="w-5 h-5 text-primary" />}
+                  {groupName} 
+                </span>
                 <span className="text-sm font-medium text-text-muted bg-table-deep px-2 py-1 rounded">
                   {cards.reduce((acc: number, c: any) => acc + c.quantity, 0)} Cartas
                 </span>
@@ -399,28 +515,42 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
               
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {cards.map((card: any) => (
-                  <div key={card.id} className="relative group/card cursor-pointer" onClick={() => setEditingPrintingCard(card)}>
+                  <div key={card.id} className="relative group/card" onClick={() => !isReadOnly && setEditingPrintingCard(card)}>
                     <img 
                       src={card.imageNormal || ''} 
                       alt={card.name} 
-                      className="w-full rounded-lg shadow-md border-2 border-transparent group-hover/card:border-primary transition-colors"
+                      className={`w-full rounded-lg shadow-md border-2 transition-colors ${card.boardType === 'COMMANDER' ? 'border-primary shadow-primary/30' : 'border-transparent group-hover/card:border-primary'}`}
                       loading="lazy"
                     />
-                    <div className="absolute -top-2 -right-2 bg-panel border border-panel-border rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shadow-lg">
+                    <div className={`absolute -top-2 -right-2 border rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shadow-lg ${card.boardType === 'COMMANDER' ? 'bg-primary border-primary text-white' : 'bg-panel border-panel-border'}`}>
                       {card.quantity}
                     </div>
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/card:opacity-100 flex flex-col items-center justify-center transition-opacity rounded-lg backdrop-blur-[2px]">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleRemoveCard(card.id); }}
-                        className="mb-2 p-2 bg-danger/80 text-white rounded-full hover:bg-danger hover:scale-110 transition-all shadow-lg"
-                        title="Remover carta"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <span className="text-[10px] bg-black/80 px-2 py-1 rounded text-white font-bold flex items-center gap-1">
-                        <ImageIcon className="w-3 h-3" /> Mudar Arte
-                      </span>
-                    </div>
+                    {card.boardType === 'COMMANDER' && (
+                       <div className="absolute -top-2 -left-2 bg-primary border-primary rounded-full w-6 h-6 flex items-center justify-center text-white shadow-lg">
+                          <Crown className="w-3.5 h-3.5" />
+                       </div>
+                    )}
+                    {!isReadOnly && (
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/card:opacity-100 flex flex-col items-center justify-center transition-opacity rounded-lg backdrop-blur-[2px]">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleToggleBoardType(card.id, card.boardType); }}
+                          className={`mb-2 px-3 py-1.5 text-xs font-bold rounded flex items-center gap-1 transition-colors shadow-lg ${card.boardType === 'COMMANDER' ? 'bg-danger/80 text-white hover:bg-danger' : 'bg-primary/80 text-white hover:bg-primary'}`}
+                          title={card.boardType === 'COMMANDER' ? "Remover do Comando" : "Tornar Comandante"}
+                        >
+                          <Crown className="w-3 h-3" /> {card.boardType === 'COMMANDER' ? 'Despromover' : 'Comandante'}
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleRemoveCard(card.id); }}
+                          className="mb-2 p-2 bg-danger/80 text-white rounded-full hover:bg-danger hover:scale-110 transition-all shadow-lg"
+                          title="Remover carta"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <span className="text-[10px] bg-black/80 px-2 py-1 rounded text-white font-bold flex items-center gap-1">
+                          <ImageIcon className="w-3 h-3" /> Mudar Arte
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -434,6 +564,16 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             </div>
           )}
         </div>
+      )}
+
+      {editingPrintingCard && (
+        <PrintingPicker 
+          card={editingPrintingCard} 
+          deckId={deck.id} 
+          accessToken={accessToken!} 
+          onClose={() => setEditingPrintingCard(null)} 
+          onSuccess={() => { fetchDeck(); setEditingPrintingCard(null); }} 
+        />
       )}
     </div>
   );

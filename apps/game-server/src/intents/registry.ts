@@ -506,6 +506,61 @@ const INTENT_COPY_CARD: IntentHandler<typeof S.CopyCardIntent> = {
   }
 };
 
+const INTENT_MULLIGAN: IntentHandler<typeof S.MulliganIntent> = {
+  schema: S.MulliganIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx) {
+    const sid = ctx.client.sessionId;
+    const mao = ordem(ctx.state, sid, 'HAND');
+    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const jogador = ctx.state.players.get(sid);
+    if (!mao || !grimorio || !jogador) return;
+
+    jogador.mulliganCount = (jogador.mulliganCount || 0) + 1;
+
+    // 1. Devolve tudo da mão para o grimório
+    while (mao.length > 0) {
+      const id = mao.pop();
+      if (id) {
+        grimorio.push(id);
+        const c = carta(ctx.state, id);
+        if (c) aplicarEfeitosDeZona(ctx, c, 'LIBRARY');
+      }
+    }
+
+    // 2. Embaralha o grimório (usa CSPRNG e limpa concessões)
+    const ids = embaralhar(Array.from(grimorio));
+    // Limpar o grimório
+    while (grimorio.length > 0) grimorio.pop();
+    // Repopular
+    for (const id of ids) {
+      grimorio.push(id);
+    }
+    grimorio.forEach((id) => {
+      const c = carta(ctx.state, id);
+      if (c) {
+        limparConcessoes(c);
+        reconciliarCartaParaTodos(ctx.clients, c);
+      }
+    });
+
+    // 3. Saca 7 cartas
+    const compradas = Math.min(7, grimorio.length);
+    for (let i = 0; i < compradas; i += 1) {
+      const id = grimorio.pop();
+      if (!id) break;
+      const c = carta(ctx.state, id);
+      if (c) {
+        mao.push(id);
+        aplicarEfeitosDeZona(ctx, c, 'HAND');
+      }
+    }
+
+    atualizarContagens(ctx.state, sid);
+    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} realizou um Mulligan (embaralhou a mão e comprou 7 cartas).`));
+  }
+};
+
 // ─── Tabela ──────────────────────────────────────────────────────────────────
 
 /**
@@ -532,6 +587,7 @@ export const REGISTRY = {
   INTENT_CHAT,
   INTENT_PING,
   INTENT_COPY_CARD,
+  INTENT_MULLIGAN,
 } satisfies Partial<Record<IntentType, IntentHandler<z.ZodTypeAny>>>;
 
 export type IntentImplementada = keyof typeof REGISTRY;

@@ -64,16 +64,29 @@ const CardSprite = React.memo(function CardSprite({ card, room, isSelected, onCo
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
 
   useEffect(() => {
+    let active = true;
+
     if (!showFront) {
-      setImgEl(getCardBack());
+      const back = getCardBack();
+      if (back.complete) {
+        if (back.naturalWidth > 0) setImgEl(back);
+      } else {
+        const handleBackLoad = () => { if (active && back.naturalWidth > 0) setImgEl(back); };
+        back.addEventListener('load', handleBackLoad);
+        return () => { active = false; back.removeEventListener('load', handleBackLoad); };
+      }
       return;
     }
+
     if (!card.scryfallId) return;
     const img = getTexture(card.scryfallId, 'small');
+    
     if (img.complete) {
-      setImgEl(img);
+      if (img.naturalWidth > 0) setImgEl(img);
     } else {
-      img.onload = () => setImgEl(img);
+      const handleLoad = () => { if (active && img.naturalWidth > 0) setImgEl(img); };
+      img.addEventListener('load', handleLoad);
+      return () => { active = false; img.removeEventListener('load', handleLoad); };
     }
   }, [card.scryfallId, showFront]);
 
@@ -117,11 +130,18 @@ const CardSprite = React.memo(function CardSprite({ card, room, isSelected, onCo
 
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.evt.button === 2) return;
+    
+    // Alt-click = inspecionar carta
+    if (e.evt.altKey) {
+      onInspect(card.scryfallId);
+      return;
+    }
+
     // Duplo clique = tap/untap (DOC-040 §6)
     if (e.evt.detail === 2 && isController) {
       intents.tap(room, card.id, !card.isTapped);
     }
-  }, [room, card.id, card.isTapped, isController]);
+  }, [room, card.id, card.scryfallId, card.isTapped, isController, onInspect]);
 
   const handleRightClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     e.evt.preventDefault();
@@ -130,15 +150,7 @@ const CardSprite = React.memo(function CardSprite({ card, room, isSelected, onCo
     if (pos) onContextMenu(card.id, pos.x, pos.y);
   }, [card.id, onContextMenu]);
 
-  const handleMouseEnter = useCallback(() => {
-    hoverTimeout.current = setTimeout(() => {
-      onInspect(card.id);
-    }, 400);
-  }, [card.id, onInspect]);
 
-  const handleMouseLeave = useCallback(() => {
-    clearTimeout(hoverTimeout.current);
-  }, []);
 
   const rotation = card.isTapped ? 90 : (card.rotation ?? 0);
 
@@ -155,8 +167,6 @@ const CardSprite = React.memo(function CardSprite({ card, room, isSelected, onCo
       onDragEnd={handleDragEnd}
       onClick={handleClick}
       onContextMenu={handleRightClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       opacity={card.phasedOut ? 0.4 : 1}
     >
       {/* Fundo fallback */}
@@ -173,7 +183,7 @@ const CardSprite = React.memo(function CardSprite({ card, room, isSelected, onCo
       />
 
       {/* Imagem da carta */}
-      {imgEl && (
+      {imgEl && imgEl.complete && imgEl.naturalWidth > 0 && (
         <KonvaImage
           image={imgEl}
           width={CARD_W}
@@ -283,7 +293,13 @@ export default function GameBoard({ room }: GameBoardProps) {
   const cards = useGameStore((s) => s.cards);
   const myId = useGameStore((s) => s.mySessionId);
   const { openContextMenu, setInspectedCard, selectedCardIds } = useUIStore();
-  const [dims, setDims] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [dims, setDims] = useState({ w: typeof window !== 'undefined' ? window.innerWidth : 1920, h: typeof window !== 'undefined' ? window.innerHeight : 1080 });
+
+  const LOGICAL_W = 1920;
+  const LOGICAL_H = 1080;
+  const scale = Math.min(dims.w / LOGICAL_W, dims.h / LOGICAL_H);
+  const offsetX = (dims.w - LOGICAL_W * scale) / 2;
+  const offsetY = (dims.h - LOGICAL_H * scale) / 2;
 
   // Atualiza dimensões ao redimensionar
   useEffect(() => {
@@ -299,28 +315,30 @@ export default function GameBoard({ room }: GameBoardProps) {
   const myCommand = cardList.filter(c => c.zone === 'COMMAND' && c.ownerId === myId);
   const myGraveyard = cardList.filter(c => c.zone === 'GRAVEYARD' && c.ownerId === myId);
 
-  // Posiciona mão visualmente na base da tela
-  const handStartX = dims.w / 2 - (myHand.length * (CARD_W + 10)) / 2;
+  // Posiciona mão visualmente na base da tela lógica
+  const handStartX = LOGICAL_W / 2 - (myHand.length * (CARD_W + 10)) / 2;
   myHand.forEach((c, idx) => {
     if (c.x === 0 && c.y === 0) {
       c.x = handStartX + idx * (CARD_W + 10) + CARD_W / 2;
-      c.y = dims.h - CARD_H / 2 - 20;
+      c.y = LOGICAL_H - CARD_H / 2 - 20;
     }
   });
 
   // Posiciona Comandante
+  // Posiciona Comandante
   myCommand.forEach((c, idx) => {
     if (c.x === 0 && c.y === 0) {
       c.x = 80 + idx * (CARD_W + 10);
-      c.y = dims.h / 2;
+      c.y = LOGICAL_H / 2;
     }
   });
 
   // Cemitério no canto
+  // Cemitério no canto
   myGraveyard.slice(-1).forEach(c => {
     if (c.x === 0 && c.y === 0) {
-      c.x = dims.w - CARD_W - 20;
-      c.y = dims.h - CARD_H - 20;
+      c.x = LOGICAL_W - CARD_W - 20;
+      c.y = LOGICAL_H - CARD_H - 20;
     }
   });
 
@@ -341,44 +359,54 @@ export default function GameBoard({ room }: GameBoardProps) {
       height={dims.h}
       style={{ background: 'transparent' }}
     >
-      {/* Layer 0: Contornos de zona (raramente redesenhado) */}
-      <Layer listening={false}>
-        <ZoneOutline
-          label="BATTLEFIELD"
-          x={180}
-          y={40}
-          width={dims.w - 360}
-          height={dims.h - 200}
-          color={ZONE_COLORS.BATTLEFIELD}
+      <Layer scale={{ x: scale, y: scale }} x={offsetX} y={offsetY}>
+        {/* Fundo clicável lógico para perder seleção */}
+        <Rect
+          width={LOGICAL_W}
+          height={LOGICAL_H}
+          fill="transparent"
+          onContextMenu={(e) => {
+            e.evt.preventDefault();
+            const stage = e.target.getStage();
+            const pos = stage?.getPointerPosition();
+            if (pos) {
+              const logicalX = (pos.x - offsetX) / scale;
+              const logicalY = (pos.y - offsetY) / scale;
+              openContextMenu('zone', logicalX, logicalY);
+            }
+          }}
         />
         <ZoneOutline
-          label="MÃO"
-          x={180}
-          y={dims.h - 180}
-          width={dims.w - 360}
+          label="BATTLEFIELD"
+          x={20} y={20}
+          width={LOGICAL_W - 40}
+          height={LOGICAL_H - 220}
+          color="rgba(30, 41, 59, 0.4)"
+        />
+        <ZoneOutline
+          label="HAND"
+          x={20} y={LOGICAL_H - 180}
+          width={LOGICAL_W - 40}
           height={160}
-          color={ZONE_COLORS.HAND}
+          color="rgba(15, 23, 42, 0.6)"
         />
         <ZoneOutline
           label="COMANDO"
           x={10}
-          y={dims.h / 2 - 120}
+          y={LOGICAL_H / 2 - 120}
           width={160}
           height={220}
           color={ZONE_COLORS.COMMAND}
         />
         <ZoneOutline
           label="CEMITÉRIO"
-          x={dims.w - 170}
-          y={dims.h - 280}
+          x={LOGICAL_W - 170}
+          y={LOGICAL_H - 280}
           width={160}
           height={220}
           color={ZONE_COLORS.GRAVEYARD}
         />
-      </Layer>
 
-      {/* Layer 1: Cartas (atualizado a 20 Hz pelos patches do Colyseus) */}
-      <Layer>
         {allVisible.map(card => (
           <CardSprite
             key={card.id}

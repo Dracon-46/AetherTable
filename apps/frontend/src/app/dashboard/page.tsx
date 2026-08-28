@@ -47,6 +47,8 @@ export default function DashboardPage() {
   const [selectedDeckId, setSelectedDeckId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [maxClients, setMaxClients] = useState(4);
+  const [gameType, setGameType] = useState('COMMANDER');
 
   // Funcão para abrir modal
   const handleOpenModal = (action: 'CREATE' | 'JOIN') => {
@@ -108,7 +110,11 @@ export default function DashboardPage() {
 
       // Sucesso! Temos o seatToken. Vamos para a Mesa de Jogo!
       // Passaremos o token na URL ou em estado global. Para o MVP, URL query param.
-      window.location.href = `/play/${code}?token=${joinData.seatToken}`;
+      let redirectUrl = `/play/${code}?token=${joinData.seatToken}`;
+      if (modalAction === 'CREATE') {
+        redirectUrl += `&maxClients=${maxClients}&gameType=${gameType}`;
+      }
+      window.location.href = redirectUrl;
 
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro desconhecido ao conectar.');
@@ -237,6 +243,38 @@ export default function DashboardPage() {
                 ))}
               </select>
             </div>
+
+            {modalAction === 'CREATE' && (
+              <div className="mb-6 flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-2">Jogadores</label>
+                  <select 
+                    value={maxClients}
+                    onChange={e => setMaxClients(Number(e.target.value))}
+                    className="w-full bg-table-deep border border-panel-border text-text rounded-md px-4 py-3 focus:outline-none focus:border-primary"
+                  >
+                    <option value={2}>2 Jogadores</option>
+                    <option value={3}>3 Jogadores</option>
+                    <option value={4}>4 Jogadores</option>
+                    <option value={5}>5 Jogadores</option>
+                    <option value={6}>6 Jogadores</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-2">Formato</label>
+                  <select 
+                    value={gameType}
+                    onChange={e => setGameType(e.target.value)}
+                    className="w-full bg-table-deep border border-panel-border text-text rounded-md px-4 py-3 focus:outline-none focus:border-primary"
+                  >
+                    <option value="COMMANDER">Commander</option>
+                    <option value="STANDARD">Standard</option>
+                    <option value="MODERN">Modern</option>
+                    <option value="PAUPER">Pauper</option>
+                  </select>
+                </div>
+              </div>
+            )}
 
             {errorMsg && (
               <div className="mb-6 p-3 bg-danger/10 border border-danger/30 text-danger rounded-md text-sm font-medium">

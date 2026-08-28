@@ -10,6 +10,7 @@ interface ScryCard {
   legalities?: { commander?: string };
   image_uris?: { normal?: string, small?: string };
   card_faces?: Array<{ image_uris?: { normal?: string, small?: string } }>;
+  prices?: { usd?: string, eur?: string, tix?: string };
 }
 
 interface ScryResponse {
@@ -21,11 +22,12 @@ interface ScryResponse {
 export class DecksService {
   constructor(private prisma: PrismaService) {}
 
-  async createDeck(userId: string, name: string) {
+  async createDeck(userId: string, name: string, formatId: string = 'commander') {
     return this.prisma.deck.create({
       data: {
         userId,
         name,
+        formatId,
       },
     });
   }
@@ -77,6 +79,7 @@ export class DecksService {
             typeLine: extra ? extra.type_line : '',
             isBanned: extra ? extra.legalities?.commander === 'banned' : false,
             imageNormal: extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
+            priceUsd: extra?.prices?.usd || 0,
           };
         });
       } catch (e) {
@@ -118,6 +121,34 @@ export class DecksService {
       where: { id: deckId },
       data: { cardCount: { decrement: card.quantity } }
     });
+
+    return { success: true };
+  }
+
+  async updateCardQuantity(userId: string, deckId: string, cardId: string, delta: number) {
+    const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
+    if (!deck) throw new NotFoundException('Deck não encontrado');
+
+    const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
+    if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
+
+    const newQuantity = card.quantity + delta;
+    if (newQuantity <= 0) {
+      await this.prisma.deckCard.delete({ where: { id: cardId } });
+      await this.prisma.deck.update({
+        where: { id: deckId },
+        data: { cardCount: { decrement: card.quantity } }
+      });
+    } else {
+      await this.prisma.deckCard.update({
+        where: { id: cardId },
+        data: { quantity: newQuantity }
+      });
+      await this.prisma.deck.update({
+        where: { id: deckId },
+        data: { cardCount: { increment: delta } }
+      });
+    }
 
     return { success: true };
   }
@@ -165,6 +196,21 @@ export class DecksService {
     await this.prisma.deckCard.update({
       where: { id: cardId },
       data: { scryfallId: newScryfallId }
+    });
+
+    return { success: true };
+  }
+
+  async updateBoardType(userId: string, deckId: string, cardId: string, boardType: BoardType) {
+    const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
+    if (!deck) throw new NotFoundException('Deck não encontrado');
+
+    const card = await this.prisma.deckCard.findFirst({ where: { id: cardId, deckId } });
+    if (!card) throw new NotFoundException('Carta não encontrada no deck');
+
+    await this.prisma.deckCard.update({
+      where: { id: cardId },
+      data: { boardType }
     });
 
     return { success: true };

@@ -131,14 +131,17 @@ export const useGameStore = create<GameState>((set) => ({
 interface UIState {
   zoomLevel: number;
   cameraPosition: { x: number; y: number };
-  activeModals: { chat: boolean; dice: boolean; settings: boolean; tokens: boolean; context: boolean };
+  activeModals: { chat: boolean; dice: boolean; settings: boolean; tokens: boolean; context: boolean; players: boolean };
   selectedCardIds: string[];
   hoveredCardId: string | null;
   inspectedCardId: string | null;
   contextMenuCard: string | null;
   contextMenuPos: { x: number; y: number };
   showZoneOutlines: boolean;
-  inspectedZone: 'GRAVEYARD' | 'EXILE' | null;
+  inspectedZone: 'GRAVEYARD' | 'EXILE' | 'LIBRARY' | null;
+  boardView: string; // 'ALL' | 'ME' | opponent_sessionId
+  hasKeptHand: boolean;
+  mulliganCount: number;
 
   setZoom: (z: number) => void;
   setCamera: (x: number, y: number) => void;
@@ -147,9 +150,12 @@ interface UIState {
   setSelectedCards: (ids: string[]) => void;
   setHoveredCard: (id: string | null) => void;
   setInspectedCard: (id: string | null) => void;
-  setInspectedZone: (zone: 'GRAVEYARD' | 'EXILE' | null) => void;
+  setInspectedZone: (zone: 'GRAVEYARD' | 'EXILE' | 'LIBRARY' | null) => void;
   openContextMenu: (cardId: string, x: number, y: number) => void;
   closeContextMenu: () => void;
+  setBoardView: (view: string) => void;
+  setHasKeptHand: (val: boolean) => void;
+  setMulliganCount: (count: number) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -157,7 +163,7 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       zoomLevel: 1,
       cameraPosition: { x: 0, y: 0 },
-      activeModals: { chat: false, dice: false, settings: false, tokens: false, context: false },
+      activeModals: { chat: false, dice: false, settings: false, tokens: false, context: false, players: false },
       selectedCardIds: [],
       hoveredCardId: null,
       inspectedCardId: null,
@@ -165,6 +171,9 @@ export const useUIStore = create<UIState>()(
       contextMenuPos: { x: 0, y: 0 },
       showZoneOutlines: true,
       inspectedZone: null,
+      boardView: 'ALL',
+      hasKeptHand: false,
+      mulliganCount: 0,
 
       setZoom: (zoomLevel) => set({ zoomLevel: Math.min(2.5, Math.max(0.4, zoomLevel)) }),
       setCamera: (x, y) => set({ cameraPosition: { x, y } }),
@@ -172,7 +181,7 @@ export const useUIStore = create<UIState>()(
         activeModals: { ...s.activeModals, [modal]: !s.activeModals[modal] },
       })),
       closeAllModals: () => set({
-        activeModals: { chat: false, dice: false, settings: false, tokens: false, context: false },
+        activeModals: { chat: false, dice: false, settings: false, tokens: false, context: false, players: false },
       }),
       setSelectedCards: (selectedCardIds) => set({ selectedCardIds }),
       setHoveredCard: (hoveredCardId) => set({ hoveredCardId }),
@@ -187,7 +196,10 @@ export const useUIStore = create<UIState>()(
         contextMenuCard: null,
         activeModals: { ...s.activeModals, context: false },
       })),
+      setBoardView: (boardView) => set({ boardView }),
+      setHasKeptHand: (hasKeptHand) => set({ hasKeptHand }),
+      setMulliganCount: (mulliganCount) => set({ mulliganCount }),
     }),
-    { name: 'aether-ui-store', partialize: (s) => ({ showZoneOutlines: s.showZoneOutlines }) }
+    { name: 'aether-ui-store', partialize: (s) => ({ showZoneOutlines: s.showZoneOutlines, boardView: s.boardView }) }
   )
 );
