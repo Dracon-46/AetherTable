@@ -398,7 +398,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
               </h3>
               
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {cards.map(card => (
+                {cards.map((card: any) => (
                   <div key={card.id} className="relative group/card cursor-pointer" onClick={() => setEditingPrintingCard(card)}>
                     <img 
                       src={card.imageNormal || ''} 
