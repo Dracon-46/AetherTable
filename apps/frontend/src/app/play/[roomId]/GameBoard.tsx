@@ -78,7 +78,8 @@ const CardVisual = ({ scryfallId, lockedBy, sessionId, isTapped, faceDown }: any
 const CardNode = ({ 
   card, 
   room,
-  onContextMenu
+  onContextMenu,
+  onHover
 }: { 
   card: any, 
   room: Room<any>,
@@ -352,7 +353,7 @@ export default function GameBoard({ room }: GameBoardProps) {
             </Group>
           )}
 
-          {cards.map(card => (
+          {cards.map((card: any) => (
             <CardNode key={card.id} card={card} room={room} onContextMenu={handleContextMenu} onHover={setHoveredCardId} />
           ))}
         </Layer>
