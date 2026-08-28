@@ -85,9 +85,9 @@ export function useRoomSync(room: Room<RoomState> | null) {
     // ── Cartas ─────────────────────────────────────────────────────────────
 
     room.state.cards.onAdd((card: Card, id: string) => {
-      card.onChange = () => {
+      card.onChange(() => {
         useGameStore.getState().upsertCard(id, snapCard(card));
-      };
+      });
       useGameStore.getState().upsertCard(id, snapCard(card));
     });
 
@@ -98,9 +98,9 @@ export function useRoomSync(room: Room<RoomState> | null) {
     // ── Jogadores ──────────────────────────────────────────────────────────
 
     room.state.players.onAdd((player: Player, id: string) => {
-      player.onChange = () => {
+      player.onChange(() => {
         useGameStore.getState().upsertPlayer(id, snapPlayer(player));
-      };
+      });
       useGameStore.getState().upsertPlayer(id, snapPlayer(player));
     });
 
