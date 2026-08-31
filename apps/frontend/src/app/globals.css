@@ -2,53 +2,70 @@
 
 @theme {
   /* Cores Base da Mesa (DOC-041) */
-  --color-table: #1A1C23;
-  --color-table-deep: #12141A;
-  
+  --color-table: #1a1c23;
+  --color-table-deep: #12141a;
+  /* Alias usado por telas fora da mesa. Antes `bg-background` não existia e
+     as telas de erro/loading da mesa ficavam sem fundo nenhum. */
+  --color-background: #12141a;
+
   /* Cores de Painéis */
   --color-panel: #252836;
-  --color-panel-hover: #2E3242;
-  --color-panel-border: #363B4D;
-  
+  --color-panel-hover: #2e3242;
+  --color-panel-border: #363b4d;
+
   /* Cores de Texto */
-  --color-text: #E2E8F0;
-  --color-text-muted: #94A3B8;
-  --color-text-faint: #64748B;
-  
+  --color-text: #e2e8f0;
+  --color-text-muted: #94a3b8;
+  --color-text-faint: #64748b;
+
   /* Cores de Feedback e Estado */
-  --color-primary: #3B82F6;
-  --color-primary-hover: #2563EB;
-  --color-primary-subtle: #1E3A8A;
-  --color-danger: #EF4444;
-  --color-danger-hover: #DC2626;
-  --color-success: #22C55E;
-  --color-warning: #F59E0B;
-  --color-speaking: #FBBF24;
-  
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-subtle: #1e3a8a;
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+  --color-success: #22c55e;
+  --color-success-hover: #16a34a;
+  --color-warning: #f59e0b;
+  --color-warning-hover: #d97706;
+  --color-speaking: #fbbf24;
+
   /* Cores de Mana */
-  --color-mana-w: #F8F6D8;
-  --color-mana-u: #C1D7E9;
-  --color-mana-b: #BAB1AB;
-  --color-mana-r: #E49977;
-  --color-mana-g: #A3C095;
-  
+  --color-mana-w: #f8f6d8;
+  --color-mana-u: #c1d7e9;
+  --color-mana-b: #bab1ab;
+  --color-mana-r: #e49977;
+  --color-mana-g: #a3c095;
+
   /* Fontes (Inter) */
   --font-sans: 'Inter', system-ui, sans-serif;
-  
-  /* Configuração de Container e Tela */
-  --container-center: true;
 }
 
-/* 
- * Utilitários Nativos
+/*
+ * ── Escala de empilhamento (z-index) da mesa ────────────────────────────────
+ * Antes cada overlay escolhia o próprio z: a ActionBar (z-30) ficava debaixo
+ * do painel de Câmera (z-50), e o ChatLog cobria os menus suspensos da barra.
+ * Esta é a fonte única:
+ *
+ *   0   canvas Konva (mesa)
+ *   10  HUD passivo (rótulo da sala)
+ *   20  painéis laterais (vida, log, câmera)
+ *   30  barra de ações e seus menus suspensos
+ *   40  gavetas (inspetor de carta)
+ *   50  modais de tela cheia (tokens, jogadores, zonas)
+ *   60  bloqueantes de fluxo (mulligan, lobby)
  */
+
 @layer base {
   :root {
     color-scheme: dark;
   }
-  
+
+  html {
+    height: 100%;
+  }
+
   body {
-    /* O padrão para telas fora da mesa de jogo é o fundo profundo */
     background-color: var(--color-table-deep);
     color: var(--color-text);
     /* Força os números dinâmicos a não pularem na tela (DOC-041 §2.2) */
@@ -56,11 +73,174 @@
     font-family: var(--font-sans);
     margin: 0;
     padding: 0;
+    /* `100dvh` acompanha a barra de endereço do mobile; `100vh` cortava a
+       interface. */
+    min-height: 100dvh;
+    /* NUNCA `overflow: hidden` global: login, registro e dashboard precisam
+       rolar em telas baixas. Só a mesa de jogo trava a rolagem, e o faz no
+       próprio container. */
+    overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* A mesa de jogo marca o container com `data-lock-scroll` para travar a
+     rolagem da página sem afetar as outras telas. */
+  body:has([data-lock-scroll]) {
+    overflow: hidden;
   }
 }
 
-/* Animação personalizada do Sopro de Fogo do Dragão */
+/*
+ * Barra de rolagem dos painéis da mesa. A classe era referenciada em 6
+ * componentes e nunca existiu — sobrava a barra padrão do SO, larga o
+ * bastante para cobrir conteúdo em telas estreitas.
+ */
+@utility custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-panel-border) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-panel-border);
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-text-faint);
+  }
+}
+
+/* Esconde a barra mantendo a rolagem (barra de ações no mobile). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/*
+ * ── Bordas de perfil (DOC-060 §2.4) ─────────────────────────────────────────
+ *
+ * A especificação recomenda CSS puro em vez de GIF/WebM: custo de CPU
+ * praticamente nulo, nada para baixar, e nenhuma arte de terceiros para
+ * revisar. Cada classe abaixo corresponde a um item do catálogo fechado em
+ * `packages/shared-types/src/cosmetics.ts`.
+ */
+@utility borda-brilho-azul {
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 14px 2px rgba(59, 130, 246, 0.55);
+}
+
+@utility borda-brilho-ouro {
+  box-shadow: 0 0 0 2px #f59e0b, 0 0 14px 2px rgba(245, 158, 11, 0.55);
+}
+
+@utility borda-neon-verde {
+  box-shadow: 0 0 0 2px #22c55e, 0 0 16px 3px rgba(34, 197, 94, 0.5);
+}
+
+@utility borda-prisma {
+  position: relative;
+  box-shadow: 0 0 0 2px transparent;
+  background-image:
+    linear-gradient(var(--color-panel), var(--color-panel)),
+    conic-gradient(from var(--giro, 0deg), #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7, #ef4444);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  border: 2px solid transparent;
+  animation: girar-prisma 4s linear infinite;
+}
+
+@utility borda-chama {
+  box-shadow:
+    0 0 0 2px #ef4444,
+    0 0 10px 1px rgba(239, 68, 68, 0.7),
+    0 0 22px 5px rgba(245, 158, 11, 0.4);
+  animation: tremular 2.2s ease-in-out infinite;
+}
+
+/*
+ * `@property` dá ao ângulo do gradiente um tipo, e é isso que permite animá-lo.
+ * Sem a declaração, o navegador trata `--giro` como texto e o giro não acontece.
+ */
+@property --giro {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes girar-prisma {
+  to {
+    --giro: 360deg;
+  }
+}
+
+@keyframes tremular {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px #ef4444,
+      0 0 10px 1px rgba(239, 68, 68, 0.7),
+      0 0 22px 5px rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px #f59e0b,
+      0 0 14px 2px rgba(245, 158, 11, 0.8),
+      0 0 28px 7px rgba(239, 68, 68, 0.45);
+  }
+}
+
+/*
+ * ── Transições ──────────────────────────────────────────────────────────────
+ *
+ * Painéis que aparecem e somem de repente parecem defeito. Estas classes dão a
+ * eles um movimento curto e consistente — e todas somem sob
+ * `prefers-reduced-motion`, que já está tratado no fim deste arquivo.
+ */
+@utility painel-entra {
+  animation: painel-entrada 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@utility modal-entra {
+  animation: modal-entrada 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@utility fundo-entra {
+  animation: fadeIn 0.18s ease-out;
+}
+
+@keyframes painel-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/*
+ * ── Animações ───────────────────────────────────────────────────────────────
+ * `fadeIn`, `popIn` e `shake` eram usadas via `animate-[fadeIn_...]` em nove
+ * componentes sem nunca terem sido declaradas: nada animava.
+ */
 @keyframes fire-breathe {
   0% {
     opacity: 0;
@@ -79,6 +259,51 @@
   }
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
 .animate-fire-breathe {
   animation: fire-breathe 2s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

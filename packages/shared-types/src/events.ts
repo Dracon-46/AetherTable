@@ -56,7 +56,22 @@ export interface LogEvent {
   timestamp: number;
   type: LogType;
   actorId: string;
+  /**
+   * Texto neutro. Pode conter o marcador `{Carta}`, que o cliente substitui
+   * pelo nome resolvido a partir de `scryfallId`.
+   */
   text: string;
+  /**
+   * Identidade da carta envolvida — PRESENTE APENAS em acao publica.
+   *
+   * O servidor nao guarda nome de carta (DOC-030 §1.2): guarda o id. Sem este
+   * campo, o log dizia "moveu uma carta" ate entre duas zonas publicas, onde
+   * nomear e permitido e esperado — e o historico da partida ficava ilegivel.
+   *
+   * NUNCA acompanha um `LogType` neutro (`NEUTRAL_LOG_TYPES`): esses cobrem
+   * exatamente as acoes em zona oculta, e um id ali seria vazamento (RN09).
+   */
+  scryfallId?: string;
 }
 
 export interface ChatEvent {
@@ -87,6 +102,15 @@ export interface RevealToOwnerEvent {
   cards: Array<{ id: string; scryfallId: string }>;
 }
 
+/**
+ * Abertura de um scry/surveil. Vai SO ao dono (`client.send`): as cartas do
+ * topo do grimorio sao informacao oculta ate a decisao ser tomada.
+ */
+export interface ScryOpenedEvent {
+  mode: 'SCRY' | 'SURVEIL';
+  cards: Array<{ id: string; scryfallId: string }>;
+}
+
 export interface WarningEvent {
   code: 'RATE_LIMITED' | 'PEEK_EXPIRED' | 'RECONNECTING';
   message: string;
@@ -107,6 +131,11 @@ export interface PlayerConnectionEvent {
   playerId: string;
 }
 
+/** A sala saiu de WAITING: os clientes fecham a sala de espera. */
+export interface MatchStartedEvent {
+  startedBy: string;
+}
+
 export interface RoomClosingEvent {
   reason: 'EMPTY' | 'DRAIN_FOR_DEPLOY' | 'ERROR' | 'ALL_LEFT';
   inSeconds: number;
@@ -119,12 +148,14 @@ export interface ServerEventMap {
   dice: DiceEvent;
   ping: PingEvent;
   revealToOwner: RevealToOwnerEvent;
+  scryOpened: ScryOpenedEvent;
   warning: WarningEvent;
   error: ErrorEvent;
   playerJoined: PlayerPresenceEvent;
   playerLeft: PlayerPresenceEvent;
   playerDisconnected: PlayerConnectionEvent;
   playerReconnected: PlayerConnectionEvent;
+  matchStarted: MatchStartedEvent;
   roomClosing: RoomClosingEvent;
 }
 

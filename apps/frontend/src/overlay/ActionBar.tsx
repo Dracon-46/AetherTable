@@ -2,63 +2,88 @@
 
 /**
  * ActionBar.tsx — Barra de Ações da Mesa (DOC-040 §2).
- * 
- * Atalhos rápidos para as ações mais comuns:
- * comprar, embaralhar, dados, virar tudo, etc.
+ *
+ * MUDANÇAS DE LAYOUT (auditoria)
+ *
+ * A barra ficava em `top-3 left-1/2` com 14 botões numa linha rígida. Em
+ * qualquer viewport abaixo de ~1400px ela cobria o rótulo da sala (canto
+ * superior esquerdo) e o painel de Câmera (canto superior direito), e os
+ * menus suspensos abriam para baixo por cima do painel de vida. Além disso a
+ * barra tinha `z-30` enquanto a Câmera tinha `z-50`: a Câmera ganhava.
+ *
+ * Agora a barra vive na BASE da tela — onde não disputa espaço com nada — rola
+ * horizontalmente quando não cabe, e seus menus abrem PARA CIMA.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Dices, Shuffle, BookOpen, RefreshCcw, Trash2,
-  LogOut, ChevronUp, Repeat, Coins, Ghost, Mic, MicOff, Users
+  Dices,
+  Shuffle,
+  BookOpen,
+  RefreshCcw,
+  Trash2,
+  LogOut,
+  ChevronUp,
+  Repeat,
+  Coins,
+  Ghost,
+  Mic,
+  MicOff,
+  Users,
+  Search,
 } from 'lucide-react';
 import type { Room } from 'colyseus.js';
 import { intents } from '../net/intents';
 import { useRouter } from 'next/navigation';
 import { useUIStore } from '../store/game.store';
-import { useLocalParticipant } from '@livekit/components-react';
+import { useVoiceStore } from '../net/voice';
+import { Undo2 } from 'lucide-react';
+import type { RoomState } from '../net/schema/RoomState';
 
 interface ActionBarProps {
-  room: Room<any>;
+  room: Room<RoomState>;
 }
 
-const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100];
+const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
+
+/** Fecha um menu suspenso ao clicar fora dele. */
+function useFecharAoClicarFora<T extends HTMLElement>(aberto: boolean, fechar: () => void) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) fechar();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [aberto, fechar]);
+  return ref;
+}
 
 export function ActionBar({ room }: ActionBarProps) {
   const router = useRouter();
-  const toggleModal = useUIStore(s => s.toggleModal);
-  
+  const toggleModal = useUIStore((s) => s.toggleModal);
+  const setInspectedZone = useUIStore((s) => s.setInspectedZone);
+
   const [showDice, setShowDice] = useState(false);
   const [drawAmount, setDrawAmount] = useState(1);
   const [showDraw, setShowDraw] = useState(false);
-  // Só o setter é usado: o resultado do dado chega pelo evento 'dice' e é
-  // renderizado pelo log, não por este componente.
-  const [, setLastDice] = useState<{ sides: number; result?: number } | null>(null);
 
-  // LiveKit hook (pode falhar se estiver fora do LiveKitRoom)
-  let livekitActive = false;
-  let isMicEnabled = false;
-  let toggleMic = () => {};
-  try {
-    const { isMicrophoneEnabled, localParticipant } = useLocalParticipant();
-    if (localParticipant) {
-      livekitActive = true;
-      isMicEnabled = isMicrophoneEnabled;
-      toggleMic = () => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
-    }
-  } catch (e) {
-    // Não está no LiveKitRoom ainda
-  }
+  // Voz: lida do store, nunca de um hook do LiveKit chamado condicionalmente.
+  const voiceAvailable = useVoiceStore((s) => s.available);
+  const micEnabled = useVoiceStore((s) => s.micEnabled);
+  const toggleMic = useVoiceStore((s) => s.toggleMic);
+
+  const diceRef = useFecharAoClicarFora<HTMLDivElement>(showDice, () => setShowDice(false));
+  const drawRef = useFecharAoClicarFora<HTMLDivElement>(showDraw, () => setShowDraw(false));
 
   const handleDice = (sides: number) => {
     intents.rollDice(room, sides);
     setShowDice(false);
-    setLastDice({ sides });
-    // O resultado chegará via evento 'dice' → log
   };
 
   const handleDraw = () => {
-    intents.draw(room, drawAmount);
+    intents.draw(room, Math.max(1, Math.min(20, drawAmount)));
     setShowDraw(false);
   };
 
@@ -68,35 +93,45 @@ export function ActionBar({ room }: ActionBarProps) {
     router.push('/dashboard');
   };
 
+  const btn =
+    'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-panel-hover';
+  const iconBtn =
+    'flex shrink-0 items-center justify-center rounded-lg p-2 text-text transition-colors hover:bg-panel-hover';
+
   return (
-    <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-30">
-      <div className="pointer-events-auto flex items-center gap-1 bg-panel/90 backdrop-blur border border-panel-border rounded-xl px-3 py-2 shadow-xl">
-        
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="no-scrollbar border-panel-border bg-panel/95 pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border px-2 py-2 shadow-xl backdrop-blur">
         {/* Comprar carta */}
-        <div className="relative">
+        <div className="relative shrink-0" ref={drawRef}>
           <button
             onClick={() => intents.draw(room, 1)}
-            onContextMenu={e => { e.preventDefault(); setShowDraw(!showDraw); }}
-            title="Comprar 1 carta (Botão direito para X)"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setShowDraw((v) => !v);
+            }}
+            title="Comprar 1 carta (botão direito para escolher a quantidade)"
+            className={`${btn} hover:text-primary`}
           >
-            <BookOpen className="w-4 h-4" />
-            Comprar
+            <BookOpen className="h-4 w-4" />
+            <span className="hidden sm:inline">Comprar</span>
           </button>
           {showDraw && (
-            <div className="absolute top-full left-0 mt-1 bg-panel border border-panel-border rounded-lg p-2 shadow-xl z-10">
+            <div className="border-panel-border bg-panel absolute bottom-full left-0 mb-2 rounded-lg border p-2 shadow-xl">
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={1}
                   max={20}
                   value={drawAmount}
-                  onChange={e => setDrawAmount(Number(e.target.value))}
-                  className="w-16 bg-table-deep border border-panel-border text-text text-xs px-2 py-1 rounded"
+                  onChange={(e) => setDrawAmount(Number(e.target.value))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleDraw();
+                  }}
+                  className="border-panel-border bg-table-deep text-text w-16 rounded border px-2 py-1 text-xs"
                 />
                 <button
                   onClick={handleDraw}
-                  className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary-hover"
+                  className="bg-primary hover:bg-primary-hover rounded px-3 py-1 text-xs text-white"
                 >
                   Comprar
                 </button>
@@ -105,73 +140,78 @@ export function ActionBar({ room }: ActionBarProps) {
           )}
         </div>
 
-        {/* Embaralhar */}
+        {/* Buscar no grimório (tutor) — antes só existia via clique na pilha */}
+        <button
+          onClick={() => setInspectedZone('LIBRARY')}
+          title="Buscar no grimório"
+          className={`${btn} hover:text-warning`}
+        >
+          <Search className="h-4 w-4" />
+          <span className="hidden lg:inline">Buscar</span>
+        </button>
+
         <button
           onClick={() => intents.shuffle(room)}
           title="Embaralhar grimório"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+          className={`${btn} hover:text-primary`}
         >
-          <Shuffle className="w-4 h-4" />
-          Embaralhar
+          <Shuffle className="h-4 w-4" />
+          <span className="hidden lg:inline">Embaralhar</span>
         </button>
 
-        {/* Desvirar tudo */}
         <button
           onClick={() => intents.untapAll(room)}
           title="Desvirar todas as cartas (início do turno)"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text hover:text-success hover:bg-panel-hover rounded-lg transition-colors"
+          className={`${btn} hover:text-success`}
         >
-          <RefreshCcw className="w-4 h-4" />
-          Desvirar
+          <RefreshCcw className="h-4 w-4" />
+          <span className="hidden lg:inline">Desvirar</span>
         </button>
 
-        {/* Passar Turno */}
         <button
           onClick={() => intents.passTurn(room)}
           title="Passar o turno"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text hover:text-warning hover:bg-panel-hover rounded-lg transition-colors"
+          className={`${btn} hover:text-warning`}
         >
-          <ChevronUp className="w-4 h-4" />
-          Turno
+          <ChevronUp className="h-4 w-4" />
+          <span className="hidden lg:inline">Turno</span>
         </button>
 
-        <div className="w-px h-5 bg-panel-border mx-1" />
+        <div className="bg-panel-border mx-1 h-5 w-px shrink-0" />
 
-        {/* Moeda */}
         <button
           onClick={() => intents.flipCoin(room)}
           title="Girar moeda"
-          className="p-2 text-text hover:text-speaking hover:bg-panel-hover rounded-lg transition-colors"
+          className={`${iconBtn} hover:text-speaking`}
         >
-          <Coins className="w-4 h-4" />
+          <Coins className="h-4 w-4" />
         </button>
 
-        {/* Jogadores */}
         <button
           onClick={() => toggleModal('players')}
           title="Ver jogadores"
-          className="p-2 text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+          className={`${iconBtn} hover:text-primary`}
         >
-          <Users className="w-4 h-4" />
+          <Users className="h-4 w-4" />
         </button>
 
         {/* Dados */}
-        <div className="relative">
+        <div className="relative shrink-0" ref={diceRef}>
           <button
-            onClick={() => setShowDice(!showDice)}
+            onClick={() => setShowDice((v) => !v)}
             title="Rolar dado"
-            className="p-2 text-text hover:text-speaking hover:bg-panel-hover rounded-lg transition-colors"
+            className={`${iconBtn} hover:text-speaking`}
           >
-            <Dices className="w-4 h-4" />
+            <Dices className="h-4 w-4" />
           </button>
           {showDice && (
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-panel border border-panel-border rounded-xl p-2 shadow-xl z-10">
+            <div className="border-panel-border bg-panel absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-xl border p-2 shadow-xl">
               <div className="grid grid-cols-4 gap-1">
-                {DICE_SIDES.map(s => (
+                {DICE_SIDES.map((s) => (
                   <button
                     key={s}
                     onClick={() => handleDice(s)}
-                    className="px-2 py-1.5 text-xs text-text bg-panel-hover hover:bg-speaking/20 hover:text-speaking rounded transition-colors font-mono"
+                    className="bg-panel-hover text-text hover:bg-speaking/20 hover:text-speaking rounded px-2 py-1.5 font-mono text-xs transition-colors"
                   >
                     D{s}
                   </button>
@@ -181,53 +221,60 @@ export function ActionBar({ room }: ActionBarProps) {
           )}
         </div>
 
-        {/* Muligan */}
         <button
           onClick={() => intents.mulligan(room)}
-          title="Fazer muligan"
-          className="p-2 text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+          title="Fazer mulligan"
+          className={`${iconBtn} hover:text-primary`}
         >
-          <Repeat className="w-4 h-4" />
+          <Repeat className="h-4 w-4" />
         </button>
 
-        {/* Gerar Token */}
         <button
           onClick={() => toggleModal('tokens')}
-          title="Gerar Token"
-          className="p-2 text-text hover:text-primary hover:bg-panel-hover rounded-lg transition-colors"
+          title="Gerar token"
+          className={`${iconBtn} hover:text-primary`}
         >
-          <Ghost className="w-4 h-4" />
+          <Ghost className="h-4 w-4" />
         </button>
 
-        {/* Limpar Tokens */}
         <button
           onClick={() => intents.clearTokens(room)}
           title="Remover todos os tokens"
-          className="p-2 text-text hover:text-danger hover:bg-panel-hover rounded-lg transition-colors"
+          className={`${iconBtn} hover:text-danger`}
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="h-4 w-4" />
         </button>
 
-        <div className="w-px h-5 bg-panel-border mx-1" />
+        <button
+          onClick={() => intents.undo(room)}
+          title="Desfazer a última ação própria (até 10 s). Não desfaz sorteio nem revelação."
+          className={`${iconBtn} hover:text-warning`}
+        >
+          <Undo2 className="h-4 w-4" />
+        </button>
 
-        {/* Voz (Microfone) */}
-        {livekitActive && (
+        <div className="bg-panel-border mx-1 h-5 w-px shrink-0" />
+
+        {voiceAvailable && (
           <button
             onClick={toggleMic}
-            title={isMicEnabled ? "Mutar Microfone" : "Ativar Microfone"}
-            className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${isMicEnabled ? 'text-text hover:text-speaking hover:bg-speaking/20' : 'text-danger bg-danger/10 hover:bg-danger hover:text-white'}`}
+            title={micEnabled ? 'Mutar microfone' : 'Ativar microfone'}
+            className={`${iconBtn} ${
+              micEnabled
+                ? 'hover:bg-speaking/20 hover:text-speaking'
+                : 'bg-danger/10 text-danger hover:bg-danger hover:text-white'
+            }`}
           >
-            {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
           </button>
         )}
 
-        {/* Sair */}
         <button
           onClick={handleLeave}
           title="Sair da sala"
-          className="p-2 text-text-faint hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
+          className={`${iconBtn} text-text-faint hover:bg-danger/10 hover:text-danger`}
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="h-4 w-4" />
         </button>
       </div>
     </div>

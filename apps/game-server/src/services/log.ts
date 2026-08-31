@@ -14,15 +14,28 @@
 import { randomUUID } from 'node:crypto';
 import { NEUTRAL_LOG_TYPES, type LogEvent, type LogType } from '@aethertable/shared-types';
 
-export function criarLog(type: LogType, actorId: string, text: string): LogEvent {
+export function criarLog(
+  type: LogType,
+  actorId: string,
+  text: string,
+  /** So para acao PUBLICA. Ver a guarda logo abaixo. */
+  scryfallId?: string,
+): LogEvent {
+  // A invariante mais importante deste arquivo: tipo neutro NUNCA carrega
+  // identidade. Falhar aqui, em desenvolvimento, e barato; descobrir em
+  // producao significa que o log vazou o conteudo de uma zona oculta.
+  if (scryfallId && NEUTRAL_LOG_TYPES.has(type)) {
+    throw new Error(
+      `Log de tipo neutro "${type}" recebeu scryfallId. Use a variante publica ou remova o id.`,
+    );
+  }
+
   if (process.env.NODE_ENV !== 'production' && NEUTRAL_LOG_TYPES.has(type)) {
     // Guarda de desenvolvimento: tipos neutros nao devem carregar identidade de
     // carta. Nao da para detectar isso com certeza, mas um nome entre chaves e
     // um sinal forte de que a variante errada foi usada.
     if (/\{Carta\}|scryfall/i.test(text)) {
-      throw new Error(
-        `Log de tipo neutro "${type}" tentou incluir identidade de carta: ${text}`,
-      );
+      throw new Error(`Log de tipo neutro "${type}" tentou incluir identidade de carta: ${text}`);
     }
   }
 
@@ -32,6 +45,7 @@ export function criarLog(type: LogType, actorId: string, text: string): LogEvent
     type,
     actorId,
     text,
+    ...(scryfallId ? { scryfallId } : {}),
   };
 }
 
@@ -40,15 +54,25 @@ export function logCompra(actorId: string, nome: string, amount: number): LogEve
   return criarLog('DRAW', actorId, `${nome} comprou ${amount} carta(s)`);
 }
 
-/** Zona -> zona quando AMBAS sao publicas: pode nomear a carta. */
+/**
+ * Zona -> zona quando AMBAS sao publicas: pode nomear a carta.
+ *
+ * O `{Carta}` e um marcador — o servidor nao conhece nomes, so ids. Quem
+ * resolve e o cliente, com o catalogo da Scryfall.
+ */
 export function logTrocaZonaPublica(
   actorId: string,
   nome: string,
-  carta: string,
+  scryfallId: string | undefined,
   de: string,
   para: string,
 ): LogEvent {
-  return criarLog('ZONE_CHANGE', actorId, `${nome} moveu ${carta} de ${de} para ${para}`);
+  return criarLog(
+    'ZONE_CHANGE',
+    actorId,
+    `${nome} moveu {Carta} de ${de} para ${para}`,
+    scryfallId || undefined,
+  );
 }
 
 /** Variante obrigatoria quando origem OU destino e zona oculta. */
@@ -70,28 +94,14 @@ export function logBusca(actorId: string, nome: string, zona: string): LogEvent 
 }
 
 export function logMoer(actorId: string, nome: string, amount: number): LogEvent {
-  return criarLog(
-    'MILL',
-    actorId,
-    `${nome} moveu ${amount} cartas do grimorio para o cemiterio`,
-  );
+  return criarLog('MILL', actorId, `${nome} moveu ${amount} cartas do grimorio para o cemiterio`);
 }
 
-export function logVida(
-  actorId: string,
-  nome: string,
-  antes: number,
-  depois: number,
-): LogEvent {
+export function logVida(actorId: string, nome: string, antes: number, depois: number): LogEvent {
   return criarLog('LIFE', actorId, `${nome}: vida ${antes} -> ${depois}`);
 }
 
-export function logDado(
-  actorId: string,
-  nome: string,
-  sides: number,
-  resultado: number,
-): LogEvent {
+export function logDado(actorId: string, nome: string, sides: number, resultado: number): LogEvent {
   return criarLog('DICE', actorId, `${nome} rolou D${sides} e tirou ${resultado}`);
 }
 

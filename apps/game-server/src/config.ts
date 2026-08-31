@@ -15,6 +15,12 @@ const schema = z.object({
   /** Precisa ser IDENTICO ao do backend-core. */
   JWT_SECRET: z.string().min(16, 'JWT_SECRET precisa de pelo menos 16 caracteres'),
   BACKEND_CORE_URL: z.string().url().default('http://localhost:3333'),
+  /**
+   * Segredo das rotas maquina-a-maquina da API Core. `GET /internal/decks/:id`
+   * devolve o decklist completo sem checar dono — em producao a API recusa a
+   * chamada sem este cabecalho. Ver common/internal-api.guard.ts.
+   */
+  INTERNAL_API_TOKEN: z.string().default(''),
   PUBLIC_WS_URL: z.string().default('ws://localhost:2567'),
   /** Opcional em dev de um no; OBRIGATORIO em producao multi-no. */
   USE_REDIS: z

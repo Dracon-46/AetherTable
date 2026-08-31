@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI do AetherTable.
+#
+# `.github/workflows/` existia VAZIO: nenhuma verificação automática rodava em
+# push ou pull request. Os defeitos encontrados na auditoria de 31/08 eram
+# todos detectáveis por máquina:
+#
+#   - `next build` quebrado (useSearchParams sem Suspense) → passo `build`;
+#   - mirror de schema Colyseus fora de sincronia → passo `schema:check`;
+#   - hooks condicionais derrubando a mesa → `lint` (react-hooks/rules-of-hooks);
+#   - intenções que o cliente emitia e o servidor não conhecia → `test`.
+#
+# Cada passo abaixo corresponde a uma classe de bug que chegou ao usuário.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Gerar o Prisma Client
+        run: pnpm --filter backend-core exec prisma generate
+
+      - name: Compilar pacotes compartilhados
+        # O frontend e o game-server importam `@aethertable/shared-types` pelo
+        # `dist`. Sem este passo, typecheck e testes falham por módulo ausente.
+        run: pnpm --filter @aethertable/shared-types build
+
+      - name: Mirror de schema Colyseus em sincronia
+        # Falha se apps/frontend/src/net/schema divergir do game-server. Esta é
+        # a verificação mais barata do pipeline e a que protege contra o bug
+        # mais caro: divergência de índice de campo corrompe o state inteiro
+        # sem emitir um único erro em runtime.
+        run: pnpm schema:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Testes
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

@@ -3,47 +3,64 @@
 import React from 'react';
 import { useUIStore } from '../store/game.store';
 import { X } from 'lucide-react';
+import { scryfallImageUrl } from '../canvas/textureCache';
 
 export function CardInspector() {
-  const inspectedCardId = useUIStore(s => s.inspectedCardId);
-  const setInspectedCard = useUIStore(s => s.setInspectedCard);
+  const inspectedCardId = useUIStore((s) => s.inspectedCardId);
+  const setInspectedCard = useUIStore((s) => s.setInspectedCard);
 
-  if (!inspectedCardId) return null;
-
+  // O `useEffect` ficava DEPOIS de `if (!inspectedCardId) return null`. Abrir ou
+  // fechar a inspeção mudava a quantidade de hooks executados no mesmo
+  // componente e o React derrubava a árvore com "Rendered fewer hooks than
+  // expected". Todo hook vem antes de qualquer retorno antecipado.
   React.useEffect(() => {
+    if (!inspectedCardId) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setInspectedCard(null);
     };
-    window.addEventListener('keydown', handleEsc, true); // true para fase capture
+    window.addEventListener('keydown', handleEsc, true);
     return () => window.removeEventListener('keydown', handleEsc, true);
-  }, [setInspectedCard]);
+  }, [inspectedCardId, setInspectedCard]);
+
+  if (!inspectedCardId) return null;
 
   return (
-    <div className="absolute top-0 right-0 h-full w-80 bg-panel/95 backdrop-blur border-l border-panel-border p-4 shadow-2xl flex flex-col pointer-events-auto z-40 transform transition-transform duration-300">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-sm font-bold text-text-muted">INSPEÇÃO</h3>
-        <button 
+    <div
+      className="border-panel-border bg-panel/95 pointer-events-auto absolute inset-y-0 right-0 z-40 flex w-[min(20rem,85vw)] flex-col border-l p-4 shadow-2xl backdrop-blur"
+      role="dialog"
+      aria-label="Inspeção de carta"
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-text-muted text-sm font-bold">INSPEÇÃO</h3>
+        <button
           onClick={() => setInspectedCard(null)}
-          className="p-1 hover:bg-danger/20 hover:text-danger rounded transition-colors text-text-muted"
+          className="text-text-muted hover:bg-danger/20 hover:text-danger rounded p-1 transition-colors"
+          aria-label="Fechar inspeção"
         >
-          <X className="w-5 h-5" />
+          <X className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-        <div className="relative rounded-xl overflow-hidden shadow-lg border border-[#333] aspect-[63/88] bg-table-deep flex items-center justify-center">
-          <img 
-            src={`https://api.scryfall.com/cards/${inspectedCardId}?format=image&version=normal`}
-            alt="Card"
-            className="w-full h-full object-cover"
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
+        <div className="border-panel-border bg-table-deep relative flex aspect-[63/88] items-center justify-center overflow-hidden rounded-xl border shadow-lg">
+          {/* CDN de imagens (cards.scryfall.io) em vez da API REST: a API tem
+              limite de 10 req/s por IP e responde por redirect, o que fazia a
+              inspeção falhar em silêncio numa mesa cheia. */}
+          <img
+            src={scryfallImageUrl(inspectedCardId, 'normal')}
+            alt="Carta em inspeção"
+            className="h-full w-full object-cover"
             loading="lazy"
           />
         </div>
-        
-        {/* Additional information could be fetched and displayed here in the future */}
-        <div className="mt-4 p-3 bg-table-deep border border-panel-border rounded-lg">
-          <p className="text-xs text-text-muted text-center">
-            Pressione <kbd className="bg-panel px-1 py-0.5 rounded border border-panel-border text-text">Esc</kbd> para fechar.
+
+        <div className="border-panel-border bg-table-deep mt-4 rounded-lg border p-3">
+          <p className="text-text-muted text-center text-xs">
+            Pressione{' '}
+            <kbd className="border-panel-border bg-panel text-text rounded border px-1 py-0.5">
+              Esc
+            </kbd>{' '}
+            para fechar.
           </p>
         </div>
       </div>

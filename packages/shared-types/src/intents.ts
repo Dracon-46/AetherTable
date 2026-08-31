@@ -335,6 +335,11 @@ export type UndoPayload = Record<string, never>;
 
 // ─── Ciclo e formato (DOC-031 §3.7) ──────────────────────────────────────────
 
+/**
+ * Sai da fase WAITING e comeca a partida (compra as maos iniciais).
+ * Emitida pelo anfitriao — o jogador do assento 0.
+ */
+export type StartMatchPayload = Record<string, never>;
 /** Requer confirmacao de todos os presentes. */
 export type ResetMatchPayload = Record<string, never>;
 export type LeavePayload = Record<string, never>;
@@ -345,6 +350,19 @@ export interface FetchFromSideboardPayload {
 /** COMMAND -> BATTLEFIELD e incrementa `commanderTax` em 2. */
 export interface CastCommanderPayload {
   entityId: string;
+}
+
+/**
+ * Equipa cosmeticos (DOC-060). Cada campo e um ID do CATALOGO FECHADO — o
+ * servidor recusa qualquer id que nao esteja nele. Nao existe caminho para
+ * enviar uma URL: e o que impede upload disfarcado de arte de terceiros.
+ */
+export interface SetCosmeticsPayload {
+  sleeveId?: string;
+  playmatId?: string;
+  borderId?: string;
+  titleId?: string;
+  petId?: string;
 }
 
 // ─── Mapa canonico: nome da intencao -> payload ──────────────────────────────
@@ -439,10 +457,12 @@ export interface IntentPayloadMap {
   INTENT_PASS_TURN: PassTurnPayload;
   INTENT_UNDO: UndoPayload;
   // ciclo e formato
+  INTENT_START_MATCH: StartMatchPayload;
   INTENT_RESET_MATCH: ResetMatchPayload;
   INTENT_LEAVE: LeavePayload;
   INTENT_FETCH_FROM_SIDEBOARD: FetchFromSideboardPayload;
   INTENT_CAST_COMMANDER: CastCommanderPayload;
+  INTENT_SET_COSMETICS: SetCosmeticsPayload;
 }
 
 export type IntentType = keyof IntentPayloadMap;

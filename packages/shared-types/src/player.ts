@@ -13,11 +13,15 @@ export interface IPlayer {
   name: string;
   avatarUrl: string;
 
-  /** Cosmeticos equipados (DOC-060). */
-  playmatUrl: string;
-  sleeveUrl: string;
+  /**
+   * Cosmeticos equipados (DOC-060). Sao IDs do catalogo fechado — ver
+   * `cosmetics.ts`. Nunca URLs: URL vinda do cliente e upload disfarcado.
+   */
+  playmatId: string;
+  sleeveId: string;
   profileBorder: string;
   chatTitle: string;
+  petId: string;
 
   /** Posicao na mesa, 0..3. */
   seat: number;

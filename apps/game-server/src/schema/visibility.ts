@@ -44,8 +44,8 @@ export function podeVer(card: VisibilityInput, sid: string): boolean {
   // 4. Zonas publicas com a face para cima: todos veem.
   if (PUBLIC_ZONES.has(card.zone as Zone)) return true;
 
-  // 5. Mao: so o dono.
-  if (card.zone === 'HAND') return sid === card.ownerId;
+  // 5. Mao e reserva: so o dono.
+  if (card.zone === 'HAND' || card.zone === 'SIDEBOARD') return sid === card.ownerId;
 
   // 6. Grimorio: NINGUEM — nem o dono. Chegar aqui so acontece sem revelacao
   //    nem olhada, tratadas em 1 e 2.

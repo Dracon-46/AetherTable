@@ -1,0 +1,3 @@
+# lint-staged já estava configurado no package.json — mas o hook que o dispara
+# nunca existiu, então nada rodava antes de um commit.
+pnpm exec lint-staged

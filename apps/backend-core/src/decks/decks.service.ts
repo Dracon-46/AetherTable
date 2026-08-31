@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../common/prisma/prisma.service.js';
+import type { PrismaService } from '../common/prisma/prisma.service.js';
 import { BoardType } from '@prisma/client';
 
 interface ScryCard {
@@ -8,9 +8,9 @@ interface ScryCard {
   set: string;
   type_line?: string;
   legalities?: { commander?: string };
-  image_uris?: { normal?: string, small?: string };
-  card_faces?: Array<{ image_uris?: { normal?: string, small?: string } }>;
-  prices?: { usd?: string, eur?: string, tix?: string };
+  image_uris?: { normal?: string; small?: string };
+  card_faces?: Array<{ image_uris?: { normal?: string; small?: string } }>;
+  prices?: { usd?: string; eur?: string; tix?: string };
 }
 
 interface ScryResponse {
@@ -49,45 +49,68 @@ export class DecksService {
     // Hidratação via Scryfall
     if (deck.cards.length > 0) {
       try {
-        const identifiers = deck.cards.map(c => ({ id: c.scryfallId }));
+        const identifiers = deck.cards.map((c) => ({ id: c.scryfallId }));
         const scryMap = new Map<string, ScryCard>();
         const chunkSize = 75;
-        
+
         for (let i = 0; i < identifiers.length; i += chunkSize) {
           const chunk = identifiers.slice(i, i + chunkSize);
           const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'User-Agent': 'AetherTable/1.0' },
-            body: JSON.stringify({ identifiers: chunk })
+            body: JSON.stringify({ identifiers: chunk }),
           });
-          const scryData = await scryRes.json() as ScryResponse;
-          
+          const scryData = (await scryRes.json()) as ScryResponse;
+
           if (scryData.data) {
-            scryData.data.forEach(d => scryMap.set(d.id, d));
+            scryData.data.forEach((d) => scryMap.set(d.id, d));
           }
-          
-          if (identifiers.length > chunkSize) await new Promise(r => setTimeout(r, 100)); // Respect rate limits
+
+          if (identifiers.length > chunkSize) await new Promise((r) => setTimeout(r, 100)); // Respect rate limits
         }
 
         // Injeta dados virtuais para o frontend usar (nome, legalidade, set)
-        (deck as any).cards = deck.cards.map((c) => {
+        (deck as { cards: unknown[] }).cards = deck.cards.map((c) => {
           const extra = scryMap.get(c.scryfallId);
           return {
             ...c,
             name: extra ? extra.name : 'Desconhecido',
             set: extra ? extra.set.toUpperCase() : '???',
             typeLine: extra ? extra.type_line : '',
-            isBanned: extra ? extra.legalities?.commander === 'banned' : false,
-            imageNormal: extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
+            // A legalidade era checada SEMPRE contra Commander, mesmo num deck
+            // de Modern ou Pauper: cartas legais no formato do deck vinham
+            // marcadas como banidas e o `join` bloqueava a entrada na mesa.
+            isBanned: extra
+              ? (extra.legalities as Record<string, string> | undefined)?.[
+                  String(deck.formatId ?? 'commander').toLowerCase()
+                ] === 'banned'
+              : false,
+            imageNormal:
+              extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
             priceUsd: extra?.prices?.usd || 0,
           };
         });
-      } catch (e) {
-        console.error('Falha ao hidratar cartas', e);
+      } catch (erro) {
+        // A hidratação é enriquecimento: se a Scryfall cair, o deck ainda
+        // precisa ser devolvido — só sem nome, set e legalidade.
+        console.error('[decks] Falha ao hidratar cartas na Scryfall:', erro);
       }
     }
 
     return deck;
+  }
+
+  /**
+   * Deck completo SEM checagem de dono — só para o game-server provisionar a
+   * partida. A rota que expõe isto é protegida pelo `InternalApiGuard`; até a
+   * auditoria de 31/08 ela era pública, e o controller alcançava `this.prisma`
+   * por dentro do serviço com um `as any`.
+   */
+  async getDeckForServer(deckId: string) {
+    return this.prisma.deck.findUnique({
+      where: { id: deckId },
+      include: { cards: true },
+    });
   }
 
   async deleteDeck(userId: string, deckId: string) {
@@ -119,7 +142,7 @@ export class DecksService {
 
     await this.prisma.deck.update({
       where: { id: deckId },
-      data: { cardCount: { decrement: card.quantity } }
+      data: { cardCount: { decrement: card.quantity } },
     });
 
     return { success: true };
@@ -137,35 +160,41 @@ export class DecksService {
       await this.prisma.deckCard.delete({ where: { id: cardId } });
       await this.prisma.deck.update({
         where: { id: deckId },
-        data: { cardCount: { decrement: card.quantity } }
+        data: { cardCount: { decrement: card.quantity } },
       });
     } else {
       await this.prisma.deckCard.update({
         where: { id: cardId },
-        data: { quantity: newQuantity }
+        data: { quantity: newQuantity },
       });
       await this.prisma.deck.update({
         where: { id: deckId },
-        data: { cardCount: { increment: delta } }
+        data: { cardCount: { increment: delta } },
       });
     }
 
     return { success: true };
   }
 
-  async addCard(userId: string, deckId: string, scryfallId: string, quantity: number = 1, boardType: BoardType = BoardType.MAIN) {
+  async addCard(
+    userId: string,
+    deckId: string,
+    scryfallId: string,
+    quantity: number = 1,
+    boardType: BoardType = BoardType.MAIN,
+  ) {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
     // Verifica se a carta já existe no deck
     const existingCard = await this.prisma.deckCard.findFirst({
-      where: { deckId, scryfallId, boardType }
+      where: { deckId, scryfallId, boardType },
     });
 
     if (existingCard) {
       await this.prisma.deckCard.update({
         where: { id: existingCard.id },
-        data: { quantity: existingCard.quantity + quantity }
+        data: { quantity: existingCard.quantity + quantity },
       });
     } else {
       await this.prisma.deckCard.create({
@@ -173,14 +202,14 @@ export class DecksService {
           deckId,
           scryfallId,
           quantity,
-          boardType
-        }
+          boardType,
+        },
       });
     }
 
     await this.prisma.deck.update({
       where: { id: deckId },
-      data: { cardCount: { increment: quantity } }
+      data: { cardCount: { increment: quantity } },
     });
 
     return { success: true };
@@ -195,7 +224,7 @@ export class DecksService {
 
     await this.prisma.deckCard.update({
       where: { id: cardId },
-      data: { scryfallId: newScryfallId }
+      data: { scryfallId: newScryfallId },
     });
 
     return { success: true };
@@ -210,7 +239,7 @@ export class DecksService {
 
     await this.prisma.deckCard.update({
       where: { id: cardId },
-      data: { boardType }
+      data: { boardType },
     });
 
     return { success: true };
@@ -221,13 +250,22 @@ export class DecksService {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
-    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const lines = rawText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
     const parsedCards: { quantity: number; name: string; set?: string }[] = [];
 
-    const LINE_REGEX = /^\s*(?<qty>\d+)\s*[xX]?\s+(?<name>[^([#*]+?)\s*(?:\((?<set1>[A-Za-z0-9]{2,5})\)\s*(?<cn>\S+)?)?\s*(?:\[(?<set2>[A-Za-z0-9]{2,5})\])?\s*(?:\*F\*)?\s*(?:#.*)?$/;
+    const LINE_REGEX =
+      /^\s*(?<qty>\d+)\s*[xX]?\s+(?<name>[^([#*]+?)\s*(?:\((?<set1>[A-Za-z0-9]{2,5})\)\s*(?<cn>\S+)?)?\s*(?:\[(?<set2>[A-Za-z0-9]{2,5})\])?\s*(?:\*F\*)?\s*(?:#.*)?$/;
 
     for (const line of lines) {
-      if (line.startsWith('#') || line.startsWith('//') || line.toUpperCase().startsWith('SIDEBOARD')) continue;
+      if (
+        line.startsWith('#') ||
+        line.startsWith('//') ||
+        line.toUpperCase().startsWith('SIDEBOARD')
+      )
+        continue;
 
       const match = line.match(LINE_REGEX);
       if (match && match.groups) {
@@ -245,16 +283,22 @@ export class DecksService {
       }
     }
 
-    if (parsedCards.length === 0) throw new BadRequestException('Nenhuma carta válida encontrada no texto');
+    if (parsedCards.length === 0)
+      throw new BadRequestException('Nenhuma carta válida encontrada no texto');
 
-    const identifiers = parsedCards.map(c => {
+    const identifiers = parsedCards.map((c) => {
       const idObj: Record<string, string> = { name: c.name };
       if (c.set) idObj['set'] = c.set.toLowerCase();
       return idObj;
     });
 
     const chunkSize = 75;
-    const resolvedCards: { quantity: number; scryfallId: string; name: string; boardType: BoardType }[] = [];
+    const resolvedCards: {
+      quantity: number;
+      scryfallId: string;
+      name: string;
+      boardType: BoardType;
+    }[] = [];
     const notFound: string[] = [];
 
     for (let i = 0; i < identifiers.length; i += chunkSize) {
@@ -264,10 +308,10 @@ export class DecksService {
         const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'User-Agent': 'AetherTable/1.0' },
-          body: JSON.stringify({ identifiers: chunk })
+          body: JSON.stringify({ identifiers: chunk }),
         });
 
-        const scryData = await scryRes.json() as ScryResponse;
+        const scryData = (await scryRes.json()) as ScryResponse;
 
         if (scryData.not_found) {
           scryData.not_found.forEach((nf) => notFound.push(nf.name ?? nf.set ?? 'desconhecido'));
@@ -275,20 +319,25 @@ export class DecksService {
 
         if (scryData.data) {
           scryData.data.forEach((cardData) => {
-            const original = parsedCards.find(p => p.name.toLowerCase() === cardData.name.toLowerCase());
+            const original = parsedCards.find(
+              (p) => p.name.toLowerCase() === cardData.name.toLowerCase(),
+            );
             if (original) {
               resolvedCards.push({
                 quantity: original.quantity,
                 scryfallId: cardData.id,
                 name: cardData.name,
-                boardType: BoardType.MAIN
+                boardType: BoardType.MAIN,
               });
             }
           });
         }
 
-        if (identifiers.length > chunkSize) await new Promise(r => setTimeout(r, 150));
-      } catch (e) {
+        if (identifiers.length > chunkSize) await new Promise((r) => setTimeout(r, 150));
+      } catch (erro) {
+        // A causa real ia para o vazio: sem log, uma queda da Scryfall e um
+        // bug de parsing viravam a mesma mensagem genérica.
+        console.error('[decks] Falha ao consultar a Scryfall:', erro);
         throw new BadRequestException('Falha ao comunicar com a Scryfall');
       }
     }
@@ -298,13 +347,13 @@ export class DecksService {
         await tx.deckCard.deleteMany({ where: { deckId } });
 
         let totalCount = 0;
-        const insertData = resolvedCards.map(rc => {
+        const insertData = resolvedCards.map((rc) => {
           totalCount += rc.quantity;
           return {
             deckId,
             scryfallId: rc.scryfallId,
             quantity: rc.quantity,
-            boardType: rc.boardType
+            boardType: rc.boardType,
           };
         });
 
@@ -312,7 +361,7 @@ export class DecksService {
 
         await tx.deck.update({
           where: { id: deckId },
-          data: { cardCount: totalCount }
+          data: { cardCount: totalCount },
         });
       });
     }

@@ -7,11 +7,17 @@
 
 import { useEffect, useRef } from 'react';
 import { getStateCallbacks, type Room } from 'colyseus.js';
-import { useGameStore, type CardData, type PlayerData, type LogEntry } from '../store/game.store';
-import { preaquecer } from '../canvas/textureCache';
-import { RoomState } from './schema/RoomState';
-import { Card } from './schema/Card';
-import { Player } from './schema/Player';
+import {
+  useGameStore,
+  useTableStore,
+  type ArrowData,
+  type CardData,
+  type PlayerData,
+  type LogEntry,
+} from '../store/game.store';
+import type { RoomState } from './schema/RoomState';
+import type { Card } from './schema/Card';
+import type { Player } from './schema/Player';
 
 function snapCard(card: Card): CardData {
   return {
@@ -40,6 +46,10 @@ function snapCard(card: Card): CardData {
     powerOverride: card.powerOverride ?? 0,
     toughnessOverride: card.toughnessOverride ?? 0,
     counters: Object.fromEntries(card.counters?.entries?.() ?? []),
+    exiledBy: card.exiledBy ?? '',
+    goadedBy: card.goadedBy ?? '',
+    hasPtOverride: card.hasPtOverride ?? false,
+    enteredThisTurn: card.enteredThisTurn ?? false,
   };
 }
 
@@ -61,8 +71,20 @@ function snapPlayer(p: Player): PlayerData {
     commanderDamage: Object.fromEntries(p.commanderDamage?.entries?.() ?? []),
     handCount: p.handCount,
     libraryCount: p.libraryCount,
+    mulliganCount: p.mulliganCount ?? 0,
     connected: p.connected,
     disconnectedAt: p.disconnectedAt,
+    rad: p.rad ?? 0,
+    ticket: p.ticket ?? 0,
+    speed: p.speed ?? 0,
+    ringLevel: p.ringLevel ?? 0,
+    ringBearerId: p.ringBearerId ?? '',
+    maxHandSize: p.maxHandSize ?? 7,
+    sleeveId: p.sleeveId ?? '',
+    playmatId: p.playmatId ?? '',
+    profileBorder: p.profileBorder ?? '',
+    chatTitle: p.chatTitle ?? '',
+    petId: p.petId ?? '',
   };
 }
 
@@ -73,9 +95,6 @@ export function useRoomSync(room: Room<RoomState> | null) {
   useEffect(() => {
     if (!room) return;
     roomRef.current = room;
-
-    // Pré-aquece o verso das cartas
-    preaquecer();
 
     // Informações base da sala
     // colyseus.js expõe `roomId`, não `id`.
@@ -113,8 +132,36 @@ export function useRoomSync(room: Room<RoomState> | null) {
     // ── Fase da sala ────────────────────────────────────────────────────────
 
     $(room.state).onChange(() => {
-      useGameStore.getState().setPhase(room.state.phase as "WAITING" | "PLAYING" | "PAUSED" | "CLOSING");
+      const st = useGameStore.getState();
+      st.setPhase(room.state.phase as 'WAITING' | 'PLAYING' | 'PAUSED' | 'CLOSING');
+      // Os marcadores globais (turno, fase, dia/noite) viajam no mesmo patch e
+      // ninguém os lia: o painel de mesa mostrava sempre turno 1.
+      st.setMesa({
+        turn: room.state.turn ?? 1,
+        turnPhase: room.state.turnPhase ?? '',
+        dayNight: room.state.dayNight ?? 'NEITHER',
+        activePlayerId: room.state.activePlayerId ?? '',
+      });
     });
+
+    // ── Setas de alvo ──────────────────────────────────────────────────────
+    const sincronizarSetas = () => {
+      const mapa: Record<string, ArrowData> = {};
+      room.state.arrows?.forEach((a, id) => {
+        mapa[id] = {
+          id: a.id,
+          ownerId: a.ownerId,
+          fromId: a.fromId,
+          toId: a.toId,
+          color: a.color,
+          combat: a.combat,
+        };
+      });
+      useGameStore.getState().setArrows(mapa);
+    };
+
+    $(room.state).arrows.onAdd(() => sincronizarSetas());
+    $(room.state).arrows.onRemove(() => sincronizarSetas());
 
     // ── Eventos efêmeros ───────────────────────────────────────────────────
 
@@ -124,6 +171,38 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     room.onMessage('chat', (entry: any) => {
       useGameStore.getState().addChat(entry as LogEntry);
+    });
+
+    // ── Eventos efêmeros que NINGUÉM escutava ────────────────────────────
+    //
+    // O servidor já transmitia `dice`, `ping`, `revealToOwner` e `scryOpened`.
+    // Sem estes handlers, olhar o topo do grimório não mostrava nada, o ping
+    // não aparecia na mesa e o dado só existia como texto no log.
+
+    room.onMessage('dice', (payload: { actorId: string; sides: number; result: number }) => {
+      useTableStore.getState().setDado(payload);
+    });
+
+    room.onMessage('ping', (payload: { actorId: string; x: number; y: number }) => {
+      useTableStore.getState().addPing(payload);
+    });
+
+    room.onMessage(
+      'revealToOwner',
+      (payload: { cards: Array<{ id: string; scryfallId: string }> }) => {
+        useTableStore.getState().setPeek(payload.cards ?? []);
+      },
+    );
+
+    room.onMessage(
+      'scryOpened',
+      (payload: { mode: 'SCRY' | 'SURVEIL'; cards: Array<{ id: string; scryfallId: string }> }) => {
+        useTableStore.getState().abrirScry({ mode: payload.mode, cards: payload.cards ?? [] });
+      },
+    );
+
+    room.onMessage('matchStarted', () => {
+      useGameStore.getState().setPhase('PLAYING');
     });
 
     room.onMessage('error', (payload: any) => {
@@ -175,6 +254,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
       // a remontagem rápida destruía permanentemente a comunicação com o Colyseus.
       // O ciclo de vida da sala é controlado por room.leave() no page.tsx.
       useGameStore.getState().reset();
+      useTableStore.getState().reset();
     };
   }, [room]);
 
