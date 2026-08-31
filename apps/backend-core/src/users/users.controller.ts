@@ -1,10 +1,9 @@
 import { Controller, Get, Param, Request, UseGuards, Patch, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
-import { UsersService } from './users.service.js';
+import type { UsersService } from './users.service.js';
 
-// NOTA: JwtAuthGuard será implementado no AuthModule. Por enquanto, criaremos
-// as rotas e depois injetaremos o Guard.
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
 @ApiTags('Users')
 @Controller('users')
@@ -18,7 +17,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtém o perfil do usuário atualmente autenticado' })
-  async getMe(@Request() req: any) {
+  async getMe(@Request() req: RequisicaoAutenticada) {
     // O JwtAuthGuard extrai o ID do token e coloca em req.user.sub
     return this.usersService.findById(req.user.sub);
   }
@@ -30,7 +29,10 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualiza o perfil do usuário' })
-  async updateMe(@Request() req: any, @Body() body: { username?: string; displayName?: string; language?: string }) {
+  async updateMe(
+    @Request() req: RequisicaoAutenticada,
+    @Body() body: { username?: string; displayName?: string; language?: string },
+  ) {
     return this.usersService.updateUser(req.user.sub, body);
   }
 

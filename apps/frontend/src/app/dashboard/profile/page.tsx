@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
 import { API_URL } from '@/lib/api';
-import { User, Save, Loader2, Trophy, Clock, History } from 'lucide-react';
+import { User, Save, Loader2, Trophy, Clock } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProfilePage() {
   const { accessToken, setAuth, user: sessionUser } = useAuthStore();
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -21,7 +21,7 @@ export default function ProfilePage() {
       if (!accessToken) return;
       try {
         const res = await fetch(`${API_URL}/users/me`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
+          headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (res.ok) {
           const data = await res.json();
@@ -48,19 +48,23 @@ export default function ProfilePage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`
+          Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ displayName, username })
+        body: JSON.stringify({ displayName, username }),
       });
 
       if (res.ok) {
         const updatedUser = await res.json();
         setProfile((p: any) => ({ ...p, ...updatedUser }));
         setMessage({ text: 'Perfil atualizado com sucesso!', type: 'success' });
-        
+
         // Atualiza a sessão
         if (sessionUser && accessToken) {
-          setAuth(accessToken, { ...sessionUser, username: updatedUser.username, avatarUrl: updatedUser.avatarUrl || '' });
+          setAuth(accessToken, {
+            ...sessionUser,
+            username: updatedUser.username,
+            avatarUrl: updatedUser.avatarUrl || '',
+          });
         }
       } else {
         const err = await res.json();
@@ -76,78 +80,96 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-[50vh] items-center justify-center text-primary">
-        <Loader2 className="w-10 h-10 animate-spin" />
+      <div className="text-primary flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-10 w-10 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="mx-auto max-w-4xl space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-text mb-2">Meu Perfil</h1>
-        <p className="text-text-muted">Gerencie suas informações públicas e credenciais da conta.</p>
+        <h1 className="text-text mb-2 text-3xl font-bold">Meu Perfil</h1>
+        <p className="text-text-muted">
+          Gerencie suas informações públicas e credenciais da conta.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
         {/* Painel Esquerdo: Formulário */}
-        <div className="md:col-span-2 space-y-6">
-          <form onSubmit={handleSave} className="bg-panel border border-panel-border p-6 rounded-xl shadow-lg">
-            <h2 className="text-xl font-bold text-text mb-6 flex items-center gap-2">
-              <User className="w-5 h-5 text-primary" /> Dados Públicos
+        <div className="space-y-6 md:col-span-2">
+          <form
+            onSubmit={handleSave}
+            className="bg-panel border-panel-border rounded-xl border p-6 shadow-lg"
+          >
+            <h2 className="text-text mb-6 flex items-center gap-2 text-xl font-bold">
+              <User className="text-primary h-5 w-5" /> Dados Públicos
             </h2>
 
             {message.text && (
-              <div className={`p-4 rounded-md mb-6 text-sm ${message.type === 'success' ? 'bg-success/10 text-success border border-success/30' : 'bg-danger/10 text-danger border border-danger/30'}`}>
+              <div
+                className={`mb-6 rounded-md p-4 text-sm ${message.type === 'success' ? 'bg-success/10 text-success border-success/30 border' : 'bg-danger/10 text-danger border-danger/30 border'}`}
+              >
                 {message.text}
               </div>
             )}
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">Nome de Usuário (Username)</label>
-                <input 
-                  type="text" 
+                <label className="text-text-muted mb-1 block text-sm font-medium">
+                  Nome de Usuário (Username)
+                </label>
+                <input
+                  type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-table-deep border border-panel-border rounded-md px-4 py-2 text-text focus:outline-none focus:border-primary transition-colors"
+                  className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-2 transition-colors focus:outline-none"
                   placeholder="Seu identificador único (@)"
                   required
                 />
-                <p className="text-xs text-text-faint mt-1">Usado para te encontrarem. Ex: /u/{username || 'username'}</p>
+                <p className="text-text-faint mt-1 text-xs">
+                  Usado para te encontrarem. Ex: /u/{username || 'username'}
+                </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">Apelido na Mesa (Display Name)</label>
-                <input 
-                  type="text" 
+                <label className="text-text-muted mb-1 block text-sm font-medium">
+                  Apelido na Mesa (Display Name)
+                </label>
+                <input
+                  type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full bg-table-deep border border-panel-border rounded-md px-4 py-2 text-text focus:outline-none focus:border-primary transition-colors"
+                  className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-2 transition-colors focus:outline-none"
                   placeholder="Como você será visto durante o jogo"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">E-mail</label>
-                <input 
-                  type="email" 
+                <label className="text-text-muted mb-1 block text-sm font-medium">E-mail</label>
+                <input
+                  type="email"
                   value={profile?.email || ''}
                   disabled
-                  className="w-full bg-table-deep/50 border border-panel-border rounded-md px-4 py-2 text-text-muted opacity-60 cursor-not-allowed"
+                  className="bg-table-deep/50 border-panel-border text-text-muted w-full cursor-not-allowed rounded-md border px-4 py-2 opacity-60"
                 />
-                <p className="text-xs text-text-faint mt-1">O e-mail não pode ser alterado e nunca é exibido publicamente.</p>
+                <p className="text-text-faint mt-1 text-xs">
+                  O e-mail não pode ser alterado e nunca é exibido publicamente.
+                </p>
               </div>
             </div>
 
             <div className="mt-8 flex justify-end">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={isSaving}
-                className="bg-primary hover:bg-primary-hover text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+                className="bg-primary hover:bg-primary-hover flex items-center gap-2 rounded-lg px-6 py-2 font-medium text-white transition-colors disabled:opacity-50"
               >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
                 Salvar Alterações
               </button>
             </div>
@@ -156,44 +178,47 @@ export default function ProfilePage() {
 
         {/* Painel Direito: Estatísticas */}
         <div className="space-y-6">
-          <div className="bg-panel border border-panel-border p-6 rounded-xl shadow-lg">
-            <h2 className="text-lg font-bold text-text mb-4">Estatísticas</h2>
-            
+          <div className="bg-panel border-panel-border rounded-xl border p-6 shadow-lg">
+            <h2 className="text-text mb-4 text-lg font-bold">Estatísticas</h2>
+
             <div className="space-y-4">
-              <div className="flex items-center gap-4 bg-table-deep p-4 rounded-lg border border-panel-border">
-                <div className="p-3 bg-primary/20 rounded-full text-primary">
-                  <Trophy className="w-6 h-6" />
+              <div className="bg-table-deep border-panel-border flex items-center gap-4 rounded-lg border p-4">
+                <div className="bg-primary/20 text-primary rounded-full p-3">
+                  <Trophy className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-sm text-text-muted">Partidas Jogadas</p>
-                  <p className="text-2xl font-bold text-text">{profile?._count?.participions || 0}</p>
+                  <p className="text-text-muted text-sm">Partidas Jogadas</p>
+                  <p className="text-text text-2xl font-bold">
+                    {profile?._count?.participions || 0}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 bg-table-deep p-4 rounded-lg border border-panel-border">
-                <div className="p-3 bg-speaking/20 rounded-full text-speaking">
-                  <Clock className="w-6 h-6" />
+              <div className="bg-table-deep border-panel-border flex items-center gap-4 rounded-lg border p-4">
+                <div className="bg-speaking/20 text-speaking rounded-full p-3">
+                  <Clock className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-sm text-text-muted">Conta Criada em</p>
-                  <p className="text-sm font-bold text-text">
-                    {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('pt-BR') : '---'}
+                  <p className="text-text-muted text-sm">Conta Criada em</p>
+                  <p className="text-text text-sm font-bold">
+                    {profile?.createdAt
+                      ? new Date(profile.createdAt).toLocaleDateString('pt-BR')
+                      : '---'}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 pt-6 border-t border-panel-border text-center">
-              <Link 
+            <div className="border-panel-border mt-6 border-t pt-6 text-center">
+              <Link
                 href={`/u/${profile?.username}`}
-                className="text-sm text-primary hover:underline flex items-center justify-center gap-2"
+                className="text-primary flex items-center justify-center gap-2 text-sm hover:underline"
               >
-                <User className="w-4 h-4" /> Ver meu perfil público
+                <User className="h-4 w-4" /> Ver meu perfil público
               </Link>
             </div>
           </div>
         </div>
-        
       </div>
     </div>
   );

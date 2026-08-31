@@ -102,4 +102,20 @@ export class Card extends Schema {
    * e cada colecao adiciona outros (DOC-036 §5.1).
    */
   @type({ map: 'number' }) counters = new MapSchema<number>();
+
+  // ───────────────────────────────────────────────────────────────────────────
+  //  CAMPOS NOVOS VÃO SEMPRE NO FIM.
+  //  O serializador do @colyseus/schema usa o ÍNDICE do campo. Inserir no meio
+  //  desloca todos os seguintes e o mirror do cliente decodifica lixo, sem erro
+  //  e sem aviso. `pnpm schema:check` guarda essa invariante.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * P/T sobreposto ativo (DOC-036 item 57). `powerOverride`/`toughnessOverride`
+   * só valem quando isto e true — sem o booleano, "0/0" e "sem override" sao
+   * indistinguiveis.
+   */
+  @type('boolean') hasPtOverride = false;
+  /** Marcador visual de "entrou este turno" (DOC-036 item 60). */
+  @type('boolean') enteredThisTurn = false;
 }

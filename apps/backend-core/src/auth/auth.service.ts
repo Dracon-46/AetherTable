@@ -1,8 +1,8 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import type { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import { UsersService } from '../users/users.service.js';
-import { PrismaService } from '../common/prisma/prisma.service.js';
+import type { UsersService } from '../users/users.service.js';
+import type { PrismaService } from '../common/prisma/prisma.service.js';
 
 @Injectable()
 export class AuthService {
@@ -15,9 +15,15 @@ export class AuthService {
   /**
    * Valida e/ou cria o usuário via OAuth
    */
-  async validateOAuthUser(provider: 'GOOGLE' | 'DISCORD', providerAccountId: string, email: string, username: string, displayName: string) {
+  async validateOAuthUser(
+    provider: 'GOOGLE' | 'DISCORD',
+    providerAccountId: string,
+    email: string,
+    username: string,
+    displayName: string,
+  ) {
     // Busca a conta vinculada
-    let account = await this.prisma.account.findUnique({
+    const account = await this.prisma.account.findUnique({
       where: {
         provider_providerAccountId: {
           provider,
@@ -59,7 +65,7 @@ export class AuthService {
   }
 
   /**
-   * Criptografa a senha com Argon2id, o algoritmo mais avançado e recomendado 
+   * Criptografa a senha com Argon2id, o algoritmo mais avançado e recomendado
    * pela OWASP contra ataques de força bruta e GPU.
    */
   private async hashPassword(password: string): Promise<string> {
@@ -72,7 +78,7 @@ export class AuthService {
    */
   async login(email: string, pass: string) {
     const user = await this.usersService.findForAuthByEmail(email);
-    
+
     // Se não encontrou o usuário ou ele não tem senha (login via OAuth apenas)
     if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Credenciais inválidas');
@@ -80,14 +86,14 @@ export class AuthService {
 
     // Compara a senha informada com o Hash seguro
     const isPasswordValid = await argon2.verify(user.passwordHash, pass);
-    
+
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    // Não retornamos a hash da senha
-    const { passwordHash, ...result } = user;
-    
+    // Descarte intencional: a hash da senha nunca sai do serviço.
+    const { passwordHash: _hash, ...result } = user;
+
     // Gerar JWT Tokens
     const payload = { username: user.username, sub: user.id };
     const accessToken = this.jwtService.sign(payload);
@@ -120,8 +126,9 @@ export class AuthService {
       },
     });
 
-    const { passwordHash, ...result } = user;
-    
+    // Descarte intencional: a hash da senha nunca sai do serviço.
+    const { passwordHash: _hash, ...result } = user;
+
     // Gera token para auto-login
     const payload = { username: user.username, sub: user.id };
     const accessToken = this.jwtService.sign(payload);

@@ -1,4 +1,5 @@
-import { ArraySchema, MapSchema, Schema, type } from '@colyseus/schema';
+import { MapSchema, Schema, type } from '@colyseus/schema';
+import { Arrow } from './Arrow';
 import { Card } from './Card';
 import { Player } from './Player';
 import { ZoneOrderList } from './ZoneOrderList';
@@ -36,4 +37,25 @@ export class RoomState extends Schema {
    * partida e nao tem relacao com a identidade da carta (DOC-032 §3.1).
    */
   @type({ map: ZoneOrderList }) zoneOrder = new MapSchema<ZoneOrderList>();
+
+  /**
+   * Campos da SALA DE ESPERA. Vivem no estado (e nao na querystring do
+   * /play/:code) porque quem entra pelo codigo nunca recebeu essas opcoes:
+   * so o criador as tinha na URL, e o lobby dele mostrava dados que o
+   * convidado nao via.
+   *
+   * ATENCAO: campos novos vao no FIM. O @colyseus/schema serializa por INDICE
+   * — inserir no meio desloca todos os seguintes e o mirror do cliente decodifica
+   * lixo. Foi exatamente esse o defeito de `Player.mulliganCount`.
+   */
+  @type('number') maxSeats = 4;
+  /** COMMANDER | STANDARD | MODERN | PAUPER ... */
+  @type('string') gameType = 'COMMANDER';
+
+  /** DAY | NIGHT | NEITHER (DOC-036 item 110). Marcador visual. */
+  @type('string') dayNight = 'NEITHER';
+  /** Rotulo livre de fase, escrito por INTENT_SET_TURN (DOC-036 item 127). */
+  @type('string') turnPhase = '';
+  /** Setas de alvo persistentes (DOC-036 item 126). */
+  @type({ map: Arrow }) arrows = new MapSchema<Arrow>();
 }

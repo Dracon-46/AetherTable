@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { ArraySchema } from '@colyseus/schema';
-import { Client, Room } from '@colyseus/core';
+import type { Client } from '@colyseus/core';
+import { Room } from '@colyseus/core';
 import jwt from 'jsonwebtoken';
 import {
   REALTIME_LIMITS,
@@ -25,6 +25,7 @@ import {
   type IntentHandler,
 } from '../intents/registry';
 import { embaralhar } from '../services/rng';
+import { JornalUndo } from '../services/undo';
 import { logSistema } from '../services/log';
 import { reconciliarClient, reconciliarTudo } from '../services/view-sync';
 import { intentsRecebidas, intentsRejeitadas, salasAtivas } from '../metrics';
@@ -56,6 +57,8 @@ export class AetherRoom extends Room<RoomState> {
   override maxClients: number = REALTIME_LIMITS.MAX_PLAYERS;
 
   private readonly rateLimiter = new RateLimiter();
+  /** Janela de arrependimento de 10 s por jogador (DOC-036 item 130). */
+  private readonly jornal = new JornalUndo();
   /** Uso unico do seat token (FR-20): jti ja consumido nesta sala. */
   private readonly jtisUsados = new Set<string>();
   private proximoAssento = 0;
@@ -67,8 +70,10 @@ export class AetherRoom extends Room<RoomState> {
     this.state.startedAt = Date.now();
 
     if (options.maxClients) {
-      this.maxClients = options.maxClients;
+      this.maxClients = Math.max(2, Math.min(REALTIME_LIMITS.MAX_PLAYERS * 2, options.maxClients));
     }
+    this.state.maxSeats = this.maxClients;
+    this.state.gameType = options.gameType ?? 'COMMANDER';
 
     // 20 Hz: mutacoes na mesma janela viram um patch. Arrastar uma carta nao
     // gera 60 pacotes por segundo.
@@ -124,13 +129,21 @@ export class AetherRoom extends Room<RoomState> {
       this.state.zoneOrder.set(zoneOrderKey(client.sessionId, zone), new ZoneOrderList());
     }
 
-    this.provisionarDeck(client.sessionId, auth.deckId);
+    void this.provisionarDeck(client.sessionId, auth.deckId);
 
     // O cliente precisa de uma StateView antes do primeiro patch, senao veria
     // todos os campos marcados com view().
     reconciliarClient(client, this.state);
 
-    this.state.phase = 'PLAYING';
+    // NAO marcar 'PLAYING' aqui. A sala nasce em WAITING e so sai dai por
+    // INTENT_START_MATCH, disparado pelo anfitriao na sala de espera. Antes o
+    // primeiro `onJoin` ja colocava a mesa em jogo, e por isso a tela de
+    // gerenciamento da sala nunca tinha oportunidade de aparecer.
+    //
+    // Excecao: quem entra numa partida JA em andamento (reconexao com assento
+    // novo, ou convidado tardio) entra direto no jogo — a fase ja e 'PLAYING'
+    // e nada aqui a altera.
+
     this.broadcast('playerJoined', { playerId: client.sessionId, name: player.name });
     this.publicarLog(logSistema(client.sessionId, `${player.name} entrou na mesa`));
   }
@@ -181,9 +194,7 @@ export class AetherRoom extends Room<RoomState> {
     // TypeScript intersecta todos os payloads e nenhum valor satisfaz o
     // resultado. A correlacao real e garantida pelo `satisfies` na declaracao do
     // REGISTRY — o dispatcher so precisa saber "valida, autoriza, executa".
-    const entradas = Object.entries(REGISTRY) as Array<
-      [string, IntentHandler<z.ZodTypeAny>]
-    >;
+    const entradas = Object.entries(REGISTRY) as Array<[string, IntentHandler<z.ZodTypeAny>]>;
 
     for (const [tipo, handler] of entradas) {
       this.onMessage(tipo, (client, payload: unknown) => {
@@ -217,6 +228,9 @@ export class AetherRoom extends Room<RoomState> {
         }
 
         try {
+          // O snapshot e tirado ANTES da mutacao e so para intencoes
+          // reversiveis — a propria lista de exclusoes vive em services/undo.ts.
+          this.jornal.registrar(this.state, client.sessionId, tipo);
           handler.executa(this.montarContexto(client), parsed.data);
           intentsRecebidas.inc({ type: tipo });
         } catch (erro) {
@@ -238,6 +252,7 @@ export class AetherRoom extends Room<RoomState> {
       send: (event, payload) => client.send(event, payload),
       broadcast: (event, payload) => this.broadcast(event, payload),
       log: (entrada) => this.publicarLog(entrada),
+      desfazer: () => this.jornal.desfazer(this.state, client.sessionId),
     };
   }
 
@@ -249,6 +264,7 @@ export class AetherRoom extends Room<RoomState> {
     const player = this.state.players.get(sessionId);
     this.state.players.delete(sessionId);
     this.rateLimiter.esquecer(sessionId);
+    this.jornal.esquecer(sessionId);
 
     for (const zone of ZONES) {
       this.state.zoneOrder.delete(zoneOrderKey(sessionId, zone));
@@ -256,6 +272,15 @@ export class AetherRoom extends Room<RoomState> {
     this.state.cards.forEach((card, id) => {
       if (card.ownerId === sessionId) this.state.cards.delete(id);
     });
+
+    // Reatribui assentos: `proximoAssento` so crescia, entao apos qualquer
+    // saida ninguem mais ocupava o assento 0 — e sem assento 0 nao existe
+    // anfitriao para iniciar a partida.
+    const restantes = Array.from(this.state.players.values()).sort((a, b) => a.seat - b.seat);
+    restantes.forEach((p, indice) => {
+      p.seat = indice;
+    });
+    this.proximoAssento = restantes.length;
 
     this.broadcast('playerLeft', { playerId: sessionId, name: player?.name ?? '' });
 
@@ -285,16 +310,15 @@ export class AetherRoom extends Room<RoomState> {
     try {
       // A URL vem da config (BACKEND_CORE_URL), nunca hardcoded: era isso que
       // fazia o game-server procurar a API numa porta onde ninguem escutava.
-      const res = await fetch(`${config.BACKEND_CORE_URL}/api/v1/internal/decks/${deckId}`);
+      const res = await fetch(`${config.BACKEND_CORE_URL}/api/v1/internal/decks/${deckId}`, {
+        // A rota interna passou a exigir segredo compartilhado: sem ele, ela
+        // era um endpoint publico que entregava o decklist de qualquer id.
+        headers: config.INTERNAL_API_TOKEN ? { 'X-Internal-Token': config.INTERNAL_API_TOKEN } : {},
+      });
       if (!res.ok) throw new Error('Deck não encontrado');
       // `Response.json()` devolve `unknown`: sem a asserção, todo acesso abaixo
       // é erro de tipo. O formato vem de DeckCard (docs/modelo_de_dados.md §3.4).
       const deckReal = (await res.json()) as DeckPayload;
-      
-      console.log(`[${this.roomId}] Deck ${deckId} fetched. Total cards in array: ${deckReal.cards.length}`);
-      let totalQuantity = 0;
-      for (const c of deckReal.cards) totalQuantity += c.quantity;
-      console.log(`[${this.roomId}] Total quantity of cards to create: ${totalQuantity}`);
 
       const criar = (zone: Zone, dbCard: DeckCardPayload): Card => {
         const c = new Card();
@@ -309,13 +333,26 @@ export class AetherRoom extends Room<RoomState> {
 
       const deckCards: string[] = [];
 
-      // Popula baseado no boardType (MAIN vs COMMANDER)
+      const reserva = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'SIDEBOARD'))?.items;
+
+      // Popula por boardType. Antes o `else` mandava TUDO que nao fosse
+      // COMMANDER para o grimorio — inclusive SIDEBOARD e MAYBEBOARD. Quem
+      // tivesse reserva cadastrada jogava com um grimorio maior que o deck.
       for (const card of deckReal.cards) {
         for (let i = 0; i < card.quantity; i++) {
-          if (card.boardType === 'COMMANDER') {
-            comando.push(criar('COMMAND', card).id);
-          } else {
-            deckCards.push(criar('LIBRARY', card).id);
+          switch (card.boardType) {
+            case 'COMMANDER':
+            case 'SIGNATURE_SPELL':
+              comando.push(criar('COMMAND', card).id);
+              break;
+            case 'SIDEBOARD':
+              reserva?.push(criar('SIDEBOARD', card).id);
+              break;
+            case 'MAYBEBOARD':
+              // Lista de considerACAO do deckbuilder: nao entra na mesa.
+              break;
+            default:
+              deckCards.push(criar('LIBRARY', card).id);
           }
         }
       }
@@ -326,35 +363,32 @@ export class AetherRoom extends Room<RoomState> {
         grimorio.push(id);
       }
 
-      // Saca as 7 iniciais
-      for (let i = 0; i < 7; i += 1) {
-        const id = grimorio.pop();
-        if (!id) break;
-        const c = this.state.cards.get(id);
-        if (c) c.zone = 'HAND';
-        mao.push(id);
+      // A mao inicial NAO e comprada aqui. Com a sala de espera, quem entra
+      // primeiro ficaria com 7 cartas na mesa enquanto os outros ainda estao
+      // chegando — e o modal de mulligan abriria antes de a partida existir.
+      // INTENT_START_MATCH compra para todo mundo ao mesmo tempo.
+      //
+      // Se a partida JA estiver rodando (jogador entrou no meio), compra agora.
+      if (this.state.phase === 'PLAYING') {
+        for (let i = 0; i < 7; i += 1) {
+          const id = grimorio.pop();
+          if (!id) break;
+          const c = this.state.cards.get(id);
+          if (c) c.zone = 'HAND';
+          mao.push(id);
+        }
       }
-      
-      console.log(`[${this.roomId}] Provision finished. Library: ${grimorio.length}, Hand: ${mao.length}`);
-
-      this.broadcast('log', {
-        id: randomUUID(),
-        timestamp: Date.now(),
-        type: 'SYSTEM',
-        text: `DEBUG DECK: Fetched ${deckReal.cards.length} distinct cards. Library size: ${grimorio.length}, Hand size: ${mao.length}`,
-      });
 
       const player = this.state.players.get(sessionId);
       if (player) {
         player.handCount = mao.length;
         player.libraryCount = grimorio.length;
       }
-      
+
       // RECONCILIAR TUDO AQUI: Garante que as cartas recém criadas e
       // assinaladas para a mão (HAND) / comando (COMMAND) recebam a view
       // correta e sejam visíveis para o dono!
       reconciliarTudo(this.clients, this.state);
-
     } catch (e) {
       console.error(`[${this.roomId}] Falha ao provisionar deck ${deckId}:`, e);
     }

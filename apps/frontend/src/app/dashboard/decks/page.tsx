@@ -42,9 +42,9 @@ export default function DecksPage() {
     try {
       const res = await fetch(`${API_URL}/decks`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}` 
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ name: newDeckName, formatId: newDeckFormat }),
       });
@@ -64,7 +64,7 @@ export default function DecksPage() {
   }
 
   async function handleDeleteDeck(id: string) {
-    if(!confirm('Tem certeza que deseja DESTRUIR este grimório?')) return;
+    if (!confirm('Tem certeza que deseja DESTRUIR este grimório?')) return;
     try {
       const res = await fetch(`${API_URL}/decks/${id}`, {
         method: 'DELETE',
@@ -77,11 +77,11 @@ export default function DecksPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+    <div className="mx-auto max-w-6xl animate-[fadeIn_0.3s_ease-out]">
       <header className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-text mb-2 flex items-center gap-3">
-            <Library className="w-8 h-8 text-primary" />
+          <h1 className="text-text mb-2 flex items-center gap-3 text-3xl font-bold">
+            <Library className="text-primary h-8 w-8" />
             Seu Grimório
           </h1>
           <p className="text-text-muted">Forje, organize e prepare seus decks para a batalha.</p>
@@ -89,23 +89,23 @@ export default function DecksPage() {
       </header>
 
       {/* Area de Criacao Rápida */}
-      <section className="mb-10 bg-panel border border-panel-border p-6 rounded-xl shadow-lg">
-        <h2 className="text-lg font-semibold text-text mb-4">Forjar Novo Deck</h2>
-        <form onSubmit={handleCreateDeck} className="flex gap-3">
-          <input 
-            type="text" 
+      <section className="border-panel-border bg-panel mb-10 rounded-xl border p-4 shadow-lg sm:p-6">
+        <h2 className="text-text mb-4 text-lg font-semibold">Forjar Novo Deck</h2>
+        <form onSubmit={handleCreateDeck} className="flex flex-col gap-3 sm:flex-row">
+          <input
+            type="text"
             value={newDeckName}
             onChange={(e) => setNewDeckName(e.target.value)}
             disabled={isCreating}
             required
             placeholder="Ex: Mono Blue Control"
-            className="flex-1 bg-table-deep border border-panel-border rounded-md px-4 py-2 text-text focus:outline-none focus:border-primary transition-colors"
+            className="border-panel-border bg-table-deep text-text focus:border-primary min-w-0 flex-1 rounded-md border px-4 py-2 transition-colors focus:outline-none"
           />
-          <select 
+          <select
             value={newDeckFormat}
             onChange={(e) => setNewDeckFormat(e.target.value)}
             disabled={isCreating}
-            className="bg-table-deep border border-panel-border text-text rounded-md px-4 py-2 focus:outline-none focus:border-primary transition-colors"
+            className="bg-table-deep border-panel-border text-text focus:border-primary rounded-md border px-4 py-2 transition-colors focus:outline-none"
           >
             <option value="commander">Commander</option>
             <option value="standard">Standard</option>
@@ -115,62 +115,67 @@ export default function DecksPage() {
             <option value="vintage">Vintage</option>
             <option value="timeless">Timeless</option>
           </select>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={isCreating}
-            className="px-6 py-2 bg-primary text-white font-medium rounded-md hover:bg-primary-hover active:scale-95 transition-all flex items-center gap-2"
+            className="bg-primary hover:bg-primary-hover flex shrink-0 items-center justify-center gap-2 rounded-md px-6 py-2 font-medium text-white transition-all active:scale-95"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="h-4 w-4" />
             {isCreating ? 'Forjando...' : 'Criar Deck'}
           </button>
         </form>
       </section>
 
       {/* Grid de Decks */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {decks.map(deck => (
-          <div key={deck.id} className="bg-panel border border-panel-border rounded-xl p-5 hover:border-primary transition-all group flex flex-col shadow-md">
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-bold text-text truncate pr-4">{deck.name}</h3>
-              <span className="text-xs font-semibold bg-table-deep text-text-muted px-2 py-1 rounded">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {decks.map((deck) => (
+          <div
+            key={deck.id}
+            className="bg-panel border-panel-border hover:border-primary group flex flex-col rounded-xl border p-5 shadow-md transition-all"
+          >
+            <div className="mb-4 flex items-start justify-between">
+              <h3 className="text-text truncate pr-4 text-xl font-bold">{deck.name}</h3>
+              <span className="bg-table-deep text-text-muted rounded px-2 py-1 text-xs font-semibold">
                 {deck.cardCount} CARTAS
               </span>
             </div>
-            
-            <p className="text-sm text-text-muted flex-1 mb-6">
+
+            <p className="text-text-muted mb-6 flex-1 text-sm">
               Atualizado em {new Date(deck.updatedAt).toLocaleDateString()}
             </p>
 
-            <div className="flex items-center gap-2 mt-auto">
-              <button 
+            <div className="mt-auto flex flex-wrap items-center gap-2">
+              <button
                 onClick={() => router.push(`/dashboard/decks/${deck.id}?mode=view`)}
-                className="flex-1 px-4 py-2 bg-table-deep text-text hover:text-white hover:bg-panel-border border border-panel-border rounded font-medium transition-colors flex justify-center items-center gap-2"
+                className="border-panel-border bg-table-deep text-text hover:bg-panel-border flex min-w-[7rem] flex-1 items-center justify-center gap-2 rounded border px-3 py-2 font-medium transition-colors hover:text-white"
               >
-                <Library className="w-4 h-4" />
+                <Library className="h-4 w-4" />
                 Visualizar
               </button>
-              <button 
+              <button
                 onClick={() => router.push(`/dashboard/decks/${deck.id}`)}
-                className="flex-1 px-4 py-2 bg-table-deep text-primary hover:text-white hover:bg-primary border border-primary/30 rounded font-medium transition-colors flex justify-center items-center gap-2"
+                className="border-primary/30 bg-table-deep text-primary hover:bg-primary flex min-w-[7rem] flex-1 items-center justify-center gap-2 rounded border px-3 py-2 font-medium transition-colors hover:text-white"
               >
-                <Edit3 className="w-4 h-4" />
+                <Edit3 className="h-4 w-4" />
                 Editar
               </button>
-              <button 
+              <button
                 onClick={() => handleDeleteDeck(deck.id)}
-                className="p-2 bg-table-deep text-text-muted hover:text-white hover:bg-danger border border-panel-border hover:border-danger rounded transition-colors"
+                className="bg-table-deep text-text-muted hover:bg-danger border-panel-border hover:border-danger rounded border p-2 transition-colors hover:text-white"
                 title="Destruir Deck"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
           </div>
         ))}
 
         {decks.length === 0 && (
-          <div className="col-span-full py-12 text-center border border-dashed border-panel-border rounded-xl">
-            <Library className="w-12 h-12 text-text-muted mx-auto mb-3 opacity-50" />
-            <p className="text-text-muted">Você ainda não possui nenhum deck. Forje um acima para começar.</p>
+          <div className="border-panel-border col-span-full rounded-xl border border-dashed py-12 text-center">
+            <Library className="text-text-muted mx-auto mb-3 h-12 w-12 opacity-50" />
+            <p className="text-text-muted">
+              Você ainda não possui nenhum deck. Forje um acima para começar.
+            </p>
           </div>
         )}
       </div>

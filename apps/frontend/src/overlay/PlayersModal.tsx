@@ -1,74 +1,85 @@
+'use client';
+
 import React from 'react';
-import type { Room } from 'colyseus.js';
 import { useUIStore, useGameStore } from '../store/game.store';
-import { X, Users, Trash2, Mic, MicOff } from 'lucide-react';
-import { useParticipants } from '@livekit/components-react';
+import { X, Users, Mic } from 'lucide-react';
+import { useVoiceStore } from '../net/voice';
 
-interface PlayersModalProps {
-  room: Room<any>;
-}
+export function PlayersModal() {
+  const activeModals = useUIStore((s) => s.activeModals);
+  const toggleModal = useUIStore((s) => s.toggleModal);
+  const playersMap = useGameStore((s) => s.players);
+  const myId = useGameStore((s) => s.mySessionId);
+  const speaking = useVoiceStore((s) => s.speaking);
 
-export function PlayersModal({ room }: PlayersModalProps) {
-  const { activeModals, toggleModal } = useUIStore();
-  const playersMap = useGameStore(s => s.players);
-  const players = Object.values(playersMap);
-  const myId = useGameStore(s => s.mySessionId);
-  
   if (!activeModals.players) return null;
 
+  const players = Object.values(playersMap).sort((a, b) => a.seat - b.seat);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto">
-      <div className="bg-panel border border-panel-border rounded-xl shadow-2xl w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col animate-[fadeIn_0.2s_ease-out]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-panel-border">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Users className="text-primary w-5 h-5" />
-            Jogadores Conectados
+    <div
+      className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) toggleModal('players');
+      }}
+    >
+      <div className="modal-entra border-panel-border bg-panel flex max-h-[80dvh] w-full max-w-xl flex-col overflow-hidden rounded-xl border shadow-2xl">
+        <div className="border-panel-border flex items-center justify-between border-b px-4 py-4 sm:px-6">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-white sm:text-xl">
+            <Users className="text-primary h-5 w-5" />
+            Jogadores conectados
           </h2>
-          <button 
+          <button
             onClick={() => toggleModal('players')}
-            className="p-2 text-text hover:text-white hover:bg-danger/20 rounded transition-colors"
+            className="text-text hover:bg-danger/20 rounded p-2 transition-colors hover:text-white"
+            aria-label="Fechar"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-3">
-          {players.map(player => (
-            <div key={player.id} className="flex items-center justify-between p-4 bg-table-deep border border-panel-border rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
-                  {player.name.substring(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white">{player.name}</span>
-                    {player.id === myId && <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded font-bold uppercase">Você</span>}
-                    <span className={`w-2 h-2 rounded-full ${player.connected ? 'bg-success' : 'bg-warning'}`} title={player.connected ? 'Conectado' : 'Desconectado'} />
-                  </div>
-                  <span className="text-xs text-text-muted">Cartas: {player.libraryCount} (G) / {player.handCount} (M)</span>
-                </div>
+        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 sm:p-6">
+          {players.map((player) => (
+            <div
+              key={player.id}
+              className="border-panel-border bg-table-deep flex items-center gap-3 rounded-lg border p-3 sm:p-4"
+            >
+              <div className="bg-primary/20 text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold">
+                {player.name.substring(0, 2).toUpperCase()}
               </div>
-
-              <div className="flex items-center gap-2">
-                {/* Aqui poderíamos adicionar ações de microfone (mute para o meu próprio microfone) ou Kick se o usuário tiver admin role, mas num sandbox, todo mundo pode kikar. */}
-                {player.id !== myId && (
-                  <button 
-                    onClick={() => {
-                      if (window.confirm(`Você tem certeza que quer remover ${player.name} da sala?`)) {
-                        // Não há um intent de kick no servidor ainda, mas podemos enviar um aviso.
-                        window.alert('O recurso de banir/expulsar ainda não está integrado no backend.');
-                      }
-                    }}
-                    className="p-2 text-text-faint hover:text-danger hover:bg-danger/20 rounded transition-colors"
-                    title="Expulsar Jogador"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate font-bold text-white">{player.name}</span>
+                  {player.id === myId && (
+                    <span className="bg-primary/20 text-primary rounded px-2 py-0.5 text-[10px] font-bold uppercase">
+                      Você
+                    </span>
+                  )}
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${player.connected ? 'bg-success' : 'bg-warning'}`}
+                    title={player.connected ? 'Conectado' : 'Desconectado'}
+                  />
+                  {speaking.includes(player.userId) && (
+                    <Mic className="text-speaking h-3.5 w-3.5 shrink-0" aria-label="Falando" />
+                  )}
+                </div>
+                <span className="text-text-muted text-xs">
+                  Assento {player.seat + 1} · {player.libraryCount} no grimório · {player.handCount}{' '}
+                  na mão
+                </span>
               </div>
             </div>
           ))}
         </div>
+
+        {/* O botão de expulsar abria um `window.confirm` seguido de um
+            `window.alert` dizendo que o recurso não existe. Um diálogo nativo
+            para anunciar uma funcionalidade ausente é pior que não ter o botão. */}
+        <p className="border-panel-border text-text-faint border-t px-4 py-3 text-center text-[11px] sm:px-6">
+          Expulsar jogadores ainda não está disponível no servidor.
+        </p>
       </div>
     </div>
   );
