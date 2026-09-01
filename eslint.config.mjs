@@ -74,6 +74,28 @@ export default tseslint.config(
     },
   },
   {
+    // `consistent-type-imports` É INCOMPATÍVEL COM O NEST — e o estrago é mudo.
+    //
+    // O backend compila com `emitDecoratorMetadata`, e é dela que o Nest tira o
+    // `design:paramtypes` de cada construtor para saber o que injetar. Um
+    // `import type` some no JS emitido: o parâmetro vira `Function` e o
+    // container falha no boot com "Nest can't resolve dependencies of the
+    // DecksService (?)" apontando `[Function: Function]`.
+    //
+    // Não é hipótese. Um `pnpm lint:fix` aplicou o autofix desta regra nos 14
+    // imports de injetáveis (PrismaService, JwtService, AuthService, …) e
+    // derrubou a API inteira — o typecheck passava, o build passava, e só o
+    // runtime acusava. A própria documentação do typescript-eslint desaconselha
+    // a regra em projetos com `emitDecoratorMetadata`.
+    //
+    // Tipos de verdade (interfaces, aliases) continuam podendo usar
+    // `import type` à mão; o que fica proibido é o autofix decidir isso.
+    files: ['apps/backend-core/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
+  {
     // REGRAS DOS HOOKS — não estavam habilitadas, e o preço foi alto.
     //
     // A auditoria encontrou quatro violações que só se manifestavam em runtime,

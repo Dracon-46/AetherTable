@@ -10,7 +10,9 @@
     "pnpm": ">=9"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "node tools/dev.mjs",
+    "dev:kill": "node tools/kill-dev.mjs",
+    "dev:turbo": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",

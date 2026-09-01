@@ -1,11 +1,11 @@
 # Especificação Técnica do Frontend
 
-| Campo | Valor |
-|---|---|
-| **ID** | `DOC-040` |
-| **Versão** | 1.1 |
-| **Status** | Estável |
-| **Última revisão** | 2026-08-20 |
+| Campo                       | Valor                                                                                                                                                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**                      | `DOC-040`                                                                                                                                                                                                                                     |
+| **Versão**                  | 1.1                                                                                                                                                                                                                                           |
+| **Status**                  | Estável                                                                                                                                                                                                                                       |
+| **Última revisão**          | 2026-08-20                                                                                                                                                                                                                                    |
 | **Documentos relacionados** | [readme.md](readme.md) · [guia_de_ui_e_design_system.md](guia_de_ui_e_design_system.md) · [especificacao_websocket_e_eventos.md](especificacao_websocket_e_eventos.md) · [integracoes_externas_scryfall.md](integracoes_externas_scryfall.md) |
 
 ---
@@ -14,13 +14,13 @@
 
 O projeto usa Next.js para separar as preocupações de renderização por rota.
 
-| Rota | Estratégia | Motivo |
-|---|---|---|
-| `/` (landing) | **SSG** | SEO e primeiro carregamento rápido |
-| `/login`, `/register` | SSR | Formulários acessíveis, sem JS pesado |
-| `/dashboard` | SSR + hidratação | Dados por usuário |
+| Rota                    | Estratégia          | Motivo                                                                  |
+| ----------------------- | ------------------- | ----------------------------------------------------------------------- |
+| `/` (landing)           | **SSG**             | SEO e primeiro carregamento rápido                                      |
+| `/login`, `/register`   | SSR                 | Formulários acessíveis, sem JS pesado                                   |
+| `/dashboard`            | SSR + hidratação    | Dados por usuário                                                       |
 | `/decks`, `/decks/[id]` | SSR + `react-query` | HTML/Tailwind normal maximiza acessibilidade e velocidade de construção |
-| **`/room/[id]`** | **100 % CSR** | Canvas e WebSocket não fazem sentido no servidor |
+| **`/room/[id]`**        | **100 % CSR**       | Canvas e WebSocket não fazem sentido no servidor                        |
 
 Renderizar a mesa no servidor não traria benefício algum: não há SEO em uma partida privada, e o
 primeiro quadro útil depende do estado que só chega pelo WebSocket.
@@ -53,10 +53,10 @@ primeiro quadro útil depende do estado que só chega pelo WebSocket.
 
 ### 2.1 Por que essa divisão
 
-| Conteúdo | Melhor em | Por quê |
-|---|---|---|
-| Texto, formulário, menu, chat | **DOM** | Acessibilidade, leitor de tela, seleção de texto, IME, foco por teclado, CSS |
-| Sprite em movimento, arraste, zoom | **Canvas** | GPU, custo previsível, sem *reflow* |
+| Conteúdo                           | Melhor em  | Por quê                                                                      |
+| ---------------------------------- | ---------- | ---------------------------------------------------------------------------- |
+| Texto, formulário, menu, chat      | **DOM**    | Acessibilidade, leitor de tela, seleção de texto, IME, foco por teclado, CSS |
+| Sprite em movimento, arraste, zoom | **Canvas** | GPU, custo previsível, sem _reflow_                                          |
 
 Tentar fazer chat em Canvas custaria acessibilidade; tentar fazer 300 cartas arrastáveis em DOM
 custaria a taxa de quadros. Cada um no que é bom.
@@ -70,12 +70,12 @@ painel invisível bloqueia o clique no Canvas embaixo.
 O Konva permite múltiplos `<Layer>`, e cada um é um canvas separado. Redesenhar um layer não redesenha
 os outros — o que é a principal alavanca de performance:
 
-| Layer | Conteúdo | Frequência de redesenho |
-|---|---|---|
-| `staticLayer` | Contornos de zona, rótulos, grade | Raríssima (só em zoom/pan) |
-| `cardsLayer` | Todas as cartas em repouso | A cada *patch* (20 Hz) |
-| `dragLayer` | Apenas a(s) carta(s) sendo arrastada(s) | A cada quadro (60 Hz) |
-| `fxLayer` | Pings, animação de dado, brilho de seleção | Durante efeitos |
+| Layer         | Conteúdo                                   | Frequência de redesenho    |
+| ------------- | ------------------------------------------ | -------------------------- |
+| `staticLayer` | Contornos de zona, rótulos, grade          | Raríssima (só em zoom/pan) |
+| `cardsLayer`  | Todas as cartas em repouso                 | A cada _patch_ (20 Hz)     |
+| `dragLayer`   | Apenas a(s) carta(s) sendo arrastada(s)    | A cada quadro (60 Hz)      |
+| `fxLayer`     | Pings, animação de dado, brilho de seleção | Durante efeitos            |
 
 Mover a carta arrastada para o `dragLayer` durante o arraste é o que permite 60 FPS: apenas um layer
 com um objeto é repintado a cada quadro, em vez das 300 cartas.
@@ -90,12 +90,12 @@ assunto de ninguém.
 ```ts
 // store/uiStore.ts — puramente local, nunca trafega
 interface UIState {
-  zoomLevel: number;                    // 0.4 .. 2.5
+  zoomLevel: number; // 0.4 .. 2.5
   cameraPosition: { x: number; y: number };
   activeModals: { chat: boolean; dice: boolean; settings: boolean; tokens: boolean };
-  selectedCardIds: string[];            // seleção por caixa de arraste
+  selectedCardIds: string[]; // seleção por caixa de arraste
   hoveredCardId: string | null;
-  inspectedCardId: string | null;       // zoom em painel lateral
+  inspectedCardId: string | null; // zoom em painel lateral
   keybindings: Record<string, string>;
   showZoneOutlines: boolean;
 }
@@ -106,8 +106,8 @@ interface GameState {
   phase: 'WAITING' | 'PLAYING' | 'PAUSED' | 'CLOSING';
   mySessionId: string;
   players: Record<string, PlayerData>;
-  cards: Record<string, CardData>;      // alimentado pelos patches do Colyseus
-  log: LogEntry[];                      // últimas 200 entradas
+  cards: Record<string, CardData>; // alimentado pelos patches do Colyseus
+  log: LogEntry[]; // últimas 200 entradas
   connectionState: 'connecting' | 'connected' | 'reconnecting' | 'lost';
 }
 
@@ -116,7 +116,7 @@ interface AudioState {
   micEnabled: boolean;
   voiceMode: 'VAD' | 'PTT';
   speakingIds: Set<string>;
-  volumes: Record<string, number>;      // userId -> 0..1
+  volumes: Record<string, number>; // userId -> 0..1
   mutedIds: Set<string>;
 }
 
@@ -129,12 +129,12 @@ interface CardDataState {
 
 ### 3.1 Fronteira entre os stores
 
-| Regra | Motivo |
-|---|---|
-| `uiStore` **nunca** vai para a rede | Zoom e modais são preferência pessoal |
-| `gameStore` **nunca** é mutado pela UI diretamente | A UI envia intenção; o *patch* muta o espelho (`RN07`) |
-| `audioStore` é local, com persistência opcional | Volume de cada um é escolha individual |
-| `cardDataStore` é cache derivado | Reconstruível a qualquer momento |
+| Regra                                              | Motivo                                                 |
+| -------------------------------------------------- | ------------------------------------------------------ |
+| `uiStore` **nunca** vai para a rede                | Zoom e modais são preferência pessoal                  |
+| `gameStore` **nunca** é mutado pela UI diretamente | A UI envia intenção; o _patch_ muta o espelho (`RN07`) |
+| `audioStore` é local, com persistência opcional    | Volume de cada um é escolha individual                 |
+| `cardDataStore` é cache derivado                   | Reconstruível a qualquer momento                       |
 
 ### 3.2 Conectando o Colyseus ao `gameStore`
 
@@ -147,7 +147,7 @@ room.state.cards.onAdd((card, id) => {
 
 room.state.cards.onChange((card, id) => {
   useGameStore.getState().upsertCard(id, snapshot(card));
-  renderer.updateSprite(id);            // não passa por re-render do React
+  renderer.updateSprite(id); // não passa por re-render do React
 });
 
 room.state.cards.onRemove((_card, id) => {
@@ -185,13 +185,13 @@ mesmo tempo.
 
 ### 4.1 Estratégia de qualidade
 
-| Contexto | Qualidade | Peso | Quando é buscada |
-|---|---|---|---|
-| Carta na `LIBRARY` | **nenhuma** — só o verso local (`/card-back.webp`) | ~15 KB, 1 requisição para toda a mesa | Nunca |
-| Carta no `BATTLEFIELD` / `HAND` própria | `small` (146×204) | ~15–25 KB | Ao entrar na zona |
-| `hover` longo / `Alt+clique` | `normal` (488×680) | ~80–120 KB | Sob demanda, uma por vez |
-| Deckbuilder (detalhe) | `normal` | ~100 KB | Ao abrir |
-| Thumbnail de deck | `art_crop` | ~30 KB | Ao listar |
+| Contexto                                | Qualidade                                          | Peso                                  | Quando é buscada         |
+| --------------------------------------- | -------------------------------------------------- | ------------------------------------- | ------------------------ |
+| Carta na `LIBRARY`                      | **nenhuma** — só o verso local (`/card-back.webp`) | ~15 KB, 1 requisição para toda a mesa | Nunca                    |
+| Carta no `BATTLEFIELD` / `HAND` própria | `small` (146×204)                                  | ~15–25 KB                             | Ao entrar na zona        |
+| `hover` longo / `Alt+clique`            | `normal` (488×680)                                 | ~80–120 KB                            | Sob demanda, uma por vez |
+| Deckbuilder (detalhe)                   | `normal`                                           | ~100 KB                               | Ao abrir                 |
+| Thumbnail de deck                       | `art_crop`                                         | ~30 KB                                | Ao listar                |
 
 **Regra dura:** nunca pré-carregar as 100 imagens de um deck ao entrar na sala. Só o que está visível
 em zona revelada é resolvido (`FR-23`).
@@ -247,30 +247,32 @@ carta em texto**. Nunca um retângulo vazio — o jogador precisa saber o que es
 Alvo: **60 FPS**, mínimo aceitável **30 FPS**, com 300 sprites, no hardware de referência (Intel i5 de
 8ª geração, gráficos integrados, 1920×1080) — `NFR-01`.
 
-| Técnica | Ganho | Prioridade |
-|---|---|---|
-| **Layers separados** (§2.2) | Alto — o maior ganho isolado | **Obrigatório** |
-| **Carta arrastada no `dragLayer`** | Alto | **Obrigatório** |
-| **Texturas compartilhadas** (§4.2) | Alto — memória e decode | **Obrigatório** |
-| **`listening: false`** em nós não interativos | Médio — hit testing é caro | **Obrigatório** |
-| **Culling de fora de tela** | Alto com zoom afastado | Obrigatório na V1 |
-| **`perfectDrawEnabled: false`** nos sprites | Médio | Recomendado |
-| **Sem re-render React por sprite** (§3.2) | Crítico | **Obrigatório** |
-| **Throttle de intenção de movimento (20/s)** | Médio — banda | **Obrigatório** |
-| Cache de `Group` estático (`cache()` do Konva) | Médio | Recomendado |
-| Sombra só na carta arrastada | Médio — sombra é caro no Canvas | Recomendado |
+| Técnica                                        | Ganho                           | Prioridade        |
+| ---------------------------------------------- | ------------------------------- | ----------------- |
+| **Layers separados** (§2.2)                    | Alto — o maior ganho isolado    | **Obrigatório**   |
+| **Carta arrastada no `dragLayer`**             | Alto                            | **Obrigatório**   |
+| **Texturas compartilhadas** (§4.2)             | Alto — memória e decode         | **Obrigatório**   |
+| **`listening: false`** em nós não interativos  | Médio — hit testing é caro      | **Obrigatório**   |
+| **Culling de fora de tela**                    | Alto com zoom afastado          | Obrigatório na V1 |
+| **`perfectDrawEnabled: false`** nos sprites    | Médio                           | Recomendado       |
+| **Sem re-render React por sprite** (§3.2)      | Crítico                         | **Obrigatório**   |
+| **Throttle de intenção de movimento (20/s)**   | Médio — banda                   | **Obrigatório**   |
+| Cache de `Group` estático (`cache()` do Konva) | Médio                           | Recomendado       |
+| Sombra só na carta arrastada                   | Médio — sombra é caro no Canvas | Recomendado       |
 
 ### 5.1 Instrumentação
 
 ```ts
 // devtools/fpsMeter.ts — ativo em dev; amostragem em produção
-let frames = 0, last = performance.now();
+let frames = 0,
+  last = performance.now();
 function tick() {
   frames++;
   const now = performance.now();
   if (now - last >= 1000) {
-    telemetry.sample('fps', frames);   // p50 e p05 por sessão
-    frames = 0; last = now;
+    telemetry.sample('fps', frames); // p50 e p05 por sessão
+    frames = 0;
+    last = now;
   }
   requestAnimationFrame(tick);
 }
@@ -289,7 +291,7 @@ interface CanvasRenderer {
   updateSprite(id: string): void;
   removeSprite(id: string): void;
   setCamera(x: number, y: number, zoom: number): void;
-  beginDrag(id: string): void;   // move para o dragLayer
+  beginDrag(id: string): void; // move para o dragLayer
   endDrag(id: string): void;
   playEffect(effect: Effect): void;
 }
@@ -301,18 +303,18 @@ Se `NFR-01` não for atingido, trocar a implementação por PixiJS não deve toc
 
 ## 6. Interação e entrada
 
-| Entrada | Ação | Observação |
-|---|---|---|
-| Arrastar com botão esquerdo em carta | Move a carta | Emite `GRAB` → `MOVE` → `RELEASE` |
-| Arrastar em área vazia | Caixa de seleção | Preenche `selectedCardIds` |
-| Arrastar com botão do meio / espaço | *Pan* da câmera | — |
-| Roda do mouse | Zoom centrado no cursor | Limites 0,4×–2,5× |
-| Clique com botão direito em carta | Menu de contexto | Tap, marcadores, mover para zona, copiar |
-| `hover` longo (400 ms) | Zoom no painel lateral | Carrega qualidade `normal` |
-| `Alt+clique` | Zoom fixado até novo clique | — |
-| Duplo clique em carta | Tap/untap | Atalho mais usado |
-| `Shift+clique` | Adiciona à seleção | — |
-| `Esc` | Limpa seleção e fecha modais | — |
+| Entrada                              | Ação                         | Observação                               |
+| ------------------------------------ | ---------------------------- | ---------------------------------------- |
+| Arrastar com botão esquerdo em carta | Move a carta                 | Emite `GRAB` → `MOVE` → `RELEASE`        |
+| Arrastar em área vazia               | Caixa de seleção             | Preenche `selectedCardIds`               |
+| Arrastar com botão do meio / espaço  | _Pan_ da câmera              | —                                        |
+| Roda do mouse                        | Zoom centrado no cursor      | Limites 0,4×–2,5×                        |
+| Clique com botão direito em carta    | Menu de contexto             | Tap, marcadores, mover para zona, copiar |
+| `hover` longo (400 ms)               | Zoom no painel lateral       | Carrega qualidade `normal`               |
+| `Alt+clique`                         | Zoom fixado até novo clique  | —                                        |
+| Duplo clique em carta                | Tap/untap                    | Atalho mais usado                        |
+| `Shift+clique`                       | Adiciona à seleção           | —                                        |
+| `Esc`                                | Limpa seleção e fecha modais | —                                        |
 
 Atalhos de teclado completos e remapeáveis em [guia_de_ui_e_design_system.md](guia_de_ui_e_design_system.md) §6.
 
@@ -320,13 +322,13 @@ Atalhos de teclado completos e remapeáveis em [guia_de_ui_e_design_system.md](g
 
 ## 7. Responsividade
 
-| Dispositivo | Comportamento |
-|---|---|
-| **Desktop ≥ 1280 px** | Experiência completa: mesa + painéis laterais fixos |
-| **Desktop 1024–1280 px** | Painéis colapsáveis, sobrepostos ao Canvas |
-| **Tablet landscape** | Suportado; alvos de toque ampliados; menu de contexto por toque longo |
-| **Tablet portrait** | Aviso para girar o dispositivo |
-| **Smartphone** | Lobby e Deckbuilder **100 % funcionais**; mesa exibe aviso de que requer landscape/tablet |
+| Dispositivo              | Comportamento                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| **Desktop ≥ 1280 px**    | Experiência completa: mesa + painéis laterais fixos                                       |
+| **Desktop 1024–1280 px** | Painéis colapsáveis, sobrepostos ao Canvas                                                |
+| **Tablet landscape**     | Suportado; alvos de toque ampliados; menu de contexto por toque longo                     |
+| **Tablet portrait**      | Aviso para girar o dispositivo                                                            |
+| **Smartphone**           | Lobby e Deckbuilder **100 % funcionais**; mesa exibe aviso de que requer landscape/tablet |
 
 Motivo: a mesa de Commander tem 4 áreas de jogo simultâneas. Abaixo de ~900 px de largura útil, o
 tamanho da carta cai a ponto de a arte deixar de ser reconhecível — e o produto perde o sentido.
@@ -369,15 +371,15 @@ apps/frontend/src/
 
 ## 9. Acessibilidade no frontend
 
-| Item | Implementação |
-|---|---|
-| UI de DOM navegável por teclado | Ordem de foco lógica, `focus-visible` em tudo |
-| Contraste | AA no texto de UI (`NFR-13`) |
-| Leitor de tela na mesa | Região `aria-live="polite"` espelha o log de ações em texto |
-| Nome da carta | `hover` longo expõe o nome também como texto no DOM |
-| Alternativa ao arraste fino | Selecionar com teclado e mover por setas (`F25` + atalhos) |
-| Movimento reduzido | `prefers-reduced-motion` desliga animações não essenciais |
-| Atalhos remapeáveis | Todos, via `uiStore` e `UserPreference` |
+| Item                            | Implementação                                               |
+| ------------------------------- | ----------------------------------------------------------- |
+| UI de DOM navegável por teclado | Ordem de foco lógica, `focus-visible` em tudo               |
+| Contraste                       | AA no texto de UI (`NFR-13`)                                |
+| Leitor de tela na mesa          | Região `aria-live="polite"` espelha o log de ações em texto |
+| Nome da carta                   | `hover` longo expõe o nome também como texto no DOM         |
+| Alternativa ao arraste fino     | Selecionar com teclado e mover por setas (`F25` + atalhos)  |
+| Movimento reduzido              | `prefers-reduced-motion` desliga animações não essenciais   |
+| Atalhos remapeáveis             | Todos, via `uiStore` e `UserPreference`                     |
 
 O Canvas é, por natureza, opaco para leitores de tela. A mitigação é o espelho textual em
 `aria-live` — não resolve tudo, mas torna o log e as mudanças de estado audíveis.

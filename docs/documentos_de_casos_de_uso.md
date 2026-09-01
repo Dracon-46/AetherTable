@@ -1,11 +1,11 @@
 # Documento de Casos de Uso (Narrativas)
 
-| Campo | Valor |
-|---|---|
-| **ID** | `DOC-012` |
-| **Versão** | 1.1 |
-| **Status** | Estável |
-| **Última revisão** | 2026-08-20 |
+| Campo                       | Valor                                                                                                                                                                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**                      | `DOC-012`                                                                                                                                                                                                                                 |
+| **Versão**                  | 1.1                                                                                                                                                                                                                                       |
+| **Status**                  | Estável                                                                                                                                                                                                                                   |
+| **Última revisão**          | 2026-08-20                                                                                                                                                                                                                                |
 | **Documentos relacionados** | [readme.md](readme.md) · [regras_de_negocio_e_casos_de_uso.md](regras_de_negocio_e_casos_de_uso.md) · [documento_de_funcionalidades.md](documento_de_funcionalidades.md) · [guia_de_ui_e_design_system.md](guia_de_ui_e_design_system.md) |
 
 ---
@@ -20,25 +20,25 @@ Para a mesma jornada descrita em termos de rede e mutação de estado, use
 
 ### 1.1 Atores
 
-| Ator | Descrição |
-|---|---|
-| **Jogador** | Usuário autenticado. Papel padrão. |
-| **Host** | Jogador que criou a sala. Sem privilégios especiais de jogo, apenas de configuração. |
-| **Convidado** | Jogador que entra por link ou código. |
-| **Espectador** | Usuário com acesso somente leitura às zonas públicas (V2). |
-| **Sistema** | O conjunto backend + game server, quando age sozinho. |
-| **Scryfall** | API externa de dados de carta. |
+| Ator           | Descrição                                                                            |
+| -------------- | ------------------------------------------------------------------------------------ |
+| **Jogador**    | Usuário autenticado. Papel padrão.                                                   |
+| **Host**       | Jogador que criou a sala. Sem privilégios especiais de jogo, apenas de configuração. |
+| **Convidado**  | Jogador que entra por link ou código.                                                |
+| **Espectador** | Usuário com acesso somente leitura às zonas públicas (V2).                           |
+| **Sistema**    | O conjunto backend + game server, quando age sozinho.                                |
+| **Scryfall**   | API externa de dados de carta.                                                       |
 
 ---
 
 ## CDU01 — Importar e salvar deck
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador |
-| **Pré-condições** | Estar autenticado |
-| **Pós-condições** | Deck persistido e disponível para seleção em sala |
-| **Funcionalidades** | `F02`, `F03`, `F05` |
+| Campo               | Valor                                             |
+| ------------------- | ------------------------------------------------- |
+| **Ator primário**   | Jogador                                           |
+| **Pré-condições**   | Estar autenticado                                 |
+| **Pós-condições**   | Deck persistido e disponível para seleção em sala |
+| **Funcionalidades** | `F02`, `F03`, `F05`                               |
 
 **Fluxo principal**
 
@@ -48,7 +48,7 @@ Para a mesma jornada descrita em termos de rede e mutação de estado, use
 4. O sistema consulta a Scryfall e converte o texto em cartas visuais, exibindo uma barra de progresso.
 5. O sistema exibe o Deckbuilder com as cartas resolvidas e um painel de avisos.
 6. O ator digita o nome do deck, marca o comandante e clica em **Salvar**.
-7. O sistema persiste e confirma com *toast* de sucesso.
+7. O sistema persiste e confirma com _toast_ de sucesso.
 
 **Fluxos alternativos**
 
@@ -56,7 +56,7 @@ Para a mesma jornada descrita em termos de rede e mutação de estado, use
   importação**. Ele lista as linhas problemáticas em vermelho no topo do Deckbuilder, com o texto
   original editável e sugestões de nome parecido (via `/cards/autocomplete`). O ator corrige e clica
   em **Resolver novamente**.
-- **A2 — Deck fora do padrão:** contagem ≠ 100, carta banida ou duplicata não-básica geram *badge*
+- **A2 — Deck fora do padrão:** contagem ≠ 100, carta banida ou duplicata não-básica geram _badge_
   de aviso. O ator pode salvar de qualquer forma (`RN05`).
 - **A3 — Construção manual:** em vez de importar, o ator usa a busca (`F01`) e adiciona carta por carta.
 - **A4 — Duplicar deck existente:** o ator abre um deck, clica em **Duplicar** e edita a cópia.
@@ -75,12 +75,12 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU02 — Criar e configurar sala de jogo
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador (Host) |
-| **Pré-condições** | Ter pelo menos um deck salvo |
-| **Pós-condições** | Sala ativa com o host na mesa e link de convite disponível |
-| **Funcionalidades** | `F14`, `F06`, `F16` |
+| Campo               | Valor                                                      |
+| ------------------- | ---------------------------------------------------------- |
+| **Ator primário**   | Jogador (Host)                                             |
+| **Pré-condições**   | Ter pelo menos um deck salvo                               |
+| **Pós-condições**   | Sala ativa com o host na mesa e link de convite disponível |
+| **Funcionalidades** | `F14`, `F06`, `F16`                                        |
 
 **Fluxo principal**
 
@@ -106,12 +106,12 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU03 — Ingressar em uma partida existente
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador (Convidado) |
-| **Pré-condições** | Ter o link ou código da sala |
-| **Pós-condições** | Cartas do convidado injetadas na mesa; demais jogadores notificados |
-| **Funcionalidades** | `F14`, `F06` |
+| Campo               | Valor                                                               |
+| ------------------- | ------------------------------------------------------------------- |
+| **Ator primário**   | Jogador (Convidado)                                                 |
+| **Pré-condições**   | Ter o link ou código da sala                                        |
+| **Pós-condições**   | Cartas do convidado injetadas na mesa; demais jogadores notificados |
+| **Funcionalidades** | `F14`, `F06`                                                        |
 
 **Fluxo principal**
 
@@ -141,12 +141,12 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU04 — Ação básica de turno (comprar e jogar carta)
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador na mesa |
-| **Pré-condições** | Estar conectado em sala ativa |
-| **Pós-condições** | Carta no Battlefield, visível a todos; log registrado |
-| **Funcionalidades** | `F09`, `F07`, `F15` |
+| Campo               | Valor                                                 |
+| ------------------- | ----------------------------------------------------- |
+| **Ator primário**   | Jogador na mesa                                       |
+| **Pré-condições**   | Estar conectado em sala ativa                         |
+| **Pós-condições**   | Carta no Battlefield, visível a todos; log registrado |
+| **Funcionalidades** | `F09`, `F07`, `F15`                                   |
 
 **Fluxo principal**
 
@@ -178,10 +178,10 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU05 — Rolar dado e interagir com marcadores
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador na mesa |
-| **Pré-condições** | Estar em sala ativa |
+| Campo               | Valor               |
+| ------------------- | ------------------- |
+| **Ator primário**   | Jogador na mesa     |
+| **Pré-condições**   | Estar em sala ativa |
 | **Funcionalidades** | `F12`, `F08`, `F26` |
 
 **Fluxo principal — dado**
@@ -194,14 +194,14 @@ em menos de 60 segundos, sem edição manual.
 **Fluxo principal — marcador**
 
 1. O ator clica com o botão direito sobre uma carta que controla e escolhe **+1 marcador +1/+1**.
-2. O sistema atualiza o estado e envia o *patch*.
-3. A carta passa a exibir o *badge* "1" para todos na sala.
+2. O sistema atualiza o estado e envia o _patch_.
+3. A carta passa a exibir o _badge_ "1" para todos na sala.
 
 **Fluxos alternativos**
 
 - **A1 — Atalho de teclado:** com a carta selecionada, `+` e `-` ajustam o marcador padrão.
 - **A2 — Marcador em lote:** com várias cartas selecionadas, o ajuste vale para todas.
-- **A3 — Tipo de marcador:** o menu permite `+1/+1`, `-1/-1`, *charge*, *loyalty* e genérico, cada um
+- **A3 — Tipo de marcador:** o menu permite `+1/+1`, `-1/-1`, _charge_, _loyalty_ e genérico, cada um
   com cor própria.
 - **A4 — Moeda:** o menu de dados também oferece cara ou coroa.
 
@@ -214,10 +214,10 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU06 — Gerenciar vida e dano de comandante
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador na mesa |
-| **Funcionalidades** | `F11`, `F23` |
+| Campo               | Valor           |
+| ------------------- | --------------- |
+| **Ator primário**   | Jogador na mesa |
+| **Funcionalidades** | `F11`, `F23`    |
 
 **Fluxo principal**
 
@@ -241,17 +241,17 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU07 — Usar o chat de voz
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador na mesa |
-| **Funcionalidades** | `F16` |
+| Campo               | Valor           |
+| ------------------- | --------------- |
+| **Ator primário**   | Jogador na mesa |
+| **Funcionalidades** | `F16`           |
 
 **Fluxo principal**
 
 1. Ao entrar na sala, o navegador pede permissão de microfone e o ator concede.
 2. O ator fala; o painel de todos exibe a aura dourada em torno do seu avatar.
 3. O ator clica no ícone de microfone para se silenciar e clica de novo para voltar.
-4. O ator clica no avatar de um oponente para aplicar *mute* local ou ajustar o volume dele.
+4. O ator clica no avatar de um oponente para aplicar _mute_ local ou ajustar o volume dele.
 
 **Fluxos alternativos**
 
@@ -268,15 +268,15 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU08 — Recuperar-se de uma queda de conexão
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador na mesa |
-| **Funcionalidades** | `F32` |
+| Campo               | Valor           |
+| ------------------- | --------------- |
+| **Ator primário**   | Jogador na mesa |
+| **Funcionalidades** | `F32`           |
 
 **Fluxo principal**
 
 1. A conexão do ator cai (Wi-Fi, aba fechada, guia recarregada).
-2. O cliente exibe *overlay* "reconectando…" com contagem regressiva de 90 s.
+2. O cliente exibe _overlay_ "reconectando…" com contagem regressiva de 90 s.
 3. Para os demais, o painel do ator fica esmaecido com "reconectando…"; as cartas dele **não se movem**.
 4. A conexão volta; o cliente recebe o estado completo e redesenha a mesa.
 5. O ator retoma exatamente de onde parou.
@@ -291,10 +291,10 @@ em menos de 60 segundos, sem edição manual.
 
 ## CDU09 — Criar tokens e cópias
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Jogador na mesa |
-| **Funcionalidades** | `F10`, `F24` |
+| Campo               | Valor           |
+| ------------------- | --------------- |
+| **Ator primário**   | Jogador na mesa |
+| **Funcionalidades** | `F10`, `F24`    |
 
 **Fluxo principal**
 
@@ -311,12 +311,12 @@ em menos de 60 segundos, sem edição manual.
 
 ---
 
-## CDU10 — Espectar uma partida *(V2)*
+## CDU10 — Espectar uma partida _(V2)_
 
-| Campo | Valor |
-|---|---|
-| **Ator primário** | Espectador |
-| **Funcionalidades** | `F38` |
+| Campo               | Valor      |
+| ------------------- | ---------- |
+| **Ator primário**   | Espectador |
+| **Funcionalidades** | `F38`      |
 
 **Fluxo principal**
 
@@ -334,15 +334,15 @@ em menos de 60 segundos, sem edição manual.
 
 ## 2. Cobertura de testes E2E
 
-| CDU | Prioridade de automação | Ferramenta |
-|---|---|---|
-| CDU01 (import) | **Alta** — caminho crítico | Playwright |
-| CDU02 (criar sala) | **Alta** | Playwright |
-| CDU03 (entrar) | **Alta** — 2 navegadores | Playwright multi-contexto |
-| CDU04 (comprar/jogar) | **Alta** — valida `RN02` na prática | Playwright + inspeção de WS |
-| CDU05 (dado/marcador) | Média | Playwright |
-| CDU06 (vida) | Média | Playwright |
-| CDU07 (voz) | Baixa — manual | Checklist manual |
-| CDU08 (reconexão) | **Alta** | Playwright com corte de rede |
-| CDU09 (tokens) | Baixa | Playwright |
-| CDU10 (espectador) | Média (V2) | Playwright |
+| CDU                   | Prioridade de automação             | Ferramenta                   |
+| --------------------- | ----------------------------------- | ---------------------------- |
+| CDU01 (import)        | **Alta** — caminho crítico          | Playwright                   |
+| CDU02 (criar sala)    | **Alta**                            | Playwright                   |
+| CDU03 (entrar)        | **Alta** — 2 navegadores            | Playwright multi-contexto    |
+| CDU04 (comprar/jogar) | **Alta** — valida `RN02` na prática | Playwright + inspeção de WS  |
+| CDU05 (dado/marcador) | Média                               | Playwright                   |
+| CDU06 (vida)          | Média                               | Playwright                   |
+| CDU07 (voz)           | Baixa — manual                      | Checklist manual             |
+| CDU08 (reconexão)     | **Alta**                            | Playwright com corte de rede |
+| CDU09 (tokens)        | Baixa                               | Playwright                   |
+| CDU10 (espectador)    | Média (V2)                          | Playwright                   |

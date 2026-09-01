@@ -22,8 +22,9 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { format, resolveConfig } from 'prettier';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGEM = join(raiz, 'apps/game-server/src/schema');
@@ -44,25 +45,36 @@ const requireDoServer = createRequire(join(raiz, 'apps/game-server/package.json'
 // `@colyseus/schema` bloqueia `./package.json` no campo `exports`, então
 // resolvemos o entrypoint e subimos até a raiz do pacote.
 const entrada = requireDoServer.resolve('@colyseus/schema');
-const raizPacote = entrada.slice(0, entrada.lastIndexOf('/node_modules/@colyseus/schema/') + '/node_modules/@colyseus/schema/'.length);
+
+// `resolve()` devolve o caminho com o separador NATIVO — no Windows, barra
+// invertida. Procurar aqui pelo literal com barra normal fazia o `lastIndexOf`
+// devolver -1; somado ao comprimento da marca, o slice cortava a string em 30
+// caracteres e produzia algo como `C:\Users\Fulano\Downlo`. O erro que chegava
+// ao usuário era um MODULE_NOT_FOUND apontando esse caminho picotado, sem
+// nenhuma pista de que a causa era o separador — e derrubava junto o
+// `mirror.spec.ts`, que é justamente a defesa contra mirror defasado.
+const marca = `${sep}node_modules${sep}@colyseus${sep}schema${sep}`;
+const corte = entrada.lastIndexOf(marca);
+if (corte < 0) {
+  console.error(`Não encontrei a raiz de @colyseus/schema a partir de ${entrada}`);
+  process.exit(1);
+}
+const raizPacote = entrada.slice(0, corte + marca.length);
 const codegen = join(raizPacote, 'bin/schema-codegen');
+
+/** Config do prettier do repositório, resolvida a partir do destino do mirror. */
+const prettierConfig = (await resolveConfig(join(DESTINO, 'Player.ts'))) ?? {};
 
 const saida = mkdtempSync(join(tmpdir(), 'aether-schema-'));
 
 try {
-  execFileSync(
-    process.execPath,
-    [
-      codegen,
-      ...fontes,
-      '--ts',
-      '--output',
-      saida,
-    ],
-    { stdio: 'pipe' },
-  );
+  execFileSync(process.execPath, [codegen, ...fontes, '--ts', '--output', saida], {
+    stdio: 'pipe',
+  });
 
-  const gerados = readdirSync(saida).filter((f) => f.endsWith('.ts')).sort();
+  const gerados = readdirSync(saida)
+    .filter((f) => f.endsWith('.ts'))
+    .sort();
   const defasados = [];
 
   for (const nome of gerados) {
@@ -72,7 +84,10 @@ try {
     let conteudo = readFileSync(join(saida, nome), 'utf8');
     const usados = ['type', 'Schema', 'ArraySchema', 'MapSchema', 'SetSchema', 'DataChange'].filter(
       (simbolo) => {
-        const corpo = conteudo.split('\n').filter((l) => !l.startsWith('import ')).join('\n');
+        const corpo = conteudo
+          .split('\n')
+          .filter((l) => !l.startsWith('import '))
+          .join('\n');
         return new RegExp(`\\b${simbolo}\\b`).test(corpo);
       },
     );
@@ -82,6 +97,18 @@ try {
     );
 
     const destino = join(DESTINO, nome);
+
+    // O gerador emite aspas duplas e quebras próprias; o repositório é prettier
+    // com aspas simples. Comparar o texto CRU fazia o `--check` acusar os cinco
+    // schemas como defasados por pura formatação — um alarme que dispara em
+    // todo `pnpm format` e que, de tanto ser falso, ensina a ignorar o guard
+    // justamente quando ele apontar uma divergência de verdade.
+    //
+    // Normalizar os dois lados pelo mesmo prettier deixa a comparação sobre o
+    // que de fato importa: a ORDEM e o TIPO dos campos, que é o que o
+    // `@colyseus/schema` serializa por índice.
+    conteudo = await format(conteudo, { ...prettierConfig, filepath: destino });
+
     let atual = null;
     try {
       atual = readFileSync(destino, 'utf8');

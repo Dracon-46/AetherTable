@@ -1,11 +1,11 @@
 # Plano de Testes e Garantia de Qualidade (QA)
 
-| Campo | Valor |
-|---|---|
-| **ID** | `DOC-052` |
-| **Versão** | 1.1 |
-| **Status** | Estável |
-| **Última revisão** | 2026-08-20 |
+| Campo                       | Valor                                                                                                                                                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**                      | `DOC-052`                                                                                                                                                                                                                                     |
+| **Versão**                  | 1.1                                                                                                                                                                                                                                           |
+| **Status**                  | Estável                                                                                                                                                                                                                                       |
+| **Última revisão**          | 2026-08-20                                                                                                                                                                                                                                    |
 | **Documentos relacionados** | [readme.md](readme.md) · [especificacao_de_requisitos_de_software.md](especificacao_de_requisitos_de_software.md) · [documentos_de_casos_de_uso.md](documentos_de_casos_de_uso.md) · [devops_e_infraestrutura.md](devops_e_infraestrutura.md) |
 
 ---
@@ -18,24 +18,24 @@ jogo**.
 
 ### 1.1 Prioridades de teste, em ordem
 
-| # | O que testar | Por que é o mais importante |
-|---|---|---|
-| 1 | **Informação oculta não vaza** | Falha aqui destrói o produto (`RN02`, `G1`) |
-| 2 | **Mutação de estado é correta** | Estado errado = partida corrompida |
-| 3 | **A sala não cai** | Partida interrompida é a pior experiência |
-| 4 | **Aleatoriedade é justa** | Confiança do jogador (`RN06`) |
-| 5 | Parser de decklist | Primeiro contato do usuário com o produto |
-| 6 | Performance de render | `NFR-01` |
-| 7 | Fluxos de API | Importante, mas de falha reversível |
+| #   | O que testar                    | Por que é o mais importante                 |
+| --- | ------------------------------- | ------------------------------------------- |
+| 1   | **Informação oculta não vaza**  | Falha aqui destrói o produto (`RN02`, `G1`) |
+| 2   | **Mutação de estado é correta** | Estado errado = partida corrompida          |
+| 3   | **A sala não cai**              | Partida interrompida é a pior experiência   |
+| 4   | **Aleatoriedade é justa**       | Confiança do jogador (`RN06`)               |
+| 5   | Parser de decklist              | Primeiro contato do usuário com o produto   |
+| 6   | Performance de render           | `NFR-01`                                    |
+| 7   | Fluxos de API                   | Importante, mas de falha reversível         |
 
 ### 1.2 O que **não** testamos
 
-| Não testado | Por quê |
-|---|---|
-| Regras de Magic | Não existem no sistema (`RN01`) |
+| Não testado                        | Por quê                                                    |
+| ---------------------------------- | ---------------------------------------------------------- |
+| Regras de Magic                    | Não existem no sistema (`RN01`)                            |
 | Dados da Scryfall estarem corretos | É fonte externa confiável; testamos nossa **reação** a ela |
-| Qualidade subjetiva do áudio | Verificação manual |
-| Pixels exatos do Canvas | Frágil demais; usamos QA visual manual |
+| Qualidade subjetiva do áudio       | Verificação manual                                         |
+| Pixels exatos do Canvas            | Frágil demais; usamos QA visual manual                     |
 
 ---
 
@@ -59,40 +59,40 @@ jogo**.
 
 **Foco no backend — game server:**
 
-| Alvo | Exemplo de teste |
-|---|---|
-| **Mutações de zona** | `drawCard()` remove o ID do fim de `LIBRARY`, insere em `HAND`, atualiza `handCount` e `libraryCount` |
-| **Efeitos colaterais de zona** | Carta que sai do `BATTLEFIELD` perde `isTapped` e `counters` (`DOC-033` §4) |
-| **Tokens** | Ficha que sai do `BATTLEFIELD` é destruída |
-| **Controle** | `controllerId` volta ao `ownerId` ao sair do campo |
-| **Contadores** | `addCounter(-5)` sobre total 3 resulta em 0, não em -2 |
-| **Vida** | Vida pode ficar negativa (não é limitada) |
-| **RNG** | `shuffle()` produz permutação; `rollDie(20)` está em 1–20 |
-| **Lock** | `INTENT_MOVE_CARD` de terceiro é ignorado durante *lock* |
-| **Autorização** | Intenção sobre carta alheia é rejeitada |
-| **Log** | `DRAW` gera texto neutro, **sem** nome de carta |
-| **Zod** | Cada *schema* aceita o válido e rejeita o inválido |
+| Alvo                           | Exemplo de teste                                                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Mutações de zona**           | `drawCard()` remove o ID do fim de `LIBRARY`, insere em `HAND`, atualiza `handCount` e `libraryCount` |
+| **Efeitos colaterais de zona** | Carta que sai do `BATTLEFIELD` perde `isTapped` e `counters` (`DOC-033` §4)                           |
+| **Tokens**                     | Ficha que sai do `BATTLEFIELD` é destruída                                                            |
+| **Controle**                   | `controllerId` volta ao `ownerId` ao sair do campo                                                    |
+| **Contadores**                 | `addCounter(-5)` sobre total 3 resulta em 0, não em -2                                                |
+| **Vida**                       | Vida pode ficar negativa (não é limitada)                                                             |
+| **RNG**                        | `shuffle()` produz permutação; `rollDie(20)` está em 1–20                                             |
+| **Lock**                       | `INTENT_MOVE_CARD` de terceiro é ignorado durante _lock_                                              |
+| **Autorização**                | Intenção sobre carta alheia é rejeitada                                                               |
+| **Log**                        | `DRAW` gera texto neutro, **sem** nome de carta                                                       |
+| **Zod**                        | Cada _schema_ aceita o válido e rejeita o inválido                                                    |
 
 **Foco no backend — API Core:**
 
-| Alvo | Exemplo |
-|---|---|
-| **Parser de decklist** | Os 7 formatos de `DOC-035` §4.1, um teste cada |
-| Agrupamento | 4 linhas de `1 Sol Ring` viram `{ name: "Sol Ring", qty: 4 }` |
-| Lotes | 200 nomes distintos geram 3 chamadas de 75/75/50 |
-| MDFC | Carta `modal_dfc` resolve imagem de `card_faces[0]` |
-| Avisos | Deck com 99 cartas gera `COUNT_MISMATCH` e **salva** |
-| `roomId` | 10⁶ gerações sem colisão e sem caracteres ambíguos |
+| Alvo                   | Exemplo                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| **Parser de decklist** | Os 7 formatos de `DOC-035` §4.1, um teste cada                |
+| Agrupamento            | 4 linhas de `1 Sol Ring` viram `{ name: "Sol Ring", qty: 4 }` |
+| Lotes                  | 200 nomes distintos geram 3 chamadas de 75/75/50              |
+| MDFC                   | Carta `modal_dfc` resolve imagem de `card_faces[0]`           |
+| Avisos                 | Deck com 99 cartas gera `COUNT_MISMATCH` e **salva**          |
+| `roomId`               | 10⁶ gerações sem colisão e sem caracteres ambíguos            |
 
 **Foco no frontend:**
 
-| Alvo | Exemplo |
-|---|---|
-| Formatação | Vida, contadores, timestamps |
-| Stores Zustand | Reducers de `uiStore`, `gameStore`, `audioStore` |
+| Alvo             | Exemplo                                                   |
+| ---------------- | --------------------------------------------------------- |
+| Formatação       | Vida, contadores, timestamps                              |
+| Stores Zustand   | Reducers de `uiStore`, `gameStore`, `audioStore`          |
 | Cache de textura | Dois sprites do mesmo `scryfallId` compartilham a `Image` |
-| Reconciliação | Diferença > 2 px aceita a posição do servidor |
-| Atalhos | Mapeamento tecla → intenção, incluindo remapeado |
+| Reconciliação    | Diferença > 2 px aceita a posição do servidor             |
+| Atalhos          | Mapeamento tecla → intenção, incluindo remapeado          |
 
 **Meta de cobertura:** **80 %** nas funções de utilidade e de lógica de estado (`NFR-12`). Métrica
 aplicada a `game-server/src/intents`, `game-server/src/services` e `backend-core/src/decks` — não é uma
@@ -104,39 +104,39 @@ média diluída do repositório inteiro.
 
 **Fluxos de API REST:**
 
-| Fluxo | Verificação |
-|---|---|
-| Cadastro → login → `GET /users/me` | Sessão funciona ponta a ponta |
-| OAuth com provedor *mockado* | Perfil criado; `state` inválido rejeitado |
-| Salvar e recuperar deck | JSON persiste corretamente no PostgreSQL |
-| Importar deck | `resolved`, `notFound` e `warnings` corretos |
-| IDOR | Usuário A recebe `404` ao pedir deck de B |
-| *Rate limit* | 6ª tentativa de login em um minuto recebe `429` |
-| Exclusão de conta | *Soft delete* aplicado; sessões invalidadas |
+| Fluxo                              | Verificação                                     |
+| ---------------------------------- | ----------------------------------------------- |
+| Cadastro → login → `GET /users/me` | Sessão funciona ponta a ponta                   |
+| OAuth com provedor _mockado_       | Perfil criado; `state` inválido rejeitado       |
+| Salvar e recuperar deck            | JSON persiste corretamente no PostgreSQL        |
+| Importar deck                      | `resolved`, `notFound` e `warnings` corretos    |
+| IDOR                               | Usuário A recebe `404` ao pedir deck de B       |
+| _Rate limit_                       | 6ª tentativa de login em um minuto recebe `429` |
+| Exclusão de conta                  | _Soft delete_ aplicado; sessões invalidadas     |
 
 **Mock da Scryfall — obrigatório.** Garantir que o backend reaja corretamente a:
 
-| Resposta simulada | Comportamento esperado |
-|---|---|
-| `429 Too Many Requests` | *Backoff* exponencial; sucesso na 3ª tentativa |
-| `429` persistente | `503 CARD_PROVIDER_UNAVAILABLE` |
-| `404` / carta em `not_found` | Linha marcada; resto do deck importa |
-| Timeout | Retry e então erro tratado |
-| `layout: modal_dfc` | Imagem lida de `card_faces` |
-| Resposta malformada | Erro tratado sem quebrar o processo |
+| Resposta simulada            | Comportamento esperado                         |
+| ---------------------------- | ---------------------------------------------- |
+| `429 Too Many Requests`      | _Backoff_ exponencial; sucesso na 3ª tentativa |
+| `429` persistente            | `503 CARD_PROVIDER_UNAVAILABLE`                |
+| `404` / carta em `not_found` | Linha marcada; resto do deck importa           |
+| Timeout                      | Retry e então erro tratado                     |
+| `layout: modal_dfc`          | Imagem lida de `card_faces`                    |
+| Resposta malformada          | Erro tratado sem quebrar o processo            |
 
 **Testes de sala (Colyseus):**
 
-| Cenário | Verificação |
-|---|---|
-| 4 clientes entram | Todos recebem estado; `ROOM_FULL` no 5º |
-| Cliente move carta | Os outros 3 recebem o *patch* |
+| Cenário                      | Verificação                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| 4 clientes entram            | Todos recebem estado; `ROOM_FULL` no 5º                    |
+| Cliente move carta           | Os outros 3 recebem o _patch_                              |
 | **Auditoria de zona oculta** | Cliente B **não** recebe `scryfallId` de carta na mão de A |
-| Disputa de *lock* | Segundo cliente é ignorado durante o arraste do primeiro |
-| Reconexão | Queda e retorno em 90 s restaura o estado |
-| Expiração | Após 90 s, jogador removido e cartas retiradas |
-| Sala vazia | Descartada após 10 min |
-| *Payload* inválido | Descartado; **a sala continua viva** |
+| Disputa de _lock_            | Segundo cliente é ignorado durante o arraste do primeiro   |
+| Reconexão                    | Queda e retorno em 90 s restaura o estado                  |
+| Expiração                    | Após 90 s, jogador removido e cartas retiradas             |
+| Sala vazia                   | Descartada após 10 min                                     |
+| _Payload_ inválido           | Descartado; **a sala continua viva**                       |
 
 ### 2.3 Testes ponta a ponta (E2E)
 
@@ -183,8 +183,8 @@ test('oponente nunca recebe identidade de carta em zona oculta', async ({ browse
 
   const ctxB = await browser.newContext();
   const pageB = await ctxB.newPage();
-  pageB.on('websocket', ws => {
-    ws.on('framereceived', f => frames.push(String(f.payload)));
+  pageB.on('websocket', (ws) => {
+    ws.on('framereceived', (f) => frames.push(String(f.payload)));
   });
 
   // A cria a sala, B entra; A compra 7 cartas e passa o turno
@@ -216,46 +216,46 @@ Este é o teste mais crítico de infraestrutura do projeto.
 
 ### 3.1 Cenário principal
 
-| Parâmetro | Valor |
-|---|---|
-| Conexões simultâneas | **500** (125 salas de 4 jogadores) |
-| Evento gerado | `INTENT_MOVE_CARD` atualizando `x`/`y` |
-| Frequência por cliente | **10 mensagens/s** |
-| Cartas por mesa | 100 por jogador (400 por sala) |
-| Duração | 15 minutos, com rampa de 2 minutos |
+| Parâmetro              | Valor                                  |
+| ---------------------- | -------------------------------------- |
+| Conexões simultâneas   | **500** (125 salas de 4 jogadores)     |
+| Evento gerado          | `INTENT_MOVE_CARD` atualizando `x`/`y` |
+| Frequência por cliente | **10 mensagens/s**                     |
+| Cartas por mesa        | 100 por jogador (400 por sala)         |
+| Duração                | 15 minutos, com rampa de 2 minutos     |
 
 ### 3.2 Métricas de aceite
 
-| Métrica | Limite |
-|---|---|
-| Latência de aplicação e envio do *patch* | **< 50 ms** (p95) |
-| RTT ponta a ponta | < 150 ms (p95) — `NFR-02` |
-| CPU da instância | **≤ 80 %** |
-| Memória por sala | ≤ 8 MB — `NFR-07` |
-| Banda de saída por cliente | ≤ 15 KB/s — `NFR-05` |
-| Taxa de erro | < 0,1 % |
-| Conexões perdidas | 0 |
-| `ws_room_tick_duration` | Estável, sem crescimento ao longo do teste |
+| Métrica                                  | Limite                                     |
+| ---------------------------------------- | ------------------------------------------ |
+| Latência de aplicação e envio do _patch_ | **< 50 ms** (p95)                          |
+| RTT ponta a ponta                        | < 150 ms (p95) — `NFR-02`                  |
+| CPU da instância                         | **≤ 80 %**                                 |
+| Memória por sala                         | ≤ 8 MB — `NFR-07`                          |
+| Banda de saída por cliente               | ≤ 15 KB/s — `NFR-05`                       |
+| Taxa de erro                             | < 0,1 %                                    |
+| Conexões perdidas                        | 0                                          |
+| `ws_room_tick_duration`                  | Estável, sem crescimento ao longo do teste |
 
 ### 3.3 Cenários adicionais
 
-| Cenário | Objetivo |
-|---|---|
-| **Rampa até a saturação** | Descobrir o teto real de salas por nó |
-| **Mesa lotada** | 1 sala com 400 cartas no Battlefield e 4 jogadores movendo simultaneamente |
-| **Tempestade de reconexão** | 100 clientes caem e voltam ao mesmo tempo |
-| **Escala horizontal** | 2 nós + Redis; verificar `NFR-03` e roteamento correto por `sessionId` |
-| **Teste de caos** | Matar um nó e confirmar que salas de outro nó sobrevivem (`NFR-14`) |
-| **Vazamento de memória** | 2 horas contínuas; heap não deve crescer monotonicamente |
-| **Spam de intenções** | 200 mensagens/s de um cliente; deve sofrer *rate limit* sem afetar os outros |
+| Cenário                     | Objetivo                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| **Rampa até a saturação**   | Descobrir o teto real de salas por nó                                        |
+| **Mesa lotada**             | 1 sala com 400 cartas no Battlefield e 4 jogadores movendo simultaneamente   |
+| **Tempestade de reconexão** | 100 clientes caem e voltam ao mesmo tempo                                    |
+| **Escala horizontal**       | 2 nós + Redis; verificar `NFR-03` e roteamento correto por `sessionId`       |
+| **Teste de caos**           | Matar um nó e confirmar que salas de outro nó sobrevivem (`NFR-14`)          |
+| **Vazamento de memória**    | 2 horas contínuas; heap não deve crescer monotonicamente                     |
+| **Spam de intenções**       | 200 mensagens/s de um cliente; deve sofrer _rate limit_ sem afetar os outros |
 
 ### 3.4 Teste de carga da API
 
-| Cenário | Alvo |
-|---|---|
-| `POST /decks/import` sob carga | 50 importações concorrentes com Scryfall *mockada* |
-| `GET /decks` | 500 req/s com p95 < 200 ms |
-| Fila da Scryfall | Verificar que o intervalo de 100 ms é respeitado mesmo com concorrência |
+| Cenário                        | Alvo                                                                    |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| `POST /decks/import` sob carga | 50 importações concorrentes com Scryfall _mockada_                      |
+| `GET /decks`                   | 500 req/s com p95 < 200 ms                                              |
+| Fila da Scryfall               | Verificar que o intervalo de 100 ms é respeitado mesmo com concorrência |
 
 ---
 
@@ -265,14 +265,14 @@ Parcialmente manual, porque a percepção visual é o critério.
 
 ### 4.1 Checklist de FPS
 
-| Cenário | Alvo |
-|---|---|
-| 50 cartas no Battlefield | 60 FPS |
-| 150 cartas | 60 FPS |
-| **300 cartas** | **≥ 30 FPS obrigatório; 60 FPS desejado** (`NFR-01`) |
-| 300 cartas + arraste de 10 selecionadas | ≥ 30 FPS |
-| Zoom mínimo (0,4×) com mesa cheia | ≥ 30 FPS (valida o *culling*) |
-| Animação de dado com mesa cheia | Sem engasgo perceptível |
+| Cenário                                 | Alvo                                                 |
+| --------------------------------------- | ---------------------------------------------------- |
+| 50 cartas no Battlefield                | 60 FPS                                               |
+| 150 cartas                              | 60 FPS                                               |
+| **300 cartas**                          | **≥ 30 FPS obrigatório; 60 FPS desejado** (`NFR-01`) |
+| 300 cartas + arraste de 10 selecionadas | ≥ 30 FPS                                             |
+| Zoom mínimo (0,4×) com mesa cheia       | ≥ 30 FPS (valida o _culling_)                        |
+| Animação de dado com mesa cheia         | Sem engasgo perceptível                              |
 
 **Hardware de referência:** Intel i5 de 8ª geração, gráficos integrados, 1920×1080, Chrome estável.
 Se não passar **nesse** hardware, não passou.
@@ -280,7 +280,7 @@ Se não passar **nesse** hardware, não passou.
 ### 4.2 Checklist manual de render
 
 - [ ] Degradação de FPS ao instanciar mais de 300 cartas.
-- [ ] Limites de zoom in/out; *culling* de objetos fora da tela.
+- [ ] Limites de zoom in/out; _culling_ de objetos fora da tela.
 - [ ] Proporção da carta (0,716) preservada em qualquer zoom.
 - [ ] Interpolação de movimento alheio suave, sem degraus.
 - [ ] Sombra aplicada só à carta arrastada.
@@ -293,44 +293,44 @@ Se não passar **nesse** hardware, não passou.
 
 ### 4.3 Matriz de navegadores
 
-| Navegador | Versões | Prioridade |
-|---|---|---|
-| Chrome | 2 últimas | Alta |
-| Edge | 2 últimas | Alta |
-| Firefox | 2 últimas | Média |
-| Safari (macOS) | 2 últimas | Média |
-| Safari (iPad) | 2 últimas | Média — valida o caso tablet |
+| Navegador      | Versões   | Prioridade                   |
+| -------------- | --------- | ---------------------------- |
+| Chrome         | 2 últimas | Alta                         |
+| Edge           | 2 últimas | Alta                         |
+| Firefox        | 2 últimas | Média                        |
+| Safari (macOS) | 2 últimas | Média                        |
+| Safari (iPad)  | 2 últimas | Média — valida o caso tablet |
 
 ---
 
 ## 5. Testes de segurança
 
-| Teste | Ferramenta | Frequência |
-|---|---|---|
-| **Auditoria de informação oculta (`G1`)** | Playwright | **Cada PR de `Schema` + release** |
-| Vulnerabilidade em dependências | `npm audit`, Dependabot | Cada PR |
-| *Secret scanning* | GitHub | Cada PR |
-| *Fuzzing* de intenções WS | Script próprio | Noturno |
-| *Rate limit* | k6 | Cada release |
-| XSS no chat | Playwright com *payloads* conhecidos | Cada release |
-| IDOR | Supertest | Cada release |
-| Headers de segurança | Script de verificação | Cada deploy |
-| Distribuição do RNG (χ²) | Jest | Semanal |
-| `Math.random` no game server | Regra de ESLint | Cada PR |
-| Pentest externo | Terceiro | Antes do lançamento e anualmente |
+| Teste                                     | Ferramenta                           | Frequência                        |
+| ----------------------------------------- | ------------------------------------ | --------------------------------- |
+| **Auditoria de informação oculta (`G1`)** | Playwright                           | **Cada PR de `Schema` + release** |
+| Vulnerabilidade em dependências           | `npm audit`, Dependabot              | Cada PR                           |
+| _Secret scanning_                         | GitHub                               | Cada PR                           |
+| _Fuzzing_ de intenções WS                 | Script próprio                       | Noturno                           |
+| _Rate limit_                              | k6                                   | Cada release                      |
+| XSS no chat                               | Playwright com _payloads_ conhecidos | Cada release                      |
+| IDOR                                      | Supertest                            | Cada release                      |
+| Headers de segurança                      | Script de verificação                | Cada deploy                       |
+| Distribuição do RNG (χ²)                  | Jest                                 | Semanal                           |
+| `Math.random` no game server              | Regra de ESLint                      | Cada PR                           |
+| Pentest externo                           | Terceiro                             | Antes do lançamento e anualmente  |
 
 ---
 
 ## 6. Testes de acessibilidade
 
-| Teste | Ferramenta | Critério |
-|---|---|---|
-| Violações automáticas | axe-core no Playwright | Zero crítica (`NFR-13`) |
-| Contraste | axe-core | AA em todo texto de UI |
-| Navegação por teclado | Manual | Todo fluxo de DOM operável |
-| Leitor de tela | Manual (NVDA/VoiceOver) | Log audível via `aria-live` |
-| Movimento reduzido | Manual | Animações não essenciais desligadas |
-| Alvos de toque | Manual em iPad | ≥ 44 × 44 px |
+| Teste                 | Ferramenta              | Critério                            |
+| --------------------- | ----------------------- | ----------------------------------- |
+| Violações automáticas | axe-core no Playwright  | Zero crítica (`NFR-13`)             |
+| Contraste             | axe-core                | AA em todo texto de UI              |
+| Navegação por teclado | Manual                  | Todo fluxo de DOM operável          |
+| Leitor de tela        | Manual (NVDA/VoiceOver) | Log audível via `aria-live`         |
+| Movimento reduzido    | Manual                  | Animações não essenciais desligadas |
+| Alvos de toque        | Manual em iPad          | ≥ 44 × 44 px                        |
 
 ---
 
@@ -338,55 +338,55 @@ Se não passar **nesse** hardware, não passou.
 
 Nenhum release sai com qualquer item reprovado.
 
-| Gate | Critério | Automatizado? |
-|---|---|---|
-| **G1 — Informação oculta** | Auditoria de tráfego WS não revela zona oculta alheia | ✅ |
-| **G2 — Performance** | 300 sprites a ≥ 30 FPS no hardware de referência | Parcial |
-| **G3 — Latência** | p95 de RTT ≤ 150 ms no teste de carga | ✅ |
-| **G4 — Cobertura** | ≥ 80 % nas funções de mutação | ✅ |
-| **G5 — E2E** | Caminho feliz completo aprovado | ✅ |
-| **G6 — Segurança** | Zero vulnerabilidade crítica/alta em dependências | ✅ |
-| **G7 — Carga** | 500 conexões sem exceder 80 % de CPU | ✅ |
-| **G8 — Acessibilidade** | Zero violação crítica no axe-core | ✅ |
-| **G9 — Migrações** | Migração aplicada e revertida em staging | ✅ |
-| **G10 — Reconexão** | Queda de 60 s e retomada sem perda de estado | ✅ |
+| Gate                       | Critério                                              | Automatizado? |
+| -------------------------- | ----------------------------------------------------- | ------------- |
+| **G1 — Informação oculta** | Auditoria de tráfego WS não revela zona oculta alheia | ✅            |
+| **G2 — Performance**       | 300 sprites a ≥ 30 FPS no hardware de referência      | Parcial       |
+| **G3 — Latência**          | p95 de RTT ≤ 150 ms no teste de carga                 | ✅            |
+| **G4 — Cobertura**         | ≥ 80 % nas funções de mutação                         | ✅            |
+| **G5 — E2E**               | Caminho feliz completo aprovado                       | ✅            |
+| **G6 — Segurança**         | Zero vulnerabilidade crítica/alta em dependências     | ✅            |
+| **G7 — Carga**             | 500 conexões sem exceder 80 % de CPU                  | ✅            |
+| **G8 — Acessibilidade**    | Zero violação crítica no axe-core                     | ✅            |
+| **G9 — Migrações**         | Migração aplicada e revertida em staging              | ✅            |
+| **G10 — Reconexão**        | Queda de 60 s e retomada sem perda de estado          | ✅            |
 
 ---
 
 ## 8. Estratégia de dados de teste
 
-| Recurso | Como é obtido |
-|---|---|
-| **Decklists** | 10 decks reais de Commander versionados como *fixtures*, cobrindo MDFC, split, partner, terrenos duplicados |
-| **Respostas da Scryfall** | *Fixtures* JSON capturadas uma vez e versionadas — **os testes nunca chamam a Scryfall de verdade** |
-| Usuários | `seed.ts` cria 4 usuários de teste com decks prontos |
-| Salas | Helpers de `@colyseus/testing` |
-| Imagens | Placeholder local; nenhum download em teste |
+| Recurso                   | Como é obtido                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Decklists**             | 10 decks reais de Commander versionados como _fixtures_, cobrindo MDFC, split, partner, terrenos duplicados |
+| **Respostas da Scryfall** | _Fixtures_ JSON capturadas uma vez e versionadas — **os testes nunca chamam a Scryfall de verdade**         |
+| Usuários                  | `seed.ts` cria 4 usuários de teste com decks prontos                                                        |
+| Salas                     | Helpers de `@colyseus/testing`                                                                              |
+| Imagens                   | Placeholder local; nenhum download em teste                                                                 |
 
 **Regra dura:** nenhum teste automatizado faz requisição à Scryfall real. Isso mantém a suíte rápida,
-determinística e respeitosa com o *rate limit* de um serviço gratuito.
+determinística e respeitosa com o _rate limit_ de um serviço gratuito.
 
 ---
 
 ## 9. Ambientes e execução
 
-| Ambiente | Suíte executada | Quando |
-|---|---|---|
-| **Local** | Unitários + integração | `pnpm test` |
-| **PR (CI)** | Unitários + integração + E2E essencial + segurança | Cada push |
-| **Staging** | Suíte completa + carga leve (50 conexões) | Merge na `main` |
-| **Pré-release** | Carga completa (500) + QA visual + acessibilidade | Antes da tag |
-| **Produção** | Testes de fumaça pós-deploy | Cada deploy |
+| Ambiente        | Suíte executada                                    | Quando          |
+| --------------- | -------------------------------------------------- | --------------- |
+| **Local**       | Unitários + integração                             | `pnpm test`     |
+| **PR (CI)**     | Unitários + integração + E2E essencial + segurança | Cada push       |
+| **Staging**     | Suíte completa + carga leve (50 conexões)          | Merge na `main` |
+| **Pré-release** | Carga completa (500) + QA visual + acessibilidade  | Antes da tag    |
+| **Produção**    | Testes de fumaça pós-deploy                        | Cada deploy     |
 
 ### 9.1 Orçamento de tempo do CI
 
-| Etapa | Alvo |
-|---|---|
-| Lint + type check | < 2 min |
-| Unitários | < 3 min |
-| Integração | < 5 min |
-| E2E essencial | < 8 min |
-| **Total do PR** | **< 15 min** |
+| Etapa             | Alvo         |
+| ----------------- | ------------ |
+| Lint + type check | < 2 min      |
+| Unitários         | < 3 min      |
+| Integração        | < 5 min      |
+| E2E essencial     | < 8 min      |
+| **Total do PR**   | **< 15 min** |
 
 Acima de 15 minutos, o time começa a ignorar o CI — e um CI ignorado não protege nada.
 
@@ -394,12 +394,12 @@ Acima de 15 minutos, o time começa a ignorar o CI — e um CI ignorado não pro
 
 ## 10. Métricas de qualidade
 
-| Métrica | Alvo |
-|---|---|
-| Cobertura nas funções de mutação | ≥ 80 % |
-| Testes instáveis (*flaky*) | < 1 % das execuções |
-| Tempo do CI no PR | < 15 min |
-| Defeitos escapados por release | < 3 |
-| Defeito P0 em produção | **0** |
-| Tempo médio de correção de P0 | < 4 h |
-| Desync reportado por partida | < 0,05 (`DOC-001` §7) |
+| Métrica                          | Alvo                  |
+| -------------------------------- | --------------------- |
+| Cobertura nas funções de mutação | ≥ 80 %                |
+| Testes instáveis (_flaky_)       | < 1 % das execuções   |
+| Tempo do CI no PR                | < 15 min              |
+| Defeitos escapados por release   | < 3                   |
+| Defeito P0 em produção           | **0**                 |
+| Tempo médio de correção de P0    | < 4 h                 |
+| Desync reportado por partida     | < 0,05 (`DOC-001` §7) |
