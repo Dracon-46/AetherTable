@@ -172,6 +172,13 @@ OAUTH_REDIRECT_BASE="http://localhost:3333/api/v1/auth/oauth"
 
 SCRYFALL_USER_AGENT="AetherTable-dev/1.0 (seu-email@exemplo.com)"
 
+# Espelho da Scryfall (rotas /api/v1/cards/*). O navegador nunca fala com
+# scryfall.io: quem precisa alcançar a Scryfall é o SERVIDOR. Numa rede que
+# filtra o domínio, aponte estas duas para um espelho liberado.
+# SCRYFALL_API_URL="https://api.scryfall.com"
+# SCRYFALL_IMAGE_URL="https://cards.scryfall.io"
+CARD_IMAGE_CACHE_MB=64
+
 # LiveKit — opcional
 LIVEKIT_URL="ws://localhost:7880"
 LIVEKIT_API_KEY="devkey"
@@ -391,21 +398,22 @@ Nunca chame `api.scryfall.com` direto de um service: passaria por cima da fila d
 
 ## 9. Troubleshooting
 
-| Problema                                   | Causa provável                                              | Solução                                                 |
-| ------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------- |
-| **`Invalid seat token` ao entrar na sala** | `JWT_SECRET` diferente entre `backend-core` e `game-server` | Igualar os dois `.env`                                  |
-| `ECONNREFUSED 5432`                        | Postgres não subiu                                          | `docker compose up -d` e conferir `docker compose ps`   |
-| `Prisma migrate` falha                     | Banco inexistente ou credenciais erradas                    | Conferir `DATABASE_URL`; `pnpm db:reset`                |
-| Frontend não conecta ao WS                 | `NEXT_PUBLIC_WS_URL` errado                                 | Deve ser `ws://localhost:2567`                          |
-| Cartas sem imagem                          | `SCRYFALL_USER_AGENT` vazio ou _rate limit_                 | Preencher o `User-Agent`; aguardar                      |
-| `429` da Scryfall                          | Fila de 100 ms sendo ignorada                               | Verificar se a chamada passa pelo `scryfall-client`     |
-| Voz não conecta                            | LiveKit local não está rodando                              | Subir o LiveKit ou ignorar (a mesa funciona sem voz)    |
-| Porta em uso                               | Outro processo na 3030/3333/2567                            | `pnpm dev:kill` (ver Passo 7)                           |
-| Tipos não resolvem                         | `shared-types` não compilado                                | `pnpm build --filter shared-types`                      |
-| FPS baixo em dev                           | _Source maps_ e HMR pesam                                   | Medir performance sempre com `pnpm build && pnpm start` |
-| Erro de CORS                               | Origem não permitida                                        | Incluir `http://localhost:3030` em `CORS_ORIGINS`       |
-| Mudança no `Schema` não reflete            | Cliente com versão antiga do serializador                   | Reiniciar frontend e game server juntos                 |
-| `pnpm install` reclamando de peer deps     | Divergência de versão no workspace                          | `pnpm install --force` e conferir o `pnpm-lock.yaml`    |
+| Problema                                   | Causa provável                                                   | Solução                                                                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **`Invalid seat token` ao entrar na sala** | `JWT_SECRET` diferente entre `backend-core` e `game-server`      | Igualar os dois `.env`                                                                                         |
+| `ECONNREFUSED 5432`                        | Postgres não subiu                                               | `docker compose up -d` e conferir `docker compose ps`                                                          |
+| `Prisma migrate` falha                     | Banco inexistente ou credenciais erradas                         | Conferir `DATABASE_URL`; `pnpm db:reset`                                                                       |
+| Frontend não conecta ao WS                 | `NEXT_PUBLIC_WS_URL` errado                                      | Deve ser `ws://localhost:2567`                                                                                 |
+| Cartas sem imagem                          | `SCRYFALL_USER_AGENT` vazio ou _rate limit_                      | Preencher o `User-Agent`; aguardar                                                                             |
+| Mesa toda em branco, sem erro no console   | A rede bloqueia `scryfall.io` — e o **backend** também está nela | Apontar `SCRYFALL_API_URL`/`SCRYFALL_IMAGE_URL` para um espelho liberado, ou rodar a API fora da rede filtrada |
+| `429` da Scryfall                          | Fila de 100 ms sendo ignorada                                    | Verificar se a chamada passa pelo `scryfall-client`                                                            |
+| Voz não conecta                            | LiveKit local não está rodando                                   | Subir o LiveKit ou ignorar (a mesa funciona sem voz)                                                           |
+| Porta em uso                               | Outro processo na 3030/3333/2567                                 | `pnpm dev:kill` (ver Passo 7)                                                                                  |
+| Tipos não resolvem                         | `shared-types` não compilado                                     | `pnpm build --filter shared-types`                                                                             |
+| FPS baixo em dev                           | _Source maps_ e HMR pesam                                        | Medir performance sempre com `pnpm build && pnpm start`                                                        |
+| Erro de CORS                               | Origem não permitida                                             | Incluir `http://localhost:3030` em `CORS_ORIGINS`                                                              |
+| Mudança no `Schema` não reflete            | Cliente com versão antiga do serializador                        | Reiniciar frontend e game server juntos                                                                        |
+| `pnpm install` reclamando de peer deps     | Divergência de versão no workspace                               | `pnpm install --force` e conferir o `pnpm-lock.yaml`                                                           |
 
 ---
 

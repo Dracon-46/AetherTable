@@ -35,6 +35,8 @@
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import { API_URL } from '@/lib/api';
+import { cardImageUrl } from '@/canvas/textureCache';
 
 export interface FaceMeta {
   name: string;
@@ -99,8 +101,18 @@ function texto(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
-function normalizarFace(face: Record<string, unknown>): FaceMeta {
-  const imgs = (face.image_uris ?? {}) as Record<string, string>;
+/**
+ * As URLs de imagem são REESCRITAS para o proxy da API.
+ *
+ * O `image_uris` da resposta aponta para `cards.scryfall.io`. Guardar aquilo
+ * aqui plantaria uma armadilha: o campo funciona no navegador de quem alcança a
+ * CDN e some no de quem não alcança, que é o motivo deste proxy existir.
+ */
+function normalizarFace(
+  face: Record<string, unknown>,
+  scryfallId: string,
+  lado: 'front' | 'back',
+): FaceMeta {
   return {
     name: texto(face.name),
     typeLine: texto(face.type_line),
@@ -109,8 +121,8 @@ function normalizarFace(face: Record<string, unknown>): FaceMeta {
     power: typeof face.power === 'string' ? face.power : undefined,
     toughness: typeof face.toughness === 'string' ? face.toughness : undefined,
     loyalty: typeof face.loyalty === 'string' ? face.loyalty : undefined,
-    imageSmall: imgs.small,
-    imageNormal: imgs.normal,
+    imageSmall: scryfallId ? cardImageUrl(scryfallId, 'small', lado) : undefined,
+    imageNormal: scryfallId ? cardImageUrl(scryfallId, 'normal', lado) : undefined,
   };
 }
 
@@ -127,11 +139,18 @@ function normalizar(bruto: Record<string, unknown>): CardMeta {
   const facesBrutas = Array.isArray(bruto.card_faces)
     ? (bruto.card_faces as Array<Record<string, unknown>>)
     : [];
-  const imgs = (bruto.image_uris ?? {}) as Record<string, string>;
+  const id = texto(bruto.id);
   const layout = texto(bruto.layout);
 
+  // `card_faces` sozinho não decide o lado: split, adventure e flip TÊM duas
+  // faces e uma imagem só. Mandar a segunda face dessas cartas para `/back/`
+  // produziria um 404 gravado no cache do catálogo.
+  const versoReal = LAYOUTS_COM_VERSO.has(layout);
+
   const faces: FaceMeta[] = facesBrutas.length
-    ? facesBrutas.map(normalizarFace)
+    ? facesBrutas.map((face, indice) =>
+        normalizarFace(face, id, versoReal && indice === 1 ? 'back' : 'front'),
+      )
     : [
         {
           name: texto(bruto.name),
@@ -141,15 +160,15 @@ function normalizar(bruto: Record<string, unknown>): CardMeta {
           power: typeof bruto.power === 'string' ? bruto.power : undefined,
           toughness: typeof bruto.toughness === 'string' ? bruto.toughness : undefined,
           loyalty: typeof bruto.loyalty === 'string' ? bruto.loyalty : undefined,
-          imageSmall: imgs.small,
-          imageNormal: imgs.normal,
+          imageSmall: id ? cardImageUrl(id, 'small') : undefined,
+          imageNormal: id ? cardImageUrl(id, 'normal') : undefined,
         },
       ];
 
   const frente = faces[0]!;
 
   return {
-    scryfallId: texto(bruto.id),
+    scryfallId: id,
     name: texto(bruto.name) || frente.name,
     typeLine: texto(bruto.type_line) || frente.typeLine,
     manaCost: texto(bruto.mana_cost) || frente.manaCost,
@@ -238,13 +257,16 @@ async function drenar(
       });
 
       try {
-        const res = await fetch('https://api.scryfall.com/cards/collection', {
+        // Passa pelo espelho do backend, nunca por `api.scryfall.com` direto:
+        // numa rede que filtra o domínio, a chamada do navegador nem sai — e o
+        // sintoma é uma mesa inteira de cartas "Desconhecido".
+        const res = await fetch(`${API_URL}/cards/collection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ identifiers: lote.map((id) => ({ id })) }),
         });
 
-        if (!res.ok) throw new Error(`Scryfall respondeu ${res.status}`);
+        if (!res.ok) throw new Error(`API de cartas respondeu ${res.status}`);
 
         const corpo = (await res.json()) as RespostaScryfall;
         const encontradas: Record<string, CardMeta> = {};

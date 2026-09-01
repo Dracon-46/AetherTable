@@ -15,7 +15,7 @@
 import React from 'react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { useCardMeta } from '../cards/catalog';
-import { scryfallImageUrl } from '../canvas/textureCache';
+import { cardImageUrl } from '../canvas/textureCache';
 
 export function CardHoverPreview() {
   const hoveredCardId = useUIStore((s) => s.hoveredCardId);
@@ -36,7 +36,7 @@ export function CardHoverPreview() {
   return (
     <div className="painel-entra border-panel-border bg-panel/95 pointer-events-none absolute bottom-28 right-2 z-40 hidden w-56 flex-col overflow-hidden rounded-xl border shadow-2xl backdrop-blur lg:flex">
       <img
-        src={scryfallImageUrl(card.scryfallId, 'normal', face === 1 ? 'back' : 'front')}
+        src={cardImageUrl(card.scryfallId, 'normal', face === 1 ? 'back' : 'front')}
         alt={faceMeta?.name ?? 'Carta'}
         className="aspect-[63/88] w-full object-cover"
       />

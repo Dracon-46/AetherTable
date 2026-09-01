@@ -6,7 +6,7 @@ import type { Room } from 'colyseus.js';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
-import { scryfallImageUrl } from '../canvas/textureCache';
+import { cardImageUrl } from '../canvas/textureCache';
 import { useCardCatalog, useHidratarCartas } from '../cards/catalog';
 
 interface ZoneInspectorProps {
@@ -159,7 +159,7 @@ export function ZoneInspector({ room }: ZoneInspectorProps) {
                   <div className="group-hover:border-primary relative aspect-[63/88] w-full overflow-hidden rounded-xl border border-transparent shadow-lg transition-all">
                     {card.scryfallId ? (
                       <img
-                        src={scryfallImageUrl(card.scryfallId, 'normal')}
+                        src={cardImageUrl(card.scryfallId, 'normal')}
                         alt="Carta"
                         className="h-full w-full object-cover"
                         loading="lazy"

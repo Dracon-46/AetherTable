@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { API_URL } from '@/lib/api';
+import { cardImageUrl } from '@/canvas/textureCache';
 import { ConfirmDialog, ToastHost, useToast } from '../../../../components/Toast';
 import { CardSearch } from '../../../../deckbuilder/CardSearch';
 import { PrintingPicker } from '../../../../deckbuilder/PrintingPicker';
@@ -656,8 +657,11 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                       className="group/card relative"
                       onClick={() => !isReadOnly && setEditingPrintingCard(card)}
                     >
+                      {/* Pelo proxy da API. O `imageNormal` que o backend
+                          devolve aponta para `cards.scryfall.io` — domínio que
+                          a rede do usuário pode estar bloqueando. */}
                       <img
-                        src={card.imageNormal || ''}
+                        src={cardImageUrl(card.scryfallId, 'normal')}
                         alt={card.name}
                         className={`w-full rounded-lg border-2 shadow-md transition-colors ${card.boardType === 'COMMANDER' ? 'border-primary shadow-primary/30' : 'group-hover/card:border-primary border-transparent'}`}
                         loading="lazy"

@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Loader2 } from 'lucide-react';
+import { API_URL } from '@/lib/api';
+import { cardImageUrl } from '../canvas/textureCache';
 
 interface CardSearchProps {
   onAddCard: (scryfallId: string, quantity: number) => Promise<void>;
@@ -29,9 +31,9 @@ export function CardSearch({ onAddCard }: CardSearchProps) {
   const performSearch = async (q: string) => {
     setIsSearching(true);
     try {
-      const res = await fetch(
-        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&unique=prints`,
-      );
+      // Espelho do backend, não `api.scryfall.com`: numa rede que filtra o
+      // domínio da Scryfall, a busca do navegador nem chega a sair.
+      const res = await fetch(`${API_URL}/cards/search?q=${encodeURIComponent(q)}&unique=prints`);
       if (res.ok) {
         const data = await res.json();
         setResults(data.data?.slice(0, 20) || []);
@@ -88,7 +90,10 @@ export function CardSearch({ onAddCard }: CardSearchProps) {
         )}
 
         {results.map((card) => {
-          const imageUri = card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small;
+          // A URL vem do nosso proxy, não do `image_uris` da resposta: aquele
+          // campo aponta para `cards.scryfall.io`, que é justamente o domínio
+          // que o navegador pode não alcançar.
+          const imageUri = card.id ? cardImageUrl(card.id, 'small') : null;
           return (
             <div
               key={card.id}

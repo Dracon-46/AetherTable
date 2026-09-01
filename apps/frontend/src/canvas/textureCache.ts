@@ -6,25 +6,36 @@
  * nem tem o `scryfallId` delas.
  */
 
+import { API_URL } from '@/lib/api';
+
 const cache = new Map<string, HTMLImageElement>();
 
 type Quality = 'small' | 'normal' | 'art_crop' | 'large';
 export type Face = 'front' | 'back';
 
 /**
- * URL da imagem na CDN da Scryfall.
+ * URL da arte da carta — servida pelo NOSSO backend, não pela CDN da Scryfall.
  *
- * A CDN separa `front/` e `back/`: uma carta de dupla face tem as DUAS imagens
- * sob o mesmo id. O código anterior só conhecia `front`, e por isso
- * `INTENT_TRANSFORM` alternava um booleano no servidor sem que nada mudasse na
- * tela — o jogador virava a carta e via a mesma face.
+ * POR QUE NÃO VAI MAIS DIRETO NA CDN
+ *
+ * `cards.scryfall.io` é o caminho ideal — CDN global, custo zero para nós — e é
+ * exatamente o que some numa rede que filtra domínios: a mesa monta, o estado
+ * sincroniza, e toda carta aparece em branco. Parece bug de render; é firewall.
+ *
+ * Apontando para `GET /cards/img/:id`, o único domínio que o navegador precisa
+ * alcançar é o da própria API, que responde com `immutable` e ETag — o cache do
+ * navegador continua funcionando igual.
+ *
+ * A separação `front/`/`back/` continua importando: uma carta de dupla face tem
+ * as DUAS artes sob o mesmo id, e sem isso o `INTENT_TRANSFORM` viraria um
+ * booleano no servidor sem nada mudar na tela.
  */
-export function scryfallImageUrl(
+export function cardImageUrl(
   scryfallId: string,
   quality: Quality = 'small',
   face: Face = 'front',
 ): string {
-  return `https://cards.scryfall.io/${quality}/${face}/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.jpg`;
+  return `${API_URL}/cards/img/${scryfallId}?quality=${quality}&face=${face}`;
 }
 
 /**
@@ -54,7 +65,7 @@ export function getTexture(
   if (!img) {
     img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = scryfallImageUrl(scryfallId, quality, face);
+    img.src = cardImageUrl(scryfallId, quality, face);
     cache.set(cacheKey, img);
   }
   return img;

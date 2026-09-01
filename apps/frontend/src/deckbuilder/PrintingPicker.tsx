@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useToast } from '../components/Toast';
 import { Loader2, X, AlertCircle } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { cardImageUrl } from '../canvas/textureCache';
 
 interface PrintingPickerProps {
   card: any; // The current deckCard being edited
@@ -34,7 +35,7 @@ export function PrintingPicker({
         let oracleId = card.oracleId;
 
         if (!oracleId) {
-          const cardRes = await fetch(`https://api.scryfall.com/cards/${card.scryfallId}`);
+          const cardRes = await fetch(`${API_URL}/cards/${card.scryfallId}`);
           if (cardRes.ok) {
             const cardData = await cardRes.json();
             oracleId = cardData.oracle_id;
@@ -46,14 +47,16 @@ export function PrintingPicker({
         }
 
         // Fetch all printings
+        // Tudo pelo espelho do backend: o navegador nunca fala com
+        // `api.scryfall.com`, que pode estar bloqueado na rede do usuário.
         const res = await fetch(
-          `https://api.scryfall.com/cards/search?order=released&q=oracleid%3A${oracleId}&unique=prints`,
+          `${API_URL}/cards/search?order=released&q=${encodeURIComponent(`oracleid:${oracleId}`)}&unique=prints`,
         );
         if (res.ok) {
           const data = await res.json();
           setPrintings(data.data || []);
         } else {
-          throw new Error('Falha ao buscar impressões na Scryfall.');
+          throw new Error('Falha ao buscar as impressões desta carta.');
         }
       } catch (err: any) {
         setError(err.message);
@@ -121,8 +124,9 @@ export function PrintingPicker({
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {printings.map((printing) => {
-                const imageUri =
-                  printing.image_uris?.normal || printing.card_faces?.[0]?.image_uris?.normal;
+                // Do nosso proxy, não do `image_uris` da resposta — aquele
+                // aponta para `cards.scryfall.io`.
+                const imageUri = printing.id ? cardImageUrl(printing.id, 'normal') : null;
                 const isCurrent = printing.id === card.scryfallId;
 
                 return (

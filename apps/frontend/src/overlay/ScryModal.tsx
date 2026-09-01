@@ -17,7 +17,7 @@ import type { Room } from 'colyseus.js';
 import { ArrowDown, ArrowUp, Check, Skull } from 'lucide-react';
 import { useTableStore } from '../store/game.store';
 import { intents } from '../net/intents';
-import { scryfallImageUrl } from '../canvas/textureCache';
+import { cardImageUrl } from '../canvas/textureCache';
 import type { RoomState } from '../net/schema/RoomState';
 
 interface ScryModalProps {
@@ -110,7 +110,7 @@ export function ScryModal({ room }: ScryModalProps) {
 
                 {c.scryfallId ? (
                   <img
-                    src={scryfallImageUrl(c.scryfallId, 'small')}
+                    src={cardImageUrl(c.scryfallId, 'small')}
                     alt="Carta do topo"
                     className="border-panel-border h-24 w-[68px] shrink-0 rounded-lg border object-cover sm:h-28 sm:w-20"
                   />

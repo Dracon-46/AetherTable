@@ -22,7 +22,7 @@ import type { Room } from 'colyseus.js';
 import { useGameStore } from '../store/game.store';
 import { Check, Repeat, X } from 'lucide-react';
 import { intents } from '../net/intents';
-import { scryfallImageUrl } from '../canvas/textureCache';
+import { cardImageUrl } from '../canvas/textureCache';
 import type { RoomState } from '../net/schema/RoomState';
 
 interface MulliganModalProps {
@@ -141,7 +141,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
             >
               {c.scryfallId ? (
                 <img
-                  src={scryfallImageUrl(c.scryfallId, 'normal')}
+                  src={cardImageUrl(c.scryfallId, 'normal')}
                   className={`aspect-[63/88] w-24 rounded-xl border object-cover shadow-[0_0_20px_rgba(0,0,0,0.8)] transition-all duration-300 sm:w-32 lg:w-40 ${
                     isSelected
                       ? 'border-primary shadow-primary/50'

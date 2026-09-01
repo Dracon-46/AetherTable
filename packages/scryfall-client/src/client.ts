@@ -95,11 +95,21 @@ export class ScryfallClient {
     this.baseUrl = options.baseUrl ?? BASE_URL;
   }
 
-  /** `GET /cards/search?q=...` — sintaxe de query da Scryfall. */
-  search(query: string, params: { unique?: string; page?: number } = {}) {
+  /**
+   * `GET /cards/search?q=...` — sintaxe de query da Scryfall.
+   *
+   * `order` e `dir` sao parametros de URL, NAO palavras da query: escrever
+   * `order:released` dentro do `q` nao ordena nada e ainda arrisca 422.
+   */
+  search(
+    query: string,
+    params: { unique?: string; page?: number; order?: string; dir?: string } = {},
+  ) {
     const qs = new URLSearchParams({ q: query });
     if (params.unique) qs.set('unique', params.unique);
     if (params.page) qs.set('page', String(params.page));
+    if (params.order) qs.set('order', params.order);
+    if (params.dir) qs.set('dir', params.dir);
     return this.get<{ data: ScryfallCard[]; has_more: boolean }>(`/cards/search?${qs}`);
   }
 

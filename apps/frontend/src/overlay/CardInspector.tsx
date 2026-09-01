@@ -3,7 +3,7 @@
 import React from 'react';
 import { useUIStore } from '../store/game.store';
 import { X } from 'lucide-react';
-import { scryfallImageUrl } from '../canvas/textureCache';
+import { cardImageUrl } from '../canvas/textureCache';
 
 export function CardInspector() {
   const inspectedCardId = useUIStore((s) => s.inspectedCardId);
@@ -43,11 +43,11 @@ export function CardInspector() {
 
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
         <div className="border-panel-border bg-table-deep relative flex aspect-[63/88] items-center justify-center overflow-hidden rounded-xl border shadow-lg">
-          {/* CDN de imagens (cards.scryfall.io) em vez da API REST: a API tem
-              limite de 10 req/s por IP e responde por redirect, o que fazia a
-              inspeção falhar em silêncio numa mesa cheia. */}
+          {/* Rota de imagem do nosso backend, nunca a API REST da Scryfall: a
+              API tem limite de 10 req/s por IP e responde por redirect, o que
+              fazia a inspeção falhar em silêncio numa mesa cheia. */}
           <img
-            src={scryfallImageUrl(inspectedCardId, 'normal')}
+            src={cardImageUrl(inspectedCardId, 'normal')}
             alt="Carta em inspeção"
             className="h-full w-full object-cover"
             loading="lazy"

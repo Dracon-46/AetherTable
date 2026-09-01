@@ -42,15 +42,15 @@ que o site está quebrado.
 
 ## 2. A stack gratuita
 
-| Componente             | Serviço         | Plano            | Limite que importa                            |
-| ---------------------- | --------------- | ---------------- | --------------------------------------------- |
-| Frontend (Next.js)     | **Vercel**      | Hobby            | Sem hibernação. 100 GB de banda/mês           |
-| API Core (NestJS)      | **Render**      | Free Web Service | Hiberna em ~15 min. 750 h/mês                 |
-| Game server (Colyseus) | **Render**      | Free Web Service | Idem. WebSocket suportado                     |
-| PostgreSQL             | **Neon**        | Free             | 0.5 GB. Autosuspend, acorda em <1 s           |
-| Redis                  | **removido**    | —                | Ver §2.1                                      |
-| Imagens de carta       | CDN da Scryfall | —                | Nunca hospedamos arte (`DOC-023 §1.2`)        |
-| Voz (LiveKit)          | LiveKit Cloud   | Free             | 50 GB/mês. Opcional — a mesa funciona sem voz |
+| Componente             | Serviço         | Plano            | Limite que importa                                                            |
+| ---------------------- | --------------- | ---------------- | ----------------------------------------------------------------------------- |
+| Frontend (Next.js)     | **Vercel**      | Hobby            | Sem hibernação. 100 GB de banda/mês                                           |
+| API Core (NestJS)      | **Render**      | Free Web Service | Hiberna em ~15 min. 750 h/mês                                                 |
+| Game server (Colyseus) | **Render**      | Free Web Service | Idem. WebSocket suportado                                                     |
+| PostgreSQL             | **Neon**        | Free             | 0.5 GB. Autosuspend, acorda em <1 s                                           |
+| Redis                  | **removido**    | —                | Ver §2.1                                                                      |
+| Imagens de carta       | CDN da Scryfall | —                | Nunca hospedamos arte (`DOC-023 §1.2`) — mas o navegador busca via API (§3.6) |
+| Voz (LiveKit)          | LiveKit Cloud   | Free             | 50 GB/mês. Opcional — a mesa funciona sem voz                                 |
 
 ### 2.1 Por que o Redis sai
 
@@ -139,6 +139,27 @@ NEXT_PUBLIC_WS_URL=wss://aethertable-game.onrender.com
 > erro no console fala de _mixed content_, não de WebSocket — o que manda a investigação para o lado
 > errado.
 
+### Passo 3.6 — Por que a API precisa estar no ar para as cartas aparecerem
+
+O navegador **não** busca mais arte em `cards.scryfall.io`. Ele pede tudo à API
+(`GET /api/v1/cards/img/:id`), que reencaminha. Isso existe para redes que filtram domínio —
+escola, empresa, órgão público — onde a chamada direta do navegador nem sai e a mesa aparece
+inteira em branco, sem erro no console que aponte a causa.
+
+Consequência: **quem precisa alcançar a Scryfall passou a ser o servidor**, não o cliente.
+
+| Onde a API roda                     | Resultado                                           |
+| ----------------------------------- | --------------------------------------------------- |
+| Render (fora da rede filtrada)      | Funciona, inclusive para quem acessa de dentro dela |
+| `localhost` dentro da rede filtrada | **Não funciona** — o backend toma o mesmo bloqueio  |
+
+Não adianta subir o código para o GitHub e rodar `pnpm dev` na máquina de dentro da rede: o
+proxy só muda o problema de lugar. Se a rede também bloquear o host da API, aponte
+`SCRYFALL_API_URL` e `SCRYFALL_IMAGE_URL` para um espelho liberado.
+
+> `NEXT_PUBLIC_API_URL` é substituída em tempo de **build** pelo Next. Mudar o valor na Vercel
+> sem redeployar não tem efeito nenhum — o valor antigo já está dentro do bundle.
+
 ### Passo 4 — Fechar o CORS
 
 Com a URL final da Vercel em mãos, volte no Render e corrija **as duas** variáveis que ficaram
@@ -161,8 +182,14 @@ credenciais em lugar nenhum.
 | `https://…-api.onrender.com/api/v1/docs`   | Swagger da API                                   |
 | A URL da Vercel                            | Tela de login                                    |
 
+| `https://…-api.onrender.com/api/v1/cards/img/0dd0f3e2-3e0a-4b41-9a10-2f83e4d3b3f6` | A arte de uma carta — prova que o proxy alcança a Scryfall |
+
 Se a mesa abrir mas o grimório vier **vazio**, o `INTERNAL_API_TOKEN` não bate entre os dois
 serviços — é o único sintoma que não produz erro na tela.
+
+Se as cartas aparecerem em branco mas o resto funcionar, abra a rota de imagem acima direto no
+navegador: `503` significa que a API não alcança a Scryfall (§3.6); a arte significa que o
+problema está em `NEXT_PUBLIC_API_URL` no build da Vercel.
 
 ---
 

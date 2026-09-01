@@ -6,6 +6,8 @@ import { useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
 import type { Room } from 'colyseus.js';
 import type { RoomState } from '../net/schema/RoomState';
+import { API_URL } from '@/lib/api';
+import { cardImageUrl } from '../canvas/textureCache';
 
 interface TokenPickerProps {
   room: Room<RoomState>;
@@ -68,8 +70,9 @@ export function TokenPicker({ room }: TokenPickerProps) {
   const performSearch = async (q: string) => {
     setIsSearching(true);
     try {
+      // Espelho do backend: `api.scryfall.com` pode estar bloqueado na rede.
       const res = await fetch(
-        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=cmc&dir=asc`,
+        `${API_URL}/cards/search?q=${encodeURIComponent(q)}&order=cmc&dir=asc`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -90,9 +93,9 @@ export function TokenPicker({ room }: TokenPickerProps) {
     setPresetEmCurso(query);
     try {
       const res = await fetch(
-        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&order=released&dir=desc`,
+        `${API_URL}/cards/search?q=${encodeURIComponent(query)}&order=released&dir=desc`,
       );
-      if (!res.ok) throw new Error(`Scryfall respondeu ${res.status}`);
+      if (!res.ok) throw new Error(`API de cartas respondeu ${res.status}`);
       const data = await res.json();
       const carta = data.data?.[0];
       if (carta) handleCreate(carta);
@@ -205,8 +208,8 @@ export function TokenPicker({ room }: TokenPickerProps) {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {results.map((card) => {
-                const imageUri =
-                  card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal;
+                // Do nosso proxy, não do `image_uris` da resposta.
+                const imageUri = card.id ? cardImageUrl(card.id, 'normal') : null;
                 return (
                   <div
                     key={card.id}

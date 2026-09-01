@@ -5,7 +5,11 @@ const config: NextConfig = {
   // Pacotes do workspace consumidos como TS-fonte precisam ser transpilados.
   transpilePackages: ['@aethertable/ui', '@aethertable/shared-types'],
   images: {
-    // Nunca hospedamos artes de carta: as imagens vem da CDN da Scryfall.
+    // Continuamos sem HOSPEDAR arte de carta: o backend só reencaminha o que a
+    // CDN da Scryfall serve (`GET /api/v1/cards/img/:id`), porque o navegador do
+    // usuário pode não alcançar `cards.scryfall.io` numa rede filtrada.
+    // O padrão abaixo fica para qualquer uso residual de `next/image` apontando
+    // direto para a CDN.
     remotePatterns: [{ protocol: 'https', hostname: 'cards.scryfall.io' }],
   },
 
