@@ -93,18 +93,32 @@ serviços já configurados.
 1. No Render: **New → Blueprint** e aponte para o repositório.
 2. Preencha as variáveis marcadas como `sync: false` (o Render pergunta):
 
-| Variável              | Serviço | Valor                                                  |
-| --------------------- | ------- | ------------------------------------------------------ |
-| `DATABASE_URL`        | api     | A pooled string do Neon                                |
-| `CORS_ORIGINS`        | api     | A URL da Vercel, ex.: `https://aethertable.vercel.app` |
-| `SCRYFALL_USER_AGENT` | api     | `AetherTable/1.0 (+seu-email)`                         |
-| `JWT_SECRET`          | game    | **O mesmo** valor gerado no serviço `api`              |
-| `PUBLIC_WS_URL`       | game    | `wss://aethertable-game.onrender.com`                  |
+| Variável              | Serviço | Valor                                                    |
+| --------------------- | ------- | -------------------------------------------------------- |
+| `DATABASE_URL`        | api     | A pooled string do Neon                                  |
+| `CORS_ORIGINS`        | api     | A URL da Vercel — **só existe depois do Passo 3**        |
+| `FRONTEND_URL`        | api     | A mesma URL da Vercel (destino do redirect de OAuth)     |
+| `SCRYFALL_USER_AGENT` | api     | `AetherTable/1.0 (+seu-email)`                           |
+| `LIVEKIT_URL`         | api     | `wss://…livekit.cloud` — deixe vazio se não for usar voz |
+| `LIVEKIT_API_KEY`     | api     | Do LiveKit Cloud — idem                                  |
+| `LIVEKIT_API_SECRET`  | api     | Do LiveKit Cloud — idem                                  |
+| `JWT_SECRET`          | game    | **Copiado** do valor gerado no serviço `api`             |
+| `INTERNAL_API_TOKEN`  | game    | **Copiado** do valor gerado no serviço `api`             |
+| `PUBLIC_WS_URL`       | game    | `wss://aethertable-game.onrender.com`                    |
 
-> **`JWT_SECRET` idêntico nos dois serviços.** O `render.yaml` gera o segredo no serviço da API; copie
-> o valor gerado e cole no game server. Segredos diferentes produzem `Invalid seat token` no
-> handshake e a mesa nunca abre — é o erro nº 1 de quem monta o ambiente
-> (`DOC-054 §9`).
+> **Dois segredos precisam ser IDÊNTICOS nos dois serviços.** O `render.yaml` os gera no serviço da
+> API (`generateValue`) e deixa o campo do game server em branco; copiar é manual, e é onde o deploy
+> costuma morrer:
+>
+> | Segredo              | Se divergir                                                                                                                                                  |
+> | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+> | `JWT_SECRET`         | `Invalid seat token` no handshake — a mesa nunca abre. É o erro nº 1 de quem monta o ambiente (`DOC-054 §9`)                                                 |
+> | `INTERNAL_API_TOKEN` | Pior, porque é **silencioso**: o game server toma 401 ao buscar o decklist, a partida começa e a mesa abre **vazia**, sem nenhum erro visível para o jogador |
+
+> **A ordem tem um nó.** `CORS_ORIGINS` e `FRONTEND_URL` pedem a URL da Vercel, que só nasce no Passo
+> 3 — e o Passo 3 pede as URLs do Render, que nascem aqui. Preencha os dois com um valor provisório
+> (`https://exemplo.vercel.app` serve), termine o Passo 3 e volte no Passo 4 para corrigir. Deixar em
+> branco não é opção: o serviço sobe e o login falha com erro de CORS.
 
 As migrations rodam sozinhas: o `CMD` da imagem executa `prisma migrate deploy` antes de subir a
 API. É idempotente — aplica só o que está pendente.
@@ -127,12 +141,28 @@ NEXT_PUBLIC_WS_URL=wss://aethertable-game.onrender.com
 
 ### Passo 4 — Fechar o CORS
 
-Com a URL final da Vercel em mãos, volte no Render e ajuste `CORS_ORIGINS` no serviço da API para
-exatamente essa origem.
+Com a URL final da Vercel em mãos, volte no Render e corrija **as duas** variáveis que ficaram
+provisórias no Passo 2, no serviço da API:
 
-Não use `*`: com `credentials: true` o navegador **rejeita** a resposta se o
+- `CORS_ORIGINS` — exatamente a origem da Vercel, sem barra no fim;
+- `FRONTEND_URL` — a mesma URL. É para onde o backend devolve o navegador depois do OAuth; apontando
+  para o lugar errado, o login pelo Google/Discord termina numa página que não é a sua.
+
+Não use `*` em `CORS_ORIGINS`: com `credentials: true` o navegador **rejeita** a resposta se o
 `Access-Control-Allow-Origin` for curinga. O sintoma é um erro de CORS no login que não menciona
 credenciais em lugar nenhum.
+
+### Passo 5 — Conferir que subiu
+
+| O que abrir                                | O que esperar                                    |
+| ------------------------------------------ | ------------------------------------------------ |
+| `https://…-api.onrender.com/api/v1/health` | JSON de saúde (pode levar ~50 s na primeira vez) |
+| `https://…-game.onrender.com/health`       | Idem                                             |
+| `https://…-api.onrender.com/api/v1/docs`   | Swagger da API                                   |
+| A URL da Vercel                            | Tela de login                                    |
+
+Se a mesa abrir mas o grimório vier **vazio**, o `INTERNAL_API_TOKEN` não bate entre os dois
+serviços — é o único sintoma que não produz erro na tela.
 
 ---
 

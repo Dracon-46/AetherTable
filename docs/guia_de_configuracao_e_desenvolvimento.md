@@ -226,14 +226,14 @@ Na raiz do projeto:
 pnpm dev
 ```
 
-| Serviço                | Endereço                         |
-| ---------------------- | -------------------------------- |
-| Frontend               | http://localhost:3030            |
-| API REST               | http://localhost:3333            |
-| Swagger da API         | http://localhost:3333/api/docs   |
-| WebSocket              | ws://localhost:2567              |
-| Monitor do Colyseus    | http://localhost:2567/colyseus   |
-| Playground do Colyseus | http://localhost:2567/playground |
+| Serviço                | Endereço                          |
+| ---------------------- | --------------------------------- |
+| Frontend               | http://localhost:3030             |
+| API REST               | http://localhost:3333             |
+| Swagger da API         | http://localhost:3333/api/v1/docs |
+| WebSocket              | ws://localhost:2567               |
+| Monitor do Colyseus    | http://localhost:2567/colyseus    |
+| Playground do Colyseus | http://localhost:2567/playground  |
 
 ### Passo 6 — Verificar que funciona
 

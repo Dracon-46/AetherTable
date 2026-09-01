@@ -32,7 +32,7 @@ login, decks, salas) usa arquitetura **RESTful** servida por NestJS.
 | Paginação         | `?page=1&limit=50` (máx. 100)                         |
 | Ordenação         | `?sort=updatedAt&order=desc`                          |
 | Idempotência      | `Idempotency-Key` aceito em `POST` de criação         |
-| Documentação viva | Swagger em `/api/docs` (gerado pelo NestJS)           |
+| Documentação viva | Swagger em `/api/v1/docs` (gerado pelo NestJS)        |
 
 ### 1.2 Envelope de resposta
 
@@ -472,7 +472,7 @@ Emite token de espectador — escopo somente leitura, sem assento de jogador.
 | `GET /health`       | Pública      | `{ "status": "ok", "version": "1.4.2" }` |
 | `GET /health/ready` | Pública      | Verifica Postgres e Redis                |
 | `GET /metrics`      | Rede interna | Métricas Prometheus (`NFR-11`)           |
-| `GET /api/docs`     | Pública      | Swagger UI                               |
+| `GET /api/v1/docs`  | Pública      | Swagger UI                               |
 
 ---
 
