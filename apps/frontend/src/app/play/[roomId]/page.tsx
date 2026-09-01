@@ -31,6 +31,7 @@ import { useCosmeticos } from '@/cosmetics/store';
 import { RoomLobby } from '@/overlay/RoomLobby';
 import { MulliganModal } from '@/overlay/MulliganModal';
 import { PlayersModal } from '@/overlay/PlayersModal';
+import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { VoiceBridge } from '@/net/voice';
 import { useAuthStore } from '@/store/auth.store';
 import { useGameStore } from '@/store/game.store';
@@ -218,6 +219,7 @@ export default function PlayRoomPage() {
           <CardEditor room={room} />
           <PlayersModal />
           <MulliganModal room={room} />
+          <SorteioOverlay />
         </>
       )}
 

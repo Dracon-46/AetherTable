@@ -40,11 +40,13 @@ import type { RoomState } from '../net/schema/RoomState';
 import {
   CARD_W,
   CARD_H,
+  escalaDaFaixa,
   montarMesa,
   posicaoNaMao,
   posicaoNoCampo,
   posicaoNoComando,
   paraCoordenadaRelativa,
+  zonaSolta,
   type Faixa,
   type Mesa,
   type Ponto,
@@ -58,6 +60,9 @@ interface GameBoardProps {
 
 const COR_FAIXA_FOCO = 'rgba(59,130,246,0.055)';
 const COR_FAIXA = 'rgba(30,41,59,0.30)';
+/** Âmbar da zona de comando — a mesma família do ícone de coroa da UI. */
+const COR_COMANDO = 'rgba(69,53,22,0.42)';
+const COR_COMANDO_BORDA = 'rgba(251,191,36,0.35)';
 
 /** Uma carta pronta para desenhar: dado do servidor + posição derivada. */
 interface CartaPosicionada {
@@ -214,6 +219,17 @@ const CardSprite = React.memo(function CardSprite({
         return;
       }
       if (!minhaFaixa) return;
+
+      // Quem decide a zona é a geometria — ver `zonaSolta` em layout.ts. Antes
+      // daqui só existiam mão e campo: soltar sobre o cemitério, o exílio, o
+      // grimório ou a zona de comando caía no ramo do campo, e o clamp de
+      // `posicaoNoCampo` devolvia a carta para o meio da mesa.
+      const destino = zonaSolta(minhaFaixa, x, y);
+
+      if (destino !== 'BATTLEFIELD') {
+        if (card.zone !== destino) intents.changeZone(room, card.id, destino);
+        return;
+      }
 
       const rel = paraCoordenadaRelativa(minhaFaixa, x, y);
       if (card.zone !== 'BATTLEFIELD')
@@ -558,6 +574,79 @@ function Pilha({
   );
 }
 
+// ─── Zona de comando ─────────────────────────────────────────────────────────
+
+/**
+ * Slot da zona de comando de uma faixa.
+ *
+ * NÃO é uma `Pilha`, e a diferença é o motivo de este componente existir. As
+ * outras zonas se desenham a partir do próprio conteúdo: sem cartas, não há o
+ * que mostrar, e tudo bem. A de comando é o contrário — precisa estar visível
+ * JUSTAMENTE quando está vazia, porque é aí que ela responde à única pergunta
+ * que importa: para onde o comandante volta quando morrer.
+ *
+ * A refatoração que trocou o plano único de 1920x1080 pelas faixas por assento
+ * levou junto o `ZoneOutline label="COMANDO"` e recriou só as quatro pilhas da
+ * direita. O `LARGURA_COMANDO` continuou reservado e os comandantes continuaram
+ * sendo posicionados aqui — só que flutuando sobre nada.
+ */
+function SlotComando({
+  centro,
+  quantidade,
+  escala,
+}: {
+  centro: Ponto;
+  quantidade: number;
+  escala: number;
+}) {
+  const w = CARD_W * escala;
+  const h = CARD_H * escala;
+  const vazia = quantidade === 0;
+
+  return (
+    <Group x={centro.x} y={centro.y} offsetX={w / 2} offsetY={h / 2} listening={false}>
+      <Rect
+        width={w}
+        height={h}
+        fill={COR_COMANDO}
+        stroke={COR_COMANDO_BORDA}
+        strokeWidth={1}
+        // Tracejado só quando vazia: cheia, a moldura sólida emoldura a carta;
+        // vazia, o tracejado a lê como espaço reservado e não como carta virada
+        // para baixo.
+        dash={vazia ? [7, 5] : undefined}
+        cornerRadius={6}
+      />
+      <Text
+        text="COMANDO"
+        y={-16 * escala}
+        width={w}
+        align="center"
+        fontSize={10 * escala}
+        fontStyle="bold"
+        fill="rgba(251,191,36,0.75)"
+      />
+      {quantidade > 1 && (
+        <Group x={w / 2} y={h}>
+          <Rect x={-17} y={-11} width={34} height={20} fill="rgba(0,0,0,0.8)" cornerRadius={10} />
+          <Text
+            text={String(quantidade)}
+            width={34}
+            height={20}
+            offsetX={17}
+            offsetY={11}
+            align="center"
+            verticalAlign="middle"
+            fontSize={12}
+            fontStyle="bold"
+            fill="#FCD34D"
+          />
+        </Group>
+      )}
+    </Group>
+  );
+}
+
 // ─── Mascote ─────────────────────────────────────────────────────────────────
 
 /**
@@ -751,7 +840,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
       cosmeticosVisiveis(players[ownerId], ownerId === myId, cosmeticosDeOponentes).sleeveId;
 
     for (const faixa of mesa.faixas) {
-      const escalaFaixa = faixa.emFoco ? 1 : 0.72;
+      const escalaFaixa = escalaDaFaixa(faixa.emFoco);
 
       // Campo de batalha: quem CONTROLA define a faixa. É a semântica correta —
       // roubar uma criatura a traz para o seu lado da mesa.
@@ -819,6 +908,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
         playmat: playmatCanvas(cosmeticos.playmatId),
         petId: cosmeticos.petId,
         library: p?.libraryCount ?? contar('LIBRARY', faixa.playerId),
+        command: contar('COMMAND', faixa.playerId),
         graveyard: contar('GRAVEYARD', faixa.playerId),
         exile: contar('EXILE', faixa.playerId),
         sideboard: contar('SIDEBOARD', faixa.playerId),
@@ -1025,10 +1115,11 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
 
             {/* ── Pilhas por faixa ───────────────────────────────────────── */}
             {resumoFaixas.map((r) => {
-              const esc = r.faixa.emFoco ? 1 : 0.72;
+              const esc = escalaDaFaixa(r.faixa.emFoco);
               const meu = r.faixa.playerId === myId;
               return (
                 <Group key={`pilhas-${r.faixa.playerId}`}>
+                  <SlotComando centro={r.faixa.comando} quantidade={r.command} escala={esc} />
                   <Pilha
                     rotulo="GRIMÓRIO"
                     centro={r.faixa.grimorio}

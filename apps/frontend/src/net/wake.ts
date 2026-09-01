@@ -37,9 +37,7 @@ const ESPERA_ENTRE_TENTATIVAS_MS = 3_000;
  * @param onEstado chamado a cada mudança — use para trocar o texto do botão.
  * @returns true se o serviço respondeu dentro do teto.
  */
-export async function acordarApi(
-  onEstado?: (estado: EstadoAcordar) => void,
-): Promise<boolean> {
+export async function acordarApi(onEstado?: (estado: EstadoAcordar) => void): Promise<boolean> {
   const inicio = Date.now();
   let avisouQueEstaAcordando = false;
 

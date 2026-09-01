@@ -183,6 +183,10 @@ export function useRoomSync(room: Room<RoomState> | null) {
       useTableStore.getState().setDado(payload);
     });
 
+    room.onMessage('coin', (payload: { actorId: string; result: 'CARA' | 'COROA' }) => {
+      useTableStore.getState().setMoeda(payload);
+    });
+
     room.onMessage('ping', (payload: { actorId: string; x: number; y: number }) => {
       useTableStore.getState().addPing(payload);
     });
