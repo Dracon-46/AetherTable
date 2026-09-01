@@ -5,7 +5,9 @@
   "description": "Cliente unico da Scryfall: fila serializada de 100 ms, User-Agent obrigatorio e backoff. NUNCA chamar api.scryfall.com direto de um service.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",

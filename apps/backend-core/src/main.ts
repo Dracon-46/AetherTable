@@ -57,7 +57,7 @@ async function bootstrap() {
   // externo falhar e o deploy ser marcado como não saudável.
   const port = process.env.PORT || 3333;
   await app.listen(port, '0.0.0.0');
-  
+
   logger.log(`🚀 AetherTable Backend-Core rodando na porta: ${port}`);
 }
 

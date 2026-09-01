@@ -37,9 +37,9 @@ const SENHA_DE_TESTE = 'teste1234';
 
 /** Um comandante por jogador. Resolvidos por nome exato. */
 const COMANDANTES = [
-  'Atraxa, Praetors\' Voice',
+  "Atraxa, Praetors' Voice",
   'Krenko, Mob Boss',
-  'Yuriko, the Tiger\'s Shadow',
+  "Yuriko, the Tiger's Shadow",
   'Omnath, Locus of Creation',
 ];
 
@@ -64,8 +64,7 @@ interface CartaResolvida {
 
 /** Resolve todos os nomes de uma vez e grava o resultado no card_cache. */
 async function resolverCartas(): Promise<Map<string, CartaResolvida>> {
-  const userAgent =
-    process.env.SCRYFALL_USER_AGENT ?? 'AetherTable-seed/1.0 (dev@localhost)';
+  const userAgent = process.env.SCRYFALL_USER_AGENT ?? 'AetherTable-seed/1.0 (dev@localhost)';
 
   const scryfall = new ScryfallClient({ userAgent });
   const nomes = [...COMANDANTES, ...PREENCHIMENTO];
@@ -76,9 +75,7 @@ async function resolverCartas(): Promise<Map<string, CartaResolvida>> {
 
   if (resposta.not_found.length > 0) {
     const faltando = resposta.not_found.map((i) => i.name ?? '?').join(', ');
-    throw new Error(
-      `A Scryfall não encontrou: ${faltando}. Corrija os nomes em prisma/seed.ts.`,
-    );
+    throw new Error(`A Scryfall não encontrou: ${faltando}. Corrija os nomes em prisma/seed.ts.`);
   }
 
   const porNome = new Map<string, CartaResolvida>();

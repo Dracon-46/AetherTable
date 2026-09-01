@@ -147,6 +147,23 @@ function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zone): vo
   card.zone = destino;
   card.lockedBy = '';
 
+  /**
+   * O CONTROLE VOLTA AO DONO AO SAIR DO CAMPO (DOC-052 §2.1).
+   *
+   * `INTENT_SET_CONTROLLER` deixa uma permanente sob controle alheio. Sem este
+   * reset, a carta roubada continuava com `controllerId` do ladrão depois de
+   * morrer: ela ia para o cemitério do DONO (`ownerId` nunca muda) mas
+   * continuava desenhada na faixa do ladrão, e — pior — a autorização
+   * `CONTROLLER` continuava valendo. Na prática, quem roubou uma criatura uma
+   * vez ganhava permissão permanente de mexer numa carta que agora está numa
+   * zona do adversário.
+   *
+   * Controle é um estado do campo de batalha; fora dele não existe.
+   */
+  if (destino !== 'BATTLEFIELD' && card.controllerId !== card.ownerId) {
+    card.controllerId = card.ownerId;
+  }
+
   // Fichas deixam de existir fora do campo.
   if (card.isToken && destino !== 'BATTLEFIELD') {
     ctx.state.cards.delete(card.id);
@@ -445,6 +462,10 @@ const INTENT_FLIP_COIN: IntentHandler<typeof S.FlipCoinIntent> = {
   executa(ctx) {
     const sid = ctx.client.sessionId;
     const r = girarMoeda();
+    // O dado transmite um evento efemero; a moeda so escrevia no log. A
+    // assimetria nao era intencional: quem girava a moeda nao via nada
+    // acontecer na mesa, e o resultado se perdia na primeira rolagem de log.
+    ctx.broadcast('coin', { actorId: sid, result: r });
     ctx.log(criarLog('DICE', sid, `${nomeDe(ctx.state, sid)} girou a moeda: ${r}`));
   },
 };

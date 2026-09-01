@@ -7,10 +7,7 @@ import { PinoLogger } from 'nestjs-pino';
  * Estende PrismaClient para aproveitar todas as tipagens geradas a partir do schema.prisma.
  */
 @Injectable()
-export class PrismaService
-  extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly logger: PinoLogger) {
     // Configura o logger contexto
     super();
