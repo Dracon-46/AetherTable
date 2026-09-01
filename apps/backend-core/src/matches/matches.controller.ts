@@ -1,5 +1,5 @@
 import { Controller, Post, Body, Param, UseGuards, Request, Get } from '@nestjs/common';
-import type { MatchesService } from './matches.service.js';
+import { MatchesService } from './matches.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 

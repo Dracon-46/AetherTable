@@ -4,7 +4,7 @@ import { UsersController } from './users.controller.js';
 
 /**
  * Módulo de Usuários (UsersModule).
- * Responsável pelas regras de domínio de perfis, preferências e 
+ * Responsável pelas regras de domínio de perfis, preferências e
  * isolamento do acesso à tabela User no banco de dados.
  */
 @Module({

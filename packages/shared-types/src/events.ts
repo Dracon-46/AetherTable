@@ -87,6 +87,15 @@ export interface DiceEvent {
   result: number;
 }
 
+/**
+ * Resultado de moeda. O dado transmitia evento desde sempre; a moeda so
+ * escrevia no log, entao girar a moeda nao produzia nada visivel na mesa.
+ */
+export interface CoinEvent {
+  actorId: string;
+  result: 'CARA' | 'COROA';
+}
+
 export interface PingEvent {
   actorId: string;
   x: number;
@@ -146,6 +155,7 @@ export interface ServerEventMap {
   log: LogEvent;
   chat: ChatEvent;
   dice: DiceEvent;
+  coin: CoinEvent;
   ping: PingEvent;
   revealToOwner: RevealToOwnerEvent;
   scryOpened: ScryOpenedEvent;

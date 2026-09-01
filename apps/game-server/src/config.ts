@@ -14,7 +14,21 @@ const schema = z.object({
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
   /** Precisa ser IDENTICO ao do backend-core. */
   JWT_SECRET: z.string().min(16, 'JWT_SECRET precisa de pelo menos 16 caracteres'),
-  BACKEND_CORE_URL: z.string().url().default('http://localhost:3333'),
+  /**
+   * URL da API Core.
+   *
+   * No Render, `fromService.property: host` entrega apenas o HOSTNAME
+   * ("aethertable-api.onrender.com") — sem esquema. Com `z.string().url()`
+   * cru, a validação falhava na subida e o game-server NÃO BOOTAVA em
+   * produção: o erro aparecia como "Configuracao invalida" e o serviço ficava
+   * em restart loop. Normalizar aqui é mais barato do que exigir que quem faz
+   * o deploy lembre de digitar o https:// à mão.
+   */
+  BACKEND_CORE_URL: z
+    .string()
+    .default('http://localhost:3333')
+    .transform((v) => (/^https?:\/\//i.test(v) ? v : `https://${v}`))
+    .pipe(z.string().url()),
   /**
    * Segredo das rotas maquina-a-maquina da API Core. `GET /internal/decks/:id`
    * devolve o decklist completo sem checar dono — em producao a API recusa a

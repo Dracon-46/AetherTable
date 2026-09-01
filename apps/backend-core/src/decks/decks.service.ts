@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import type { PrismaService } from '../common/prisma/prisma.service.js';
+import { PrismaService } from '../common/prisma/prisma.service.js';
 import { BoardType } from '@prisma/client';
 
 interface ScryCard {

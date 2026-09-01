@@ -10,7 +10,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import type { DecksService } from './decks.service.js';
+import { DecksService } from './decks.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';

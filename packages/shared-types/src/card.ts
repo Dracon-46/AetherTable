@@ -80,5 +80,17 @@ export const CARD_ASPECT_RATIO = 0.716;
 export const CARD_BASE_WIDTH = 100;
 export const CARD_BASE_HEIGHT = 140;
 
-/** Formato da chave de contador aceito pelo servidor. */
-export const COUNTER_NAME_PATTERN = /^[a-z0-9_+-]{1,24}$/;
+/**
+ * Formato da chave de contador aceito pelo servidor.
+ *
+ * A BARRA E OBRIGATORIA. O padrao anterior era `/^[a-z0-9_+-]{1,24}$/` — sem
+ * `/` — e portanto REJEITAVA "+1/+1" e "-1/-1", que sao os dois contadores mais
+ * usados de Magic. Todo botao de +1/+1 da interface enviava
+ * `INTENT_ADD_COUNTER` e recebia INVALID_PAYLOAD de volta: a intencao saia, o
+ * servidor descartava, e o marcador nunca aparecia na carta.
+ *
+ * A restricao continua estreita de proposito: a chave vira label de metrica no
+ * Prometheus (`intentsRecebidas`), entao caractere livre viraria explosao de
+ * cardinalidade, e o texto e renderizado na mesa de todos.
+ */
+export const COUNTER_NAME_PATTERN = /^[a-z0-9_+/-]{1,24}$/;

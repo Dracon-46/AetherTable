@@ -4,7 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 
 export interface JwtPayload {
-  sub: string;      // ID do usuário
+  sub: string; // ID do usuário
   username: string; // Username para evitar roundtrips no banco quando possível
 }
 
@@ -19,10 +19,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       // O token deve vir no cabeçalho HTTP: "Authorization: Bearer <token>"
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      
+
       // Rejeita automaticamente se o token passou da data de expiração
       ignoreExpiration: false,
-      
+
       // Chave secreta super segura (gerada aleatoriamente no .env)
       secretOrKey: configService.get<string>('JWT_SECRET')!,
     });
