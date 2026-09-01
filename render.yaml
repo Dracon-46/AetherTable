@@ -47,10 +47,19 @@ services:
       - key: JWT_SECRET
         generateValue: true
 
+      # Vida do access token, em segundos. ATENÇÃO: este valor passou a ser LIDO
+      # de verdade (auth/ttl.ts). Antes era decorativo — o módulo assinava com
+      # '7d' fixo e ninguém olhava aqui.
+      #
+      # 43200 = 12 h. NÃO baixe para 900 (15 min) enquanto não existir rota de
+      # refresh: o jogador seria deslogado no meio da partida, sem nada que
+      # renove a sessão. Era exatamente o que este campo dizia, e felizmente
+      # ninguém lia.
       - key: JWT_ACCESS_TTL
-        value: '900'
-      - key: JWT_REFRESH_TTL
-        value: '604800'
+        value: '43200'
+      # `JWT_REFRESH_TTL` foi removido: não existe refresh token no sistema, e
+      # variável que finge configurar algo é pior que variável ausente — leva
+      # quem audita a concluir que há uma rotação de sessão que não há.
 
       # Origem do frontend na Vercel. Com credentials: true o navegador rejeita
       # curinga — precisa ser a origem exata.

@@ -1,6 +1,8 @@
 import { Controller, Get, Param, Request, UseGuards, Patch, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service.js';
+import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { AtualizarPerfilDto, UsernameParam } from './users.dto.js';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
@@ -31,7 +33,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Atualiza o perfil do usuário' })
   async updateMe(
     @Request() req: RequisicaoAutenticada,
-    @Body() body: { username?: string; displayName?: string; language?: string },
+    @Body(new ZodValidationPipe(AtualizarPerfilDto)) body: AtualizarPerfilDto,
   ) {
     return this.usersService.updateUser(req.user.sub, body);
   }
@@ -42,7 +44,9 @@ export class UsersController {
   @Get(':username')
   @ApiOperation({ summary: 'Obtém o perfil público de um jogador' })
   @ApiParam({ name: 'username', example: 'planeswalker42' })
-  async getPublicProfile(@Param('username') username: string) {
+  async getPublicProfile(
+    @Param('username', new ZodValidationPipe(UsernameParam)) username: string,
+  ) {
     return this.usersService.findByUsername(username);
   }
 }

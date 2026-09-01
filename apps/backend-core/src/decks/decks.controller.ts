@@ -8,13 +8,23 @@ import {
   Param,
   UseGuards,
   Request,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
+import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import {
+  AdicionarCartaDto,
+  AtualizarBoardTypeDto,
+  AtualizarDeckDto,
+  AtualizarImpressaoDto,
+  AtualizarQuantidadeDto,
+  CriarDeckDto,
+  ImportarDeckDto,
+} from './decks.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
-import type { BoardType } from './board-type.js';
 
 @ApiTags('Decks')
 @ApiBearerAuth()
@@ -26,10 +36,9 @@ export class DecksController {
   @Post()
   createDeck(
     @Request() req: RequisicaoAutenticada,
-    @Body('name') name: string,
-    @Body('formatId') formatId?: string,
+    @Body(new ZodValidationPipe(CriarDeckDto)) dto: CriarDeckDto,
   ) {
-    return this.decksService.createDeck(req.user.sub, name || 'Novo Deck', formatId);
+    return this.decksService.createDeck(req.user.sub, dto.name || 'Novo Deck', dto.formatId);
   }
 
   @Get()
@@ -38,38 +47,38 @@ export class DecksController {
   }
 
   @Get(':id')
-  getDeckById(@Request() req: RequisicaoAutenticada, @Param('id') id: string) {
+  getDeckById(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
     return this.decksService.getDeckById(req.user.sub, id);
   }
 
   @Delete(':id')
-  deleteDeck(@Request() req: RequisicaoAutenticada, @Param('id') id: string) {
+  deleteDeck(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
     return this.decksService.deleteDeck(req.user.sub, id);
   }
 
   @Post(':id/import')
   importDeck(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Body('decklist') decklist: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ImportarDeckDto)) dto: ImportarDeckDto,
   ) {
-    return this.decksService.importDeckList(req.user.sub, id, decklist);
+    return this.decksService.importDeckList(req.user.sub, id, dto.decklist);
   }
 
   @Patch(':id')
   updateDeck(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Body('name') name: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(AtualizarDeckDto)) dto: AtualizarDeckDto,
   ) {
-    return this.decksService.updateDeck(req.user.sub, id, name);
+    return this.decksService.updateDeck(req.user.sub, id, dto.name);
   }
 
   @Delete(':id/cards/:cardId')
   removeCard(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Param('cardId') cardId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('cardId', ParseUUIDPipe) cardId: string,
   ) {
     return this.decksService.removeCard(req.user.sub, id, cardId);
   }
@@ -77,46 +86,40 @@ export class DecksController {
   @Post(':id/cards')
   addCard(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Body() body: { scryfallId: string; quantity?: number; boardType?: BoardType },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(AdicionarCartaDto)) dto: AdicionarCartaDto,
   ) {
-    return this.decksService.addCard(
-      req.user.sub,
-      id,
-      body.scryfallId,
-      body.quantity,
-      body.boardType,
-    );
+    return this.decksService.addCard(req.user.sub, id, dto.scryfallId, dto.quantity, dto.boardType);
   }
 
   @Patch(':id/cards/:cardId/printing')
   updatePrinting(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Param('cardId') cardId: string,
-    @Body() body: { scryfallId: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('cardId', ParseUUIDPipe) cardId: string,
+    @Body(new ZodValidationPipe(AtualizarImpressaoDto)) dto: AtualizarImpressaoDto,
   ) {
-    return this.decksService.updatePrinting(req.user.sub, id, cardId, body.scryfallId);
+    return this.decksService.updatePrinting(req.user.sub, id, cardId, dto.scryfallId);
   }
 
   @Patch(':id/cards/:cardId/quantity')
   updateCardQuantity(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Param('cardId') cardId: string,
-    @Body() body: { delta: number },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('cardId', ParseUUIDPipe) cardId: string,
+    @Body(new ZodValidationPipe(AtualizarQuantidadeDto)) dto: AtualizarQuantidadeDto,
   ) {
-    return this.decksService.updateCardQuantity(req.user.sub, id, cardId, body.delta);
+    return this.decksService.updateCardQuantity(req.user.sub, id, cardId, dto.delta);
   }
 
   @Patch(':id/cards/:cardId/board-type')
   updateBoardType(
     @Request() req: RequisicaoAutenticada,
-    @Param('id') id: string,
-    @Param('cardId') cardId: string,
-    @Body() body: { boardType: BoardType },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('cardId', ParseUUIDPipe) cardId: string,
+    @Body(new ZodValidationPipe(AtualizarBoardTypeDto)) dto: AtualizarBoardTypeDto,
   ) {
-    return this.decksService.updateBoardType(req.user.sub, id, cardId, body.boardType);
+    return this.decksService.updateBoardType(req.user.sub, id, cardId, dto.boardType);
   }
 }
 
@@ -136,7 +139,7 @@ export class InternalDecksController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Deck completo para o game-server (uso interno)' })
-  getDeckForServer(@Param('id') id: string) {
+  getDeckForServer(@Param('id', ParseUUIDPipe) id: string) {
     // Antes: `(this.decksService as any).prisma.deck.findUnique(...)` — o
     // controller alcançava um campo privado do serviço por asserção `any`.
     return this.decksService.getDeckForServer(id);
