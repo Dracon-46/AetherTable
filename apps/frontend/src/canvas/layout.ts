@@ -58,6 +58,21 @@ export const FAIXA_H = CARD_H + 56;
 /** A faixa em foco cabe três fileiras — é onde o jogo realmente acontece. */
 export const FAIXA_FOCO_H = CARD_H * 3 + 80;
 
+/** Quanto uma faixa fora de foco encolhe. */
+export const ESCALA_FORA_DE_FOCO = 0.72;
+/**
+ * Escala das cartas de uma faixa. Exportada porque o GameBoard precisa da
+ * MESMA conta: com o número solto nos dois lados, mover uma âncora aqui
+ * deslocava o desenho lá sem que nada acusasse.
+ */
+export const escalaDaFaixa = (emFoco: boolean) => (emFoco ? 1 : ESCALA_FORA_DE_FOCO);
+
+/**
+ * Folga entre a base da faixa e a borda inferior das zonas fixas. Precisa caber
+ * o contador que cada pilha desenha logo abaixo da carta.
+ */
+const MARGEM_BASE = 20;
+
 /** Reservado à esquerda de cada faixa para a zona de comando. */
 export const LARGURA_COMANDO = CARD_W + 48;
 /**
@@ -135,10 +150,23 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
     const campoY = 26;
     const campoAltura = altura - campoY - 10;
 
-    const meio = y + altura / 2;
+    const alturaCarta = CARD_H * escalaDaFaixa(emFoco);
+
+    /**
+     * Âncora vertical das zonas fixas — comando e pilhas.
+     *
+     * Antes era `altura / 2`. Numa faixa em foco, que tem três fileiras de
+     * altura, isso deixava grimório, cemitério e exílio boiando no meio do
+     * nada, na mesma linha das criaturas. A leitura natural de uma mesa é o
+     * campo em cima e as zonas paradas embaixo; ancorar na base também alinha
+     * as pilhas com a faixa de mão, que já vive no rodapé.
+     */
+    const base = y + altura - alturaCarta / 2 - MARGEM_BASE;
+
     const pilhaX = largura - larguraPilhas + 24;
     const col = (i: number) => pilhaX + CARD_W / 2 + i * (CARD_W + 14);
-    const linha = (i: number) => meio + (i - 0.5) * (CARD_H + 22);
+    /** Grade 2x2 do modo estreito: a fileira 1 é a que encosta na base. */
+    const linha = (i: number) => base - (1 - i) * (alturaCarta + 22);
 
     faixas.push({
       playerId,
@@ -146,11 +174,11 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
       altura,
       emFoco,
       campo: { x: campoX, y: campoY, largura: campoLargura, altura: campoAltura },
-      comando: { x: larguraComando / 2 + 8, y: meio },
-      grimorio: estreito ? { x: col(0), y: linha(0) } : { x: col(0), y: meio },
-      cemiterio: estreito ? { x: col(1), y: linha(0) } : { x: col(1), y: meio },
-      exilio: estreito ? { x: col(0), y: linha(1) } : { x: col(2), y: meio },
-      reserva: estreito ? { x: col(1), y: linha(1) } : { x: col(3), y: meio },
+      comando: { x: larguraComando / 2 + 8, y: base },
+      grimorio: estreito ? { x: col(0), y: linha(0) } : { x: col(0), y: base },
+      cemiterio: estreito ? { x: col(1), y: linha(0) } : { x: col(1), y: base },
+      exilio: estreito ? { x: col(0), y: linha(1) } : { x: col(2), y: base },
+      reserva: estreito ? { x: col(1), y: linha(1) } : { x: col(3), y: base },
       rotulo: { x: 12, y: y + 6 },
     });
 
@@ -220,4 +248,50 @@ export function posicaoNaMao(indice: number, total: number, mesa: Mesa): Ponto {
 /** Comandantes empilham lado a lado (parceiros / fundo). */
 export function posicaoNoComando(indice: number, base: Ponto): Ponto {
   return { x: base.x + indice * 24, y: base.y - indice * 8 };
+}
+
+/** Zonas em que uma carta pode ser SOLTA dentro de uma faixa. */
+export type ZonaDeSoltura = 'COMMAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE' | 'BATTLEFIELD';
+
+/**
+ * Em que zona aterrissa uma carta solta em (x, y) — coordenadas absolutas.
+ *
+ * ─── POR QUE ISSO MORA AQUI ────────────────────────────────────────────────
+ *
+ * O GameBoard só sabia distinguir mão de campo. Soltar sobre o cemitério, o
+ * exílio, o grimório ou a zona de comando caía no ramo do campo, e o clamp de
+ * `posicaoNoCampo` devolvia a carta para dentro da área de batalha. Da cadeira
+ * do jogador isso é indistinguível de "o arrasto não funciona" — funcionava,
+ * só que o destino nunca era o que estava debaixo do cursor.
+ *
+ * A decisão vive junto da geometria de propósito: as âncoras e a regra de
+ * acerto precisam mudar juntas. Separadas, mover uma pilha em `montarMesa`
+ * deixaria a área de soltura para trás, em silêncio.
+ *
+ * A reserva não é destino: é zona oculta e de pré-jogo, e cair nela por um
+ * arrasto impreciso esconderia a carta da mesa inteira.
+ */
+export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
+  if (x < faixa.campo.x) return 'COMMAND';
+  if (x <= faixa.campo.x + faixa.campo.largura) return 'BATTLEFIELD';
+
+  // Faixa das pilhas: vale a âncora mais próxima. Distância em vez de
+  // retângulos porque o modo estreito reorganiza as mesmas quatro zonas numa
+  // grade 2x2 — com retângulos, cada arranjo precisaria da sua própria conta.
+  const alvos: Array<[ZonaDeSoltura, Ponto]> = [
+    ['LIBRARY', faixa.grimorio],
+    ['GRAVEYARD', faixa.cemiterio],
+    ['EXILE', faixa.exilio],
+  ];
+
+  let zona: ZonaDeSoltura = 'GRAVEYARD';
+  let menor = Number.POSITIVE_INFINITY;
+  for (const [candidata, ancora] of alvos) {
+    const distancia = Math.hypot(ancora.x - x, ancora.y - y);
+    if (distancia < menor) {
+      menor = distancia;
+      zona = candidata;
+    }
+  }
+  return zona;
 }

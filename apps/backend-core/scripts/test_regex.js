@@ -1,14 +1,17 @@
-
-
 async function test() {
-  const rawText = "1 Sol Ring\n4 Lightning Bolt";
-  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const rawText = '1 Sol Ring\n4 Lightning Bolt';
+  const lines = rawText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
   const parsedCards = [];
 
-  const LINE_REGEX = /^\s*(?<qty>\d+)\s*[xX]?\s+(?<name>[^([#*]+?)\s*(?:\((?<set1>[A-Za-z0-9]{2,5})\)\s*(?<cn>\S+)?)?\s*(?:\[(?<set2>[A-Za-z0-9]{2,5})\])?\s*(?:\*F\*)?\s*(?:#.*)?$/;
+  const LINE_REGEX =
+    /^\s*(?<qty>\d+)\s*[xX]?\s+(?<name>[^([#*]+?)\s*(?:\((?<set1>[A-Za-z0-9]{2,5})\)\s*(?<cn>\S+)?)?\s*(?:\[(?<set2>[A-Za-z0-9]{2,5})\])?\s*(?:\*F\*)?\s*(?:#.*)?$/;
 
   for (const line of lines) {
-    if (line.startsWith('#') || line.startsWith('//') || line.toUpperCase().startsWith('SIDEBOARD')) continue;
+    if (line.startsWith('#') || line.startsWith('//') || line.toUpperCase().startsWith('SIDEBOARD'))
+      continue;
 
     const match = line.match(LINE_REGEX);
     if (match && match.groups) {
@@ -26,28 +29,28 @@ async function test() {
     }
   }
 
-  console.log("Parsed:", parsedCards);
+  console.log('Parsed:', parsedCards);
 
-  const identifiers = parsedCards.map(c => {
+  const identifiers = parsedCards.map((c) => {
     const idObj = { name: c.name };
     if (c.set) idObj['set'] = c.set.toLowerCase();
     return idObj;
   });
 
-  console.log("Identifiers:", identifiers);
+  console.log('Identifiers:', identifiers);
 
   try {
     const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifiers })
+      body: JSON.stringify({ identifiers }),
     });
-    
-    console.log("Status:", scryRes.status);
+
+    console.log('Status:', scryRes.status);
     const scryData = await scryRes.json();
-    console.log("Response:", JSON.stringify(scryData, null, 2));
+    console.log('Response:', JSON.stringify(scryData, null, 2));
   } catch (e) {
-    console.error("Fetch error:", e);
+    console.error('Fetch error:', e);
   }
 }
 

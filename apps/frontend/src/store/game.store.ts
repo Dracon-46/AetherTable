@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { armazenamentoSeguro } from './storage';
 
 // ─── gameStore: espelho do estado do servidor ──────────────────────────────
 
@@ -336,6 +337,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'aether-ui-store',
+      storage: armazenamentoSeguro,
       partialize: (s) => ({
         showZoneOutlines: s.showZoneOutlines,
         boardView: s.boardView,
@@ -372,15 +374,30 @@ export interface SessaoScry {
   cards: CartaRevelada[];
 }
 
+/**
+ * Dado e moeda num tipo só.
+ *
+ * Os dois são o mesmo gesto — pedir um número ao acaso e mostrá-lo à mesa — e
+ * separá-los custava duas fatias de estado, dois temporizadores e a chance de
+ * um sobrepor o outro na tela. Com uma união, o último sorteio é sempre o que
+ * aparece, seja qual for o tipo.
+ */
+export type Sorteio =
+  | { tipo: 'DADO'; actorId: string; sides: number; result: number; em: number }
+  | { tipo: 'MOEDA'; actorId: string; result: 'CARA' | 'COROA'; em: number };
+
 interface TableState {
-  /** Resultado do último dado, para o destaque visual. */
-  ultimoDado: { actorId: string; sides: number; result: number; em: number } | null;
+  /** Último dado ou moeda, para o destaque visual na mesa. */
+  ultimoSorteio: Sorteio | null;
   pings: PingVisual[];
   /** Buffer de olhada/busca: o que o servidor liberou só para mim. */
   peek: CartaRevelada[];
   scry: SessaoScry | null;
 
   setDado: (d: { actorId: string; sides: number; result: number }) => void;
+  setMoeda: (m: { actorId: string; result: 'CARA' | 'COROA' }) => void;
+  /** Some com o sorteio depois da animação, para não congelar na tela. */
+  limparSorteio: () => void;
   addPing: (p: Omit<PingVisual, 'id' | 'em'>) => void;
   expirarPings: () => void;
   setPeek: (cards: CartaRevelada[]) => void;
@@ -390,12 +407,14 @@ interface TableState {
 }
 
 export const useTableStore = create<TableState>((set) => ({
-  ultimoDado: null,
+  ultimoSorteio: null,
   pings: [],
   peek: [],
   scry: null,
 
-  setDado: (d) => set({ ultimoDado: { ...d, em: Date.now() } }),
+  setDado: (d) => set({ ultimoSorteio: { tipo: 'DADO', ...d, em: Date.now() } }),
+  setMoeda: (m) => set({ ultimoSorteio: { tipo: 'MOEDA', ...m, em: Date.now() } }),
+  limparSorteio: () => set({ ultimoSorteio: null }),
   addPing: (p) =>
     set((s) => ({
       pings: [
@@ -411,5 +430,5 @@ export const useTableStore = create<TableState>((set) => ({
   setPeek: (peek) => set({ peek }),
   abrirScry: (scry) => set({ scry }),
   fecharScry: () => set({ scry: null }),
-  reset: () => set({ ultimoDado: null, pings: [], peek: [], scry: null }),
+  reset: () => set({ ultimoSorteio: null, pings: [], peek: [], scry: null }),
 }));

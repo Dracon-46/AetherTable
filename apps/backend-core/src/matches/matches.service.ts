@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import type { JwtService } from '@nestjs/jwt';
+import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
-import type { DecksService } from '../decks/decks.service.js';
+import { DecksService } from '../decks/decks.service.js';
 import { AccessToken } from 'livekit-server-sdk';
 
 @Injectable()
@@ -27,6 +27,12 @@ export class MatchesService {
     vintage: { min: 60 },
     timeless: { min: 60 },
   };
+
+  /** Formatos em que entrar sem comandante não faz sentido. */
+  private static readonly FORMATOS_COM_COMANDANTE = new Set(['commander', 'brawl']);
+
+  /** Dois cobre a dupla de parceiros; três em diante não é regra de nenhum formato. */
+  private static readonly MAX_COMANDANTES = 2;
 
   async createMatch(_userId: string, _username: string) {
     // Gera um roomCode de 6 caracteres
@@ -55,7 +61,35 @@ export class MatchesService {
 
     // O `getDeckById` hidrata cada carta com dados da Scryfall — daí `name` e
     // `isBanned`, que não existem no registro cru do Prisma.
-    type CartaHidratada = { name?: string; isBanned?: boolean };
+    type CartaHidratada = { name?: string; isBanned?: boolean; boardType?: string };
+
+    // 2.1 — Trava de comandante.
+    //
+    // A contagem de cartas passava, o deck entrava, e o `AetherRoom` provisionava
+    // uma zona de comando VAZIA: partida de Commander sem comandante, com
+    // imposto e dano de comandante que nunca teriam de onde sair. O sintoma
+    // aparecia só na mesa, depois de todo mundo já ter entrado.
+    //
+    // Barrar aqui e não no game-server é deliberado: este é o ponto onde já
+    // conhecemos o formato e o conteúdo do deck, e onde ainda dá para devolver
+    // uma mensagem que diz o que fazer. Depois do handshake, o que sobra é
+    // derrubar a conexão.
+    if (MatchesService.FORMATOS_COM_COMANDANTE.has(formato)) {
+      const comandantes = (deck.cards as CartaHidratada[]).filter(
+        (c) => c.boardType === 'COMMANDER',
+      );
+      if (comandantes.length === 0) {
+        throw new BadRequestException(
+          `O formato ${formato} exige um comandante. Abra o deck e marque a carta como comandante antes de entrar na mesa.`,
+        );
+      }
+      if (comandantes.length > MatchesService.MAX_COMANDANTES) {
+        throw new BadRequestException(
+          `O deck tem ${comandantes.length} comandantes; o máximo é ${MatchesService.MAX_COMANDANTES} (parceiros).`,
+        );
+      }
+    }
+
     const bannedCards = (deck.cards as CartaHidratada[]).filter((c) => c.isBanned);
     if (bannedCards.length > 0) {
       const bannedNames = bannedCards.map((c) => c.name ?? 'carta desconhecida').join(', ');

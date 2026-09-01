@@ -3,7 +3,7 @@ import { PrismaService } from './prisma.service.js';
 
 /**
  * PrismaModule exportado globalmente (@Global).
- * 
+ *
  * Sendo global, ele não precisa ser importado nos módulos de feature (ex: UsersModule).
  * Basta declará-lo no AppModule e os serviços poderão injetar o PrismaService diretamente.
  */

@@ -12,9 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import type { JwtService } from '@nestjs/jwt';
-import type { ConfigService } from '@nestjs/config';
-import type { AuthService } from './auth.service.js';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { AuthService } from './auth.service.js';
 import { LoginDto, RegisterDto } from './auth.dto.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import type { RequisicaoOAuth, RespostaRedirecionavel } from './http.types.js';

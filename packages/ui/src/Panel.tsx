@@ -25,9 +25,7 @@ export function Panel({ title, children, className, ...props }: PanelProps) {
       )}
       {...props}
     >
-      {title ? (
-        <h2 className="text-text mb-2 text-[15px] font-semibold">{title}</h2>
-      ) : null}
+      {title ? <h2 className="text-text mb-2 text-[15px] font-semibold">{title}</h2> : null}
       {children}
     </div>
   );
@@ -37,13 +35,7 @@ export function Panel({ title, children, className, ...props }: PanelProps) {
  * Numero que muda (vida, contadores). `tabular-nums` e OBRIGATORIO: sem isso o
  * texto salta na horizontal a cada mudanca de digito (DOC-041 §2.2).
  */
-export function LiveNumber({
-  value,
-  className,
-}: {
-  value: number;
-  className?: string;
-}) {
+export function LiveNumber({ value, className }: { value: number; className?: string }) {
   return (
     <span className={cn('font-bold tabular-nums', className)} aria-live="polite">
       {value}

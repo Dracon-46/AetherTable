@@ -10,7 +10,7 @@ import { MatchesModule } from './matches/matches.module.js';
 
 /**
  * Root Module of the application.
- * Imports essential global modules (Config, Logging, Database) 
+ * Imports essential global modules (Config, Logging, Database)
  * and feature modules (Health).
  */
 @Module({
@@ -20,7 +20,7 @@ import { MatchesModule } from './matches/matches.module.js';
       isGlobal: true, // Disponível em qualquer lugar sem precisar importar o ConfigModule novamente
       envFilePath: '.env',
     }),
-    
+
     // Configura o Pino Logger como o logger padrão da aplicação
     LoggerModule.forRoot({
       pinoHttp: {

@@ -5,8 +5,9 @@ const registry = readFileSync('apps/game-server/src/intents/registry.ts', 'utf8'
 const tabela = registry.slice(registry.indexOf('export const REGISTRY = {'));
 const implementadas = [...tabela.matchAll(/^\s{2}(INTENT_[A-Z_]+),$/gm)].map((m) => m[1]).sort();
 
-const pendentes = [...registry.matchAll(/\{ intent: '(INTENT_[A-Z_]+)', motivo: '([^']+)' \}/g)]
-  .map((m) => ({ intent: m[1], motivo: m[2] }));
+const pendentes = [
+  ...registry.matchAll(/\{ intent: '(INTENT_[A-Z_]+)', motivo: '([^']+)' \}/g),
+].map((m) => ({ intent: m[1], motivo: m[2] }));
 
 const contrato = readFileSync('packages/shared-types/src/intents.ts', 'utf8');
 const mapa = contrato.slice(contrato.indexOf('export interface IntentPayloadMap'));
@@ -21,7 +22,8 @@ const semImplementacao = todas.filter(
   (i) => !implementadas.includes(i) && !pendentes.some((p) => p.intent === i),
 );
 
-const linha = (i) => `| \`${i}\` | ${implementadas.includes(i) ? '✅' : '—'} | ${emitidas.has(i) ? '✅' : '—'} |`;
+const linha = (i) =>
+  `| \`${i}\` | ${implementadas.includes(i) ? '✅' : '—'} | ${emitidas.has(i) ? '✅' : '—'} |`;
 
 writeFileSync(
   'docs/estado_de_implementacao.md',
@@ -85,4 +87,6 @@ ${semImplementacao.length === 0 ? '_Nenhuma._' : semImplementacao.map((i) => `- 
 `,
 );
 
-console.log(`contrato=${todas.length} servidor=${implementadas.length} cliente=${emitidas.size} sem-handler=${semHandler.length}`);
+console.log(
+  `contrato=${todas.length} servidor=${implementadas.length} cliente=${emitidas.size} sem-handler=${semHandler.length}`,
+);

@@ -38,7 +38,8 @@ COPY apps/game-server/ apps/game-server/
 RUN pnpm --filter @aethertable/shared-types build \
   && pnpm --filter game-server build
 
-RUN pnpm --filter game-server --prod --legacy deploy /out
+# Sem `--legacy`: a flag não existe no pnpm 9.15.4 e derrubava o build.
+RUN pnpm --filter game-server --prod deploy /out
 
 # ─── Estágio 2: runtime ─────────────────────────────────────────────────────
 FROM node:22-slim AS runner

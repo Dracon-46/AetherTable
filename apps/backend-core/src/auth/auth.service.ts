@@ -1,8 +1,8 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
-import type { JwtService } from '@nestjs/jwt';
+import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import type { UsersService } from '../users/users.service.js';
-import type { PrismaService } from '../common/prisma/prisma.service.js';
+import { UsersService } from '../users/users.service.js';
+import { PrismaService } from '../common/prisma/prisma.service.js';
 
 @Injectable()
 export class AuthService {

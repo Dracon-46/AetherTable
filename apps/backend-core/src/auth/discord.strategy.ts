@@ -1,7 +1,7 @@
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-discord';
 import { Injectable, Logger } from '@nestjs/common';
-import type { AuthService } from './auth.service.js';
+import { AuthService } from './auth.service.js';
 import { usernameSugerido, type PerfilOAuth } from './oauth.types.js';
 
 /** O Discord entrega `email` direto no perfil, não em `emails[]`. */

@@ -21,11 +21,7 @@ export class ScryfallError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code:
-      | 'NOT_FOUND'
-      | 'INVALID_QUERY'
-      | 'CARD_PROVIDER_UNAVAILABLE'
-      | 'UNEXPECTED',
+    readonly code: 'NOT_FOUND' | 'INVALID_QUERY' | 'CARD_PROVIDER_UNAVAILABLE' | 'UNEXPECTED',
     readonly retryAfterSeconds?: number,
   ) {
     super(message);
@@ -183,11 +179,7 @@ export class ScryfallClient {
       }
 
       if (statusCode === 422) {
-        throw new ScryfallError(
-          `Query malformada: ${text.slice(0, 200)}`,
-          422,
-          'INVALID_QUERY',
-        );
+        throw new ScryfallError(`Query malformada: ${text.slice(0, 200)}`, 422, 'INVALID_QUERY');
       }
 
       const retryable = statusCode === 429 || statusCode >= 500;

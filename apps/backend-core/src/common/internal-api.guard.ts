@@ -1,6 +1,6 @@
 import type { CanActivate } from '@nestjs/common';
 import { type ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 
 /**
  * internal-api.guard.ts — protege as rotas máquina-a-máquina.

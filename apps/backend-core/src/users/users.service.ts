@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../common/prisma/prisma.service.js';
 
 /**
- * Serviço de Usuários. Isola a regra de negócio e 
+ * Serviço de Usuários. Isola a regra de negócio e
  * o acesso à tabela `users` no banco de dados.
  */
 @Injectable()
@@ -21,9 +21,9 @@ export class UsersService {
       },
       include: {
         _count: {
-          select: { participions: true }
-        }
-      }
+          select: { participions: true },
+        },
+      },
     });
 
     if (!user) {
@@ -51,8 +51,8 @@ export class UsersService {
         createdAt: true,
         // E-mail é explicitamente omitido do perfil público conforme DOC-030
         _count: {
-          select: { participions: true }
-        }
+          select: { participions: true },
+        },
       },
     });
 
@@ -90,9 +90,12 @@ export class UsersService {
   /**
    * Atualiza os dados do usuário (perfil e preferências)
    */
-  async updateUser(id: string, data: { username?: string; displayName?: string; language?: string }) {
+  async updateUser(
+    id: string,
+    data: { username?: string; displayName?: string; language?: string },
+  ) {
     const { username, displayName, language } = data;
-    
+
     if (username) {
       const existing = await this.prisma.user.findFirst({ where: { username, id: { not: id } } });
       if (existing) throw new BadRequestException('Username já em uso');
@@ -104,14 +107,14 @@ export class UsersService {
         ...(username && { username }),
         ...(displayName !== undefined && { displayName }), // Allows clearing displayName
       },
-      select: { id: true, username: true, displayName: true, avatarUrl: true }
+      select: { id: true, username: true, displayName: true, avatarUrl: true },
     });
 
     if (language) {
       await this.prisma.userPreference.upsert({
         where: { userId: id },
         update: { language },
-        create: { userId: id, language }
+        create: { userId: id, language },
       });
     }
 

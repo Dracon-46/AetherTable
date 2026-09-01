@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Request, UseGuards, Patch, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
-import type { UsersService } from './users.service.js';
+import { UsersService } from './users.service.js';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';

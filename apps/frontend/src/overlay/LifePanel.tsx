@@ -17,8 +17,20 @@
  *    vira uma faixa compacta no mobile.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Heart, Skull, Zap, Star, Shield, Crown, Settings } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Gauge,
+  Heart,
+  Skull,
+  Ticket,
+  Radiation,
+  Zap,
+  Star,
+  Shield,
+  Crown,
+  Settings,
+} from 'lucide-react';
 import type { Room } from 'colyseus.js';
 import { useGameStore, type PlayerData } from '../store/game.store';
 import { intents } from '../net/intents';
@@ -49,6 +61,9 @@ function PlayerCard({
   const [lifeInput, setLifeInput] = useState(String(player.life));
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const botaoRef = useRef<HTMLButtonElement>(null);
+  /** Posição do menu em coordenadas de viewport — ver `abrirMenu`. */
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const isSpeaking = useVoiceStore((s) => s.speaking.includes(player.userId));
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
@@ -56,12 +71,63 @@ function PlayerCard({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setShowMenu(false);
-      }
+      const alvo = event.target as Node;
+      // O menu vive num portal, FORA desta árvore: sem checar o botão também,
+      // o clique que abre seria lido como clique fora e fecharia na hora.
+      if (menuRef.current?.contains(alvo) || botaoRef.current?.contains(alvo)) return;
+      setShowMenu(false);
     }
     if (showMenu) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
+
+  /**
+   * Abre o menu de status ancorado ao botão, em coordenadas de VIEWPORT.
+   *
+   * ─── POR QUE PORTAL, E NÃO `absolute` ──────────────────────────────────────
+   *
+   * O menu era `absolute left-full`, quer dizer: para fora da borda direita do
+   * cartão. Só que o cartão mora dentro da coluna de vida, que em `sm+` tem
+   * `overflow-y-auto` para rolar quando há muitos jogadores. Pelo CSS, quando um
+   * eixo é `auto` e o outro é `visible`, o `visible` VIRA `auto` — não existe
+   * "recorta em cima e embaixo, mas deixa vazar dos lados". A coluna passava a
+   * recortar horizontalmente e o menu, que abre justamente para o lado, era
+   * cortado inteiro. O botão respondia ao clique e nada aparecia.
+   *
+   * Um portal no `body` sai de qualquer `overflow` e de qualquer contexto de
+   * empilhamento de ancestral. O preço é posicionar à mão, que é o que a medida
+   * do `getBoundingClientRect` abaixo faz.
+   */
+  const abrirMenu = useCallback(() => {
+    if (showMenu) {
+      setShowMenu(false);
+      return;
+    }
+    const r = botaoRef.current?.getBoundingClientRect();
+    if (!r) return;
+
+    const LARGURA = 192; // w-48
+    const ALTURA_ESTIMADA = 340;
+    // Vira para a esquerda do botão quando não há espaço à direita, e sobe o
+    // bastante para não sair pela base numa tela baixa.
+    const left = Math.min(r.right + 8, window.innerWidth - LARGURA - 8);
+    const top = Math.min(r.top, Math.max(8, window.innerHeight - ALTURA_ESTIMADA - 8));
+
+    setMenuPos({ top, left: Math.max(8, left) });
+    setShowMenu(true);
+  }, [showMenu]);
+
+  // Rolar a coluna ou redimensionar a janela deixaria o menu para trás, preso
+  // na coordenada antiga. Mais honesto fechá-lo do que exibi-lo desalinhado.
+  useEffect(() => {
+    if (!showMenu) return;
+    const fechar = () => setShowMenu(false);
+    window.addEventListener('resize', fechar);
+    window.addEventListener('scroll', fechar, true);
+    return () => {
+      window.removeEventListener('resize', fechar);
+      window.removeEventListener('scroll', fechar, true);
+    };
   }, [showMenu]);
 
   const handleLifeWheel = (e: React.WheelEvent) => {
@@ -141,95 +207,167 @@ function PlayerCard({
         </div>
 
         {isMe && (
-          <div ref={menuRef} className="relative shrink-0">
+          <div className="shrink-0">
             <button
-              onClick={() => setShowMenu((v) => !v)}
+              ref={botaoRef}
+              onClick={abrirMenu}
               className="text-text-muted rounded p-1 transition-colors hover:text-white"
               aria-label="Status do jogador"
+              aria-expanded={showMenu}
             >
               <Settings className="h-4 w-4" />
             </button>
 
-            {showMenu && (
-              // Abre para a DIREITA e não para baixo: no canto esquerdo da tela
-              // havia espaço de sobra ali, enquanto abrir para baixo cobria os
-              // painéis dos outros jogadores.
-              <div className="border-panel-border bg-panel absolute left-full top-0 z-40 ml-2 flex w-48 flex-col gap-2 rounded-lg border p-2 shadow-2xl">
-                <span className="border-panel-border text-text-muted border-b pb-1 text-[10px] font-bold uppercase">
-                  Status do Jogador
-                </span>
+            {showMenu &&
+              menuPos &&
+              typeof document !== 'undefined' &&
+              createPortal(
+                // `fixed` + portal no body: fora do `overflow` da coluna de vida
+                // e de qualquer contexto de empilhamento acima daqui.
+                <div
+                  ref={menuRef}
+                  style={{ top: menuPos.top, left: menuPos.left }}
+                  className="border-panel-border bg-panel fixed z-[55] flex w-48 flex-col gap-2 rounded-lg border p-2 shadow-2xl"
+                >
+                  <span className="border-panel-border text-text-muted border-b pb-1 text-[10px] font-bold uppercase">
+                    Status do Jogador
+                  </span>
 
-                <div className="mb-1 flex gap-2">
-                  <button
-                    onClick={() => {
-                      intents.toggleDesignation(room, 'MONARCH');
-                      setShowMenu(false);
-                    }}
-                    className={`flex flex-1 flex-col items-center justify-center rounded border p-2 text-[10px] font-bold transition-colors ${
-                      player.isMonarch
-                        ? 'border-warning bg-warning/20 text-warning'
-                        : 'border-panel-border bg-table-deep text-text-muted hover:bg-panel-hover'
-                    }`}
-                  >
-                    <Crown className="mb-1 h-4 w-4" />
-                    Monarca
-                  </button>
-                  <button
-                    onClick={() => {
-                      intents.toggleDesignation(room, 'INITIATIVE');
-                      setShowMenu(false);
-                    }}
-                    className={`flex flex-1 flex-col items-center justify-center rounded border p-2 text-[10px] font-bold transition-colors ${
-                      player.hasInitiative
-                        ? 'border-primary bg-primary/20 text-primary'
-                        : 'border-panel-border bg-table-deep text-text-muted hover:bg-panel-hover'
-                    }`}
-                  >
-                    <Shield className="mb-1 h-4 w-4" />
-                    Iniciativa
-                  </button>
-                </div>
+                  <div className="mb-1 flex gap-2">
+                    <button
+                      onClick={() => {
+                        intents.toggleDesignation(room, 'MONARCH');
+                        setShowMenu(false);
+                      }}
+                      className={`flex flex-1 flex-col items-center justify-center rounded border p-2 text-[10px] font-bold transition-colors ${
+                        player.isMonarch
+                          ? 'border-warning bg-warning/20 text-warning'
+                          : 'border-panel-border bg-table-deep text-text-muted hover:bg-panel-hover'
+                      }`}
+                    >
+                      <Crown className="mb-1 h-4 w-4" />
+                      Monarca
+                    </button>
+                    <button
+                      onClick={() => {
+                        intents.toggleDesignation(room, 'INITIATIVE');
+                        setShowMenu(false);
+                      }}
+                      className={`flex flex-1 flex-col items-center justify-center rounded border p-2 text-[10px] font-bold transition-colors ${
+                        player.hasInitiative
+                          ? 'border-primary bg-primary/20 text-primary'
+                          : 'border-panel-border bg-table-deep text-text-muted hover:bg-panel-hover'
+                      }`}
+                    >
+                      <Shield className="mb-1 h-4 w-4" />
+                      Iniciativa
+                    </button>
+                  </div>
 
-                {(
-                  [
-                    ['POISON', 'Veneno', player.poison, 'text-warning'],
-                    ['ENERGY', 'Energia', player.energy, 'text-primary'],
-                    ['EXPERIENCE', 'Exp', player.experience, 'text-text-muted'],
-                  ] as const
-                ).map(([key, rotulo, valor, cor]) => (
-                  <div
-                    key={key}
-                    className="bg-table-deep flex items-center justify-between rounded p-1 text-xs"
-                  >
-                    <span className={`flex items-center gap-1 ${cor}`}>
-                      {key === 'ENERGY' ? (
-                        <Zap className="h-3 w-3" />
-                      ) : key === 'EXPERIENCE' ? (
-                        <Star className="h-3 w-3" />
-                      ) : (
-                        <span className="text-[10px]">☠</span>
-                      )}
-                      {rotulo}
+                  {/*
+                  Os cinco contadores de jogador que o servidor conhece. RAD e
+                  ingresso já tinham intent (`INTENT_ADD_PLAYER_COUNTER`) e
+                  campo no schema, mas nenhuma UI — só existiam para quem lesse
+                  o código.
+                */}
+                  {(
+                    [
+                      [
+                        'POISON',
+                        'Veneno',
+                        player.poison,
+                        'text-warning',
+                        <Skull key="i" className="h-3 w-3" />,
+                      ],
+                      [
+                        'ENERGY',
+                        'Energia',
+                        player.energy,
+                        'text-primary',
+                        <Zap key="i" className="h-3 w-3" />,
+                      ],
+                      [
+                        'EXPERIENCE',
+                        'Exp',
+                        player.experience,
+                        'text-text-muted',
+                        <Star key="i" className="h-3 w-3" />,
+                      ],
+                      [
+                        'RAD',
+                        'Radiação',
+                        player.rad,
+                        'text-success',
+                        <Radiation key="i" className="h-3 w-3" />,
+                      ],
+                      [
+                        'TICKET',
+                        'Ingresso',
+                        player.ticket,
+                        'text-speaking',
+                        <Ticket key="i" className="h-3 w-3" />,
+                      ],
+                    ] as const
+                  ).map(([key, rotulo, valor, cor, icone]) => (
+                    <div
+                      key={key}
+                      className="bg-table-deep flex items-center justify-between rounded p-1 text-xs"
+                    >
+                      <span className={`flex items-center gap-1 ${cor}`}>
+                        {icone}
+                        {rotulo}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => intents.addPlayerCounter(room, key, -1)}
+                          className="text-danger px-1 hover:text-white"
+                          aria-label={`Reduzir ${rotulo}`}
+                        >
+                          −
+                        </button>
+                        <span className="w-5 text-center font-mono">{valor}</span>
+                        <button
+                          onClick={() => intents.addPlayerCounter(room, key, 1)}
+                          className="text-success px-1 hover:text-white"
+                          aria-label={`Aumentar ${rotulo}`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/*
+                  Velocidade (Aetherdrift) não é contador comum: vai de 0 a 4 e
+                  nunca desce, então tem intent própria (`INTENT_SET_SPEED`) com
+                  valor absoluto em vez de delta.
+                */}
+                  <div className="bg-table-deep flex items-center justify-between rounded p-1 text-xs">
+                    <span className="text-danger flex items-center gap-1">
+                      <Gauge className="h-3 w-3" />
+                      Velocidade
                     </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => intents.addPlayerCounter(room, key, -1)}
-                        className="text-danger px-1 hover:text-white"
-                      >
-                        −
-                      </button>
-                      <span className="w-4 text-center font-mono">{valor}</span>
-                      <button
-                        onClick={() => intents.addPlayerCounter(room, key, 1)}
-                        className="text-success px-1 hover:text-white"
-                      >
-                        +
-                      </button>
+                    <div className="flex items-center gap-1">
+                      {[0, 1, 2, 3, 4].map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => intents.setSpeed(room, v)}
+                          aria-label={`Velocidade ${v}`}
+                          aria-pressed={player.speed === v}
+                          className={`h-5 w-5 rounded font-mono text-[10px] transition-colors ${
+                            player.speed === v
+                              ? 'bg-danger font-bold text-white'
+                              : 'bg-panel text-text-muted hover:bg-panel-hover'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>,
+                document.body,
+              )}
           </div>
         )}
       </div>
