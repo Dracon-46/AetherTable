@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { UserPlus, AlertCircle, ShieldCheck } from 'lucide-react';
-import { FireCanvas } from '../FireCanvas';
+import { CenaDoDragao, useDragao } from '../CenaDoDragao';
 import { useAuthStore } from '../../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
@@ -13,7 +13,8 @@ export default function RegisterPage() {
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
-  const [isHovering, setIsHovering] = useState(false);
+  // A cena do dragão é a mesma do login — ver CenaDoDragao.
+  const { fase, carregar, relaxar, cuspir } = useDragao();
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -31,6 +32,7 @@ export default function RegisterPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsRegistering(true);
+    cuspir();
     setError(null);
 
     try {
@@ -68,18 +70,7 @@ export default function RegisterPage() {
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden">
-      <div
-        className={`absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700 ${isRegistering ? 'animate-fire-breathe' : ''}`}
-        style={{ backgroundImage: 'url("/dragon_bg.png")' }}
-      >
-        <div className="bg-table-deep/70 absolute inset-0 backdrop-blur-[2px]" />
-      </div>
-
-      <FireCanvas active={isRegistering} />
-
-      {isHovering && !isRegistering && (
-        <div className="pointer-events-none absolute inset-0 z-0 animate-pulse bg-orange-600/10 mix-blend-color-dodge transition-opacity duration-500" />
-      )}
+      <CenaDoDragao fase={fase} carregar={carregar} relaxar={relaxar} cuspir={cuspir} />
 
       <div
         className={`bg-panel/80 border-panel-border relative z-10 w-full max-w-md rounded-lg border p-8 shadow-2xl backdrop-blur-md transition-transform duration-300 ${error ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
@@ -155,8 +146,8 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={isRegistering}
-            onMouseEnter={() => setIsHovering(true)}
-            onMouseLeave={() => setIsHovering(false)}
+            onMouseEnter={carregar}
+            onMouseLeave={relaxar}
             className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold transition-all duration-150 ${
               isRegistering
                 ? 'bg-success cursor-wait text-white'

@@ -383,6 +383,105 @@
   animation: moeda-girar 1s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
+/*
+ * ── O dragão da tela de login ───────────────────────────────────────────────
+ *
+ * A arte é um PNG estático. O que anima é a CENA: ela respira parada, recua
+ * para tomar fôlego quando o mouse chega, e dá o bote quando o usuário clica.
+ * Não é a mesma coisa que um dragão articulado — para isso seria preciso um
+ * sprite sheet ou vídeo — mas o conjunto (movimento da cena + brasas sugadas +
+ * jato saindo da bocarra, tudo em FireCanvas.tsx) lê como criatura viva em vez
+ * de papel de parede.
+ *
+ * Tudo por `transform` e `filter`: ambos compostos na GPU, sem relayout por
+ * quadro. Animar `background-position` faria o navegador repintar a imagem de
+ * 748 KB a cada quadro.
+ *
+ * A escala nunca desce abaixo de 1.02: a cena precisa de folga para se mexer
+ * sem revelar a borda da imagem.
+ */
+@keyframes dragao-respira {
+  0%,
+  100% {
+    transform: scale(1.025) translate3d(0, 0, 0);
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    transform: scale(1.045) translate3d(0, -0.5%, 0);
+    filter: brightness(1.04) saturate(1.05);
+  }
+}
+
+/* Inspiração: recua e treme de leve, como quem enche o peito. */
+@keyframes dragao-inspira {
+  0% {
+    transform: scale(1.045) translate3d(0, 0, 0);
+    filter: brightness(1.04) saturate(1.05);
+  }
+  100% {
+    transform: scale(1.085) translate3d(-0.6%, 0.3%, 0);
+    filter: brightness(1.18) saturate(1.3) contrast(1.05);
+  }
+}
+
+/* O bote: avança rápido, passa do ponto e assenta. */
+@keyframes dragao-cospe {
+  0% {
+    transform: scale(1.085) translate3d(-0.6%, 0.3%, 0);
+    filter: brightness(1.18) saturate(1.3);
+  }
+  12% {
+    transform: scale(1.16) translate3d(1.2%, -0.4%, 0);
+    filter: brightness(1.55) saturate(1.5) contrast(1.1);
+  }
+  30% {
+    transform: scale(1.13) translate3d(0.7%, -0.2%, 0);
+    filter: brightness(1.4) saturate(1.4);
+  }
+  100% {
+    transform: scale(1.05) translate3d(0, 0, 0);
+    filter: brightness(1.1) saturate(1.15);
+  }
+}
+
+/* Tremor do impacto, aplicado no container para sacudir a cena inteira. */
+@keyframes dragao-tremor {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  20% {
+    transform: translate3d(-4px, 2px, 0);
+  }
+  40% {
+    transform: translate3d(3px, -3px, 0);
+  }
+  60% {
+    transform: translate3d(-2px, -1px, 0);
+  }
+  80% {
+    transform: translate3d(2px, 1px, 0);
+  }
+}
+
+.dragao-cena {
+  will-change: transform, filter;
+  transform-origin: 47% 43%; /* a bocarra: é dela que a cena cresce */
+}
+.dragao-respira {
+  animation: dragao-respira 9s ease-in-out infinite;
+}
+.dragao-inspira {
+  /* `forwards` porque a carga é um ESTADO, não um pulso: enquanto o mouse
+     estiver ali, a criatura fica cheia de ar. */
+  animation: dragao-inspira 0.85s cubic-bezier(0.33, 0, 0.2, 1) forwards;
+}
+.dragao-cospe {
+  animation:
+    dragao-cospe 1.4s cubic-bezier(0.15, 0.9, 0.25, 1) forwards,
+    dragao-tremor 0.42s ease-out 2;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

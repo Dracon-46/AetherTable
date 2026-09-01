@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { FireCanvas } from './FireCanvas';
+import { CenaDoDragao, useDragao } from './CenaDoDragao';
 import { useAuthStore } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
@@ -13,7 +13,9 @@ export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
-  const [isHovering, setIsHovering] = useState(false);
+  // A cena do dragão (fundo, véu, brasas e sopro) vive em CenaDoDragao.
+  const { fase, carregar, relaxar, cuspir } = useDragao();
+
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -32,6 +34,9 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoggingIn(true);
     setError(null);
+    // Entrar É o sopro. No plano gratuito o login pode levar ~50 s acordando o
+    // container; a criatura cuspindo é o que preenche essa espera.
+    cuspir();
 
     try {
       // Acorda o serviço ANTES do POST: um login enviado contra um container
@@ -69,21 +74,7 @@ export default function LoginPage() {
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden">
-      {/* Fundo do Dragão com overlay e efeito de fogo */}
-      <div
-        className={`absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700 ${isLoggingIn ? 'animate-fire-breathe' : ''}`}
-        style={{ backgroundImage: 'url("/dragon_bg.png")' }}
-      >
-        <div className="bg-table-deep/70 absolute inset-0 backdrop-blur-[2px]" />
-      </div>
-
-      {/* Partículas de Fogo que literalmente sagram da tela */}
-      <FireCanvas active={isLoggingIn} />
-
-      {/* Luz do Sopro do Dragão que interage com o botão */}
-      {isHovering && !isLoggingIn && (
-        <div className="pointer-events-none absolute inset-0 z-0 animate-pulse bg-orange-600/10 mix-blend-color-dodge transition-opacity duration-500" />
-      )}
+      <CenaDoDragao fase={fase} carregar={carregar} relaxar={relaxar} cuspir={cuspir} />
 
       {/* Painel de Login Glassmorphism */}
       <div
@@ -164,8 +155,10 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isLoggingIn}
-            onMouseEnter={() => setIsHovering(true)}
-            onMouseLeave={() => setIsHovering(false)}
+            // O botão também carrega o dragão: mirar em "Entrar" é mirar no
+            // bote. O sopro em si sai no `handleSubmit`, junto do login.
+            onMouseEnter={carregar}
+            onMouseLeave={relaxar}
             className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold transition-all duration-150 ${
               isLoggingIn
                 ? 'bg-danger cursor-wait text-white'
