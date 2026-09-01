@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   /* Cores Base da Mesa (DOC-041) */
@@ -54,6 +54,9 @@
  *   40  gavetas (inspetor de carta)
  *   50  modais de tela cheia (tokens, jogadores, zonas)
  *   60  bloqueantes de fluxo (mulligan, lobby)
+ *   70  confirmação destrutiva (ConfirmDialog) — precisa ficar por cima do
+ *       modal que disparou a ação, senão o usuário confirma às cegas
+ *   80  avisos efêmeros (ToastHost) — nunca bloqueiam clique
  */
 
 @layer base {
@@ -132,15 +135,21 @@
  * `packages/shared-types/src/cosmetics.ts`.
  */
 @utility borda-brilho-azul {
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 14px 2px rgba(59, 130, 246, 0.55);
+  box-shadow:
+    0 0 0 2px #3b82f6,
+    0 0 14px 2px rgba(59, 130, 246, 0.55);
 }
 
 @utility borda-brilho-ouro {
-  box-shadow: 0 0 0 2px #f59e0b, 0 0 14px 2px rgba(245, 158, 11, 0.55);
+  box-shadow:
+    0 0 0 2px #f59e0b,
+    0 0 14px 2px rgba(245, 158, 11, 0.55);
 }
 
 @utility borda-neon-verde {
-  box-shadow: 0 0 0 2px #22c55e, 0 0 16px 3px rgba(34, 197, 94, 0.5);
+  box-shadow:
+    0 0 0 2px #22c55e,
+    0 0 16px 3px rgba(34, 197, 94, 0.5);
 }
 
 @utility borda-prisma {
@@ -296,6 +305,82 @@
 
 .animate-fire-breathe {
   animation: fire-breathe 2s ease-out forwards;
+}
+
+/*
+ * ── Sorteio: dado e moeda ───────────────────────────────────────────────────
+ *
+ * O servidor já transmitia o resultado e o cliente já o guardava no
+ * `tableStore` — mas nada o desenhava. Girar o dado era indistinguível de não
+ * girar: o número só aparecia como mais uma linha no log, que rolava e sumia.
+ *
+ * A animação não é enfeite. Ela é o que diz à mesa inteira que ALGUÉM sorteou
+ * agora, e o pouso é o que separa o número final do embaralhamento visual que
+ * veio antes. Sem o pouso, o valor lido é sempre duvidoso.
+ *
+ * `prefers-reduced-motion` é tratado no bloco no fim deste arquivo: quem pediu
+ * menos movimento recebe o resultado direto, sem giro.
+ */
+@keyframes sorteio-entrada {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) translateY(24px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes sorteio-saida {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9) translateY(-16px);
+  }
+}
+
+/* Dado: tomba nos três eixos e desacelera até parar de frente. */
+@keyframes dado-rolar {
+  0% {
+    transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+  }
+  70% {
+    transform: rotateX(680deg) rotateY(520deg) rotateZ(180deg);
+  }
+  100% {
+    transform: rotateX(720deg) rotateY(720deg) rotateZ(0deg);
+  }
+}
+
+/* Moeda: gira no eixo vertical e vai achatando até assentar. */
+@keyframes moeda-girar {
+  0% {
+    transform: rotateY(0deg);
+  }
+  100% {
+    transform: rotateY(1800deg);
+  }
+}
+
+.animate-sorteio-entrada {
+  animation: sorteio-entrada 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+.animate-sorteio-saida {
+  animation: sorteio-saida 0.35s ease-in forwards;
+}
+.animate-dado-rolar {
+  animation: dado-rolar 0.9s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+}
+.animate-moeda-girar {
+  animation: moeda-girar 1s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

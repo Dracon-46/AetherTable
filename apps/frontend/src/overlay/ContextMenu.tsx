@@ -16,8 +16,8 @@ import {
   ArrowDownToLine,
   ArrowUpDown,
   Ban,
+  Copy,
   Crosshair,
-  Crown,
   Eye,
   FlipHorizontal,
   Hand,
@@ -337,6 +337,13 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             onClick: executar(() => setEditingCard(card.id)),
           },
           {
+            // Cópia de permanente: sai deslocada da original e entra marcada
+            // como `isCopy`, para o jogador saber qual sai da mesa no fim.
+            rotulo: 'Copiar para a mesa',
+            icone: <Copy className="h-4 w-4" />,
+            onClick: executar(() => intents.copyCard(room, card.id)),
+          },
+          {
             rotulo: 'Apontar seta para…',
             icone: <Crosshair className="h-4 w-4" />,
             onClick: executar(() => {
@@ -358,11 +365,17 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
           icone: <Ban className="h-4 w-4" />,
           onClick: executar(() => intents.unreveal(room, [card.id])),
         },
-        {
-          rotulo: 'Definir como comandante',
-          icone: <Crown className="h-4 w-4" />,
-          onClick: executar(() => intents.setCommander(room, card.id)),
-        },
+        // "Definir como comandante" ficava aqui e foi REMOVIDO de propósito.
+        //
+        // Comandante é decisão de construção de deck, não de mesa. Promover uma
+        // carta qualquer a comandante no meio da partida contorna a validação
+        // de formato inteira: o backend confere na entrada que o deck tem um
+        // comandante legal, e essa checagem não vale nada se qualquer carta na
+        // mão puder virar comandante depois, com imposto próprio e dano de
+        // comandante contando a favor de quem a promoveu.
+        //
+        // O `INTENT_SET_COMMANDER` continua existindo no game-server para o
+        // provisionamento inicial do deck. O que sai é o atalho da mesa.
         {
           rotulo: 'Para a mão',
           icone: <Hand className="h-4 w-4" />,

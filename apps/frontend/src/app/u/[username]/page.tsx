@@ -17,18 +17,25 @@ async function getProfile(username: string) {
   }
 }
 
-export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
+export default async function PublicProfilePage({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}) {
   const { username } = await params;
   const profile = await getProfile(username);
 
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-table-dark">
+      <div className="bg-table-dark flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <Ghost className="w-16 h-16 text-text-muted mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-text mb-2">Planeswalker não encontrado</h1>
+          <Ghost className="text-text-muted mx-auto mb-4 h-16 w-16" />
+          <h1 className="text-text mb-2 text-2xl font-bold">Planeswalker não encontrado</h1>
           <p className="text-text-muted mb-6">O perfil /u/{username} não existe ou foi removido.</p>
-          <Link href="/" className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover">
+          <Link
+            href="/"
+            className="bg-primary hover:bg-primary-hover rounded-lg px-6 py-2 text-white"
+          >
             Voltar para o Início
           </Link>
         </div>
@@ -37,32 +44,35 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   }
 
   return (
-    <div className="min-h-screen bg-table-dark py-12 px-4">
-      <div className="max-w-3xl mx-auto space-y-6">
-        
+    <div className="bg-table-dark min-h-screen px-4 py-12">
+      <div className="mx-auto max-w-3xl space-y-6">
         {/* Cabeçalho do Perfil */}
-        <div className="bg-panel border border-panel-border rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-r from-primary/20 to-speaking/20" />
-          
-          <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 mt-8">
-            <div className="w-32 h-32 rounded-full bg-table-deep border-4 border-panel shadow-lg overflow-hidden flex items-center justify-center flex-shrink-0">
+        <div className="bg-panel border-panel-border relative overflow-hidden rounded-2xl border p-8 shadow-2xl">
+          <div className="from-primary/20 to-speaking/20 absolute inset-x-0 top-0 h-24 bg-gradient-to-r" />
+
+          <div className="relative z-10 mt-8 flex flex-col items-center gap-6 md:flex-row">
+            <div className="bg-table-deep border-panel flex h-32 w-32 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border-4 shadow-lg">
               {profile.avatarUrl ? (
-                <img src={profile.avatarUrl} alt={profile.displayName || profile.username} className="w-full h-full object-cover" />
+                <img
+                  src={profile.avatarUrl}
+                  alt={profile.displayName || profile.username}
+                  className="h-full w-full object-cover"
+                />
               ) : (
-                <User className="w-16 h-16 text-text-muted" />
+                <User className="text-text-muted h-16 w-16" />
               )}
             </div>
-            
-            <div className="text-center md:text-left flex-1">
-              <h1 className="text-3xl font-bold text-white mb-1">
+
+            <div className="flex-1 text-center md:text-left">
+              <h1 className="mb-1 text-3xl font-bold text-white">
                 {profile.displayName || profile.username}
               </h1>
-              <p className="text-primary font-mono bg-primary/10 inline-block px-3 py-1 rounded-full">
+              <p className="text-primary bg-primary/10 inline-block rounded-full px-3 py-1 font-mono">
                 @{profile.username}
               </p>
-              
+
               {profile.role === 'ADMIN' && (
-                <span className="ml-3 text-xs bg-danger/20 text-danger border border-danger/30 px-2 py-0.5 rounded font-bold uppercase">
+                <span className="bg-danger/20 text-danger border-danger/30 ml-3 rounded border px-2 py-0.5 text-xs font-bold uppercase">
                   Admin
                 </span>
               )}
@@ -71,30 +81,32 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
         </div>
 
         {/* Estatísticas e Informações */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-panel border border-panel-border rounded-xl p-6 shadow-lg flex items-center gap-4 hover:border-primary/50 transition-colors">
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-              <Trophy className="w-6 h-6" />
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="bg-panel border-panel-border hover:border-primary/50 flex items-center gap-4 rounded-xl border p-6 shadow-lg transition-colors">
+            <div className="bg-primary/20 text-primary flex h-12 w-12 items-center justify-center rounded-full">
+              <Trophy className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-sm font-medium text-text-muted">Partidas Jogadas</p>
+              <p className="text-text-muted text-sm font-medium">Partidas Jogadas</p>
               <p className="text-3xl font-bold text-white">{profile._count?.participions || 0}</p>
             </div>
           </div>
 
-          <div className="bg-panel border border-panel-border rounded-xl p-6 shadow-lg flex items-center gap-4 hover:border-speaking/50 transition-colors">
-            <div className="w-12 h-12 rounded-full bg-speaking/20 flex items-center justify-center text-speaking">
-              <Calendar className="w-6 h-6" />
+          <div className="bg-panel border-panel-border hover:border-speaking/50 flex items-center gap-4 rounded-xl border p-6 shadow-lg transition-colors">
+            <div className="bg-speaking/20 text-speaking flex h-12 w-12 items-center justify-center rounded-full">
+              <Calendar className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-sm font-medium text-text-muted">No AetherTable desde</p>
+              <p className="text-text-muted text-sm font-medium">No AetherTable desde</p>
               <p className="text-xl font-bold text-white">
-                {new Date(profile.createdAt).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                {new Date(profile.createdAt).toLocaleDateString('pt-BR', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
               </p>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );
