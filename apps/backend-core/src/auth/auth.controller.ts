@@ -16,6 +16,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
 import { LoginDto, RegisterDto } from './auth.dto.js';
+import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import type { RequisicaoOAuth, RespostaRedirecionavel } from './http.types.js';
 
@@ -68,15 +69,37 @@ export class AuthController {
     );
   }
 
+  /**
+   * TENTATIVAS DE LOGIN SÃO O ALVO ÓBVIO.
+   *
+   * O limite global (10 req/5 s) protege a API de sobrecarga, mas é folgado
+   * demais para senha: 120 tentativas por minuto quebram uma senha fraca numa
+   * tarde. Aqui o balde é outro — 5 por minuto por IP.
+   *
+   * Cinco cobre errar a senha, corrigir e tentar de novo com folga. Não cobre
+   * um script. E como a resposta de credencial inválida é sempre a mesma, o
+   * atacante nem descobre se o e-mail existe antes de bater no limite.
+   *
+   * O limite é por IP, então não trava a conta da vítima — quem apanha é quem
+   * tenta. Bloquear por conta seria um jeito fácil de qualquer um deixar outra
+   * pessoa de fora do próprio login.
+   */
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ curto: { ttl: 60_000, limit: 5 }, longo: { ttl: 900_000, limit: 20 } })
   @UsePipes(new ZodValidationPipe(LoginDto))
   @ApiOperation({ summary: 'Realiza o login e devolve os tokens JWT' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.email, dto.password);
   }
 
+  /**
+   * Cadastro é mais caro que login: cria linha no banco e roda argon2, que é
+   * proposital e deliberadamente lento. Sem limite, um laço simples enche a
+   * tabela de usuários e prende a CPU do único nó do plano gratuito.
+   */
   @Post('register')
+  @Throttle({ curto: { ttl: 60_000, limit: 3 }, longo: { ttl: 3_600_000, limit: 10 } })
   @UsePipes(new ZodValidationPipe(RegisterDto))
   @ApiOperation({ summary: 'Cadastra um novo usuário no sistema' })
   register(@Body() dto: RegisterDto) {

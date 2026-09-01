@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { UsersService } from '../users/users.service.js';
 import { PrismaService } from '../common/prisma/prisma.service.js';
+import { ttlEmSegundos } from './ttl.js';
 
 @Injectable()
 export class AuthService {
@@ -11,6 +12,16 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
   ) {}
+
+  /**
+   * O MESMO TTL com que o token é assinado — ver auth.module.ts.
+   *
+   * Antes era `900` escrito à mão aqui, enquanto o módulo assinava com `'7d'`:
+   * a API dizia ao cliente que a sessão durava 15 minutos e entregava um token
+   * de uma semana. Ler da mesma fonte é o que impede os dois de divergirem
+   * outra vez.
+   */
+  private readonly ttlSegundos = ttlEmSegundos(process.env['JWT_ACCESS_TTL']);
 
   /**
    * Valida e/ou cria o usuário via OAuth
@@ -101,7 +112,7 @@ export class AuthService {
     return {
       user: result,
       accessToken,
-      expiresIn: 900, // 15 minutos (900 segundos)
+      expiresIn: this.ttlSegundos,
     };
   }
 
@@ -136,7 +147,7 @@ export class AuthService {
     return {
       user: result,
       accessToken,
-      expiresIn: 900,
+      expiresIn: this.ttlSegundos,
     };
   }
 }
