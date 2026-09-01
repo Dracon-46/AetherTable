@@ -61,6 +61,32 @@ services:
       - key: SCRYFALL_USER_AGENT
         sync: false
 
+      # Para onde devolver o navegador depois do OAuth. Sem isto cai na
+      # primeira origem de CORS_ORIGINS, que é um palpite razoável mas implícito.
+      - key: FRONTEND_URL
+        sync: false
+
+      # Segredo das rotas máquina-a-máquina. `GET /api/v1/internal/decks/:id`
+      # devolve o decklist completo sem checar dono — é o que o game-server
+      # precisa para provisionar a partida.
+      #
+      # EM PRODUÇÃO A ROTA FECHA SEM ESTE VALOR (internal-api.guard.ts). Sem
+      # ele no blueprint, o deploy subia e NENHUM deck era provisionado: a mesa
+      # abria vazia, sem erro visível ao jogador. Precisa ser IDÊNTICO ao do
+      # game-server.
+      - key: INTERNAL_API_TOKEN
+        generateValue: true
+
+      # Voz (LiveKit). `getVoiceToken` cai em 'devkey'/'secret' quando ausente:
+      # o token é emitido, o cliente tenta conectar e falha na autenticação do
+      # LiveKit — um "microfone não funciona" sem nenhuma pista da causa.
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+
   # ─── Game server (Colyseus) ───────────────────────────────────────────────
   - type: web
     name: aethertable-game
@@ -91,4 +117,9 @@ services:
           property: host
 
       - key: PUBLIC_WS_URL
+        sync: false
+
+      # MESMO valor do INTERNAL_API_TOKEN da API. Sem ele o provisionamento de
+      # deck recebe 401 e a partida começa com o grimório vazio.
+      - key: INTERNAL_API_TOKEN
         sync: false

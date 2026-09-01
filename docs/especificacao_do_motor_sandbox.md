@@ -1,16 +1,16 @@
 # Sandbox & Game State Specification
 
-| Campo | Valor |
-|---|---|
-| **ID** | `DOC-032` |
-| **Versão** | 1.1 |
-| **Status** | Estável |
-| **Última revisão** | 2026-08-20 |
+| Campo                       | Valor                                                                                                                                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**                      | `DOC-032`                                                                                                                                                                                                                                                                 |
+| **Versão**                  | 1.1                                                                                                                                                                                                                                                                       |
+| **Status**                  | Estável                                                                                                                                                                                                                                                                   |
+| **Última revisão**          | 2026-08-20                                                                                                                                                                                                                                                                |
 | **Documentos relacionados** | [readme.md](readme.md) · [especificacao_do_motor_de_estado_state_machine.md](especificacao_do_motor_de_estado_state_machine.md) · [especificacao_websocket_e_eventos.md](especificacao_websocket_e_eventos.md) · [seguranca_e_privacidade.md](seguranca_e_privacidade.md) |
 
 > **Fonte canônica do `Schema`.** Este documento define a **estrutura** do estado da sala: as classes,
 > os campos, as zonas e as regras de visibilidade. Para o **comportamento** (qual intenção causa qual
-> mutação, *locks*, máquina de estados), use
+> mutação, _locks_, máquina de estados), use
 > [especificacao_do_motor_de_estado_state_machine.md](especificacao_do_motor_de_estado_state_machine.md).
 
 ---
@@ -20,14 +20,14 @@
 Apesar de não validarmos regras de Magic, o motor precisa manter **leis da física e estrutura de
 zonas** — sem isso o resultado é caos, não liberdade.
 
-| O motor **impõe** | O motor **não impõe** |
-|---|---|
-| Uma carta existe em exatamente uma zona | Se a carta podia ser jogada agora |
-| Uma carta em zona oculta é invisível para os outros | Se o jogador tinha mana |
-| Só quem controla a carta pode movê-la | Se o efeito da carta resolveu |
-| Embaralhar produz ordem aleatória verificável | Quantas cartas podem ser compradas por turno |
-| Contadores são números inteiros ≥ 0 | Se a criatura deveria morrer |
-| Dois jogadores não arrastam a mesma carta | De quem é a prioridade |
+| O motor **impõe**                                   | O motor **não impõe**                        |
+| --------------------------------------------------- | -------------------------------------------- |
+| Uma carta existe em exatamente uma zona             | Se a carta podia ser jogada agora            |
+| Uma carta em zona oculta é invisível para os outros | Se o jogador tinha mana                      |
+| Só quem controla a carta pode movê-la               | Se o efeito da carta resolveu                |
+| Embaralhar produz ordem aleatória verificável       | Quantas cartas podem ser compradas por turno |
+| Contadores são números inteiros ≥ 0                 | Se a criatura deveria morrer                 |
+| Dois jogadores não arrastam a mesma carta           | De quem é a prioridade                       |
 
 Essa é a fronteira da `RN01`: **restrição física é legítima; julgamento de regra não é.**
 
@@ -38,14 +38,14 @@ Essa é a fronteira da `RN01`: **restrição física é legítima; julgamento de
 Cada carta instanciada tem uma propriedade `zone`. A zona determina **visibilidade de rede** e
 **regras de movimento**.
 
-| Zona | Visibilidade | Estrutura | Coordenadas | Observações |
-|---|---|---|---|---|
-| `BATTLEFIELD` | **Pública** | Livre | `x`, `y`, `zIndex` exatos | Oponentes veem tudo |
-| `COMMAND` | **Pública** | Ancorada em painel | Posição fixa por *slot* | Exibe `commanderTax` |
-| `GRAVEYARD` | **Pública** | Array ordenada | Não usa `x`/`y` | Vira lista de UI; último inserido no topo |
-| `EXILE` | **Pública** | Array ordenada | Não usa `x`/`y` | Idem |
-| `HAND` | **Oculta** (dono) | Array ordenada | Não usa `x`/`y` | `scryfallId` **filtrado** |
-| `LIBRARY` | **Oculta e ordenada** | *Stack* (topo = último índice) | Não usa `x`/`y` | Apenas `.length` é público |
+| Zona          | Visibilidade          | Estrutura                      | Coordenadas               | Observações                               |
+| ------------- | --------------------- | ------------------------------ | ------------------------- | ----------------------------------------- |
+| `BATTLEFIELD` | **Pública**           | Livre                          | `x`, `y`, `zIndex` exatos | Oponentes veem tudo                       |
+| `COMMAND`     | **Pública**           | Ancorada em painel             | Posição fixa por _slot_   | Exibe `commanderTax`                      |
+| `GRAVEYARD`   | **Pública**           | Array ordenada                 | Não usa `x`/`y`           | Vira lista de UI; último inserido no topo |
+| `EXILE`       | **Pública**           | Array ordenada                 | Não usa `x`/`y`           | Idem                                      |
+| `HAND`        | **Oculta** (dono)     | Array ordenada                 | Não usa `x`/`y`           | `scryfallId` **filtrado**                 |
+| `LIBRARY`     | **Oculta e ordenada** | _Stack_ (topo = último índice) | Não usa `x`/`y`           | Apenas `.length` é público                |
 
 ### 2.1 Transições de zona permitidas
 
@@ -64,30 +64,30 @@ Todas as transições são permitidas — é um sandbox. O motor apenas garante 
 
 **Efeitos colaterais obrigatórios de cada transição:**
 
-| Ao entrar em | O motor faz |
-|---|---|
-| `BATTLEFIELD` | Atribui `x`, `y` e `zIndex`; mantém `isTapped`/`counters` se veio do próprio Battlefield, senão zera |
-| `HAND` | Zera `x`, `y`, `isTapped`, `counters`, `faceDown`; **recalcula visibilidade** |
-| `LIBRARY` | Zera tudo; insere no índice indicado (topo, fundo ou posição) |
-| `GRAVEYARD` / `EXILE` | Zera `isTapped` e `counters`; empilha no fim do array |
-| `COMMAND` | Zera contadores; ancora no *slot* do dono |
-| Qualquer zona ≠ `BATTLEFIELD`, sendo `isToken = true` | **Destrói o objeto** — fichas deixam de existir fora do campo |
+| Ao entrar em                                          | O motor faz                                                                                          |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `BATTLEFIELD`                                         | Atribui `x`, `y` e `zIndex`; mantém `isTapped`/`counters` se veio do próprio Battlefield, senão zera |
+| `HAND`                                                | Zera `x`, `y`, `isTapped`, `counters`, `faceDown`; **recalcula visibilidade**                        |
+| `LIBRARY`                                             | Zera tudo; insere no índice indicado (topo, fundo ou posição)                                        |
+| `GRAVEYARD` / `EXILE`                                 | Zera `isTapped` e `counters`; empilha no fim do array                                                |
+| `COMMAND`                                             | Zera contadores; ancora no _slot_ do dono                                                            |
+| Qualquer zona ≠ `BATTLEFIELD`, sendo `isToken = true` | **Destrói o objeto** — fichas deixam de existir fora do campo                                        |
 
 ---
 
 ## 3. Modelo de estado da sala (`Schema` do Colyseus)
 
-Este é o coração da partida: vive na RAM do game node e, opcionalmente, em *snapshot* no Redis.
+Este é o coração da partida: vive na RAM do game node e, opcionalmente, em _snapshot_ no Redis.
 
 ```ts
 // game-server/src/schema/Card.ts
 import { Schema, type, filter, MapSchema } from '@colyseus/schema';
 
 export class Card extends Schema {
-  @type('string') id!: string;              // UUID desta carta nesta partida
-  @type('string') ownerId!: string;         // dono do deck — NUNCA muda
-  @type('string') controllerId!: string;    // quem manipula agora (RN08)
-  @type('string') zone!: string;            // BATTLEFIELD | HAND | LIBRARY | STACK | ...
+  @type('string') id!: string; // UUID desta carta nesta partida
+  @type('string') ownerId!: string; // dono do deck — NUNCA muda
+  @type('string') controllerId!: string; // quem manipula agora (RN08)
+  @type('string') zone!: string; // BATTLEFIELD | HAND | LIBRARY | STACK | ...
 
   // ───────────────────────────────────────────────────────────────
   //  CAMPO CRÍTICO — a identidade da carta.
@@ -97,38 +97,39 @@ export class Card extends Schema {
   @filter(function (this: Card, client: { sessionId: string }) {
     return podeVer(this, client.sessionId);
   })
-  @type('string') scryfallId!: string;
+  @type('string')
+  scryfallId!: string;
 
   // ── concessões de visibilidade (RN13) ────────────────────────────
   // Strings com sessionIds separados por vírgula, não ArraySchema:
   // o filtro roda ~30.000×/s por sala e indexOf sobre string curta
   // é mais barato que iterar coleção (§7).
-  @type('string') revealedTo = '';          // 'ALL' | 'sid1,sid2' — persistente até troca de zona
-  @type('string') peekedBy = '';            // 'sid1,sid2' — transitório, limpo ao fechar o painel
+  @type('string') revealedTo = ''; // 'ALL' | 'sid1,sid2' — persistente até troca de zona
+  @type('string') peekedBy = ''; // 'sid1,sid2' — transitório, limpo ao fechar o painel
 
   @type('number') x = 0;
   @type('number') y = 0;
-  @type('number') rotation = 0;             // 0 = normal, 90 = virada, 180 = invertida
+  @type('number') rotation = 0; // 0 = normal, 90 = virada, 180 = invertida
   @type('number') zIndex = 0;
   @type('boolean') isTapped = false;
-  @type('boolean') faceDown = false;        // morph / manifest / disguise / exílio oculto
-  @type('boolean') phasedOut = false;       // marcador visual
+  @type('boolean') faceDown = false; // morph / manifest / disguise / exílio oculto
+  @type('boolean') phasedOut = false; // marcador visual
   @type('boolean') isToken = false;
   @type('boolean') isCopy = false;
-  @type('boolean') isFlipped = false;       // DFC mostrando a face de trás
-  @type('string') lockedBy = '';            // sessionId de quem arrasta (FR-10)
-  @type('string') attachedTo = '';          // equipamento / aura anexada a outra carta
-  @type('string') exiledBy = '';            // agrupa o exílio pela carta que exilou (ação 92)
-  @type('string') goadedBy = '';            // marcador de provocada
-  @type('string') note = '';                // anotação livre do jogador (máx. 120 caracteres)
-  @type('string') highlight = '';           // cor de destaque
-  @type('number') damage = 0;               // dano marcado, distinto de -1/-1
-  @type('number') powerOverride = 0;        // P/T sobreposto para fichas e cópias
+  @type('boolean') isFlipped = false; // DFC mostrando a face de trás
+  @type('string') lockedBy = ''; // sessionId de quem arrasta (FR-10)
+  @type('string') attachedTo = ''; // equipamento / aura anexada a outra carta
+  @type('string') exiledBy = ''; // agrupa o exílio pela carta que exilou (ação 92)
+  @type('string') goadedBy = ''; // marcador de provocada
+  @type('string') note = ''; // anotação livre do jogador (máx. 120 caracteres)
+  @type('string') highlight = ''; // cor de destaque
+  @type('number') damage = 0; // dano marcado, distinto de -1/-1
+  @type('number') powerOverride = 0; // P/T sobreposto para fichas e cópias
   @type('number') toughnessOverride = 0;
 
   // contadores com chave STRING LIVRE, não enum: Magic tem 100+ tipos
   // nomeados e cada coleção adiciona outros. Chave: ^[a-z0-9_+\-]{1,24}$
-  @type({ map: 'number' }) counters = new MapSchema<number>();  // "p1p1" -> 3, "oil" -> 2
+  @type({ map: 'number' }) counters = new MapSchema<number>(); // "p1p1" -> 3, "oil" -> 2
 }
 ```
 
@@ -173,7 +174,7 @@ export function podeVer(card: Card, sid: string): boolean {
 function contem(lista: string, sid: string): boolean {
   const i = lista.indexOf(sid);
   if (i === -1) return false;
-  const antes = i === 0 || lista.charCodeAt(i - 1) === 44;          // ',' ou início
+  const antes = i === 0 || lista.charCodeAt(i - 1) === 44; // ',' ou início
   const fim = i + sid.length;
   const depois = fim === lista.length || lista.charCodeAt(fim) === 44;
   return antes && depois;
@@ -194,15 +195,15 @@ alocar array — relevante porque essa função roda dezenas de milhares de veze
 ```ts
 // game-server/src/schema/Player.ts
 export class Player extends Schema {
-  @type('string') id!: string;              // sessionId
-  @type('string') userId!: string;          // id persistente da conta
+  @type('string') id!: string; // sessionId
+  @type('string') userId!: string; // id persistente da conta
   @type('string') name!: string;
   @type('string') avatarUrl = '';
-  @type('string') playmatUrl = '';          // URL do playmat
-  @type('string') sleeveUrl = '';           // URL da estampa do verso da carta
-  @type('string') profileBorder = '';       // Borda animada
-  @type('string') chatTitle = '';           // Título no log
-  @type('number') seat = 0;                 // 0..3 — posição na mesa
+  @type('string') playmatUrl = ''; // URL do playmat
+  @type('string') sleeveUrl = ''; // URL da estampa do verso da carta
+  @type('string') profileBorder = ''; // Borda animada
+  @type('string') chatTitle = ''; // Título no log
+  @type('number') seat = 0; // 0..3 — posição na mesa
 
   @type('number') life = 40;
   @type('number') poison = 0;
@@ -220,7 +221,7 @@ export class Player extends Schema {
   @type('number') libraryCount = 0;
 
   @type('boolean') connected = true;
-  @type('number') disconnectedAt = 0;       // epoch ms; 0 = conectado
+  @type('number') disconnectedAt = 0; // epoch ms; 0 = conectado
 }
 ```
 
@@ -228,9 +229,9 @@ export class Player extends Schema {
 // game-server/src/schema/RoomState.ts
 export class RoomState extends Schema {
   @type('string') roomCode!: string;
-  @type('string') phase = 'PLAYING';        // WAITING | PLAYING | PAUSED | CLOSING
-  @type('number') turn = 1;                 // marcador VISUAL apenas (F29)
-  @type('string') activePlayerId = '';      // marcador VISUAL apenas
+  @type('string') phase = 'PLAYING'; // WAITING | PLAYING | PAUSED | CLOSING
+  @type('number') turn = 1; // marcador VISUAL apenas (F29)
+  @type('string') activePlayerId = ''; // marcador VISUAL apenas
   @type('number') startedAt = 0;
 
   @type({ map: Player }) players = new MapSchema<Player>();
@@ -245,7 +246,7 @@ export class RoomState extends Schema {
 
 `HAND`, `LIBRARY`, `GRAVEYARD` e `EXILE` são **ordenadas**, e a ordem importa (topo do grimório,
 sequência do cemitério). Guardar a ordem como um índice dentro de `Card` obrigaria a reindexar N
-cartas a cada inserção — N *patches* para uma única compra.
+cartas a cada inserção — N _patches_ para uma única compra.
 
 Com `zoneOrder`, comprar uma carta gera: uma mutação em `Card.zone`, uma remoção em
 `zoneOrder["p1:LIBRARY"]` e uma inserção em `zoneOrder["p1:HAND"]`. Barato e claro.
@@ -263,16 +264,16 @@ Com `zoneOrder`, comprar uma carta gera: uma mutação em `Card.zone`, uma remo�
 
 Avaliada **na ordem**. A primeira linha que casa decide. Implementação em `podeVer()`, §3.0.1.
 
-| # | Condição | `scryfallId` é enviado? | Regra |
-|---|---|---|---|
-| 1 | `revealedTo === 'ALL'` | ✅ **Sim, a todos** | `RN13` |
-| 2 | `sid ∈ revealedTo` | ✅ Sim, aos escolhidos | `RN13` |
-| 3 | `sid ∈ peekedBy` | ✅ Sim, enquanto a olhada durar | `RN13` |
-| 4 | `faceDown` (qualquer zona) | Só se `sid === controllerId` | §4.3 |
-| 5 | Zona ∈ {`BATTLEFIELD`, `GRAVEYARD`, `EXILE`, `COMMAND`, `STACK`} | ✅ Sim | Zona pública |
-| 6 | Zona = `HAND` | Só se `sid === ownerId` | `RN02` |
-| 7 | Zona = `LIBRARY` | ❌ **Não — a ninguém** | §4.4 |
-| 8 | Zona desconhecida | ❌ **Não** | Falha fechada |
+| #   | Condição                                                         | `scryfallId` é enviado?         | Regra         |
+| --- | ---------------------------------------------------------------- | ------------------------------- | ------------- |
+| 1   | `revealedTo === 'ALL'`                                           | ✅ **Sim, a todos**             | `RN13`        |
+| 2   | `sid ∈ revealedTo`                                               | ✅ Sim, aos escolhidos          | `RN13`        |
+| 3   | `sid ∈ peekedBy`                                                 | ✅ Sim, enquanto a olhada durar | `RN13`        |
+| 4   | `faceDown` (qualquer zona)                                       | Só se `sid === controllerId`    | §4.3          |
+| 5   | Zona ∈ {`BATTLEFIELD`, `GRAVEYARD`, `EXILE`, `COMMAND`, `STACK`} | ✅ Sim                          | Zona pública  |
+| 6   | Zona = `HAND`                                                    | Só se `sid === ownerId`         | `RN02`        |
+| 7   | Zona = `LIBRARY`                                                 | ❌ **Não — a ninguém**          | §4.4          |
+| 8   | Zona desconhecida                                                | ❌ **Não**                      | Falha fechada |
 
 **Por que revelação e olhada vêm antes da zona:** são exatamente os casos em que a zona diz "oculto" e
 uma ação explícita do jogador diz "este pode ver". Inverter a ordem tornaria `INTENT_PEEK` e
@@ -282,24 +283,24 @@ uma ação explícita do jogador diz "este pode ver". Inverter a ordem tornaria 
 
 O modelo tem duas concessões, com durações diferentes:
 
-| Campo | Semântica | Concedido por | Revogado por |
-|---|---|---|---|
-| `peekedBy` | "eu **olhei** esta carta" | `INTENT_PEEK`, `INTENT_SCRY`, `INTENT_SURVEIL`, `INTENT_SEARCH_ZONE` | Fechar o painel · *timeout* de 120 s · troca de zona |
-| `revealedTo` | "esta carta **está revelada** para estes" | `INTENT_REVEAL`, `INTENT_REVEAL_ZONE`, `INTENT_REVEAL_TOP` | `INTENT_UNREVEAL` · **troca de zona** |
+| Campo        | Semântica                                 | Concedido por                                                        | Revogado por                                         |
+| ------------ | ----------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------- |
+| `peekedBy`   | "eu **olhei** esta carta"                 | `INTENT_PEEK`, `INTENT_SCRY`, `INTENT_SURVEIL`, `INTENT_SEARCH_ZONE` | Fechar o painel · _timeout_ de 120 s · troca de zona |
+| `revealedTo` | "esta carta **está revelada** para estes" | `INTENT_REVEAL`, `INTENT_REVEAL_ZONE`, `INTENT_REVEAL_TOP`           | `INTENT_UNREVEAL` · **troca de zona**                |
 
 **Sem a ação, o dado não existe no cliente.** Não está escondido, não está num campo ignorado, não
 está em memória — **nunca foi serializado**. Modificar o frontend não dá acesso porque não há nada para
 desbloquear.
 
-**Toda concessão gera log público** (`RN09`): os oponentes sempre sabem *que* houve uma olhada, sem
-saber *o que* foi visto. Isso torna o histórico da partida uma auditoria completa de acesso.
+**Toda concessão gera log público** (`RN09`): os oponentes sempre sabem _que_ houve uma olhada, sem
+saber _o que_ foi visto. Isso torna o histórico da partida uma auditoria completa de acesso.
 
 ### 4.1.2 Limpeza obrigatória em troca de zona
 
 ```ts
 // SEMPRE, em applyZoneEffects (DOC-033 §4)
 card.revealedTo = '';
-card.peekedBy   = '';
+card.peekedBy = '';
 ```
 
 Sem isso, o vazamento é permanente: uma carta revelada na mão que vai ao campo e volta à mão
@@ -333,11 +334,11 @@ mas sua identidade só é conhecida por quem tem direito:
 
 **Vale em qualquer zona pública**, não só no campo:
 
-| Caso | Zona | Quem conhece a identidade |
-|---|---|---|
-| Morph / Manifest / Disguise / Cloak | `BATTLEFIELD` | Só o controlador |
-| Foretell / Plot / exílio oculto | `EXILE` | Só o controlador |
-| Carta jogada face para baixo | `BATTLEFIELD` | Só o controlador |
+| Caso                                | Zona          | Quem conhece a identidade |
+| ----------------------------------- | ------------- | ------------------------- |
+| Morph / Manifest / Disguise / Cloak | `BATTLEFIELD` | Só o controlador          |
+| Foretell / Plot / exílio oculto     | `EXILE`       | Só o controlador          |
+| Carta jogada face para baixo        | `BATTLEFIELD` | Só o controlador          |
 
 Sem tratar `faceDown` **antes** da checagem de zona pública, virar uma carta para baixo é puramente
 cosmético — o oponente lê a identidade no pacote. É por isso que a cláusula 4 da tabela §4.1 precede a
@@ -357,7 +358,7 @@ visibilidade temporária via `peekedBy` e deixando log público.
 
 Todo campo novo adicionado a `Card` precisa responder: **"isto revela algo sobre uma carta oculta?"**
 Se a resposta for sim ou "talvez", entra com `@filter`. O teste `G1` do `DOC-010` §7 é executado em CI
-e falha o *build* se `scryfallId` ou `name` aparecerem no tráfego de um oponente.
+e falha o _build_ se `scryfallId` ou `name` aparecerem no tráfego de um oponente.
 
 ---
 
@@ -391,11 +392,11 @@ export function shuffle<T>(arr: T[]): T[] {
 
 ### 5.1 Por que `crypto.randomInt` e não `Math.random()`
 
-| | `Math.random()` | `crypto.randomInt` |
-|---|---|---|
-| Previsibilidade | Estado interno do PRNG é recuperável a partir de saídas observadas | Não previsível |
-| Viés no módulo | `Math.floor(Math.random() * n)` introduz viés para alguns `n` | Trata rejeição internamente |
-| Adequado para jogo com adversário | **Não** | Sim |
+|                                   | `Math.random()`                                                    | `crypto.randomInt`          |
+| --------------------------------- | ------------------------------------------------------------------ | --------------------------- |
+| Previsibilidade                   | Estado interno do PRNG é recuperável a partir de saídas observadas | Não previsível              |
+| Viés no módulo                    | `Math.floor(Math.random() * n)` introduz viés para alguns `n`      | Trata rejeição internamente |
+| Adequado para jogo com adversário | **Não**                                                            | Sim                         |
 
 Em um jogo onde os jogadores competem, um PRNG previsível é uma vulnerabilidade — alguém poderia
 inferir a ordem do grimório após observar rolagens suficientes. O custo de `randomInt` é irrelevante
@@ -403,13 +404,13 @@ na nossa escala.
 
 ### 5.2 Onde a aleatoriedade aparece
 
-| Operação | Função | Publicação |
-|---|---|---|
-| Embaralhar grimório | `shuffle()` | Log "embaralhou"; conteúdo **não** vai aos oponentes |
-| Embaralhar ao entrar na sala | `shuffle()` | Silencioso |
-| Rolar dado | `rollDie()` | Log + evento `dice` para **todos** |
-| Cara ou coroa | `flipCoin()` | Log + evento para todos |
-| Determinar quem começa | `rollDie(playerCount)` | Log |
+| Operação                     | Função                 | Publicação                                           |
+| ---------------------------- | ---------------------- | ---------------------------------------------------- |
+| Embaralhar grimório          | `shuffle()`            | Log "embaralhou"; conteúdo **não** vai aos oponentes |
+| Embaralhar ao entrar na sala | `shuffle()`            | Silencioso                                           |
+| Rolar dado                   | `rollDie()`            | Log + evento `dice` para **todos**                   |
+| Cara ou coroa                | `flipCoin()`           | Log + evento para todos                              |
+| Determinar quem começa       | `rollDie(playerCount)` | Log                                                  |
 
 ### 5.3 Verificação (`FR-09`)
 
@@ -439,12 +440,12 @@ testado que `Math.random` **não aparece** em nenhum arquivo de `game-server/src
                                 └──────────┘
 ```
 
-| Estado | Significado | Intenções aceitas |
-|---|---|---|
-| `WAITING` | Sala criada, aguardando jogadores | Chat, configuração |
-| `PLAYING` | Partida em andamento | Todas |
-| `PAUSED` | Todos desconectados, dentro da janela | Nenhuma |
-| `CLOSING` | Encerramento anunciado (saída ou drenagem de deploy) | Nenhuma |
+| Estado    | Significado                                          | Intenções aceitas  |
+| --------- | ---------------------------------------------------- | ------------------ |
+| `WAITING` | Sala criada, aguardando jogadores                    | Chat, configuração |
+| `PLAYING` | Partida em andamento                                 | Todas              |
+| `PAUSED`  | Todos desconectados, dentro da janela                | Nenhuma            |
+| `CLOSING` | Encerramento anunciado (saída ou drenagem de deploy) | Nenhuma            |
 
 ### 6.1 Provisionamento inicial de um jogador (`onJoin`)
 
@@ -464,15 +465,15 @@ sala (`NFR-07`) e dos 300–400 sprites de `NFR-01`.
 
 ## 7. Orçamento de recursos por sala
 
-| Recurso | Estimativa | Limite (`NFR`) |
-|---|---|---|
-| Objetos `Card` | ~400 (4 × 100) | — |
-| Objetos `Player` | 1–8, conforme o preset (típico: 4) | `RN03` |
-| RAM por sala | ~4–8 MB | ≤ 8 MB (`NFR-07`) |
-| Sprites no Canvas do cliente | 40–120 típico; 300 pico | ≥ 30 FPS a 300 (`NFR-01`) |
-| Banda de saída por cliente | 2–15 KB/s | ≤ 15 KB/s (`NFR-05`) |
-| `patchRate` | 50 ms (20 Hz) | — |
-| Custo de `@filter` | O(cartas × clientes) por *patch* | Monitorado em `ws_patch_duration_seconds` |
+| Recurso                      | Estimativa                         | Limite (`NFR`)                            |
+| ---------------------------- | ---------------------------------- | ----------------------------------------- |
+| Objetos `Card`               | ~400 (4 × 100)                     | —                                         |
+| Objetos `Player`             | 1–8, conforme o preset (típico: 4) | `RN03`                                    |
+| RAM por sala                 | ~4–8 MB                            | ≤ 8 MB (`NFR-07`)                         |
+| Sprites no Canvas do cliente | 40–120 típico; 300 pico            | ≥ 30 FPS a 300 (`NFR-01`)                 |
+| Banda de saída por cliente   | 2–15 KB/s                          | ≤ 15 KB/s (`NFR-05`)                      |
+| `patchRate`                  | 50 ms (20 Hz)                      | —                                         |
+| Custo de `@filter`           | O(cartas × clientes) por _patch_   | Monitorado em `ws_patch_duration_seconds` |
 
 **Ponto de atenção de performance:** o `@filter` é avaliado **por cliente, por campo filtrado, por
 patch**. Com 400 cartas × 4 clientes × 20 Hz, são ~32.000 avaliações por segundo por sala. A função de

@@ -26,7 +26,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 - Contrato (`IntentPayloadMap`): **85** intenções
 - Implementadas no servidor: **79**
-- Emitidas pelo cliente: **78**
+- Emitidas pelo cliente: **79**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -49,7 +49,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_CLEAR_TOKENS`         |    ✅    |   ✅    |
 | `INTENT_CLOSE_PEEK`           |    ✅    |   ✅    |
 | `INTENT_CONCEDE`              |    ✅    |   ✅    |
-| `INTENT_COPY_CARD`            |    ✅    |    —    |
+| `INTENT_COPY_CARD`            |    ✅    |   ✅    |
 | `INTENT_CREATE_EMBLEM`        |    —     |    —    |
 | `INTENT_CREATE_TOKEN`         |    ✅    |   ✅    |
 | `INTENT_DESTROY_TOKEN`        |    ✅    |   ✅    |
@@ -139,7 +139,7 @@ nova — não apenas um handler. Ficam listadas em `INTENCOES_PENDENTES`
 Existem no servidor e ainda não têm superfície na interface. Não são defeito:
 são pontos de extensão prontos.
 
-- `INTENT_COPY_CARD`
+_Nenhuma._
 
 ## 6. Fora do contrato, sem plano
 

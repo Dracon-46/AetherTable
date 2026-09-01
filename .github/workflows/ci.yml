@@ -69,3 +69,25 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Instalar o Chromium do Playwright
+        # `--with-deps` traz as bibliotecas de sistema que o Chromium headless
+        # precisa no runner do GitHub. Só o Chromium: a suíte roda os dois
+        # perfis (Desktop Chrome e Pixel 7) sobre o mesmo motor.
+        run: pnpm --filter frontend exec playwright install --with-deps chromium
+
+      - name: E2E das telas públicas
+        # Reaproveita o build do passo anterior: o `webServer` do
+        # playwright.config.ts sobe `next start` na 3210. A suíte cobre o que
+        # roda sem banco e sem os dois serviços — renderização, ausência de
+        # estouro horizontal, erros de página e roteamento entre login e
+        # cadastro.
+        run: pnpm --filter frontend test:e2e
+
+      - name: Guardar o relatório do E2E quando falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/frontend/playwright-report
+          retention-days: 7

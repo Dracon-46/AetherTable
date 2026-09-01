@@ -52,8 +52,12 @@ RUN pnpm exec prisma generate && pnpm exec nest build
 
 # `pnpm deploy` monta uma árvore autocontida, com node_modules real (sem
 # symlinks para fora) — é o que torna possível copiar só isso para o runtime.
+#
+# SEM `--legacy`: essa flag NÃO EXISTE no pnpm 9.15.4 (a versão fixada em
+# `packageManager`). O comando falhava com "Unknown option: 'legacy'" e o build
+# da imagem morria aqui — ou seja, nenhum dos dois serviços era publicável.
 WORKDIR /repo
-RUN pnpm --filter backend-core --prod --legacy deploy /out
+RUN pnpm --filter backend-core --prod deploy /out
 
 # ─── Estágio 2: runtime ─────────────────────────────────────────────────────
 FROM node:22-slim AS runner
@@ -71,6 +75,14 @@ COPY --from=builder /repo/apps/backend-core/dist ./dist
 # da imagem, no start.
 COPY --from=builder /repo/apps/backend-core/prisma ./prisma
 COPY --from=builder /repo/apps/backend-core/package.json ./package.json
+
+# Regenera o client aqui, na estrutura FINAL de node_modules. O `prisma
+# generate` que rodou como postinstall do `pnpm deploy` (estágio builder)
+# escreveu dentro do virtual store temporário do pnpm — o caminho que o Node
+# resolve em runtime nesta imagem é outro, e o client fica "stub"
+# ("@prisma/client did not initialize yet"). Gerar de novo já em /app elimina a
+# discrepância. Não precisa de DATABASE_URL: generate só lê o schema.
+RUN node_modules/.bin/prisma generate
 
 # Nunca rodar como root.
 USER node

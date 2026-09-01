@@ -1,11 +1,11 @@
 # Especificação WebRTC (Voz / LiveKit)
 
-| Campo | Valor |
-|---|---|
-| **ID** | `DOC-034` |
-| **Versão** | 1.1 |
-| **Status** | Estável |
-| **Última revisão** | 2026-08-20 |
+| Campo                       | Valor                                                                                                                                                                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**                      | `DOC-034`                                                                                                                                                                                                                                 |
+| **Versão**                  | 1.1                                                                                                                                                                                                                                       |
+| **Status**                  | Estável                                                                                                                                                                                                                                   |
+| **Última revisão**          | 2026-08-20                                                                                                                                                                                                                                |
 | **Documentos relacionados** | [readme.md](readme.md) · [documento_de_arquitetura.md](documento_de_arquitetura.md) · [especificacao_tecnica_do_frontend_ui_ux.md](especificacao_tecnica_do_frontend_ui_ux.md) · [devops_e_infraestrutura.md](devops_e_infraestrutura.md) |
 
 ---
@@ -42,14 +42,14 @@ Internet doméstica brasileira é fortemente assimétrica — planos de 300 Mbps
 justamente no recurso mais escasso, e ainda soma o custo de manter 3 conexões ICE simultâneas (mais
 chance de falha de travessia de NAT).
 
-| | Malha P2P | SFU |
-|---|---|---|
-| Upload por usuário | ~90 kbps (3 trilhas) | **~30 kbps (1 trilha)** |
-| Download por usuário | ~90 kbps | ~90 kbps |
-| Conexões ICE por usuário | 3 | **1** |
-| Custo de banda no servidor | Zero | **Alto** — principal item da fatura |
-| Escala para 5–6 jogadores | Degrada rápido | Linear |
-| Ponto único de falha | Não | Sim (mitigado — §6) |
+|                            | Malha P2P            | SFU                                 |
+| -------------------------- | -------------------- | ----------------------------------- |
+| Upload por usuário         | ~90 kbps (3 trilhas) | **~30 kbps (1 trilha)**             |
+| Download por usuário       | ~90 kbps             | ~90 kbps                            |
+| Conexões ICE por usuário   | 3                    | **1**                               |
+| Custo de banda no servidor | Zero                 | **Alto** — principal item da fatura |
+| Escala para 5–6 jogadores  | Degrada rápido       | Linear                              |
+| Ponto único de falha       | Não                  | Sim (mitigado — §6)                 |
 
 Decisão registrada em `ADR-005`.
 
@@ -83,16 +83,16 @@ Decisão registrada em `ADR-005`.
 Emitido pelo **Backend Core** (nunca pelo frontend — a chave secreta do LiveKit não pode sair do
 servidor).
 
-| Claim | Valor | Motivo |
-|---|---|---|
-| `room` | `roomId` da partida | Impede entrar na sala de voz de outra partida |
-| `identity` | `userId` persistente | Vincula a trilha ao jogador certo |
-| `name` | `displayName` | Rótulo na UI |
-| `canPublish` (áudio) | `true` | Falar |
-| `canPublishVideo` | **`false`** | Vídeo está fora de escopo (`RFW03`) |
-| `canPublishData` | `false` | Dados vão pelo Colyseus, não pelo LiveKit |
-| `canSubscribe` | `true` | Ouvir |
-| `exp` | 60 s para uso inicial | Token vazado tem janela mínima |
+| Claim                | Valor                 | Motivo                                        |
+| -------------------- | --------------------- | --------------------------------------------- |
+| `room`               | `roomId` da partida   | Impede entrar na sala de voz de outra partida |
+| `identity`           | `userId` persistente  | Vincula a trilha ao jogador certo             |
+| `name`               | `displayName`         | Rótulo na UI                                  |
+| `canPublish` (áudio) | `true`                | Falar                                         |
+| `canPublishVideo`    | **`false`**           | Vídeo está fora de escopo (`RFW03`)           |
+| `canPublishData`     | `false`               | Dados vão pelo Colyseus, não pelo LiveKit     |
+| `canSubscribe`       | `true`                | Ouvir                                         |
+| `exp`                | 60 s para uso inicial | Token vazado tem janela mínima                |
 
 **Chave crítica de segurança:** o `roomId` no token é o que impede um jogador de entrar na sala de voz
 de uma partida alheia. Sem esse vínculo, bastaria trocar um parâmetro no cliente.
@@ -107,17 +107,17 @@ São diferentes de propósito (a sessão muda a cada reconexão, o usuário não
 
 ## 3. Configuração de mídia
 
-| Parâmetro | Valor | Justificativa |
-|---|---|---|
-| Codec | **Opus** | Padrão WebRTC, excelente para voz em baixo bitrate |
-| Canais | Mono | Voz não se beneficia de estéreo; metade da banda |
-| Bitrate | 24–32 kbps (padrão), até 64 kbps em sala de apoiador | Suficiente para fala inteligível |
-| Taxa de amostragem | 48 kHz | Padrão do Opus |
-| DTX (*Discontinuous Transmission*) | **Habilitado** | Para de transmitir no silêncio — economia real, já que a maior parte do tempo cada pessoa está calada |
-| Supressão de ruído | Habilitada (cliente) | `noiseSuppression: true` |
-| Cancelamento de eco | Habilitado (cliente) | `echoCancellation: true` |
-| AGC | Habilitado (cliente) | `autoGainControl: true` |
-| Transporte | UDP/SRTP; TURN sobre TCP/443 como *fallback* | Rede corporativa costuma bloquear UDP |
+| Parâmetro                          | Valor                                                | Justificativa                                                                                         |
+| ---------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Codec                              | **Opus**                                             | Padrão WebRTC, excelente para voz em baixo bitrate                                                    |
+| Canais                             | Mono                                                 | Voz não se beneficia de estéreo; metade da banda                                                      |
+| Bitrate                            | 24–32 kbps (padrão), até 64 kbps em sala de apoiador | Suficiente para fala inteligível                                                                      |
+| Taxa de amostragem                 | 48 kHz                                               | Padrão do Opus                                                                                        |
+| DTX (_Discontinuous Transmission_) | **Habilitado**                                       | Para de transmitir no silêncio — economia real, já que a maior parte do tempo cada pessoa está calada |
+| Supressão de ruído                 | Habilitada (cliente)                                 | `noiseSuppression: true`                                                                              |
+| Cancelamento de eco                | Habilitado (cliente)                                 | `echoCancellation: true`                                                                              |
+| AGC                                | Habilitado (cliente)                                 | `autoGainControl: true`                                                                               |
+| Transporte                         | UDP/SRTP; TURN sobre TCP/443 como _fallback_         | Rede corporativa costuma bloquear UDP                                                                 |
 
 ```ts
 // frontend/src/voice/connect.ts
@@ -148,12 +148,12 @@ export async function connectVoice(url: string, token: string) {
 
 ### 4.1 Mute e volume
 
-| Ação | Implementação | Escopo |
-|---|---|---|
+| Ação                          | Implementação                                                         | Escopo                |
+| ----------------------------- | --------------------------------------------------------------------- | --------------------- |
 | **Mutar o próprio microfone** | `localParticipant.setMicrophoneEnabled(false)` — para de **publicar** | Todos deixam de ouvir |
-| **Mute local de um oponente** | `remoteParticipant.setVolume(0)` | Só para mim |
-| **Volume individual** | `remoteParticipant.setVolume(0..1)` | Só para mim |
-| **Mutar todos** | Aplica volume 0 em todos os remotos | Só para mim |
+| **Mute local de um oponente** | `remoteParticipant.setVolume(0)`                                      | Só para mim           |
+| **Volume individual**         | `remoteParticipant.setVolume(0..1)`                                   | Só para mim           |
+| **Mutar todos**               | Aplica volume 0 em todos os remotos                                   | Só para mim           |
 
 **Distinção que a UI precisa deixar clara:** "mutar meu microfone" impede os outros de me ouvirem;
 "mutar o Jogador 2" só afeta o que **eu** ouço. Ícones e textos diferentes.
@@ -167,15 +167,15 @@ O SDK do LiveKit detecta nativamente quem está falando.
 
 ```ts
 room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-  const ids = new Set(speakers.map(s => s.identity));
-  useAudioStore.getState().setSpeaking(ids);   // dispara a aura na UI
+  const ids = new Set(speakers.map((s) => s.identity));
+  useAudioStore.getState().setSpeaking(ids); // dispara a aura na UI
 });
 ```
 
 O frontend intercepta e desenha uma **aura dourada** no avatar/painel de vida do falante — feedback
 essencial numa mesa de 4 pessoas, onde saber quem está falando não é óbvio.
 
-Parâmetros: limiar padrão do LiveKit, com *hold* de ~400 ms para a aura não piscar entre sílabas.
+Parâmetros: limiar padrão do LiveKit, com _hold_ de ~400 ms para a aura não piscar entre sílabas.
 
 ### 4.3 Push-to-Talk (PTT)
 
@@ -183,10 +183,10 @@ Alternativa ao VAD, escolhida em preferências (`voice_mode` em `DOC-023` §3.6)
 
 ```ts
 // tecla pressionada → publica; solta → para de publicar
-window.addEventListener('keydown', e => {
+window.addEventListener('keydown', (e) => {
   if (e.code === pttKey && !e.repeat) room.localParticipant.setMicrophoneEnabled(true);
 });
-window.addEventListener('keyup', e => {
+window.addEventListener('keyup', (e) => {
   if (e.code === pttKey) room.localParticipant.setMicrophoneEnabled(false);
 });
 ```
@@ -202,13 +202,13 @@ execução com `switchActiveDevice()`. Necessário porque headsets USB aparecem 
 
 ## 5. Integração com a UI
 
-| Elemento | Comportamento |
-|---|---|
-| **Painel de vida do jogador** | Aura dourada quando `isSpeaking`; ícone de microfone cortado quando *muted* |
-| **Barra inferior** | Botão de microfone próprio (estado on/off/PTT), indicador de qualidade de conexão |
-| **Clique no avatar** | Abre controle de volume individual e *mute* local |
-| **Indicador de qualidade** | Verde/amarelo/vermelho a partir de `ConnectionQuality` do SDK |
-| **Estado de voz separado do de jogo** | Voz desconectada mostra aviso próprio, sem sugerir que a partida caiu |
+| Elemento                              | Comportamento                                                                     |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| **Painel de vida do jogador**         | Aura dourada quando `isSpeaking`; ícone de microfone cortado quando _muted_       |
+| **Barra inferior**                    | Botão de microfone próprio (estado on/off/PTT), indicador de qualidade de conexão |
+| **Clique no avatar**                  | Abre controle de volume individual e _mute_ local                                 |
+| **Indicador de qualidade**            | Verde/amarelo/vermelho a partir de `ConnectionQuality` do SDK                     |
+| **Estado de voz separado do de jogo** | Voz desconectada mostra aviso próprio, sem sugerir que a partida caiu             |
 
 Detalhes visuais em [guia_de_ui_e_design_system.md](guia_de_ui_e_design_system.md).
 
@@ -216,16 +216,16 @@ Detalhes visuais em [guia_de_ui_e_design_system.md](guia_de_ui_e_design_system.m
 
 ## 6. Modos de falha
 
-| Cenário | Impacto | Comportamento |
-|---|---|---|
-| **Permissão de microfone negada** | Não fala | Entra como ouvinte; UI mostra como habilitar depois (`CDU07` E1) |
-| **Sem microfone no dispositivo** | Não fala | Idem, com mensagem específica |
-| **UDP bloqueado (rede corporativa)** | Latência maior | *Fallback* automático para TURN/TCP 443; UI indica "qualidade reduzida" |
-| **LiveKit indisponível na entrada** | Sem voz | **A mesa funciona normalmente**; banner "voz indisponível" com botão de tentar novamente |
-| **LiveKit cai durante a partida** | Voz cai | O WS da mesa **não** é afetado; SDK reconecta automaticamente; 3 tentativas com *backoff* |
-| **Token expirado** | Não conecta | Frontend pede novo token ao Backend Core e repete |
-| **Rede do jogador oscilando** | Áudio picado | `adaptiveStream` reduz qualidade antes de derrubar |
-| **Eco / microfonia** | Incômodo para todos | Cancelamento de eco ativo; UI sugere usar fones |
+| Cenário                              | Impacto             | Comportamento                                                                             |
+| ------------------------------------ | ------------------- | ----------------------------------------------------------------------------------------- |
+| **Permissão de microfone negada**    | Não fala            | Entra como ouvinte; UI mostra como habilitar depois (`CDU07` E1)                          |
+| **Sem microfone no dispositivo**     | Não fala            | Idem, com mensagem específica                                                             |
+| **UDP bloqueado (rede corporativa)** | Latência maior      | _Fallback_ automático para TURN/TCP 443; UI indica "qualidade reduzida"                   |
+| **LiveKit indisponível na entrada**  | Sem voz             | **A mesa funciona normalmente**; banner "voz indisponível" com botão de tentar novamente  |
+| **LiveKit cai durante a partida**    | Voz cai             | O WS da mesa **não** é afetado; SDK reconecta automaticamente; 3 tentativas com _backoff_ |
+| **Token expirado**                   | Não conecta         | Frontend pede novo token ao Backend Core e repete                                         |
+| **Rede do jogador oscilando**        | Áudio picado        | `adaptiveStream` reduz qualidade antes de derrubar                                        |
+| **Eco / microfonia**                 | Incômodo para todos | Cancelamento de eco ativo; UI sugere usar fones                                           |
 
 **Invariante de projeto:** **falha de voz nunca degrada a partida.** São canais independentes
 (`DOC-021` §1). Um jogador sem voz continua jogando; o grupo pode recorrer a voz externa sem perder a
@@ -241,22 +241,22 @@ O áudio é o **maior item variável** da fatura de infraestrutura (`DOC-001` §
 
 Para uma sala de 4 jogadores, com DTX e considerando ~35 % de tempo com alguém falando:
 
-| Fluxo | Cálculo | Total |
-|---|---|---|
-| Entrada no SFU | 4 × 30 kbps × 0,35 | ~42 kbps |
-| Saída do SFU | 4 × 3 × 30 kbps × 0,35 | ~126 kbps |
-| **Total por sala** | — | **~170 kbps** ≈ 21 KB/s |
-| Por hora de sala | 21 KB/s × 3.600 | ~75 MB/h |
-| 100 salas simultâneas | — | ~17 Mbps, ~7,5 GB/h |
+| Fluxo                 | Cálculo                | Total                   |
+| --------------------- | ---------------------- | ----------------------- |
+| Entrada no SFU        | 4 × 30 kbps × 0,35     | ~42 kbps                |
+| Saída do SFU          | 4 × 3 × 30 kbps × 0,35 | ~126 kbps               |
+| **Total por sala**    | —                      | **~170 kbps** ≈ 21 KB/s |
+| Por hora de sala      | 21 KB/s × 3.600        | ~75 MB/h                |
+| 100 salas simultâneas | —                      | ~17 Mbps, ~7,5 GB/h     |
 
 ### 7.2 Estratégia de contenção
 
-| Gatilho | Ação |
-|---|---|
-| Custo em crescimento | Reduzir bitrate padrão de 32 para 24 kbps |
-| Custo alto persistente | Limitar bitrate elevado a salas de apoiador |
-| Fatura > ~US$ 300/mês | Avaliar **LiveKit self-hosted** em VPS com banda generosa |
-| Pico inesperado | Teto de salas com voz simultânea; salas excedentes entram sem voz, com aviso |
+| Gatilho                | Ação                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| Custo em crescimento   | Reduzir bitrate padrão de 32 para 24 kbps                                    |
+| Custo alto persistente | Limitar bitrate elevado a salas de apoiador                                  |
+| Fatura > ~US$ 300/mês  | Avaliar **LiveKit self-hosted** em VPS com banda generosa                    |
+| Pico inesperado        | Teto de salas com voz simultânea; salas excedentes entram sem voz, com aviso |
 
 **Nunca** cortar a partida por causa de voz. Degradar áudio é aceitável; negar a mesa não é (`RN04`).
 
@@ -264,14 +264,14 @@ Para uma sala de 4 jogadores, com DTX e considerando ~35 % de tempo com alguém 
 
 ## 8. Privacidade
 
-| Item | Política |
-|---|---|
+| Item                  | Política                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
 | **Gravação de áudio** | **Nunca.** O LiveKit tem recurso de gravação; ele fica **desabilitado** e sem permissão nos tokens |
-| Transcrição | Não existe |
-| Retenção | Zero — o áudio é efêmero, apenas encaminhado |
-| Metadados | Apenas eventos de conexão para métrica agregada (`voice_joined`, `voice_failed`) |
-| Consentimento | O navegador exige permissão explícita de microfone |
-| Indicação visual | O usuário sempre vê se o próprio microfone está ativo — nunca escuta oculta |
+| Transcrição           | Não existe                                                                                         |
+| Retenção              | Zero — o áudio é efêmero, apenas encaminhado                                                       |
+| Metadados             | Apenas eventos de conexão para métrica agregada (`voice_joined`, `voice_failed`)                   |
+| Consentimento         | O navegador exige permissão explícita de microfone                                                 |
+| Indicação visual      | O usuário sempre vê se o próprio microfone está ativo — nunca escuta oculta                        |
 
 Consistente com `RN11` e [seguranca_e_privacidade.md](seguranca_e_privacidade.md).
 
@@ -279,14 +279,14 @@ Consistente com `RN11` e [seguranca_e_privacidade.md](seguranca_e_privacidade.md
 
 ## 9. Métricas
 
-| Métrica | Origem | Uso |
-|---|---|---|
-| `voice_participants_active` | LiveKit | Adoção da voz |
-| `voice_join_success_rate` | Cliente | Confiabilidade (`RF11`) |
-| `voice_turn_fallback_rate` | LiveKit | Quantos precisam de TURN (custo maior) |
-| `voice_connection_quality` | SDK | Distribuição verde/amarelo/vermelho |
-| `voice_bandwidth_bytes` | LiveKit | Projeção de custo |
-| `voice_reconnects_total` | Cliente | Estabilidade |
+| Métrica                     | Origem  | Uso                                    |
+| --------------------------- | ------- | -------------------------------------- |
+| `voice_participants_active` | LiveKit | Adoção da voz                          |
+| `voice_join_success_rate`   | Cliente | Confiabilidade (`RF11`)                |
+| `voice_turn_fallback_rate`  | LiveKit | Quantos precisam de TURN (custo maior) |
+| `voice_connection_quality`  | SDK     | Distribuição verde/amarelo/vermelho    |
+| `voice_bandwidth_bytes`     | LiveKit | Projeção de custo                      |
+| `voice_reconnects_total`    | Cliente | Estabilidade                           |
 
 ---
 
@@ -298,11 +298,11 @@ Consistente com `RN11` e [seguranca_e_privacidade.md](seguranca_e_privacidade.md
 - [ ] Opus mono, 24–32 kbps, DTX habilitado.
 - [ ] Supressão de ruído, cancelamento de eco e AGC ativos no cliente.
 - [ ] Mapa `userId → sessionId` para vincular voz ao painel de jogo.
-- [ ] Aura de `ActiveSpeakersChanged` com *hold* de ~400 ms.
+- [ ] Aura de `ActiveSpeakersChanged` com _hold_ de ~400 ms.
 - [ ] Mute de publicação **e** mute local, com UI distinguível.
 - [ ] Volume individual persistido no `audioStore`.
 - [ ] Modo PTT com tecla configurável.
 - [ ] Seleção de dispositivo de entrada e saída.
-- [ ] *Fallback* TURN/TCP 443 testado em rede sem UDP.
+- [ ] _Fallback_ TURN/TCP 443 testado em rede sem UDP.
 - [ ] Falha de voz **não** derruba nem bloqueia a mesa.
 - [ ] Métricas da §9 instrumentadas.
