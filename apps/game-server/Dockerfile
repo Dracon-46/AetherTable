@@ -17,6 +17,31 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable
 
+# GIT É DEPENDÊNCIA DE BUILD, e a `node:22-slim` não o traz.
+#
+# `@colyseus/uwebsockets-transport` depende de `uWebSockets.js`, que NÃO está
+# publicado no npm: é instalado a partir do repositório do GitHub. O `pnpm
+# deploy` re-resolve as dependências e precisa do git para buscá-la.
+#
+# O sintoma não aponta para o git em lugar nenhum:
+#
+#   ENOENT  Command failed with ENOENT: git ls-remote --refs ...
+#   spawn git ENOENT
+#
+# `spawn git ENOENT` quer dizer "o binário git não existe", não "o repositório
+# não existe" — mas a linha de cima mostra uma URL do GitHub, o que leva a
+# investigar rede, credencial e permissão do repositório antes de desconfiar da
+# imagem base.
+#
+# Repare que o `pnpm install` ANTERIOR passa sem git: o lockfile já traz a
+# referência resolvida. Só o `deploy` quebra. Por isso o erro aparece no fim de
+# um build que parecia estar indo bem.
+#
+# Fica só no estágio de build; a imagem final não leva git.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /repo
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
