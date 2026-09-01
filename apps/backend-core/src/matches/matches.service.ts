@@ -48,14 +48,48 @@ export class MatchesService {
     const formato = String(deck.formatId ?? 'commander').toLowerCase();
     const regra = MatchesService.TAMANHO_POR_FORMATO[formato] ?? { min: 60 };
 
-    if (regra.exato !== undefined && deck.cardCount !== regra.exato) {
-      throw new BadRequestException(
-        `O grimório possui ${deck.cardCount} cartas, mas ${formato} exige exatamente ${regra.exato}.`,
+    /**
+     * CONTA AS CARTAS DE VERDADE, NÃO O CONTADOR.
+     *
+     * `deck.cardCount` é desnormalizado: mantido por `increment`/`decrement` a
+     * cada mutação, em statements SEPARADOS da escrita da carta e — fora do
+     * import — SEM TRANSAÇÃO. Basta a segunda operação falhar (o Neon do plano
+     * gratuito autossuspende, a conexão pooled cai) para a carta entrar e o
+     * contador não andar.
+     *
+     * Validar contra o contador significa recusar mesa por causa de um número
+     * errado, com a mensagem "seu grimório possui 97 cartas" enquanto a tela do
+     * deckbuilder mostra 100. O jogador não tem como resolver isso: o deck dele
+     * está certo.
+     *
+     * As cartas vêm junto no `getDeckById`, então a soma real custa zero
+     * consulta a mais. Reserva e maybeboard ficam de fora — não são o deck.
+     */
+    const naContagem = new Set(['MAIN', 'COMMANDER', 'SIGNATURE_SPELL']);
+    type CartaContavel = { quantity?: number; boardType?: string };
+    const total = (deck.cards as CartaContavel[]).reduce(
+      // `quantity` é `@default(1)` no schema: uma linha de DeckCard é, no
+      // mínimo, uma carta. Assumir 0 na ausência descartaria cartas reais.
+      (soma, c) => (naContagem.has(c.boardType ?? 'MAIN') ? soma + (c.quantity ?? 1) : soma),
+      0,
+    );
+
+    // Contador divergente não bloqueia ninguém, mas precisa aparecer no log:
+    // é o sintoma de uma escrita que falhou pela metade.
+    if (total !== deck.cardCount) {
+      console.warn(
+        `[matches] cardCount dessincronizado no deck ${deckId}: contador=${deck.cardCount}, real=${total}`,
       );
     }
-    if (regra.exato === undefined && deck.cardCount < regra.min) {
+
+    if (regra.exato !== undefined && total !== regra.exato) {
       throw new BadRequestException(
-        `O grimório possui ${deck.cardCount} cartas, mas ${formato} exige no mínimo ${regra.min}.`,
+        `O grimório possui ${total} cartas, mas ${formato} exige exatamente ${regra.exato}.`,
+      );
+    }
+    if (regra.exato === undefined && total < regra.min) {
+      throw new BadRequestException(
+        `O grimório possui ${total} cartas, mas ${formato} exige no mínimo ${regra.min}.`,
       );
     }
 

@@ -138,12 +138,17 @@ export class DecksService {
     const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
     if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
 
-    await this.prisma.deckCard.delete({ where: { id: cardId } });
-
-    await this.prisma.deck.update({
-      where: { id: deckId },
-      data: { cardCount: { decrement: card.quantity } },
-    });
+    // As duas escritas numa transação só. Separadas, uma falha de conexão
+    // entre elas — o Neon do plano gratuito autossuspende — apagava a carta e
+    // deixava o contador alto. O deck passava a ser recusado na mesa por um
+    // número que não corresponde a nada.
+    await this.prisma.$transaction([
+      this.prisma.deckCard.delete({ where: { id: cardId } }),
+      this.prisma.deck.update({
+        where: { id: deckId },
+        data: { cardCount: { decrement: card.quantity } },
+      }),
+    ]);
 
     return { success: true };
   }
@@ -157,20 +162,21 @@ export class DecksService {
 
     const newQuantity = card.quantity + delta;
     if (newQuantity <= 0) {
-      await this.prisma.deckCard.delete({ where: { id: cardId } });
-      await this.prisma.deck.update({
-        where: { id: deckId },
-        data: { cardCount: { decrement: card.quantity } },
-      });
+      await this.prisma.$transaction([
+        this.prisma.deckCard.delete({ where: { id: cardId } }),
+        this.prisma.deck.update({
+          where: { id: deckId },
+          data: { cardCount: { decrement: card.quantity } },
+        }),
+      ]);
     } else {
-      await this.prisma.deckCard.update({
-        where: { id: cardId },
-        data: { quantity: newQuantity },
-      });
-      await this.prisma.deck.update({
-        where: { id: deckId },
-        data: { cardCount: { increment: delta } },
-      });
+      await this.prisma.$transaction([
+        this.prisma.deckCard.update({ where: { id: cardId }, data: { quantity: newQuantity } }),
+        this.prisma.deck.update({
+          where: { id: deckId },
+          data: { cardCount: { increment: delta } },
+        }),
+      ]);
     }
 
     return { success: true };
@@ -191,26 +197,21 @@ export class DecksService {
       where: { deckId, scryfallId, boardType },
     });
 
-    if (existingCard) {
-      await this.prisma.deckCard.update({
-        where: { id: existingCard.id },
-        data: { quantity: existingCard.quantity + quantity },
-      });
-    } else {
-      await this.prisma.deckCard.create({
-        data: {
-          deckId,
-          scryfallId,
-          quantity,
-          boardType,
-        },
-      });
-    }
+    const escritaDaCarta = existingCard
+      ? this.prisma.deckCard.update({
+          where: { id: existingCard.id },
+          data: { quantity: existingCard.quantity + quantity },
+        })
+      : this.prisma.deckCard.create({ data: { deckId, scryfallId, quantity, boardType } });
 
-    await this.prisma.deck.update({
-      where: { id: deckId },
-      data: { cardCount: { increment: quantity } },
-    });
+    // Carta e contador na MESMA transação: as duas acontecem, ou nenhuma.
+    await this.prisma.$transaction([
+      escritaDaCarta,
+      this.prisma.deck.update({
+        where: { id: deckId },
+        data: { cardCount: { increment: quantity } },
+      }),
+    ]);
 
     return { success: true };
   }
@@ -319,9 +320,31 @@ export class DecksService {
 
         if (scryData.data) {
           scryData.data.forEach((cardData) => {
-            const original = parsedCards.find(
-              (p) => p.name.toLowerCase() === cardData.name.toLowerCase(),
-            );
+            /**
+             * CASAMENTO DE NOME — o buraco silencioso do import.
+             *
+             * A comparação era só `p.name === cardData.name`. Só que a Scryfall
+             * devolve o nome CANÔNICO, e para carta de dupla face isso é
+             * "Delver of Secrets // Insectile Aberration" — enquanto o jogador
+             * digitou apenas a face da frente, como está impresso na carta e
+             * como todo exportador de deck escreve.
+             *
+             * Sem casar, a carta caía num `if (original)` que simplesmente não
+             * executava: ela não entrava no deck E não entrava em `notFound`.
+             * O import respondia "sucesso", o deck ficava com 97 cartas de 100,
+             * e o jogador só descobria ao ser barrado na criação da mesa — com
+             * uma mensagem que não menciona o import em lugar nenhum.
+             */
+            const alvo = cardData.name.toLowerCase();
+            const frente = alvo.split(' // ')[0]!;
+
+            const original =
+              parsedCards.find((p) => p.name.toLowerCase() === alvo) ??
+              parsedCards.find((p) => p.name.toLowerCase() === frente) ??
+              // Último recurso: o jogador escreveu as duas faces com separador
+              // diferente ("Delver of Secrets / Insectile Aberration").
+              parsedCards.find((p) => p.name.toLowerCase().split(/\s*\/+\s*/)[0] === frente);
+
             if (original) {
               resolvedCards.push({
                 quantity: original.quantity,
@@ -329,6 +352,10 @@ export class DecksService {
                 name: cardData.name,
                 boardType: BoardType.MAIN,
               });
+            } else {
+              // Nunca mais em silêncio: se a Scryfall achou e nós não casamos,
+              // isso é defeito NOSSO e precisa aparecer para quem importou.
+              notFound.push(cardData.name);
             }
           });
         }
