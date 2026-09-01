@@ -47,12 +47,15 @@ function PlayerCard({
   player,
   room,
   isMe,
+  naVez,
   opponents,
   compacto,
 }: {
   player: PlayerData;
   room: Room<RoomState>;
   isMe: boolean;
+  /** É a vez deste jogador. Marcador visual — o motor não impõe turno (F29). */
+  naVez: boolean;
   opponents: PlayerData[];
   /** Faixa horizontal do mobile: só o essencial cabe. */
   compacto: boolean;
@@ -147,14 +150,19 @@ function PlayerCard({
 
   return (
     <div
+      // A borda dourada da VEZ vem antes de "quem está falando": as duas são
+      // temporárias, mas de quem é a vez decide o que a mesa inteira faz a
+      // seguir. Quem fala já tem o próprio áudio como sinal.
       className={`bg-panel/90 relative shrink-0 rounded-xl border p-2 backdrop-blur transition-all sm:p-3 ${compacto ? 'w-36' : 'w-full'} ${
-        isSpeaking
-          ? 'border-warning shadow-[0_0_15px_rgba(245,158,11,0.6)]'
-          : !player.connected
-            ? 'border-warning/50 opacity-70'
-            : player.conceded
-              ? 'border-danger/50 opacity-60'
-              : 'border-panel-border'
+        naVez
+          ? 'border-2 border-[#facc15] shadow-[0_0_18px_rgba(250,204,21,0.55)]'
+          : isSpeaking
+            ? 'border-warning shadow-[0_0_15px_rgba(245,158,11,0.6)]'
+            : !player.connected
+              ? 'border-warning/50 opacity-70'
+              : player.conceded
+                ? 'border-danger/50 opacity-60'
+                : 'border-panel-border'
       }`}
     >
       {/* Barra de vida */}
@@ -184,6 +192,15 @@ function PlayerCard({
               borderId={cosmeticos.borderId}
               tamanho="sm"
             />
+          )}
+          {naVez && (
+            <span
+              title="É a vez deste jogador"
+              className="shrink-0 text-[10px] font-bold text-[#facc15]"
+              aria-label="É a vez deste jogador"
+            >
+              ▶
+            </span>
           )}
           <span className="text-text min-w-0 flex-1 truncate text-xs font-bold" title={player.name}>
             {player.name}
@@ -519,6 +536,7 @@ function PlayerCard({
 export function LifePanel({ room }: LifePanelProps) {
   const playersMap = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
   const players = Object.values(playersMap).sort((a, b) => a.seat - b.seat);
 
   return (
@@ -534,6 +552,19 @@ export function LifePanel({ room }: LifePanelProps) {
     // a roda do mouse nunca chegava nele e a lista simplesmente não rolava.
     <div
       className={
+        // AS BARRAS NO FIM DE CADA LINHA NAO SAO ESTILO: SEM ELAS O PAINEL QUEBRA.
+        //
+        // Estas quatro strings eram concatenadas sem espaco entre elas. O
+        // resultado colava a ultima classe de uma linha na primeira da
+        // seguinte e produzia `pb-1sm:inset-x-auto` e
+        // `sm:gap-3sm:max-h-[calc(100dvh-11rem)]` — quatro classes viravam
+        // duas invencionices que o Tailwind ignora.
+        //
+        // A que mais doia era `sm:max-h-`. Sem altura maxima, `overflow-y-auto`
+        // nao tem o que rolar: a coluna simplesmente crescia para fora da tela.
+        // Numa mesa de quatro, o jogador via os dois primeiros cartoes de vida
+        // e os outros dois ficavam abaixo da borda inferior, inalcancaveis —
+        // com a roda do mouse sem efeito, porque nao havia rolagem nenhuma.
         'custom-scrollbar pointer-events-auto absolute z-20 flex gap-2 ' +
         'inset-x-2 top-12 flex-row overflow-x-auto overflow-y-hidden pb-1' +
         'sm:inset-x-auto sm:left-3 sm:top-16 sm:w-44 sm:flex-col sm:gap-3' +
@@ -547,6 +578,7 @@ export function LifePanel({ room }: LifePanelProps) {
               player={player}
               room={room}
               isMe={player.id === myId}
+              naVez={player.id === activePlayerId}
               opponents={players.filter((p) => p.id !== player.id)}
               compacto
             />
@@ -556,6 +588,7 @@ export function LifePanel({ room }: LifePanelProps) {
               player={player}
               room={room}
               isMe={player.id === myId}
+              naVez={player.id === activePlayerId}
               opponents={players.filter((p) => p.id !== player.id)}
               compacto={false}
             />

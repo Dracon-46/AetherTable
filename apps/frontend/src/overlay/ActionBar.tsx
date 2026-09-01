@@ -35,7 +35,7 @@ import {
 import type { Room } from 'colyseus.js';
 import { intents } from '../net/intents';
 import { useRouter } from 'next/navigation';
-import { useUIStore } from '../store/game.store';
+import { useGameStore, useUIStore } from '../store/game.store';
 import { useVoiceStore } from '../net/voice';
 import { Undo2 } from 'lucide-react';
 import type { RoomState } from '../net/schema/RoomState';
@@ -68,6 +68,16 @@ export function ActionBar({ room }: ActionBarProps) {
   const [showDice, setShowDice] = useState(false);
   const [drawAmount, setDrawAmount] = useState(1);
   const [showDraw, setShowDraw] = useState(false);
+
+  // De quem é a vez. Marcador visual (F29) — o servidor não impõe turno, mas
+  // desde que só o jogador da vez pode passá-la, o botão precisa saber.
+  const myId = useGameStore((s) => s.mySessionId);
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
+  const players = useGameStore((s) => s.players);
+  // Sem vez definida (antes do primeiro turno, ou depois de um reset) qualquer
+  // um pode destravar a rotação — é o que o servidor faz.
+  const minhaVez = !activePlayerId || activePlayerId === myId;
+  const nomeDaVez = activePlayerId ? (players[activePlayerId]?.name ?? null) : null;
 
   // Voz: lida do store, nunca de um hook do LiveKit chamado condicionalmente.
   const voiceAvailable = useVoiceStore((s) => s.available);
@@ -168,10 +178,26 @@ export function ActionBar({ room }: ActionBarProps) {
           <span className="hidden lg:inline">Desvirar</span>
         </button>
 
+        {/* O SERVIDOR RECUSA SE NAO FOR A SUA VEZ — o botao precisa dizer isso
+            ANTES do clique. Deixa-lo sempre ativo transforma a regra nova num
+            toast de erro repetido: o jogador clica, leva "nao e a sua vez", e
+            nao entende por que o botao existia. Fica visivel (para saber de
+            quem e a vez) mas desabilitado, e dourado quando e a sua. */}
         <button
           onClick={() => intents.passTurn(room)}
-          title="Passar o turno"
-          className={`${btn} hover:text-warning`}
+          disabled={!minhaVez}
+          title={
+            minhaVez
+              ? 'Passar o turno'
+              : nomeDaVez
+                ? `A vez e de ${nomeDaVez} — so quem esta na vez passa o turno`
+                : 'Aguardando o inicio da rotacao de turnos'
+          }
+          className={`${btn} ${
+            minhaVez
+              ? 'border-[#facc15]/60 text-[#facc15] hover:text-[#facc15]'
+              : 'cursor-not-allowed opacity-40'
+          }`}
         >
           <ChevronUp className="h-4 w-4" />
           <span className="hidden lg:inline">Turno</span>

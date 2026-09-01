@@ -17,14 +17,23 @@
  * oponentes ficam acima, em ordem de assento.
  *
  *   ┌──────────────────────────────────────────┐
- *   │ oponente 2   [cmd] campo …    [pilhas]   │  ← faixa
- *   ├──────────────────────────────────────────┤
+ *   │ oponente 2   [cmd] campo …    [pilhas]   │  ← painel próprio
+ *   └──────────────────────────────────────────┘
+ *                    (respiro)
+ *   ┌──────────────────────────────────────────┐
  *   │ oponente 1   [cmd] campo …    [pilhas]   │
- *   ├──────────────────────────────────────────┤
- *   │ EU          [cmd] campo …     [pilhas]   │  ← faixa em foco (maior)
- *   ├──────────────────────────────────────────┤
+ *   └──────────────────────────────────────────┘
+ *                    (respiro)
+ *   ┌──────────────────────────────────────────┐
+ *   │ EU          [cmd] campo …     [pilhas]   │  ← em foco (maior)
+ *   └──────────────────────────────────────────┘
+ *   ┌──────────────────────────────────────────┐
  *   │ minha mão                                │
  *   └──────────────────────────────────────────┘
+ *
+ * `ordem` decide QUANTAS faixas existem. Ver só a própria mesa é passar uma
+ * lista de um elemento — não é um modo à parte, é a mesma função com menos
+ * assentos.
  *
  * `Card.x/y` de uma permanente passa a ser RELATIVO à faixa de quem a controla.
  * Isso é o que torna a colisão entre jogadores impossível por construção, em
@@ -52,6 +61,20 @@ export const CARD_H = Math.round(CARD_W * 1.396);
 
 /** Altura da faixa de mão na base da mesa. */
 export const HAND_H = CARD_H + 32;
+
+/**
+ * Respiro entre duas faixas.
+ *
+ * As faixas eram desenhadas encostadas: `topo` da seguinte era exatamente o
+ * fim da anterior. Cada uma tinha borda arredondada, mas coladas elas liam
+ * como UMA superfície listrada, e a pergunta "onde termina a mesa dele e
+ * começa a minha" não tinha resposta visual. Numa mesa de quatro, uma carta
+ * na borda de baixo da faixa do oponente parecia estar na borda de cima da
+ * minha.
+ *
+ * O vazio entre elas é o que faz cada uma virar um painel próprio.
+ */
+export const ESPACO_ENTRE_FAIXAS = 18;
 
 /** Altura de uma faixa fora de foco: cabe uma fileira de cartas. */
 export const FAIXA_H = CARD_H + 56;
@@ -140,6 +163,10 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
   let y = 0;
 
   for (const playerId of ordem) {
+    // O respiro vem ANTES de cada faixa menos a primeira: assim não sobra uma
+    // folga órfã entre a última faixa e a mão.
+    if (faixas.length > 0) y += ESPACO_ENTRE_FAIXAS;
+
     const emFoco = playerId === focoId;
     // Em tela estreita só existe a faixa em foco, e ela ganha altura extra
     // porque as pilhas passam a ocupar duas fileiras.

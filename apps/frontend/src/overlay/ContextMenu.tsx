@@ -185,6 +185,26 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   } else if (alvo === 'zone') {
     titulo = 'Mesa';
     acoes = [
+      /**
+       * COMPRAR ABRE O MENU DA MESA.
+       *
+       * "Comprar 1" só existia no menu do GRIMÓRIO — ou seja, era preciso
+       * acertar a pilha com o botão direito. Comprar é a ação mais repetida da
+       * partida inteira; exigir mira para ela, enquanto "virar tudo" está a um
+       * clique de qualquer ponto da mesa, inverte a prioridade. O menu do
+       * grimório continua existindo, com as opções que só fazem sentido lá
+       * (scry, tutor, moer, embaralhar).
+       */
+      {
+        rotulo: 'Comprar 1',
+        icone: <Hand className="h-4 w-4" />,
+        onClick: executar(() => intents.draw(room, 1)),
+      },
+      {
+        rotulo: 'Comprar 7',
+        icone: <Layers className="h-4 w-4" />,
+        onClick: executar(() => intents.draw(room, 7)),
+      },
       {
         rotulo: 'Desvirar tudo',
         icone: <RotateCcw className="h-4 w-4" />,

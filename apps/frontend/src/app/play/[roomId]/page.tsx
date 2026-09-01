@@ -33,6 +33,8 @@ import { MulliganModal } from '@/overlay/MulliganModal';
 import { PlayersModal } from '@/overlay/PlayersModal';
 import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { VoiceBridge } from '@/net/voice';
+import { ToastHost } from '@/components/Toast';
+import { mensagemDeConexao } from '@/net/erros';
 import { useAuthStore } from '@/store/auth.store';
 import { useGameStore } from '@/store/game.store';
 import { intents } from '@/net/intents';
@@ -131,7 +133,11 @@ export default function PlayRoomPage() {
       .catch((e) => {
         if (!active) return;
         console.error('Colyseus join error', e);
-        setError('Falha ao conectar na mesa. O token pode ser inválido ou a sala está cheia.');
+        // O servidor SEMPRE soube qual dos casos era — `onAuth` lança
+        // INVALID_TOKEN, TOKEN_EXPIRED ou TOKEN_ALREADY_USED. Esta linha
+        // colapsava os três num chute com três hipóteses, e o jogador ficava
+        // sem saber qual delas era a dele nem o que fazer a respeito.
+        setError(mensagemDeConexao(e));
       });
 
     return () => {
@@ -224,6 +230,11 @@ export default function PlayRoomPage() {
       )}
 
       <RoomLobby room={room} maxClients={maxClients} gameType={gameType} />
+
+      {/* Sem isto, nenhum toast desta tela aparece: o `ToastHost` estava
+          montado só no deckbuilder, então toda rejeição da mesa era escrita
+          num store que ninguém renderizava. */}
+      <ToastHost />
     </div>
   );
 

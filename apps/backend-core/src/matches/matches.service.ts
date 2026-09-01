@@ -32,6 +32,29 @@ export class MatchesService {
   private static readonly FORMATOS_COM_COMANDANTE = new Set(['commander', 'brawl']);
 
   /** Dois cobre a dupla de parceiros; três em diante não é regra de nenhum formato. */
+  /**
+   * Validade do seat token — quanto tempo o passe da mesa aceita ser usado.
+   *
+   * Eram 15 minutos, pensados como "tempo para terminar de conectar". Na
+   * prática o passe viaja na URL da mesa (`/play/CODE?token=...`), e é essa URL
+   * que as pessoas mandam no grupo, deixam aberta numa aba e voltam a abrir
+   * depois do jantar. Quinze minutos transformavam qualquer combinação de
+   * partida em "entra agora ou o link morre".
+   *
+   * ATENÇÃO — ISTO NÃO FAZ O PASSE VALER PARA VÁRIAS ENTRADAS.
+   *
+   * O `AetherRoom` guarda o `jti` de cada passe consumido e recusa o segundo
+   * uso (FR-20). Recarregar a página continua queimando o passe; o que muda
+   * aqui é só até quando a PRIMEIRA entrada é aceita. São dois limites
+   * diferentes, e confundi-los faz parecer que o link simplesmente falha ao
+   * acaso.
+   *
+   * O custo de esticar: uma URL vazada continua valendo por um dia em vez de
+   * quinze minutos. O uso único é o que segura esse risco — quem entrar
+   * primeiro com o link queima o passe e o segundo é recusado.
+   */
+  private static readonly SEAT_TOKEN_TTL = '1d';
+
   private static readonly MAX_COMANDANTES = 2;
 
   async createMatch(_userId: string, _username: string) {
@@ -139,7 +162,7 @@ export class MatchesService {
         roomId: roomCode, // Colyseus vincula o JWT a esta sala
         deckId, // Passado para o Colyseus provisionar o deck
       },
-      { jwtid: jti, expiresIn: '15m' }, // 15 minutos para tentar conectar
+      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
     );
 
     return { seatToken, roomCode };

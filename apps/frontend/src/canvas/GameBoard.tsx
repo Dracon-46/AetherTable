@@ -60,6 +60,8 @@ interface GameBoardProps {
 
 const COR_FAIXA_FOCO = 'rgba(59,130,246,0.055)';
 const COR_FAIXA = 'rgba(30,41,59,0.30)';
+/** Borda de quem está na vez. Dourado, e nunca usado para mais nada. */
+const COR_VEZ = 'rgba(250,204,21,0.9)';
 /** Âmbar da zona de comando — a mesma família do ícone de coroa da UI. */
 const COR_COMANDO = 'rgba(69,53,22,0.42)';
 const COR_COMANDO_BORDA = 'rgba(251,191,36,0.35)';
@@ -722,6 +724,8 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
   const arrows = useGameStore((s) => s.arrows);
+  /** De quem é a vez. Só marcador visual — o motor não impõe turno (F29). */
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
 
   const openContextMenu = useUIStore((s) => s.openContextMenu);
   const setInspectedCard = useUIStore((s) => s.setInspectedCard);
@@ -788,7 +792,24 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
       .sort((a, b) => a.seat - b.seat)
       .map((p) => p.id);
 
-    const foco = (boardView === 'ME' || boardView === 'ALL' ? myId : boardView) || myId;
+    /**
+     * O SELETOR DE CÂMERA PRECISA FILTRAR, NÃO SÓ DESTACAR.
+     *
+     * "Minha mesa" e "Mesa de Fulano" só mudavam qual faixa recebia o foco —
+     * todas continuavam desenhadas, uma embaixo da outra. Escolher "Minha
+     * mesa" e continuar vendo a mesa dos outros empilhada não é o que a opção
+     * promete, e em quatro jogadores o efeito é justamente o oposto do
+     * pedido: mais coisa na tela, não menos.
+     *
+     * Agora `ALL` é a única visão com várias faixas. Qualquer outra escolha
+     * monta a mesa com UM assento — a mesma função, com uma lista de um
+     * elemento.
+     */
+    const alvoValido = boardView !== 'ALL' && boardView !== 'ME' && Boolean(players[boardView]);
+    // Um oponente escolhido que depois SAIU da sala deixava `boardView`
+    // apontando para um assento inexistente, e a mesa era desenhada em branco
+    // sem nenhuma explicação. Some o jogador, volta para a minha mesa.
+    const foco = (alvoValido ? boardView : myId) || myId;
 
     // NO CELULAR, UMA FAIXA POR VEZ.
     //
@@ -801,8 +822,13 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
       return montarMesa([foco], foco, { estreito: true });
     }
 
-    // Ordem visual: oponentes de cima para baixo, eu sempre por último — é como
-    // se vê uma mesa física da própria cadeira.
+    // Uma mesa só: a minha, ou a do oponente escolhido.
+    if (boardView !== 'ALL') {
+      return montarMesa([foco], foco);
+    }
+
+    // Visão geral. Ordem visual: oponentes de cima para baixo, eu sempre por
+    // último — é como se vê uma mesa física da própria cadeira.
     const ordem = myId ? [...oponentes, myId] : oponentes;
     return montarMesa(ordem.length ? ordem : ['—'], foco);
   }, [players, myId, boardView, estreito]);
@@ -1085,29 +1111,60 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     />
                   </Group>
                 )}
+                {/* A borda de quem está fora de foco era
+                    `rgba(255,255,255,0.05)`: invisível na prática. Com as
+                    faixas encostadas umas nas outras, nada delimitava a mesa
+                    de um jogador — era uma superfície contínua com cartas de
+                    todo mundo. Agora cada uma é um painel com borda que se vê
+                    e um respiro em volta (ESPACO_ENTRE_FAIXAS). */}
                 <Rect
                   x={6}
                   y={r.faixa.topo + 3}
                   width={mesa.largura - 12}
                   height={r.faixa.altura - 6}
                   fill={r.faixa.emFoco ? COR_FAIXA_FOCO : COR_FAIXA}
-                  stroke={r.faixa.emFoco ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.05)'}
-                  strokeWidth={r.faixa.emFoco ? 2 : 1}
-                  cornerRadius={10}
+                  /* Dourado vence o azul do foco: de quem é a VEZ é a
+                     informação mais urgente da mesa, e ela precisa ser legível
+                     de relance, sem ler nome nenhum. O foco da câmera é uma
+                     preferência de quem olha; a vez é um fato da partida. */
+                  stroke={
+                    r.faixa.playerId === activePlayerId
+                      ? COR_VEZ
+                      : r.faixa.emFoco
+                        ? 'rgba(96,165,250,0.55)'
+                        : 'rgba(148,163,184,0.28)'
+                  }
+                  strokeWidth={
+                    r.faixa.playerId === activePlayerId ? 3.5 : r.faixa.emFoco ? 2.5 : 1.5
+                  }
+                  cornerRadius={12}
+                  shadowColor={r.faixa.playerId === activePlayerId ? COR_VEZ : 'black'}
+                  shadowBlur={r.faixa.playerId === activePlayerId ? 22 : 12}
+                  shadowOpacity={r.faixa.playerId === activePlayerId ? 0.55 : 0.35}
+                  shadowOffsetY={2}
                 />
                 <Text
                   text={
                     r.player
-                      ? `${r.player.name}${r.player.id === myId ? ' (você)' : ''} · ${r.player.life} PV${
-                          r.player.isMonarch ? ' · monarca' : ''
-                        }`
+                      ? `${r.faixa.playerId === activePlayerId ? '▶ ' : ''}${r.player.name}${
+                          r.player.id === myId ? ' (você)' : ''
+                        } · ${r.player.life} PV${r.player.isMonarch ? ' · monarca' : ''}`
                       : 'assento vazio'
                   }
                   x={r.faixa.rotulo.x + 8}
                   y={r.faixa.rotulo.y + 2}
                   fontSize={13}
                   fontStyle="bold"
-                  fill={r.faixa.emFoco ? 'rgba(147,197,253,0.9)' : 'rgba(255,255,255,0.4)'}
+                  /* O triângulo acompanha a borda dourada porque cor sozinha
+                     não é sinal acessível: quem não distingue dourado de azul
+                     ficaria sem saber de quem é a vez. */
+                  fill={
+                    r.faixa.playerId === activePlayerId
+                      ? COR_VEZ
+                      : r.faixa.emFoco
+                        ? 'rgba(147,197,253,0.9)'
+                        : 'rgba(255,255,255,0.4)'
+                  }
                 />
                 <Mascote petId={r.petId} x={mesa.largura - 30} y={r.faixa.topo + 26} />
               </Group>

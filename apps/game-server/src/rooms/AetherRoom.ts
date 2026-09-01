@@ -304,6 +304,10 @@ export class AetherRoom extends Room<RoomState> {
 
     if (!deckId) {
       console.warn(`[${this.roomId}] Usuário entrou sem deckId`);
+      this.avisarDeckAusente(
+        sessionId,
+        'Você entrou sem deck selecionado — a mesa abre vazia. Volte à Taverna e escolha um deck antes de entrar.',
+      );
       return;
     }
 
@@ -391,6 +395,29 @@ export class AetherRoom extends Room<RoomState> {
       reconciliarTudo(this.clients, this.state);
     } catch (e) {
       console.error(`[${this.roomId}] Falha ao provisionar deck ${deckId}:`, e);
+      this.avisarDeckAusente(
+        sessionId,
+        'Seu deck não pôde ser carregado do servidor — você entra na mesa sem cartas. Volte à Taverna e entre de novo.',
+      );
     }
+  }
+
+  /**
+   * Conta ao JOGADOR que o deck dele nao entrou.
+   *
+   * Esta falha era registrada so no `console.error` do servidor. O efeito na
+   * tela: o jogador entra, o anfitriao inicia a partida, e a mesa dele nasce
+   * sem grimorio, sem comandante e sem mao — sobra assistir os outros jogarem.
+   * Sem mensagem nenhuma, o diagnostico obvio para ele e "o jogo esta
+   * quebrado", e nao "meu deck nao carregou".
+   *
+   * A causa mais comum em producao e o `INTERNAL_API_TOKEN` divergente entre
+   * game-server e backend-core (DOC-055 §2): a rota interna devolve 401 e o
+   * deck volta vazio, em silencio.
+   */
+  private avisarDeckAusente(sessionId: string, message: string): void {
+    const client = this.clients.find((c) => c.sessionId === sessionId);
+    client?.send('deckError', { code: 'DECK_UNAVAILABLE', message });
+    this.publicarLog(logSistema(sessionId, message));
   }
 }

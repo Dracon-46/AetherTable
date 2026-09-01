@@ -101,6 +101,37 @@ function nomeDe(state: RoomState, sid: string): string {
   return state.players.get(sid)?.name ?? 'Alguem';
 }
 
+/**
+ * Barra quem nao e anfitriao, e devolve `true` quando ja respondeu o erro.
+ *
+ * ANFITRIAO E O ASSENTO 0 — e `removerJogador` reatribui assentos a cada saida,
+ * entao o papel e dinamico: quem sobrar no topo da fila assume.
+ *
+ * A checagem estava escrita a mao dentro de `INTENT_START_MATCH` e em lugar
+ * nenhum mais. As acoes que DESFAZEM o que ele fez ficaram abertas: qualquer
+ * jogador podia devolver a mesa inteira para a sala de espera
+ * (`INTENT_RESET_MATCH`) ou reescrever a ordem dos assentos
+ * (`INTENT_SET_TURN_ORDER`) — e reescrever assentos e como se promover a
+ * anfitriao, porque basta se colocar no indice 0.
+ *
+ * Com a regra num lugar so, a proxima acao de mesa nasce tendo onde se
+ * ancorar em vez de nascer aberta.
+ */
+function exigirAnfitriao(ctx: IntentContext, intent: string): boolean {
+  const eu = ctx.state.players.get(ctx.client.sessionId);
+  if (eu && eu.seat === 0) return false;
+
+  const anfitriao = Array.from(ctx.state.players.values()).find((p) => p.seat === 0);
+  ctx.send('error', {
+    code: 'NOT_HOST',
+    message: anfitriao
+      ? `So o anfitriao (${anfitriao.name}) pode fazer isso.`
+      : 'So o anfitriao pode fazer isso.',
+    intent,
+  });
+  return true;
+}
+
 function atualizarContagens(state: RoomState, playerId: string): void {
   const player = state.players.get(playerId);
   if (!player) return;
@@ -906,6 +937,31 @@ const INTENT_PASS_TURN: IntentHandler<typeof S.PassTurnIntent> = {
     const assentos = Array.from(ctx.state.players.values()).sort((a, b) => a.seat - b.seat);
     if (assentos.length === 0) return;
 
+    /**
+     * SO QUEM ESTA NA VEZ PASSA A VEZ.
+     *
+     * A intencao era `QUALQUER_JOGADOR` e nao checava nada: qualquer um podia
+     * empurrar o turno a qualquer momento, inclusive por cima da jogada de
+     * outra pessoa. Num sandbox sem motor de regras, o marcador de turno e o
+     * UNICO combinado que a mesa tem sobre de quem e a vez — se todo mundo
+     * pode mexer nele, ele nao combina nada.
+     *
+     * A excecao e a mesa sem vez definida (`activePlayerId` vazio, antes do
+     * primeiro START_MATCH ou depois de um RESET): ai o primeiro a passar
+     * inicia a rotacao, senao ninguem consegue destravar.
+     */
+    const vez = ctx.state.activePlayerId;
+    if (vez && vez !== sid) {
+      const dono = ctx.state.players.get(vez);
+      ctx.send('error', {
+        code: 'NOT_YOUR_TURN',
+        message: dono
+          ? `A vez e de ${dono.name}. So quem esta na vez passa o turno.`
+          : 'So quem esta na vez passa o turno.',
+      });
+      return;
+    }
+
     const atual = assentos.findIndex((p) => p.id === ctx.state.activePlayerId);
     const proximo = assentos[(atual + 1) % assentos.length];
     if (!proximo) return;
@@ -924,6 +980,12 @@ const INTENT_RESET_MATCH: IntentHandler<typeof S.ResetMatchIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx) {
     const sid = ctx.client.sessionId;
+    // Zerar a partida apaga a vida, os contadores e a mesa de TODO MUNDO. Era
+    // a acao mais destrutiva do jogo e estava aberta a qualquer jogador, sem
+    // confirmacao nenhuma — um clique errado de um convidado desfazia duas
+    // horas de partida dos outros tres.
+    if (exigirAnfitriao(ctx, 'INTENT_RESET_MATCH')) return;
+
     // Volta a mesa para a sala de espera. O deck ja provisionado e mantido:
     // reprovisionar exigiria I/O, proibido no caminho critico (DOC-021 §7).
     ctx.state.phase = 'WAITING';
@@ -952,13 +1014,12 @@ const INTENT_START_MATCH: IntentHandler<typeof S.StartMatchIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx) {
     const sid = ctx.client.sessionId;
-    const eu = ctx.state.players.get(sid);
     // Anfitriao = assento 0. Sem esta checagem, qualquer um comecaria a partida
     // por cima da sala de espera dos outros.
-    if (!eu || eu.seat !== 0) {
-      ctx.send('error', { code: 'NOT_AUTHORIZED', message: 'So o anfitriao inicia a partida.' });
-      return;
-    }
+    if (exigirAnfitriao(ctx, 'INTENT_START_MATCH')) return;
+
+    const eu = ctx.state.players.get(sid);
+    if (!eu) return;
     if (ctx.state.phase !== 'WAITING') return;
 
     ctx.state.phase = 'PLAYING';
@@ -1646,7 +1707,12 @@ const INTENT_SET_TURN_ORDER: IntentHandler<typeof S.SetTurnOrderIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { order }) {
     const sid = ctx.client.sessionId;
-    // A ordem VIVE nos assentos: um campo separado poderia divergir deles.
+    // ESCALADA DE PRIVILEGIO: a ordem VIVE nos assentos, e o assento 0 E o
+    // anfitriao. Com esta intencao aberta, qualquer jogador se colocava no
+    // indice 0 e virava anfitriao — ganhando START_MATCH e RESET_MATCH de
+    // brinde, sem que nada na tela indicasse a troca.
+    if (exigirAnfitriao(ctx, 'INTENT_SET_TURN_ORDER')) return;
+
     const validos = order.filter((id) => ctx.state.players.has(id));
     if (validos.length !== ctx.state.players.size) {
       ctx.send('error', {

@@ -23,6 +23,7 @@
 import {
   CARD_H,
   CARD_W,
+  ESPACO_ENTRE_FAIXAS,
   escalaDaFaixa,
   montarMesa,
   posicaoNoCampo,
@@ -164,5 +165,62 @@ describe('coordenadas do campo', () => {
   it('a faixa em foco é mais alta que as demais', () => {
     const { porJogador } = desktop();
     expect(porJogador.get('eu')!.altura).toBeGreaterThan(porJogador.get('op0')!.altura);
+  });
+});
+
+/**
+ * As faixas eram desenhadas encostadas, e o resultado lia como UMA superfície
+ * listrada: não havia como dizer onde terminava a mesa de um jogador e começava
+ * a do vizinho. Uma carta na borda inferior da faixa de cima parecia estar na
+ * borda superior da de baixo.
+ */
+describe('separação entre mesas', () => {
+  it('existe um respiro entre uma faixa e a seguinte', () => {
+    const { faixas } = desktop();
+
+    for (let i = 1; i < faixas.length; i += 1) {
+      const anterior = faixas[i - 1]!;
+      const atual = faixas[i]!;
+      const vao = atual.topo - (anterior.topo + anterior.altura);
+      expect(vao).toBe(ESPACO_ENTRE_FAIXAS);
+    }
+  });
+
+  it('nenhuma faixa invade a área da seguinte', () => {
+    const { faixas } = desktop();
+
+    for (let i = 1; i < faixas.length; i += 1) {
+      expect(faixas[i]!.topo).toBeGreaterThan(faixas[i - 1]!.topo + faixas[i - 1]!.altura);
+    }
+  });
+
+  it('não sobra folga órfã entre a última faixa e a mão', () => {
+    const mesa = desktop();
+    const ultima = mesa.faixas[mesa.faixas.length - 1]!;
+    expect(mesa.mao.topo).toBe(ultima.topo + ultima.altura);
+  });
+});
+
+/**
+ * "Minha mesa" e "Mesa de Fulano" mudavam só o FOCO: todas as faixas
+ * continuavam desenhadas, empilhadas. Ver uma mesa só é montar a mesa com um
+ * assento — não existe modo à parte para isso.
+ */
+describe('mesa de um assento só', () => {
+  const sozinho = () => montarMesa(['eu'], 'eu');
+
+  it('desenha uma faixa e nenhuma outra', () => {
+    expect(sozinho().faixas).toHaveLength(1);
+  });
+
+  it('a faixa única fica em foco e é bem mais baixa que a mesa de quatro', () => {
+    const uma = sozinho();
+    expect(uma.faixas[0]!.emFoco).toBe(true);
+    expect(uma.altura).toBeLessThan(desktop().altura);
+  });
+
+  it('a mão continua na base, logo abaixo da faixa', () => {
+    const uma = sozinho();
+    expect(uma.mao.topo).toBe(uma.faixas[0]!.topo + uma.faixas[0]!.altura);
   });
 });

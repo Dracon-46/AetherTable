@@ -15,6 +15,8 @@ import {
   type PlayerData,
   type LogEntry,
 } from '../store/game.store';
+import { useToast } from '../components/Toast';
+import { mensagemDeErro } from './erros';
 import type { RoomState } from './schema/RoomState';
 import type { Card } from './schema/Card';
 import type { Player } from './schema/Player';
@@ -209,12 +211,56 @@ export function useRoomSync(room: Room<RoomState> | null) {
       useGameStore.getState().setPhase('PLAYING');
     });
 
+    /**
+     * UMA REJEIÇÃO PRECISA APARECER NA TELA.
+     *
+     * Estes dois canais existiam e só chegavam ao `console.warn`. O servidor
+     * dizia "NOT_AUTHORIZED", "RATE_LIMITED", "ENTITY_NOT_FOUND" — e o jogador
+     * via a carta não se mexer, sem nada mais. Da cadeira dele, uma ação
+     * recusada e um clique que não pegou são indistinguíveis, e a conclusão
+     * natural é que a mesa está quebrada.
+     *
+     * O log da partida também recebe: o toast some em 5 s, e quem estava
+     * olhando para outro canto da mesa perderia o aviso.
+     */
     room.onMessage('error', (payload: any) => {
-      console.warn('[AetherRoom] Intenção rejeitada:', payload.code, payload.message);
+      const texto = mensagemDeErro(payload?.code, payload?.message);
+      console.warn('[AetherRoom] Intenção rejeitada:', payload?.code, payload?.message);
+      useToast.getState().mostrar(texto, 'erro');
+      useGameStore.getState().addLog({
+        id: `erro-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: Date.now(),
+        type: 'SYSTEM',
+        actorId: '',
+        text: texto,
+      });
     });
 
     room.onMessage('warning', (payload: any) => {
-      console.warn('[AetherRoom] Aviso:', payload.code, payload.message);
+      console.warn('[AetherRoom] Aviso:', payload?.code, payload?.message);
+      useToast.getState().mostrar(mensagemDeErro(payload?.code, payload?.message), 'info');
+    });
+
+    /**
+     * O deck não entrou na mesa.
+     *
+     * Era a falha mais cruel do fluxo: `provisionarDeck` fazia `console.error`
+     * no SERVIDOR e seguia adiante. O jogador entrava, iniciava a partida, e a
+     * mesa dele nascia sem grimório, sem comandante e sem mão — sobrava
+     * assistir os outros jogarem, sem nenhuma mensagem que explicasse por quê.
+     */
+    room.onMessage('deckError', (payload: any) => {
+      const texto =
+        payload?.message ||
+        'Seu deck não pôde ser carregado — você entra na mesa sem cartas. Volte à Taverna e entre de novo.';
+      useToast.getState().mostrar(texto, 'erro');
+      useGameStore.getState().addLog({
+        id: `deck-${Date.now()}`,
+        timestamp: Date.now(),
+        type: 'SYSTEM',
+        actorId: '',
+        text: texto,
+      });
     });
 
     room.onMessage('playerJoined', (payload: any) => {
@@ -237,19 +283,42 @@ export function useRoomSync(room: Room<RoomState> | null) {
       });
     });
 
+    /**
+     * `playerDisconnected` fala de OUTRA pessoa, não da minha conexão.
+     *
+     * O handler marcava `connectionState: 'reconnecting'` no store LOCAL. Quer
+     * dizer: o vizinho perdia o wi-fi e o meu cliente passava a se considerar
+     * reconectando — com a minha conexão intacta. Hoje nenhum componente lê
+     * esse campo, então o estrago é invisível; no dia em que alguém desenhar o
+     * indicador de conexão, ele vai mentir para três jogadores toda vez que o
+     * quarto piscar. `connectionState` descreve o MEU socket e mais nada.
+     *
+     * A mensagem também não dizia quem tinha caído, apesar de o `playerId` vir
+     * no payload: numa mesa de quatro, "um jogador se desconectou" obriga todo
+     * mundo a conferir quem sumiu.
+     */
     room.onMessage('playerDisconnected', (payload: any) => {
+      const nome = useGameStore.getState().players[payload?.playerId]?.name;
       useGameStore.getState().addLog({
         id: `dc-${Date.now()}`,
         timestamp: Date.now(),
         type: 'SYSTEM',
-        actorId: payload.playerId,
-        text: 'Um jogador se desconectou. Aguardando reconexão...',
+        actorId: payload?.playerId ?? '',
+        text: nome
+          ? `${nome} se desconectou. Aguardando reconexão…`
+          : 'Um jogador se desconectou. Aguardando reconexão…',
       });
-      useGameStore.getState().setConnectionState('reconnecting');
     });
 
-    room.onMessage('playerReconnected', () => {
-      useGameStore.getState().setConnectionState('connected');
+    room.onMessage('playerReconnected', (payload: any) => {
+      const nome = useGameStore.getState().players[payload?.playerId]?.name;
+      useGameStore.getState().addLog({
+        id: `rc-${Date.now()}`,
+        timestamp: Date.now(),
+        type: 'SYSTEM',
+        actorId: payload?.playerId ?? '',
+        text: nome ? `${nome} voltou para a mesa.` : 'Um jogador voltou para a mesa.',
+      });
     });
 
     // ── Limpeza ─────────────────────────────────────────────────────────────
