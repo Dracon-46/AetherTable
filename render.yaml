@@ -51,12 +51,12 @@ services:
       # de verdade (auth/ttl.ts). Antes era decorativo — o módulo assinava com
       # '7d' fixo e ninguém olhava aqui.
       #
-      # 43200 = 12 h. NÃO baixe para 900 (15 min) enquanto não existir rota de
-      # refresh: o jogador seria deslogado no meio da partida, sem nada que
-      # renove a sessão. Era exatamente o que este campo dizia, e felizmente
-      # ninguém lia.
+      # 86400 = 24 h. NÃO baixe enquanto não existir rota de refresh: o jogador
+      # seria deslogado no meio da partida, sem nada que renove a sessão. Era
+      # exatamente o que este campo dizia quando valia 900 (15 min), e
+      # felizmente ninguém o lia na época.
       - key: JWT_ACCESS_TTL
-        value: '43200'
+        value: '86400'
       # `JWT_REFRESH_TTL` foi removido: não existe refresh token no sistema, e
       # variável que finge configurar algo é pior que variável ausente — leva
       # quem audita a concluir que há uma rotação de sessão que não há.

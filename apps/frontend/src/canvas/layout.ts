@@ -76,13 +76,31 @@ export const HAND_H = CARD_H + 32;
  */
 export const ESPACO_ENTRE_FAIXAS = 18;
 
-/** Altura de uma faixa fora de foco: cabe uma fileira de cartas. */
-export const FAIXA_H = CARD_H + 56;
-/** A faixa em foco cabe três fileiras — é onde o jogo realmente acontece. */
-export const FAIXA_FOCO_H = CARD_H * 3 + 80;
+/**
+ * Altura de uma faixa fora de foco: cabe uma fileira de cartas encolhidas.
+ *
+ * Era `CARD_H + 56` — altura de carta em tamanho CHEIO — enquanto as cartas ali
+ * são desenhadas a 62%. Sobrava quase metade da faixa de espaço vazio, quatro
+ * vezes na tela, empurrando a faixa em foco para caber no que restava.
+ */
+export const FAIXA_H = Math.round(CARD_H * 0.62) + 52;
+
+/**
+ * A faixa em foco: onde o jogo realmente acontece.
+ *
+ * Passou de três para QUATRO fileiras. Três fileiras dão ~500px lógicos para o
+ * campo de batalha — e um deck de Commander de meio de partida tem terrenos,
+ * criaturas e artefatos que passam de doze permanentes. Com três fileiras, a
+ * quarta linha de cartas era empurrada pelo clamp de `posicaoNoCampo` para
+ * cima das anteriores, e a mesa virava uma pilha.
+ *
+ * O custo é a faixa dos oponentes ficar menor — que é exatamente a troca certa:
+ * a mesa deles é consulta, a minha é trabalho.
+ */
+export const FAIXA_FOCO_H = CARD_H * 4 + 96;
 
 /** Quanto uma faixa fora de foco encolhe. */
-export const ESCALA_FORA_DE_FOCO = 0.72;
+export const ESCALA_FORA_DE_FOCO = 0.62;
 /**
  * Escala das cartas de uma faixa. Exportada porque o GameBoard precisa da
  * MESMA conta: com o número solto nos dois lados, mover uma âncora aqui
@@ -116,9 +134,28 @@ export interface Ponto {
 export interface Faixa {
   /** sessionId do dono da faixa. */
   playerId: string;
+  /**
+   * Canto superior esquerdo da célula, em coordenadas da mesa.
+   *
+   * Existe por causa da GRADE. Enquanto a mesa era só faixas empilhadas, toda
+   * faixa começava em x=0 e ocupava a largura inteira, então a origem
+   * horizontal era implícita — e o desenho no canvas usava `mesa.largura`
+   * direto. Com células lado a lado isso deixa de valer.
+   */
+  esquerda: number;
+  largura: number;
   topo: number;
   altura: number;
   emFoco: boolean;
+  /**
+   * Escala das cartas DESTA célula.
+   *
+   * Era derivada de `emFoco` pelo desenho (`escalaDaFaixa`), o que só faz
+   * sentido no empilhado, onde a faixa em foco é maior. Na grade as células são
+   * iguais por definição — o foco vira só cor de borda — e a escala precisa vir
+   * de quem monta a geometria, não de quem desenha.
+   */
+  escala: number;
   /** Retângulo livre para permanentes, em coordenadas RELATIVAS à faixa. */
   campo: { x: number; y: number; largura: number; altura: number };
   /** Âncoras absolutas das zonas de pilha desta faixa. */
@@ -129,6 +166,14 @@ export interface Faixa {
   reserva: Ponto;
   /** Onde escrever o nome e a vida do jogador. */
   rotulo: Ponto;
+  /**
+   * Faixa das zonas fixas (comando e pilhas), em y ABSOLUTO.
+   *
+   * `zonaSolta` usa isto para separar "soltou no campo" de "soltou numa zona"
+   * sem precisar conhecer o arranjo — que é diferente no empilhado (comando à
+   * esquerda, pilhas à direita) e na grade (tudo numa fileira embaixo).
+   */
+  zonas: { topo: number; altura: number };
 }
 
 export interface Mesa {
@@ -197,9 +242,12 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
 
     faixas.push({
       playerId,
+      esquerda: 0,
+      largura,
       topo: y,
       altura,
       emFoco,
+      escala: escalaDaFaixa(emFoco),
       campo: { x: campoX, y: campoY, largura: campoLargura, altura: campoAltura },
       comando: { x: larguraComando / 2 + 8, y: base },
       grimorio: estreito ? { x: col(0), y: linha(0) } : { x: col(0), y: base },
@@ -207,6 +255,7 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
       exilio: estreito ? { x: col(0), y: linha(1) } : { x: col(2), y: base },
       reserva: estreito ? { x: col(1), y: linha(1) } : { x: col(3), y: base },
       rotulo: { x: 12, y: y + 6 },
+      zonas: { topo: base - alturaCarta / 2 - 6, altura: alturaCarta + 12 },
     });
 
     y += altura;
@@ -221,6 +270,106 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
   };
 }
 
+/** Respiro entre as células da grade e entre elas e a borda da mesa. */
+export const ESPACO_DA_GRADE = 16;
+
+/**
+ * Quantas colunas para N jogadores.
+ *
+ * Cresce pela raiz para manter a grade quadrada: 2→2x1, 3 e 4→2x2, 5 e 6→3x2,
+ * 7 a 9→3x3. É o arranjo de uma mesa vista de cima, que é o que a visão "todos"
+ * está tentando ser.
+ */
+export function colunasDaGrade(jogadores: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(Math.max(1, jogadores))));
+}
+
+/**
+ * montarGrade — a visão "todos", em QUADRADOS.
+ *
+ * ─── POR QUE ISTO NÃO É `montarMesa` COM OUTRO PARÂMETRO ───────────────────
+ *
+ * As duas respondem a perguntas diferentes, e por isso arranjam as zonas de
+ * formas diferentes.
+ *
+ * O EMPILHADO é para JOGAR: a sua faixa é larga e baixa, com o comando à
+ * esquerda e as pilhas à direita, porque a mão está logo abaixo e o gesto que
+ * importa é mão → campo. Numa faixa de 1920x584 as zonas cabem nas pontas sem
+ * roubar espaço do campo.
+ *
+ * A GRADE é para OLHAR: quatro mesas ao mesmo tempo. Numa célula quadrada as
+ * zonas nas pontas comeriam a largura toda (comando + 4 pilhas ≈ 700px de 933),
+ * e o campo viraria uma tira. Aqui elas vão para uma FILEIRA no rodapé da
+ * célula, que é como uma mesa de verdade se organiza vista de cima: o campo no
+ * meio, as pilhas na borda de baixo, na frente do jogador.
+ *
+ * Tentar servir as duas com um só arranjo é o que produziria o pior dos dois.
+ */
+export function montarGrade(ordem: string[], focoId: string): Mesa {
+  const jogadores = Math.max(1, ordem.length);
+  const colunas = colunasDaGrade(jogadores);
+  const linhas = Math.ceil(jogadores / colunas);
+
+  const largura = LOGICAL_W;
+  // Célula QUADRADA: é o pedido, e é o que faz a grade ler como uma mesa em vez
+  // de uma pilha de tiras.
+  const lado = Math.floor((largura - ESPACO_DA_GRADE * (colunas + 1)) / colunas);
+
+  /** A fileira de zonas no rodapé da célula. */
+  const alturaZonas = CARD_H + 26;
+  const alturaRotulo = 26;
+
+  const faixas: Faixa[] = ordem.map((playerId, indice) => {
+    const coluna = indice % colunas;
+    const linha = Math.floor(indice / colunas);
+    const esquerda = ESPACO_DA_GRADE + coluna * (lado + ESPACO_DA_GRADE);
+    const topo = ESPACO_DA_GRADE + linha * (lado + ESPACO_DA_GRADE);
+
+    const campo = {
+      x: 10,
+      y: alturaRotulo,
+      largura: lado - 20,
+      altura: lado - alturaRotulo - alturaZonas,
+    };
+
+    // Cinco âncoras igualmente espaçadas no rodapé: comando, grimório,
+    // cemitério, exílio, reserva. A reserva ganha lugar mesmo quando vazia para
+    // que as outras quatro não dancem quando ela aparece.
+    const baseY = topo + lado - alturaZonas / 2 - 2;
+    const passo = (lado - 20) / 5;
+    const col = (i: number) => esquerda + 10 + passo * (i + 0.5);
+
+    return {
+      playerId,
+      esquerda,
+      largura: lado,
+      topo,
+      altura: lado,
+      emFoco: playerId === focoId,
+      // Células iguais, escala igual. O foco aqui é cor de borda, não tamanho.
+      escala: 1,
+      campo,
+      comando: { x: col(0), y: baseY },
+      grimorio: { x: col(1), y: baseY },
+      cemiterio: { x: col(2), y: baseY },
+      exilio: { x: col(3), y: baseY },
+      reserva: { x: col(4), y: baseY },
+      rotulo: { x: esquerda + 10, y: topo + 6 },
+      zonas: { topo: topo + lado - alturaZonas, altura: alturaZonas },
+    };
+  });
+
+  const alturaGrade = ESPACO_DA_GRADE + linhas * (lado + ESPACO_DA_GRADE);
+
+  return {
+    largura,
+    altura: alturaGrade + HAND_H,
+    faixas,
+    porJogador: new Map(faixas.map((f) => [f.playerId, f])),
+    mao: { topo: alturaGrade, altura: HAND_H },
+  };
+}
+
 /**
  * Converte a posição relativa de uma permanente na posição absoluta da mesa,
  * mantendo-a dentro do campo da faixa.
@@ -230,17 +379,20 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
  */
 export function posicaoNoCampo(faixa: Faixa, x: number, y: number): Ponto {
   const { campo } = faixa;
-  const minX = campo.x + CARD_W / 2;
-  const maxX = campo.x + campo.largura - CARD_W / 2;
-  const minY = faixa.topo + campo.y + CARD_H / 2;
-  const maxY = faixa.topo + campo.y + campo.altura - CARD_H / 2;
+  // `esquerda` é a origem da célula: 0 no empilhado, o canto da célula na grade.
+  const campoX = faixa.esquerda + campo.x;
+  const campoY = faixa.topo + campo.y;
+  const minX = campoX + CARD_W / 2;
+  const maxX = campoX + campo.largura - CARD_W / 2;
+  const minY = campoY + CARD_H / 2;
+  const maxY = campoY + campo.altura - CARD_H / 2;
 
   // Uma carta jogada por INTENT_CHANGE_ZONE sem coordenada chega em (0,0):
   // centraliza em vez de empilhar tudo no canto superior esquerdo.
   const bruta =
     x === 0 && y === 0
-      ? { x: campo.x + campo.largura / 2, y: faixa.topo + campo.y + campo.altura / 2 }
-      : { x: campo.x + x, y: faixa.topo + campo.y + y };
+      ? { x: campoX + campo.largura / 2, y: campoY + campo.altura / 2 }
+      : { x: campoX + x, y: campoY + y };
 
   return {
     x: Math.min(maxX, Math.max(minX, bruta.x)),
@@ -252,7 +404,7 @@ export function posicaoNoCampo(faixa: Faixa, x: number, y: number): Ponto {
 export function paraCoordenadaRelativa(faixa: Faixa, x: number, y: number): Ponto {
   const { campo } = faixa;
   return {
-    x: Math.round(Math.min(campo.largura, Math.max(0, x - campo.x))),
+    x: Math.round(Math.min(campo.largura, Math.max(0, x - faixa.esquerda - campo.x))),
     y: Math.round(Math.min(campo.altura, Math.max(0, y - faixa.topo - campo.y))),
   };
 }
@@ -299,13 +451,28 @@ export type ZonaDeSoltura = 'COMMAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE' | 'BAT
  * arrasto impreciso esconderia a carta da mesa inteira.
  */
 export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
-  if (x < faixa.campo.x) return 'COMMAND';
-  if (x <= faixa.campo.x + faixa.campo.largura) return 'BATTLEFIELD';
+  const { campo } = faixa;
+  const campoX = faixa.esquerda + campo.x;
+  const campoY = faixa.topo + campo.y;
 
-  // Faixa das pilhas: vale a âncora mais próxima. Distância em vez de
-  // retângulos porque o modo estreito reorganiza as mesmas quatro zonas numa
-  // grade 2x2 — com retângulos, cada arranjo precisaria da sua própria conta.
+  // Dentro do retângulo do campo (bordas inclusive) é campo de batalha. Fora
+  // dele, vale a âncora mais próxima.
+  //
+  // ─── POR QUE DISTÂNCIA, E NÃO RETÂNGULOS ────────────────────────────────
+  //
+  // As mesmas cinco zonas são arranjadas de três formas: comando à esquerda e
+  // pilhas à direita (empilhado), grade 2x2 (tela estreita) e fileira no rodapé
+  // (grade). Com retângulos, cada arranjo precisaria da sua própria conta — e
+  // mover uma âncora em `montarMesa` deixaria a área de acerto para trás, em
+  // silêncio. A distância acompanha a âncora de graça.
+  const dentro =
+    x >= campoX && x <= campoX + campo.largura && y >= campoY && y <= campoY + campo.altura;
+  if (dentro) return 'BATTLEFIELD';
+
+  // A reserva não é destino: é zona oculta e de pré-jogo, e cair nela por um
+  // arrasto impreciso esconderia a carta da mesa inteira.
   const alvos: Array<[ZonaDeSoltura, Ponto]> = [
+    ['COMMAND', faixa.comando],
     ['LIBRARY', faixa.grimorio],
     ['GRAVEYARD', faixa.cemiterio],
     ['EXILE', faixa.exilio],

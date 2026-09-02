@@ -53,6 +53,9 @@ function ctxDe(state: RoomState, sid: string) {
     broadcast: (evento, payload) => enviados.push({ evento, payload: payload as unknown }),
     log: () => {},
     desfazer: () => null,
+    // A Room e quem sabe expulsar (ver `IntentContext.expulsar`): num contexto
+    // de teste nao ha socket para derrubar.
+    expulsar: () => {},
   };
   return { ctx, enviados };
 }

@@ -152,6 +152,16 @@ export const intents = {
   setDamage: (room: Room, entityId: string, amount: number) =>
     sendIntent(room, 'INTENT_SET_DAMAGE', { entityId, amount }),
 
+  /**
+   * Soma dano. Use este nos botões de +1/−1.
+   *
+   * `setDamage` manda o TOTAL, e o total só pode ser calculado a partir do
+   * último valor recebido do servidor — três cliques rápidos leem a mesma base
+   * e mandam "1, 1, 1". Delta não depende do que o cliente sabe.
+   */
+  addDamage: (room: Room, entityId: string, delta: number) =>
+    sendIntent(room, 'INTENT_ADD_DAMAGE', { entityId, delta }),
+
   clearDamage: (room: Room) => sendIntent(room, 'INTENT_CLEAR_DAMAGE'),
 
   setCommander: (room: Room, entityId: string) =>
@@ -288,6 +298,35 @@ export const intents = {
       petId: string;
     }>,
   ) => sendIntent(room, 'INTENT_SET_COSMETICS', cosmeticos),
+
+  // ─── Sala de espera ───────────────────────────────────────────────────────
+
+  /** Escolhe o grimório DENTRO da sala de espera. Substitui o anterior. */
+  setDeck: (room: Room, deckId: string) => sendIntent(room, 'INTENT_SET_DECK', { deckId }),
+
+  setReady: (room: Room, ready: boolean) => sendIntent(room, 'INTENT_SET_READY', { ready }),
+
+  /** Só o anfitrião. O removido recebe `kicked` antes de a conexão cair. */
+  kickPlayer: (room: Room, playerId: string) =>
+    sendIntent(room, 'INTENT_KICK_PLAYER', { playerId }),
+
+  /** Fecha a própria janela de mulligan. */
+  keepHand: (room: Room) => sendIntent(room, 'INTENT_KEEP_HAND'),
+
+  // ─── Ver a zona oculta de outro jogador, com consentimento (RN13) ─────────
+
+  requestView: (room: Room, targetPlayerId: string, zone: string) =>
+    sendIntent(room, 'INTENT_REQUEST_VIEW', { targetPlayerId, zone }),
+
+  respondView: (room: Room, requesterId: string, zone: string, accept: boolean) =>
+    sendIntent(room, 'INTENT_RESPOND_VIEW', { requesterId, zone, accept }),
+
+  revokeView: (room: Room, viewerId: string, zone: string) =>
+    sendIntent(room, 'INTENT_REVOKE_VIEW', { viewerId, zone }),
+
+  /** Manda uma permanente própria para a MESA de outro jogador. */
+  giveCard: (room: Room, entityId: string, targetPlayerId: string) =>
+    sendIntent(room, 'INTENT_GIVE_CARD', { entityId, targetPlayerId }),
 
   /** Sai da fase WAITING e começa a partida. Só o anfitrião (assento 0). */
   startMatch: (room: Room) => sendIntent(room, 'INTENT_START_MATCH'),

@@ -35,6 +35,10 @@ export function SelectionBar({ room }: SelectionBarProps) {
   if (validas.length < 2) return null;
 
   const todasViradas = validas.every((id) => cards[id]?.isTapped);
+  // "Face ↓" mandava sempre `true`: dava para virar a seleção inteira para
+  // baixo e não havia como desvirá-la em lote — o caminho de volta era carta
+  // por carta, ou a tecla F, que ninguém sabia que existia.
+  const todasParaBaixo = validas.every((id) => cards[id]?.faceDown);
 
   const botao =
     'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-panel-hover';
@@ -43,7 +47,10 @@ export function SelectionBar({ room }: SelectionBarProps) {
     // No mobile fica ACIMA do log recolhido; no desktop, dentro da faixa livre
     // entre o painel de vida (esquerda) e o log (direita) — centralizar na tela
     // inteira fazia a barra passar por baixo da coluna de vida.
-    <div className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex justify-center px-2 sm:bottom-20 sm:pl-[13rem] sm:pr-[19rem]">
+    // As folgas laterais acompanham o HUD, que encolheu: a coluna de vida tem
+    // 10rem e o log recolhido, 14rem. Reservar 13rem/19rem deixava a barra
+    // deslocada para a esquerda, fugindo do centro da mesa sem motivo.
+    <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-2 sm:bottom-16 sm:pl-[11rem] sm:pr-[15rem]">
       <div className="painel-entra no-scrollbar border-primary/50 bg-panel/95 pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border px-2 py-2 shadow-xl backdrop-blur">
         <span className="bg-primary/20 text-primary shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase">
           {validas.length} selecionadas
@@ -74,11 +81,11 @@ export function SelectionBar({ room }: SelectionBarProps) {
         </button>
 
         <button
-          onClick={() => intents.batchUpdate(room, validas, 'faceDown', true)}
+          onClick={() => intents.batchUpdate(room, validas, 'faceDown', !todasParaBaixo)}
           className={`${botao} hover:text-warning`}
         >
           <Layers className="h-4 w-4" />
-          Face ↓
+          {todasParaBaixo ? 'Face ↑' : 'Face ↓'}
         </button>
 
         <div className="bg-panel-border mx-1 h-5 w-px shrink-0" />

@@ -229,6 +229,36 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   // Trocar de sleeve nao e jogada: desfazer aqui so tiraria do jogador a
   // possibilidade de desfazer a jogada anterior de verdade.
   'INTENT_SET_COSMETICS',
+
+  // ── Sala de espera e mesa social ────────────────────────────────────────
+
+  /**
+   * DESFAZER "fiquei com a mao" REABRIRIA O MULLIGAN.
+   *
+   * `keptHand` e justamente o que fecha a janela de mulligan. Um undo que o
+   * reabrisse devolveria, por uma porta lateral, o "compre sete cartas novas a
+   * qualquer momento" que a janela existe para tirar. E nem funcionaria: o
+   * snapshot de jogador nao guarda `keptHand`, entao a acao so serviria para
+   * consumir o slot e impedir o jogador de desfazer a jogada anterior de
+   * verdade.
+   */
+  'INTENT_KEEP_HAND',
+
+  /** Prontidao ja e um interruptor: "desfazer" e clicar de novo. */
+  'INTENT_SET_READY',
+
+  /** Nao da para trazer de volta quem ja foi desconectado. */
+  'INTENT_KICK_PLAYER',
+
+  /**
+   * Mesma razao de REVEAL e PEEK: informacao vista nao volta a ser oculta.
+   * Desfazer uma resposta de visualizacao daria a falsa sensacao de que o
+   * observador "des-viu" a mao — e o jeito certo de fechar e revogar, que e
+   * uma acao propria e explicita.
+   */
+  'INTENT_REQUEST_VIEW',
+  'INTENT_RESPOND_VIEW',
+  'INTENT_REVOKE_VIEW',
 ]);
 
 /** Um snapshot por jogador — o ultimo. Undo nao empilha (DOC-036 item 130). */

@@ -49,7 +49,10 @@ describe('ttlEmSegundos', () => {
     expect(ttlEmSegundos('0h')).toBe(TTL_PADRAO_SEGUNDOS);
   });
 
-  it('o padrão é de doze horas', () => {
-    expect(TTL_PADRAO_SEGUNDOS).toBe(43_200);
+  // O número em si é a política: enquanto não existir rota de refresh, é ele
+  // que decide se o jogador termina a partida logado. Fixado no teste para que
+  // mudá-lo seja uma decisão, e não um efeito colateral.
+  it('o padrão é de um dia', () => {
+    expect(TTL_PADRAO_SEGUNDOS).toBe(86_400);
   });
 });

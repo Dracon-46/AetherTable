@@ -150,6 +150,71 @@ export interface RoomClosingEvent {
   inSeconds: number;
 }
 
+/**
+ * O deck do jogador nao entrou na mesa.
+ *
+ * Existia como `client.send('deckError', ...)` no game-server e NAO estava
+ * neste mapa: o unico evento do sistema fora do contrato, invisivel para quem
+ * lesse so o tipo.
+ */
+export interface DeckErrorEvent {
+  code: 'DECK_UNAVAILABLE' | 'DECK_NOT_YOURS' | 'NO_DECK';
+  message: string;
+}
+
+/** O grimorio terminou de ser provisionado (sala de espera). */
+export interface DeckReadyEvent {
+  deckId: string;
+  name: string;
+  cards: number;
+}
+
+/**
+ * Alguem pediu para ver uma zona oculta sua. Vai SO ao dono da zona.
+ *
+ * Nao concede nada: e um convite a decidir. A concessao so existe depois de
+ * `INTENT_RESPOND_VIEW` com `accept: true` (RN13).
+ */
+export interface ViewRequestEvent {
+  requesterId: string;
+  requesterName: string;
+  zone: 'HAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE';
+}
+
+/** Resposta ao pedido acima. Vai SO a quem pediu. */
+export interface ViewResponseEvent {
+  ownerId: string;
+  ownerName: string;
+  zone: 'HAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE';
+  accepted: boolean;
+}
+
+/** O anfitriao removeu este jogador da sala. */
+export interface KickedEvent {
+  by: string;
+  message: string;
+}
+
+/**
+ * Um jogador saiu do jogo.
+ *
+ * Vai para a MESA INTEIRA: derrota nao e informacao privada, e sem o anuncio
+ * cada jogador teria de reparar sozinho no icone de caveira do painel de vida.
+ */
+export interface PlayerEliminatedEvent {
+  playerId: string;
+  name: string;
+  reason: 'LIFE' | 'POISON' | 'COMMANDER' | 'DECKED' | 'CONCEDED';
+  /** Quem causou, quando faz sentido (dano de comandante). */
+  byName?: string;
+}
+
+/** Sobrou um. A partida acabou. */
+export interface MatchEndedEvent {
+  winnerId: string;
+  winnerName: string;
+}
+
 /** Mapa canonico: nome do evento -> payload. */
 export interface ServerEventMap {
   log: LogEvent;
@@ -167,6 +232,13 @@ export interface ServerEventMap {
   playerReconnected: PlayerConnectionEvent;
   matchStarted: MatchStartedEvent;
   roomClosing: RoomClosingEvent;
+  deckError: DeckErrorEvent;
+  deckReady: DeckReadyEvent;
+  viewRequest: ViewRequestEvent;
+  viewResponse: ViewResponseEvent;
+  kicked: KickedEvent;
+  playerEliminated: PlayerEliminatedEvent;
+  matchEnded: MatchEndedEvent;
 }
 
 export type ServerEventType = keyof ServerEventMap;

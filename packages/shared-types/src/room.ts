@@ -32,9 +32,14 @@ export const AETHER_ROOM = 'aether_room';
 
 /** Opcoes enviadas no `joinById` — validadas em `onAuth` (FR-20). */
 export interface JoinOptions {
-  /** JWT de assento emitido pela API Core. Expira em 60 s, uso unico. */
+  /** JWT de assento emitido pela API Core. Expira em 1 dia, uso unico. */
   seatToken: string;
-  deckId: string;
+  /**
+   * Deck com que o jogador entra. OPCIONAL desde que a escolha do grimorio
+   * passou a acontecer na sala de espera (`INTENT_SET_DECK`): quem cria a mesa
+   * pelo painel nao precisa mais decidir o deck antes de ver quem sentou.
+   */
+  deckId?: string;
 }
 
 /** Rejeicoes possiveis no handshake. DOC-031 §2.1. */
@@ -68,5 +73,54 @@ export const REALTIME_LIMITS = {
   PEEK_TIMEOUT_MS: 120_000,
   /** Janela do INTENT_UNDO. */
   UNDO_WINDOW_MS: 10_000,
-  MAX_PLAYERS: 4,
+
+  /**
+   * Teto de assentos de UMA sala.
+   *
+   * Era 4 — o tamanho de uma mesa de Commander — e a sala recusava o quinto
+   * jogador antes mesmo de o anfitriao poder escolher. Formatos livres,
+   * multiplayer caseiro e mesas de espectadores-jogadores pedem mais; o custo
+   * de cada assento a mais e linear (uma faixa na mesa, uma reconciliacao de
+   * visibilidade a mais por mutacao), e a 8 continua dentro do orcamento de
+   * ~1.600 avaliacoes por reconciliacao completa que DOC-032 §7 dimensiona.
+   */
+  MAX_PLAYERS: 8,
+  /** Assentos de uma sala recem-criada, quando ninguem escolhe. */
+  DEFAULT_SEATS: 4,
+
+  /**
+   * SORTEIOS EM RAJADA (dado, moeda, jogador/carta ao acaso).
+   *
+   * Sem teto, segurar o botao do dado emitia 30 rolagens por segundo — dentro
+   * do limite geral de intencoes, porque CADA UMA e uma intencao valida. Cada
+   * rolagem faz um `broadcast` para a mesa inteira e uma entrada de log em
+   * todos os clientes: e a unica familia de acoes em que uma pessoa sozinha
+   * gera trabalho para todas as outras, sem tocar em estado nenhum.
+   *
+   * Cinco por janela cobre o uso real (rolar de novo, desempatar, "melhor de
+   * tres") e corta a rajada.
+   */
+  MAX_SORTEIOS_POR_JANELA: 5,
+  SORTEIO_JANELA_MS: 8_000,
 } as const;
+
+/**
+ * Condicoes de derrota, aplicadas pelo servidor.
+ *
+ * O motor nasceu sem elas por decisao de projeto (RN01: sandbox, sem regras).
+ * A decisao foi revertida: sem estes tres numeros, "21 de comandante" era um
+ * contador vermelho que nao significava nada, e a mesa tinha de combinar de
+ * viva-voz quem ja tinha perdido.
+ */
+export const DERROTA = {
+  /** Vida neste valor ou abaixo. */
+  VIDA_MINIMA: 0,
+  /** Marcadores de veneno neste valor ou acima. */
+  VENENO_LETAL: 10,
+  /** Dano de comandante de UM MESMO oponente neste valor ou acima. */
+  DANO_DE_COMANDANTE_LETAL: 21,
+} as const;
+
+/** Por que o jogador saiu do jogo. */
+export const MOTIVOS_DE_DERROTA = ['LIFE', 'POISON', 'COMMANDER', 'DECKED', 'CONCEDED'] as const;
+export type MotivoDeDerrota = (typeof MOTIVOS_DE_DERROTA)[number];

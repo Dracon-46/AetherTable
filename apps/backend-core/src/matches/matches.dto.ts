@@ -25,7 +25,15 @@ export const RoomCodeParam = z
   .toUpperCase()
   .regex(/^[0-9A-F]{6}$/, 'Código de sala inválido');
 
+/**
+ * `deckId` é OPCIONAL: o grimório passou a ser escolhido dentro da sala de
+ * espera (`INTENT_SET_DECK`). Continua sendo aceito aqui — quem já sabe com que
+ * deck vai jogar não deve ser obrigado a escolher duas vezes — e continua sendo
+ * validado como uuid quando vem, porque a coluna é `@db.Uuid` e um valor fora
+ * do formato faz o Postgres recusar a consulta: a rota responderia 500 em vez
+ * de 404.
+ */
 export const EntrarNaPartidaDto = z.object({
-  deckId: z.string().uuid('deckId precisa ser um UUID'),
+  deckId: z.string().uuid('deckId precisa ser um UUID').optional(),
 });
 export type EntrarNaPartidaDto = z.infer<typeof EntrarNaPartidaDto>;

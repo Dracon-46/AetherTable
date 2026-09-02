@@ -38,4 +38,11 @@ export class Player extends Schema {
   @type('string') public ringBearerId!: string;
   @type('number') public maxHandSize!: number;
   @type('string') public petId!: string;
+  @type('boolean') public ready!: boolean;
+  @type('boolean') public keptHand!: boolean;
+  @type('string') public deckName!: string;
+  @type({ map: 'string' }) public sharedZones: MapSchema<string> = new MapSchema<string>();
+  @type('boolean') public eliminated!: boolean;
+  @type('string') public eliminationReason!: string;
+  @type('boolean') public decked!: boolean;
 }

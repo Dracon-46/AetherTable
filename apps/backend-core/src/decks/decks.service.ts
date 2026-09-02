@@ -106,11 +106,29 @@ export class DecksService {
    * auditoria de 31/08 ela era pública, e o controller alcançava `this.prisma`
    * por dentro do serviço com um `as any`.
    */
-  async getDeckForServer(deckId: string) {
-    return this.prisma.deck.findUnique({
+  /**
+   * Deck completo para o game-server.
+   *
+   * `ownerId` e OPCIONAL por compatibilidade com o fluxo antigo (o deck vinha
+   * dentro do seat token, ja validado em `MatchesService.joinMatch`), e
+   * OBRIGATORIO no fluxo novo: desde que o grimorio passou a ser escolhido
+   * dentro da sala de espera, o id chega numa intencao do cliente. Sem a
+   * checagem de dono aqui, qualquer jogador podia pedir `INTENT_SET_DECK` com o
+   * id do deck de outra pessoa e entrar na mesa jogando com o baralho alheio —
+   * lendo, de quebra, a lista inteira dele.
+   *
+   * Devolve `null` quando o deck nao existe OU nao e de quem pediu: as duas
+   * respostas sao iguais de proposito, para o endpoint nao virar um oraculo que
+   * confirma a existencia de ids alheios.
+   */
+  async getDeckForServer(deckId: string, ownerId?: string) {
+    const deck = await this.prisma.deck.findUnique({
       where: { id: deckId },
       include: { cards: true },
     });
+    if (!deck) return null;
+    if (ownerId && deck.userId !== ownerId) return null;
+    return deck;
   }
 
   async deleteDeck(userId: string, deckId: string) {

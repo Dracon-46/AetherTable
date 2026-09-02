@@ -51,6 +51,38 @@ export function CardEditor({ room }: CardEditorProps) {
     return () => window.removeEventListener('keydown', onEsc);
   }, [cardId, fechar]);
 
+  /**
+   * P/T CONTINUA ABSOLUTO — e por isso precisa de um acumulador local.
+   *
+   * O servidor não pode receber um delta aqui: ele guarda `scryfallId`, não o
+   * P/T impresso (DOC-030 §1.2), então não tem de onde partir na PRIMEIRA
+   * sobreposição. Quem conhece "2/2 impresso" é o cliente, pelo catálogo.
+   *
+   * Só que calcular `p + 1` a partir do render deixa o botão com o mesmo
+   * defeito que o dano tinha: dois cliques mais rápidos que o patch leem a
+   * mesma base, e o segundo não soma nada. `pendente` acumula localmente e
+   * zera quando o servidor confirma.
+   *
+   * Declarado ANTES do retorno antecipado: hook depois de `return null` muda a
+   * contagem de hooks entre renders e derruba a árvore com "Rendered fewer
+   * hooks than expected" — foi exatamente o que já aconteceu no `CardInspector`
+   * e no `ZoneInspector` deste projeto.
+   */
+  const pendente = React.useRef<{ p: number; t: number } | null>(null);
+  const overrideAtivo = card?.hasPtOverride ?? false;
+  const forcaAtual = card?.powerOverride ?? 0;
+  const resistAtual = card?.toughnessOverride ?? 0;
+  React.useEffect(() => {
+    if (!overrideAtivo) return;
+    if (pendente.current && pendente.current.p === forcaAtual && pendente.current.t === resistAtual)
+      pendente.current = null;
+  }, [overrideAtivo, forcaAtual, resistAtual]);
+
+  // Trocar de carta invalida o acumulador da anterior.
+  React.useEffect(() => {
+    pendente.current = null;
+  }, [cardId]);
+
   if (!cardId || !card) return null;
 
   const face = card.isFlipped ? 1 : 0;
@@ -60,7 +92,12 @@ export function CardEditor({ room }: CardEditorProps) {
   const p = card.hasPtOverride ? card.powerOverride : pImpresso;
   const t = card.hasPtOverride ? card.toughnessOverride : tImpresso;
 
-  const ajustarPt = (dp: number, dt: number) => intents.setPt(room, card.id, p + dp, t + dt, true);
+  const ajustarPt = (dp: number, dt: number) => {
+    const base = pendente.current ?? { p, t };
+    const alvo = { p: base.p + dp, t: base.t + dt };
+    pendente.current = alvo;
+    intents.setPt(room, card.id, alvo.p, alvo.t, true);
+  };
 
   const chip =
     'rounded-md border border-panel-border bg-table-deep px-2 py-1 text-xs text-text transition-colors hover:border-primary hover:text-primary';
@@ -219,19 +256,13 @@ export function CardEditor({ room }: CardEditorProps) {
               Dano marcado
             </span>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => intents.setDamage(room, card.id, Math.max(0, card.damage - 1))}
-                className={chip}
-              >
+              <button onClick={() => intents.addDamage(room, card.id, -1)} className={chip}>
                 −1
               </button>
               <span className="bg-table-deep text-danger min-w-[3rem] rounded-md px-2 py-1.5 text-center font-mono text-sm font-bold">
                 {card.damage}
               </span>
-              <button
-                onClick={() => intents.setDamage(room, card.id, card.damage + 1)}
-                className={chip}
-              >
+              <button onClick={() => intents.addDamage(room, card.id, 1)} className={chip}>
                 +1
               </button>
               {card.damage > 0 && (

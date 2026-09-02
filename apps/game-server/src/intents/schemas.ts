@@ -389,3 +389,52 @@ export const SetCosmeticsIntent = z
     petId: z.string().refine(ehPetValido, 'mascote fora do catalogo').optional(),
   })
   .strict();
+
+// ─── Sala de espera e mesa social ────────────────────────────────────────────
+
+/** Zonas cujo conteudo pode ser PEDIDO a outro jogador (RN13). */
+const zonaPedivel = z.enum(['HAND', 'LIBRARY', 'GRAVEYARD', 'EXILE']);
+
+/**
+ * O deck e escolhido DENTRO da sala de espera.
+ *
+ * `deckId` e um uuid porque e o formato do id no Postgres (DOC-030): validar
+ * aqui evita que uma string arbitraria vire uma chamada HTTP interna com path
+ * controlado pelo cliente.
+ */
+export const SetDeckIntent = z.object({ deckId: z.string().uuid() }).strict();
+
+export const SetReadyIntent = z.object({ ready: z.boolean() }).strict();
+
+/** `playerId` e o sessionId do Colyseus, nao um uuid. */
+export const KickPlayerIntent = z.object({ playerId: z.string().min(1).max(64) }).strict();
+
+export const KeepHandIntent = z.object({}).strict();
+
+export const RequestViewIntent = z
+  .object({ targetPlayerId: z.string().min(1).max(64), zone: zonaPedivel })
+  .strict();
+
+export const RespondViewIntent = z
+  .object({
+    requesterId: z.string().min(1).max(64),
+    zone: zonaPedivel,
+    accept: z.boolean(),
+  })
+  .strict();
+
+export const RevokeViewIntent = z
+  .object({ viewerId: z.string().min(1).max(64), zone: zonaPedivel })
+  .strict();
+
+export const GiveCardIntent = z
+  .object({ entityId, targetPlayerId: z.string().min(1).max(64) })
+  .strict();
+
+/**
+ * Dano em DELTA. Ver o comentario de `AddDamagePayload`: o valor absoluto
+ * perde incremento quando o jogador clica mais rapido que o round-trip.
+ */
+export const AddDamageIntent = z
+  .object({ entityId, delta: z.number().int().min(-999).max(999) })
+  .strict();

@@ -24,9 +24,9 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 ## 2. Cobertura
 
-- Contrato (`IntentPayloadMap`): **85** intenções
-- Implementadas no servidor: **79**
-- Emitidas pelo cliente: **79**
+- Contrato (`IntentPayloadMap`): **93** intenções
+- Implementadas no servidor: **87**
+- Emitidas pelo cliente: **87**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -61,8 +61,11 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_DRAW_UP_TO`           |    ✅    |   ✅    |
 | `INTENT_FETCH_FROM_SIDEBOARD` |    ✅    |   ✅    |
 | `INTENT_FLIP_COIN`            |    ✅    |   ✅    |
+| `INTENT_GIVE_CARD`            |    ✅    |   ✅    |
 | `INTENT_GRAB`                 |    ✅    |   ✅    |
 | `INTENT_GROUP`                |    —     |    —    |
+| `INTENT_KEEP_HAND`            |    ✅    |   ✅    |
+| `INTENT_KICK_PLAYER`          |    ✅    |   ✅    |
 | `INTENT_LEAVE`                |    ✅    |   ✅    |
 | `INTENT_MELD`                 |    —     |    —    |
 | `INTENT_MILL`                 |    ✅    |   ✅    |
@@ -77,11 +80,14 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_RANDOM_PLAYER`        |    ✅    |   ✅    |
 | `INTENT_RELEASE`              |    ✅    |   ✅    |
 | `INTENT_REORDER`              |    ✅    |   ✅    |
+| `INTENT_REQUEST_VIEW`         |    ✅    |   ✅    |
 | `INTENT_RESET_MATCH`          |    ✅    |   ✅    |
+| `INTENT_RESPOND_VIEW`         |    ✅    |   ✅    |
 | `INTENT_RETURN_ZONE`          |    ✅    |   ✅    |
 | `INTENT_REVEAL`               |    ✅    |   ✅    |
 | `INTENT_REVEAL_TOP`           |    ✅    |   ✅    |
 | `INTENT_REVEAL_ZONE`          |    ✅    |   ✅    |
+| `INTENT_REVOKE_VIEW`          |    ✅    |   ✅    |
 | `INTENT_ROLL_DICE`            |    ✅    |   ✅    |
 | `INTENT_SCRY`                 |    ✅    |   ✅    |
 | `INTENT_SCRY_COMMIT`          |    ✅    |   ✅    |
@@ -94,12 +100,14 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_SET_COUNTER`          |    ✅    |   ✅    |
 | `INTENT_SET_DAMAGE`           |    ✅    |   ✅    |
 | `INTENT_SET_DAY_NIGHT`        |    ✅    |   ✅    |
+| `INTENT_SET_DECK`             |    ✅    |   ✅    |
 | `INTENT_SET_HIGHLIGHT`        |    ✅    |   ✅    |
 | `INTENT_SET_LIFE`             |    ✅    |   ✅    |
 | `INTENT_SET_MAX_HAND_SIZE`    |    ✅    |   ✅    |
 | `INTENT_SET_NOTE`             |    ✅    |   ✅    |
 | `INTENT_SET_PLAYER_COUNTER`   |    ✅    |   ✅    |
 | `INTENT_SET_PT`               |    ✅    |   ✅    |
+| `INTENT_SET_READY`            |    ✅    |   ✅    |
 | `INTENT_SET_RING`             |    ✅    |   ✅    |
 | `INTENT_SET_SPEED`            |    ✅    |   ✅    |
 | `INTENT_SET_TURN`             |    ✅    |   ✅    |

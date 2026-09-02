@@ -27,6 +27,9 @@ import {
   Eraser,
   Sparkles,
   Keyboard,
+  Copy,
+  Check,
+  Flag,
 } from 'lucide-react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
@@ -42,21 +45,50 @@ const FASES = ['Início', 'Compra', 'Principal 1', 'Combate', 'Principal 2', 'Fi
 export function TableMenu({ room }: TableMenuProps) {
   const [aberto, setAberto] = useState(false);
   const [mostrarAtalhos, setMostrarAtalhos] = useState(false);
+  /** Duas etapas para as ações destrutivas. `null` = nada pendente. */
+  const [confirmando, setConfirmando] = useState<'desistir' | 'reiniciar' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
+  const roomCode = useGameStore((s) => s.roomId);
   const turn = useGameStore((s) => s.turn);
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
+  const [copiado, setCopiado] = useState(false);
   const dayNight = useGameStore((s) => s.dayNight);
   const turnPhase = useGameStore((s) => s.turnPhase);
   const setInspectedZone = useUIStore((s) => s.setInspectedZone);
 
   const eu = myId ? players[myId] : undefined;
+  const souAnfitriao = eu?.seat === 0;
+
+  /**
+   * O TURNO É DE QUEM ESTÁ NA VEZ — inclusive para ANDAR o contador.
+   *
+   * "Passar o turno" já era protegido no servidor; "Avançar para o turno N" não
+   * era, e é este menu que o emite (`INTENT_SET_TURN`). Qualquer jogador
+   * empurrava o contador da mesa por cima da jogada de quem estava na vez.
+   *
+   * O servidor recusa agora (`NOT_YOUR_TURN`), e aqui o botão precisa dizer
+   * isso ANTES do clique: deixá-lo ativo transformaria a regra nova num toast
+   * de erro repetido.
+   */
+  const minhaVez = !activePlayerId || activePlayerId === myId;
+  const nomeDaVez = activePlayerId ? (players[activePlayerId]?.name ?? null) : null;
+  const tituloDaVez = minhaVez
+    ? undefined
+    : `A vez é de ${nomeDaVez ?? 'outro jogador'} — só quem está na vez mexe no turno`;
 
   useEffect(() => {
     if (!aberto) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setAberto(false);
+        // Uma confirmação pendente não pode sobreviver ao fechamento: reabrir o
+        // painel com "Confirmar" já armado é um clique acidental de distância
+        // de apagar a partida da mesa inteira.
+        setConfirmando(null);
+      }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -87,6 +119,37 @@ export function TableMenu({ room }: TableMenuProps) {
         // O painel tem ~726px de altura: sem limite ele passava do rodapé em
         // qualquer tela de 720p e as últimas seções ficavam inalcançáveis.
         <div className="painel-entra custom-scrollbar border-panel-border bg-panel absolute right-0 top-full mt-1 max-h-[calc(100dvh-5rem)] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border shadow-2xl">
+          {/* CÓDIGO DA SALA.
+              Mudou de lugar: era um crachá fixo no canto superior esquerdo do
+              tabuleiro, ocupando espaço a partida inteira para mostrar um dado
+              que só se usa na hora de convidar alguém. Aqui ele fica a um
+              clique, junto das outras coisas que se consultam de vez em quando. */}
+          <div className={secao}>
+            <span className={rotulo}>Código da sala</span>
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(roomCode);
+                  setCopiado(true);
+                  setTimeout(() => setCopiado(false), 2000);
+                } catch {
+                  /* sem permissão de clipboard — o código está na tela */
+                }
+              }}
+              className={`${chip} flex w-full items-center justify-between gap-2`}
+              title="Copiar o código para convidar alguém"
+            >
+              <span className="text-primary font-mono text-sm font-bold tracking-widest">
+                {roomCode}
+              </span>
+              {copiado ? (
+                <Check className="text-success h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+
           {/* Turno e fase — marcadores visuais (F29). O motor não impõe turno. */}
           <div className={secao}>
             <span className={rotulo}>Turno {turn}</span>
@@ -95,7 +158,9 @@ export function TableMenu({ room }: TableMenuProps) {
                 <button
                   key={f}
                   onClick={() => intents.setTurn(room, undefined, f)}
-                  className={`${chip} ${turnPhase === f ? 'border-primary text-primary' : ''}`}
+                  disabled={!minhaVez}
+                  title={tituloDaVez}
+                  className={`${chip} disabled:cursor-not-allowed disabled:opacity-40 ${turnPhase === f ? 'border-primary text-primary' : ''}`}
                 >
                   {f}
                 </button>
@@ -103,10 +168,17 @@ export function TableMenu({ room }: TableMenuProps) {
             </div>
             <button
               onClick={() => intents.setTurn(room, turn + 1, FASES[0])}
-              className={`${chip} mt-1.5 w-full`}
+              disabled={!minhaVez}
+              title={tituloDaVez}
+              className={`${chip} mt-1.5 w-full disabled:cursor-not-allowed disabled:opacity-40`}
             >
               Avançar para o turno {turn + 1}
             </button>
+            {!minhaVez && nomeDaVez && (
+              <span className="text-text-faint mt-1 block text-[10px]">
+                A vez é de {nomeDaVez}.
+              </span>
+            )}
           </div>
 
           {/* Dia / Noite */}
@@ -252,6 +324,79 @@ export function TableMenu({ room }: TableMenuProps) {
                 ))}
               </dl>
             )}
+          </div>
+
+          {/* ── FIM DE PARTIDA ──────────────────────────────────────────
+              `INTENT_CONCEDE` e `INTENT_RESET_MATCH` existiam no servidor e no
+              emissor do cliente, e NENHUMA tela os chamava: desistir da partida
+              — a única forma de um jogador sair do jogo sem sair da sala — não
+              tinha botão em lugar nenhum, e o ícone de caveira do painel de
+              vida nunca podia acender.
+
+              As duas são destrutivas, então pedem confirmação. Em DUAS ETAPAS
+              no próprio painel, e não `window.confirm`: o diálogo nativo trava
+              a aba inteira (numa mesa em tempo real, isso é o oponente jogando
+              enquanto você não vê nada) e já foi removido daqui antes. */}
+          <div className={secao}>
+            <span className={rotulo}>Fim de partida</span>
+
+            {eu?.conceded ? (
+              <p className="text-text-faint text-[11px] leading-snug">
+                Você desistiu desta partida. Continua na sala e vendo tudo — a mesa só sabe que você
+                saiu do jogo.
+              </p>
+            ) : confirmando === 'desistir' ? (
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    intents.concede(room);
+                    setConfirmando(null);
+                    setAberto(false);
+                  }}
+                  className="bg-danger flex-1 rounded-md px-2 py-1.5 text-xs font-bold text-white"
+                >
+                  Confirmar
+                </button>
+                <button onClick={() => setConfirmando(null)} className={`${chip} flex-1`}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmando('desistir')}
+                className={`${chip} text-danger hover:border-danger hover:text-danger flex w-full items-center gap-2`}
+                title="Marca você como fora do jogo. Não remove você da sala."
+              >
+                <Flag className="h-3.5 w-3.5" /> Desistir da partida
+              </button>
+            )}
+
+            {souAnfitriao &&
+              (confirmando === 'reiniciar' ? (
+                <div className="mt-1.5 flex gap-1">
+                  <button
+                    onClick={() => {
+                      intents.resetMatch(room);
+                      setConfirmando(null);
+                      setAberto(false);
+                    }}
+                    className="bg-danger flex-1 rounded-md px-2 py-1.5 text-xs font-bold text-white"
+                  >
+                    Apagar e voltar
+                  </button>
+                  <button onClick={() => setConfirmando(null)} className={`${chip} flex-1`}>
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmando('reiniciar')}
+                  className={`${chip} mt-1.5 flex w-full items-center gap-2`}
+                  title="Zera vida, contadores e turno de TODOS e devolve a mesa à sala de espera."
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Reiniciar partida
+                </button>
+              ))}
           </div>
 
           {/* Desfazer */}

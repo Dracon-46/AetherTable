@@ -34,6 +34,8 @@ export interface CardData {
   goadedBy: string;
   hasPtOverride: boolean;
   enteredThisTurn: boolean;
+  /** É o comandante do dono. Vem do deck, não da zona — ver `Card.isCommander`. */
+  isCommander: boolean;
 }
 
 export interface PlayerData {
@@ -68,6 +70,19 @@ export interface PlayerData {
   profileBorder: string;
   chatTitle: string;
   petId: string;
+  /** Sala de espera: confirmou que está pronto. */
+  ready: boolean;
+  /** Já decidiu ficar com a mão inicial — fecha a janela de mulligan. */
+  keptHand: boolean;
+  deckName: string;
+  /** Zonas ocultas que ele abriu para outros: `{ HAND: 'sid1,sid2' }`. */
+  sharedZones: Record<string, string>;
+  /** Saiu do jogo — por regra ou por vontade. Continua na sala. */
+  eliminated: boolean;
+  /** LIFE | POISON | COMMANDER | DECKED | CONCEDED */
+  eliminationReason: string;
+  /** Tentou comprar de grimório vazio. Pegajoso: não se desfaz sozinho. */
+  decked: boolean;
 }
 
 export interface LogEntry {
@@ -195,8 +210,16 @@ export const useGameStore = create<GameState>((set) => ({
 
 // ─── uiStore: puramente local, nunca trafega ──────────────────────────────
 
-/** Zonas que o dono pode abrir por inteiro. */
-export type ZonaInspecionavel = 'GRAVEYARD' | 'EXILE' | 'LIBRARY' | 'SIDEBOARD';
+/**
+ * Zonas que podem ser abertas por inteiro no inspetor.
+ *
+ * `HAND` entrou junto com o pedido de visualização consentido
+ * (`INTENT_REQUEST_VIEW`): quando o dono aceita mostrar a mão, o observador
+ * precisa de algum lugar onde ela apareça. Sem isso a permissão era concedida
+ * de verdade no servidor e não tinha superfície nenhuma no cliente — as cartas
+ * chegavam com identidade e ninguém as desenhava.
+ */
+export type ZonaInspecionavel = 'GRAVEYARD' | 'EXILE' | 'LIBRARY' | 'SIDEBOARD' | 'HAND';
 
 interface UIState {
   zoomLevel: number;
@@ -234,6 +257,29 @@ interface UIState {
   boardView: string; // 'ALL' | 'ME' | opponent_sessionId
   hasKeptHand: boolean;
   mulliganCount: number;
+  /**
+   * A barra de ações da base começa RECOLHIDA.
+   *
+   * Ela tem quatorze botões e vive por cima da faixa de mão — a parte da mesa
+   * que o jogador mais olha. Deixá-la sempre aberta é gastar a borda inferior
+   * inteira com um menu que se usa algumas vezes por turno. Recolhida, sobra
+   * uma seta; a preferência é lembrada, para quem gosta dela aberta não ter de
+   * reabrir a cada partida.
+   */
+  barraAberta: boolean;
+  /**
+   * Quanto do painel de vida fica na tela.
+   *
+   *   'minima' — some da mesa; sobra um selo com o próprio total.
+   *   'minha'  — só o seu cartão (padrão).
+   *   'mesa'   — todos, para mexer em dano de comandante e contadores.
+   *
+   * Três estados e não um booleano porque "minimizar" e "ver a mesa toda" são
+   * pedidos diferentes: um é sobre tirar o painel da frente do tabuleiro, o
+   * outro é sobre trazer informação dos oponentes. Com um booleano só, quem
+   * quisesse a mesa limpa era obrigado a conviver com o próprio cartão.
+   */
+  vidaModo: 'minima' | 'minha' | 'mesa';
 
   setZoom: (z: number) => void;
   setCamera: (x: number, y: number) => void;
@@ -253,6 +299,8 @@ interface UIState {
   setBoardView: (view: string) => void;
   setHasKeptHand: (val: boolean) => void;
   setMulliganCount: (count: number) => void;
+  setBarraAberta: (v: boolean) => void;
+  setVidaModo: (v: UIState['vidaModo']) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -281,6 +329,8 @@ export const useUIStore = create<UIState>()(
       boardView: 'ALL',
       hasKeptHand: false,
       mulliganCount: 0,
+      barraAberta: false,
+      vidaModo: 'minha',
 
       setZoom: (zoomLevel) => set({ zoomLevel: Math.min(2.5, Math.max(0.4, zoomLevel)) }),
       setCamera: (x, y) => set({ cameraPosition: { x, y } }),
@@ -334,13 +384,22 @@ export const useUIStore = create<UIState>()(
       setBoardView: (boardView) => set({ boardView }),
       setHasKeptHand: (hasKeptHand) => set({ hasKeptHand }),
       setMulliganCount: (mulliganCount) => set({ mulliganCount }),
+      setBarraAberta: (barraAberta) => set({ barraAberta }),
+      setVidaModo: (vidaModo) => set({ vidaModo }),
     }),
     {
       name: 'aether-ui-store',
       storage: armazenamentoSeguro,
       partialize: (s) => ({
         showZoneOutlines: s.showZoneOutlines,
-        boardView: s.boardView,
+        // `boardView` guarda um sessionId quando aponta para um oponente, e
+        // sessionId muda a cada conexão. Persistido cru, o jogador voltava numa
+        // partida nova com a câmera fixada num assento que não existe mais: a
+        // mesa desenhava UMA faixa (nem "todos", nem a dele) e o seletor de
+        // câmera parecia sem efeito. Só as duas visões estáveis sobrevivem.
+        boardView: s.boardView === 'ALL' || s.boardView === 'ME' ? s.boardView : 'ALL',
+        barraAberta: s.barraAberta,
+        vidaModo: s.vidaModo,
       }),
     },
   ),
@@ -386,6 +445,14 @@ export type Sorteio =
   | { tipo: 'DADO'; actorId: string; sides: number; result: number; em: number }
   | { tipo: 'MOEDA'; actorId: string; result: 'CARA' | 'COROA'; em: number };
 
+/** Um pedido de "me deixa ver sua mão", esperando decisão do dono da zona. */
+export interface PedidoDeVista {
+  requesterId: string;
+  requesterName: string;
+  zone: 'HAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE';
+  em: number;
+}
+
 interface TableState {
   /** Último dado ou moeda, para o destaque visual na mesa. */
   ultimoSorteio: Sorteio | null;
@@ -393,6 +460,8 @@ interface TableState {
   /** Buffer de olhada/busca: o que o servidor liberou só para mim. */
   peek: CartaRevelada[];
   scry: SessaoScry | null;
+  /** Pedidos recebidos, na ordem de chegada. */
+  pedidosDeVista: PedidoDeVista[];
 
   setDado: (d: { actorId: string; sides: number; result: number }) => void;
   setMoeda: (m: { actorId: string; result: 'CARA' | 'COROA' }) => void;
@@ -403,6 +472,8 @@ interface TableState {
   setPeek: (cards: CartaRevelada[]) => void;
   abrirScry: (s: SessaoScry) => void;
   fecharScry: () => void;
+  addPedidoDeVista: (p: Omit<PedidoDeVista, 'em'>) => void;
+  removerPedidoDeVista: (requesterId: string, zone: string) => void;
   reset: () => void;
 }
 
@@ -411,6 +482,7 @@ export const useTableStore = create<TableState>((set) => ({
   pings: [],
   peek: [],
   scry: null,
+  pedidosDeVista: [],
 
   setDado: (d) => set({ ultimoSorteio: { tipo: 'DADO', ...d, em: Date.now() } }),
   setMoeda: (m) => set({ ultimoSorteio: { tipo: 'MOEDA', ...m, em: Date.now() } }),
@@ -430,5 +502,20 @@ export const useTableStore = create<TableState>((set) => ({
   setPeek: (peek) => set({ peek }),
   abrirScry: (scry) => set({ scry }),
   fecharScry: () => set({ scry: null }),
-  reset: () => set({ ultimoSorteio: null, pings: [], peek: [], scry: null }),
+  addPedidoDeVista: (p) =>
+    set((s) => {
+      // Insistir no botão não empilha três pedidos idênticos na tela de quem
+      // vai decidir: o pedido é sobre a zona, não sobre o clique.
+      const semDuplicata = s.pedidosDeVista.filter(
+        (x) => !(x.requesterId === p.requesterId && x.zone === p.zone),
+      );
+      return { pedidosDeVista: [...semDuplicata, { ...p, em: Date.now() }] };
+    }),
+  removerPedidoDeVista: (requesterId, zone) =>
+    set((s) => ({
+      pedidosDeVista: s.pedidosDeVista.filter(
+        (x) => !(x.requesterId === requesterId && x.zone === zone),
+      ),
+    })),
+  reset: () => set({ ultimoSorteio: null, pings: [], peek: [], scry: null, pedidosDeVista: [] }),
 }));

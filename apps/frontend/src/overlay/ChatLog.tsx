@@ -57,10 +57,20 @@ export function ChatLog({ room }: ChatLogProps) {
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
   const hidratar = useCardCatalog((s) => s.hidratar);
 
-  // Recolhido por padrão em telas estreitas: aberto, o painel cobria metade da
-  // mesa e impedia arrastar cartas do lado direito.
+  /**
+   * RECOLHIDO POR PADRÃO, EM QUALQUER TELA.
+   *
+   * O log é consulta, não painel de controle: ele responde "o que aconteceu
+   * enquanto eu olhava para outro canto". Aberto o tempo todo, ele ocupa a
+   * coluna direita inteira — justamente onde ficam as pilhas de grimório,
+   * cemitério e exílio de cada faixa — e a mesa perde a borda direita para um
+   * texto que ninguém está lendo.
+   *
+   * A barra de título continua visível e clicável, então nada some: o que muda
+   * é quem decide quando ele ocupa espaço.
+   */
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) setCollapsed(true);
+    setCollapsed(true);
   }, []);
 
   useEffect(() => {
@@ -99,11 +109,20 @@ export function ChatLog({ room }: ChatLogProps) {
   return (
     // No mobile o log fica ANCORADO NA BASE (acima da barra de ações): no topo
     // ele caía exatamente sobre a faixa de vida dos jogadores.
-    <div className="pointer-events-none absolute bottom-16 right-2 z-20 flex w-[min(17.5rem,calc(100vw-1rem))] flex-col sm:bottom-auto sm:right-3 sm:top-16">
-      <div className="border-panel-border bg-panel/90 pointer-events-auto flex items-center justify-between rounded-t-xl border px-3 py-2 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="text-text-muted h-4 w-4" />
-          <span className="text-text text-xs font-bold">Log &amp; Chat</span>
+    <div className="pointer-events-none absolute bottom-16 right-2 z-20 flex w-[min(14rem,calc(100vw-1rem))] flex-col sm:bottom-auto sm:right-3 sm:top-16">
+      <div
+        className={`border-panel-border bg-panel/90 pointer-events-auto flex items-center justify-between border px-2.5 py-1.5 backdrop-blur ${collapsed ? 'rounded-xl' : 'rounded-t-xl'}`}
+      >
+        <div className="flex min-w-0 items-center gap-1.5">
+          <MessageSquare className="text-text-muted h-3.5 w-3.5 shrink-0" />
+          <span className="text-text truncate text-[11px] font-bold">Log &amp; Chat</span>
+          {/* Recolhido, o contador é a única pista de que houve movimento. Sem
+              ele, "fechado" e "vazio" são a mesma coisa na tela. */}
+          {collapsed && log.length > 0 && (
+            <span className="bg-primary/20 text-primary shrink-0 rounded-full px-1.5 text-[10px] font-bold">
+              {log.length > 99 ? '99+' : log.length}
+            </span>
+          )}
         </div>
         <button
           onClick={() => setCollapsed((v) => !v)}
@@ -134,7 +153,7 @@ export function ChatLog({ room }: ChatLogProps) {
 
           <div
             ref={scrollRef}
-            className="custom-scrollbar border-panel-border bg-panel/80 pointer-events-auto max-h-[35dvh] min-h-0 flex-1 overflow-y-auto border-x backdrop-blur"
+            className="custom-scrollbar border-panel-border bg-panel/80 pointer-events-auto max-h-[24dvh] min-h-0 flex-1 overflow-y-auto border-x backdrop-blur"
           >
             {filtered.length === 0 ? (
               <p className="text-text-faint py-6 text-center text-[10px]">Nenhuma ação ainda…</p>

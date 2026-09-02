@@ -18,6 +18,7 @@ const TITULOS: Record<string, string> = {
   EXILE: 'Exílio',
   LIBRARY: 'Busca no Grimório (Tutor)',
   SIDEBOARD: 'Reserva (Sideboard)',
+  HAND: 'Mão',
 };
 
 export function ZoneInspector({ room }: ZoneInspectorProps) {
@@ -85,6 +86,17 @@ export function ZoneInspector({ room }: ZoneInspectorProps) {
     setInspectedZone(null);
   };
 
+  /**
+   * Quem é o dono da zona vê aqui quem está olhando junto — e pode fechar.
+   *
+   * Uma permissão concedida sem forma de revogar não é uma permissão, é uma
+   * entrega. O servidor já tem `INTENT_REVOKE_VIEW`; este é o único lugar da
+   * interface em que a lista de quem enxerga a zona aparece.
+   */
+  const observadores = (players[dono]?.sharedZones?.[inspectedZone] ?? '')
+    .split(',')
+    .filter(Boolean);
+
   return (
     <div
       className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6"
@@ -108,6 +120,23 @@ export function ZoneInspector({ room }: ZoneInspectorProps) {
               {zoneCards.length} cartas
             </span>
           </h2>
+
+          {minha && observadores.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-text-muted text-[11px] font-bold uppercase">Vendo junto:</span>
+              {observadores.map((sid) => (
+                <button
+                  key={sid}
+                  onClick={() => intents.revokeView(room, sid, inspectedZone)}
+                  className="border-warning/40 bg-warning/10 text-warning hover:bg-danger/20 hover:border-danger hover:text-danger flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+                  title="Fechar esta zona para este jogador"
+                >
+                  {players[sid]?.name ?? sid.slice(0, 6)}
+                  <X className="h-3 w-3" />
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-3">
             {minha &&

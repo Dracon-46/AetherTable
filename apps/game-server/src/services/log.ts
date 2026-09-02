@@ -14,6 +14,31 @@
 import { randomUUID } from 'node:crypto';
 import { NEUTRAL_LOG_TYPES, type LogEvent, type LogType } from '@aethertable/shared-types';
 
+/**
+ * Nome da zona como o JOGADOR a chama.
+ *
+ * O log imprimia o enum cru: "moveu uma carta para GRAVEYARD", "esta
+ * procurando em LIBRARY". O enum e o nome que o CODIGO usa — na mesa, ninguem
+ * chama o cemiterio de GRAVEYARD, e quem nao le ingles simplesmente nao
+ * entende a linha.
+ *
+ * Um id desconhecido cai nele mesmo em vez de virar "undefined": zona nova
+ * aparecendo crua no log e feio, mas some do historico e bem pior.
+ */
+const NOME_DA_ZONA: Record<string, string> = {
+  LIBRARY: 'o grimório',
+  HAND: 'a mão',
+  BATTLEFIELD: 'o campo de batalha',
+  GRAVEYARD: 'o cemitério',
+  EXILE: 'o exílio',
+  COMMAND: 'a zona de comando',
+  SIDEBOARD: 'a reserva',
+};
+
+export function nomeDaZona(zona: string): string {
+  return NOME_DA_ZONA[zona] ?? zona;
+}
+
 export function criarLog(
   type: LogType,
   actorId: string,
@@ -70,35 +95,39 @@ export function logTrocaZonaPublica(
   return criarLog(
     'ZONE_CHANGE',
     actorId,
-    `${nome} moveu {Carta} de ${de} para ${para}`,
+    `${nome} moveu {Carta} de ${nomeDaZona(de)} para ${nomeDaZona(para)}`,
     scryfallId || undefined,
   );
 }
 
 /** Variante obrigatoria quando origem OU destino e zona oculta. */
 export function logTrocaZonaOculta(actorId: string, nome: string, para: string): LogEvent {
-  return criarLog('ZONE_CHANGE_HIDDEN', actorId, `${nome} moveu uma carta para ${para}`);
+  return criarLog(
+    'ZONE_CHANGE_HIDDEN',
+    actorId,
+    `${nome} moveu uma carta para ${nomeDaZona(para)}`,
+  );
 }
 
 export function logEmbaralhar(actorId: string, nome: string): LogEvent {
-  return criarLog('SHUFFLE', actorId, `${nome} embaralhou o grimorio`);
+  return criarLog('SHUFFLE', actorId, `${nome} embaralhou o grimório`);
 }
 
 /** Publica CONTAGEM, nunca identidade. */
 export function logOlhada(actorId: string, nome: string, amount: number): LogEvent {
-  return criarLog('PEEK', actorId, `${nome} olhou as ${amount} do topo do grimorio`);
+  return criarLog('PEEK', actorId, `${nome} olhou as ${amount} do topo do grimório`);
 }
 
 export function logBusca(actorId: string, nome: string, zona: string): LogEvent {
-  return criarLog('SEARCH', actorId, `${nome} esta procurando em ${zona}`);
+  return criarLog('SEARCH', actorId, `${nome} está procurando em ${nomeDaZona(zona)}`);
 }
 
 export function logMoer(actorId: string, nome: string, amount: number): LogEvent {
-  return criarLog('MILL', actorId, `${nome} moveu ${amount} cartas do grimorio para o cemiterio`);
+  return criarLog('MILL', actorId, `${nome} moveu ${amount} cartas do grimório para o cemitério`);
 }
 
 export function logVida(actorId: string, nome: string, antes: number, depois: number): LogEvent {
-  return criarLog('LIFE', actorId, `${nome}: vida ${antes} -> ${depois}`);
+  return criarLog('LIFE', actorId, `${nome}: vida ${antes} → ${depois}`);
 }
 
 export function logDado(actorId: string, nome: string, sides: number, resultado: number): LogEvent {

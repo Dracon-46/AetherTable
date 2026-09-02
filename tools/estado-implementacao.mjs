@@ -3,7 +3,25 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const registry = readFileSync('apps/game-server/src/intents/registry.ts', 'utf8');
 const tabela = registry.slice(registry.indexOf('export const REGISTRY = {'));
-const implementadas = [...tabela.matchAll(/^\s{2}(INTENT_[A-Z_]+),$/gm)].map((m) => m[1]).sort();
+const noRegistry = [...tabela.matchAll(/^\s{2}(INTENT_[A-Z_]+),$/gm)].map((m) => m[1]);
+
+/**
+ * NEM TODO HANDLER MORA NO REGISTRY.
+ *
+ * O REGISTRY exige handler SÍNCRONO (DOC-021 §7): um `await` no caminho crítico
+ * segura a fila de mensagens da sala inteira. As poucas intenções que precisam
+ * de I/O — hoje `INTENT_SET_DECK`, que busca o decklist na API Core — são
+ * registradas direto na Room, ao lado de `provisionarDeck`.
+ *
+ * Esta ferramenta existe para apontar intenção emitida pelo cliente e
+ * descartada em silêncio pelo Colyseus. Se ela lesse só o REGISTRY, apontaria
+ * essas como lacuna — e um relatório que dá alarme falso é um relatório que
+ * as pessoas param de ler, o que devolve o problema original.
+ */
+const sala = readFileSync('apps/game-server/src/rooms/AetherRoom.ts', 'utf8');
+const naSala = [...sala.matchAll(/this\.onMessage\('(INTENT_[A-Z_]+)'/g)].map((m) => m[1]);
+
+const implementadas = [...new Set([...noRegistry, ...naSala])].sort();
 
 const pendentes = [
   ...registry.matchAll(/\{ intent: '(INTENT_[A-Z_]+)', motivo: '([^']+)' \}/g),

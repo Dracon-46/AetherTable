@@ -26,8 +26,19 @@
  * token e para informar o cliente, então não há dois formatos para divergir.
  */
 
-/** Padrão: doze horas. Ver o comentário em auth.module.ts para o porquê. */
-export const TTL_PADRAO_SEGUNDOS = 12 * 60 * 60;
+/**
+ * Padrão: UM DIA.
+ *
+ * Eram doze horas, e antes disso o `render.yaml` dizia 900 s (quinze minutos).
+ * Não existe rota de refresh no sistema: quando o access token expira, a sessão
+ * simplesmente morre — no meio da partida, sem aviso, e o que o jogador vê é a
+ * mesa recusando tudo. Enquanto o refresh não existir, o TTL é a única coisa
+ * que separa "joguei a noite toda" de "fui deslogado no turno oito".
+ *
+ * Um dia cobre uma sessão de jogo inteira com folga. Esticar mais do que isso
+ * deixaria de ser conveniência e viraria sessão sem expiração prática.
+ */
+export const TTL_PADRAO_SEGUNDOS = 24 * 60 * 60;
 
 /** `900` (segundos) ou `12h` / `45m` / `7d` / `30s`. */
 const SO_DIGITOS = /^\d+$/;

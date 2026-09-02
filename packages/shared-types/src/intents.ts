@@ -365,6 +365,96 @@ export interface SetCosmeticsPayload {
   petId?: string;
 }
 
+/**
+ * Soma dano marcado. DELTA, nao valor absoluto — e a diferenca importa.
+ *
+ * `INTENT_SET_DAMAGE` manda o total ja calculado, e o cliente so consegue
+ * calcula-lo a partir do ultimo valor que RECEBEU. Tres cliques rapidos em
+ * "+1" leem a mesma base (o patch do servidor ainda nao voltou) e mandam
+ * "1, 1, 1": o dano termina em 1, nao em 3. Numa mesa, dano se clica rapido.
+ *
+ * Delta e comutativo e nao depende do que o cliente sabe: o servidor acumula.
+ * E o mesmo motivo pelo qual `INTENT_ADD_COUNTER` sempre foi delta.
+ */
+export interface AddDamagePayload {
+  entityId: string;
+  delta: number;
+}
+
+// ─── Sala de espera (DOC-031 §3.7, extensao) ─────────────────────────────────
+
+/**
+ * Escolhe o grimorio DENTRO da sala de espera.
+ *
+ * Antes o deck viajava dentro do seat token: era preciso decidir com que deck
+ * jogar antes de saber quem sentou na mesa, qual formato os outros trouxeram ou
+ * se a partida ia acontecer. Trocar de ideia obrigava a sair, voltar ao painel
+ * e queimar um passe novo — e como o passe e de uso unico (FR-20), a segunda
+ * tentativa entrava numa sala em que o assento antigo ainda estava ocupado.
+ *
+ * O deck continua sendo carregado pelo SERVIDOR a partir do id, contra a conta
+ * do remetente: o cliente nunca envia cartas.
+ */
+export interface SetDeckPayload {
+  deckId: string;
+}
+
+/** Marca o jogador como pronto. O anfitriao so inicia com a mesa toda pronta. */
+export interface SetReadyPayload {
+  ready: boolean;
+}
+
+/** Remove alguem da sala. So o anfitriao (assento 0). */
+export interface KickPlayerPayload {
+  playerId: string;
+}
+
+/**
+ * Encerra a janela de mulligan do proprio jogador.
+ *
+ * Sem um "eu fiquei com esta mao" explicito, nao existe momento em que o botao
+ * de mulligan deixe de fazer sentido — e ele seguia disponivel no meio da
+ * partida, devolvendo a mao ao grimorio no turno seis.
+ */
+export type KeepHandPayload = Record<string, never>;
+
+/**
+ * Pede para VER uma zona oculta de outro jogador (mao ou grimorio).
+ *
+ * O pedido nao concede nada: ele so chega ao dono, que responde. E o unico
+ * caminho pelo qual a identidade de uma carta oculta alheia pode sair do
+ * servidor, e ele passa por consentimento explicito (RN13).
+ */
+export interface RequestViewPayload {
+  targetPlayerId: string;
+  zone: 'HAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE';
+}
+
+/** Resposta do dono da zona ao pedido acima. */
+export interface RespondViewPayload {
+  requesterId: string;
+  zone: 'HAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE';
+  accept: boolean;
+}
+
+/** Revoga uma concessao dada por `INTENT_RESPOND_VIEW`. */
+export interface RevokeViewPayload {
+  viewerId: string;
+  zone: 'HAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE';
+}
+
+/**
+ * Manda uma permanente propria para a mesa de outro jogador.
+ *
+ * E `INTENT_SET_CONTROLLER` com nome honesto: quem controla define em que faixa
+ * a carta e desenhada, entao "dar o controle" e literalmente "mandar para a
+ * mesa dele". O dono nao muda, e a carta volta para ele ao sair do campo.
+ */
+export interface GiveCardPayload {
+  entityId: string;
+  targetPlayerId: string;
+}
+
 // ─── Mapa canonico: nome da intencao -> payload ──────────────────────────────
 
 export interface IntentPayloadMap {
@@ -408,6 +498,7 @@ export interface IntentPayloadMap {
   INTENT_GROUP: GroupPayload;
   INTENT_SET_PT: SetPtPayload;
   INTENT_SET_DAMAGE: SetDamagePayload;
+  INTENT_ADD_DAMAGE: AddDamagePayload;
   INTENT_CLEAR_DAMAGE: ClearDamagePayload;
   INTENT_SET_NOTE: SetNotePayload;
   INTENT_SET_HIGHLIGHT: SetHighlightPayload;
@@ -463,6 +554,15 @@ export interface IntentPayloadMap {
   INTENT_FETCH_FROM_SIDEBOARD: FetchFromSideboardPayload;
   INTENT_CAST_COMMANDER: CastCommanderPayload;
   INTENT_SET_COSMETICS: SetCosmeticsPayload;
+  // sala de espera e mesa social
+  INTENT_SET_DECK: SetDeckPayload;
+  INTENT_SET_READY: SetReadyPayload;
+  INTENT_KICK_PLAYER: KickPlayerPayload;
+  INTENT_KEEP_HAND: KeepHandPayload;
+  INTENT_REQUEST_VIEW: RequestViewPayload;
+  INTENT_RESPOND_VIEW: RespondViewPayload;
+  INTENT_REVOKE_VIEW: RevokeViewPayload;
+  INTENT_GIVE_CARD: GiveCardPayload;
 }
 
 export type IntentType = keyof IntentPayloadMap;
@@ -476,5 +576,17 @@ export const INTENT_ERRORS = [
   'RATE_LIMITED',
   'ZONE_NOT_ALLOWED',
   'INTERNAL',
+  /** So o anfitriao (assento 0) pode fazer isso. */
+  'NOT_HOST',
+  /** Alguem na mesa ainda nao clicou em "pronto". */
+  'NOT_ALL_READY',
+  /** A vez e de outra pessoa. */
+  'NOT_YOUR_TURN',
+  /** A janela de mulligan ja se fechou para este jogador. */
+  'MULLIGAN_CLOSED',
+  /** Rajada de sorteios: espere alguns segundos. */
+  'TOO_MANY_ROLLS',
+  /** Entrar na mesa sem grimorio escolhido. */
+  'NO_DECK',
 ] as const;
 export type IntentError = (typeof INTENT_ERRORS)[number];

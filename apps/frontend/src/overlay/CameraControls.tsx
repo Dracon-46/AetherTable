@@ -33,12 +33,28 @@ export function CameraControls() {
 
   const opponents = Object.values(players).filter((p) => p.id !== mySessionId);
 
+  /**
+   * UM ALVO QUE SUMIU VOLTA PARA "TODOS".
+   *
+   * `boardView` guarda o sessionId do oponente escolhido. Quando essa pessoa
+   * sai da sala — ou quando a partida é outra e os sessionIds mudaram — a
+   * escolha aponta para um assento que não existe. O tabuleiro caía na própria
+   * mesa e o seletor exibia "Mesa", um rótulo que não é nenhuma das opções:
+   * escolher outro oponente parecia não fazer efeito, porque a tela já estava
+   * no formato de faixa única.
+   */
+  useEffect(() => {
+    if (boardView === 'ALL' || boardView === 'ME') return;
+    if (players[boardView]) return;
+    setBoardView('ALL');
+  }, [boardView, players, setBoardView]);
+
   const label =
     boardView === 'ALL'
       ? 'Todos'
       : boardView === 'ME'
         ? 'Minha mesa'
-        : (players[boardView]?.name ?? 'Mesa');
+        : (players[boardView]?.name ?? 'Todos');
 
   const item = (ativo: boolean) =>
     `w-full px-3 py-2.5 text-left text-sm transition-colors ${

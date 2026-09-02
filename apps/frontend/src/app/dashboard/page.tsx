@@ -50,25 +50,34 @@ export default function DashboardPage() {
   const [maxClients, setMaxClients] = useState(4);
   const [gameType, setGameType] = useState('COMMANDER');
 
-  // Funcão para abrir modal
+  /**
+   * Abre o modal de conexão.
+   *
+   * NÃO pré-seleciona deck. Ele selecionava o primeiro grimório da conta em
+   * silêncio — e desde que a escolha passou para a sala de espera, isso ficou
+   * contraditório: a opção do seletor dizia "escolher na sala de espera"
+   * enquanto o valor real já era o primeiro deck da lista. O jogador entrava na
+   * mesa com um baralho que nunca escolheu, e o botão "Estou pronto" do lobby
+   * já vinha liberado — encobrindo justamente o passo que a mudança criou.
+   *
+   * Escolher aqui continua valendo; o que não vale é escolher POR ele.
+   */
   const handleOpenModal = (action: 'CREATE' | 'JOIN') => {
     setModalAction(action);
     setErrorMsg('');
     setIsModalOpen(true);
-    // `noUncheckedIndexedAccess` torna myDecks[0] possivelmente undefined mesmo
-    // depois do length > 0 — o TS não correlaciona as duas coisas.
-    const primeiro = myDecks[0];
-    if (primeiro && !selectedDeckId) {
-      setSelectedDeckId(primeiro.id);
-    }
   };
 
   const handleConnect = async () => {
-    if (!selectedDeckId) {
-      setErrorMsg('Selecione um grimório primeiro.');
-      return;
-    }
-
+    /**
+     * O GRIMÓRIO DEIXOU DE SER OBRIGATÓRIO AQUI.
+     *
+     * Ele é escolhido na sala de espera, onde dá para ver quem sentou e qual
+     * formato a mesa está jogando antes de decidir. Escolher já neste modal
+     * continua valendo — quem sabe com que deck vai jogar não deve ser obrigado
+     * a decidir duas vezes — e nesse caso a validação de formato roda aqui, na
+     * API, antes de qualquer conexão.
+     */
     if (modalAction === 'JOIN' && !roomCodeInput) {
       setErrorMsg('Digite o código da taverna.');
       return;
@@ -98,7 +107,8 @@ export default function DashboardPage() {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ deckId: selectedDeckId }),
+        // Sem deck: o passe sai sem `deckId` e o jogador escolhe no lobby.
+        body: JSON.stringify(selectedDeckId ? { deckId: selectedDeckId } : {}),
       });
 
       const joinData = await joinRes.json();
@@ -228,8 +238,8 @@ export default function DashboardPage() {
               {modalAction === 'CREATE' ? 'Forjar Nova Sala' : 'Entrar na Sala'}
             </h2>
             <p className="text-text-muted mb-6 text-sm">
-              Escolha qual grimório você levará para esta batalha. Lembre-se que decks com cartas
-              banidas serão bloqueados pelo juiz.
+              Você pode escolher o grimório agora ou já na sala de espera, depois de ver quem sentou
+              à mesa. Decks com cartas banidas são bloqueados pelo juiz nos dois casos.
             </p>
 
             <div className="mb-6">
@@ -241,9 +251,7 @@ export default function DashboardPage() {
                 onChange={(e) => setSelectedDeckId(e.target.value)}
                 className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 focus:outline-none"
               >
-                <option value="" disabled>
-                  -- Escolha um grimório --
-                </option>
+                <option value="">-- Escolher na sala de espera --</option>
                 {myDecks.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name} ({d.cardCount ?? 0} cartas)
@@ -263,11 +271,14 @@ export default function DashboardPage() {
                     onChange={(e) => setMaxClients(Number(e.target.value))}
                     className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 focus:outline-none"
                   >
-                    <option value={2}>2 Jogadores</option>
-                    <option value={3}>3 Jogadores</option>
-                    <option value={4}>4 Jogadores</option>
-                    <option value={5}>5 Jogadores</option>
-                    <option value={6}>6 Jogadores</option>
+                    {/* O teto vem de `REALTIME_LIMITS.MAX_PLAYERS` (8). O
+                        seletor parava em 6 enquanto o servidor recusava acima
+                        de 4: dois números diferentes, nenhum deles o real. */}
+                    {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+                      <option key={n} value={n}>
+                        {n} Jogadores
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="flex-1">
@@ -304,7 +315,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={handleConnect}
-                disabled={isConnecting || !selectedDeckId}
+                disabled={isConnecting}
                 className="bg-primary hover:bg-primary-hover flex items-center gap-2 rounded-md px-6 py-2 font-medium text-white shadow-md transition-all active:scale-95 disabled:opacity-50"
               >
                 {isConnecting ? 'Conectando...' : 'Entrar na Mesa'}

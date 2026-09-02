@@ -59,11 +59,25 @@ export function MulliganModal({ room }: MulliganModalProps) {
     } catch {
       /* sessionStorage indisponível — segue só com o estado em memória */
     }
+    // Conta ao servidor. É o que faz o botão de mulligan sumir da barra de
+    // ações e o que fecha a janela para valer: sem isso, "manter mão" era um
+    // combinado só entre o modal e o `sessionStorage` desta aba.
+    intents.keepHand(room);
     setDecidiu(true);
-  }, [roomId]);
+  }, [roomId, room]);
 
   const eu = myId ? players[myId] : undefined;
   const mulliganCount = eu?.mulliganCount ?? 0;
+  /**
+   * A decisão agora vive no SERVIDOR (`Player.keptHand`).
+   *
+   * O `sessionStorage` continua como reforço para o F5 no mesmo dispositivo,
+   * mas ele nunca poderia ser a fonte da verdade: é o servidor que fecha a
+   * janela de mulligan (`MULLIGAN_CLOSED`), e antes disto o cliente podia achar
+   * que a janela ainda estava aberta — mostrando um botão que só produzia erro.
+   * Basta um dos dois dizer "já decidiu" para o modal sair da frente.
+   */
+  const jaDecidiuNoServidor = eu?.keptHand === true;
 
   const handCards = Object.values(cards).filter((c) => c.ownerId === myId && c.zone === 'HAND');
 
@@ -72,7 +86,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
     (c) => c.ownerId === myId && (c.zone === 'BATTLEFIELD' || c.zone === 'GRAVEYARD'),
   );
 
-  if (decidiu || partidaEmAndamento || handCards.length === 0) return null;
+  if (decidiu || jaDecidiuNoServidor || partidaEmAndamento || handCards.length === 0) return null;
 
   const handleKeep = () => {
     if (mulliganCount > 0) {

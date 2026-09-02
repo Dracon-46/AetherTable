@@ -41,6 +41,9 @@ function contexto(state: RoomState, sessionId: string, enviados: Enviado[]): Int
     broadcast: () => {},
     log: () => {},
     desfazer: () => null,
+    // A Room e quem sabe expulsar (ver `IntentContext.expulsar`): num contexto
+    // de teste nao ha socket para derrubar.
+    expulsar: () => {},
   } as IntentContext;
 }
 
@@ -155,5 +158,54 @@ describe('acoes reservadas ao anfitriao', () => {
 
     expect(state.players.get('convidado')!.seat).toBe(0);
     expect(enviados).toHaveLength(0);
+  });
+});
+
+/**
+ * O CONTADOR DE TURNO TAMBEM E DA VEZ.
+ *
+ * `INTENT_PASS_TURN` era protegido; `INTENT_SET_TURN` nao. So que o botao
+ * "Avancar para o turno N" do menu da mesa emite o SEGUNDO — entao qualquer
+ * jogador empurrava o turno da mesa inteira por cima da jogada de quem estava
+ * na vez. Passar estava trancado, andar nao.
+ */
+describe('INTENT_SET_TURN', () => {
+  const ajustar = (state: RoomState, sid: string, payload: object) => {
+    const enviados: Enviado[] = [];
+    REGISTRY.INTENT_SET_TURN.executa(contexto(state, sid, enviados), payload as never);
+    return enviados;
+  };
+
+  it('quem esta na vez avanca o turno', () => {
+    const state = montarMesa(['a', 'b'], 'a');
+
+    expect(ajustar(state, 'a', { turn: 5, phase: 'Combate' })).toHaveLength(0);
+    expect(state.turn).toBe(5);
+    expect(state.turnPhase).toBe('Combate');
+  });
+
+  it('RECUSA quem nao esta na vez, e o turno nao anda', () => {
+    const state = montarMesa(['a', 'b'], 'a');
+    const turnoInicial = state.turn;
+
+    const enviados = ajustar(state, 'b', { turn: 99 });
+
+    expect(state.turn).toBe(turnoInicial);
+    expect((enviados[0]!.payload as { code: string }).code).toBe('NOT_YOUR_TURN');
+  });
+
+  it('RECUSA tambem o rotulo de fase — a fase pertence ao turno de alguem', () => {
+    const state = montarMesa(['a', 'b'], 'a');
+
+    ajustar(state, 'b', { phase: 'Final' });
+
+    expect(state.turnPhase).toBe('');
+  });
+
+  it('com a mesa sem vez definida, qualquer um destrava', () => {
+    const state = montarMesa(['a', 'b'], '');
+
+    expect(ajustar(state, 'b', { turn: 2 })).toHaveLength(0);
+    expect(state.turn).toBe(2);
   });
 });

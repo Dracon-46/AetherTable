@@ -50,10 +50,20 @@ export default tseslint.config(
     },
   },
   {
-    // Scripts de apoio (`apps/*/scripts/**`) rodam no Node, fora do bundle:
-    // `require`, `module`, `console` e `process` são globais legítimos ali.
-    // Sem isto o lint acusava `no-undef` em cada linha desses arquivos.
-    files: ['**/scripts/**/*.{js,cjs,mjs,ts}', '**/tools/**/*.{js,mjs}'],
+    // Scripts de apoio (`apps/*/scripts/**`, `tools/**`, fixtures de E2E) rodam
+    // no Node, fora do bundle: `require`, `module`, `console` e `process` são
+    // globais legítimos ali. Sem isto o lint acusava `no-undef` em cada linha
+    // desses arquivos.
+    //
+    // `e2e/**/*.mjs` entrou junto com `preparar-jogadores.mjs`, que cria as
+    // contas e os decks da suíte multijogador. Ele é um script de linha de
+    // comando como os de `tools/` — não é código de navegador, e tratá-lo como
+    // tal fazia o lint acusar `fetch`, `console` e `process` como indefinidos.
+    files: [
+      '**/scripts/**/*.{js,cjs,mjs,ts}',
+      '**/tools/**/*.{js,mjs}',
+      '**/e2e/**/*.{js,mjs}',
+    ],
     languageOptions: {
       globals: {
         require: 'readonly',

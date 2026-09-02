@@ -118,4 +118,24 @@ export class Card extends Schema {
   @type('boolean') hasPtOverride = false;
   /** Marcador visual de "entrou este turno" (DOC-036 item 60). */
   @type('boolean') enteredThisTurn = false;
+
+  /**
+   * Esta carta E o comandante do dono.
+   *
+   * ─── POR QUE UM CAMPO, E NAO "esta na zona de comando" ────────────────────
+   *
+   * A zona nao serve para responder isso: o comandante passa a maior parte da
+   * partida FORA da zona de comando — no campo, no cemiterio, no exilio. Quem
+   * perguntasse "quem e o comandante do Bruno" olhando `zone === 'COMMAND'`
+   * acertaria so enquanto ele estivesse guardado.
+   *
+   * Isto existe porque o painel de dano de comandante precisa dizer de QUAL
+   * comandante veio o dano — e o jogador chama o comandante pelo nome da carta,
+   * nao pelo nome do dono. Mostrar "aether_bruno" numa linha de dano de
+   * comandante e trocar a informacao util pela que o jogador ja tem na tela.
+   *
+   * Vem do `boardType` do deck (COMMANDER / SIGNATURE_SPELL) no
+   * provisionamento, e nunca muda durante a partida.
+   */
+  @type('boolean') isCommander = false;
 }

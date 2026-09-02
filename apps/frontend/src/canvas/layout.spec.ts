@@ -24,7 +24,9 @@ import {
   CARD_H,
   CARD_W,
   ESPACO_ENTRE_FAIXAS,
+  colunasDaGrade,
   escalaDaFaixa,
+  montarGrade,
   montarMesa,
   posicaoNoCampo,
   posicaoNoComando,
@@ -222,5 +224,135 @@ describe('mesa de um assento só', () => {
   it('a mão continua na base, logo abaixo da faixa', () => {
     const uma = sozinho();
     expect(uma.mao.topo).toBe(uma.faixas[0]!.topo + uma.faixas[0]!.altura);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('montarGrade — a visão "todos" em quadrados', () => {
+  it('as células são QUADRADAS', () => {
+    for (const n of [2, 3, 4, 6, 8]) {
+      const ordem = Array.from({ length: n }, (_, i) => `p${i}`);
+      const mesa = montarGrade(ordem, 'p0');
+      for (const faixa of mesa.faixas) {
+        expect(faixa.largura).toBe(faixa.altura);
+      }
+    }
+  });
+
+  it('a grade cresce pela raiz: 2→2col, 4→2col, 6→3col, 9→3col', () => {
+    expect(colunasDaGrade(2)).toBe(2);
+    expect(colunasDaGrade(3)).toBe(2);
+    expect(colunasDaGrade(4)).toBe(2);
+    expect(colunasDaGrade(5)).toBe(3);
+    expect(colunasDaGrade(6)).toBe(3);
+    expect(colunasDaGrade(9)).toBe(3);
+  });
+
+  it('nenhuma célula se sobrepõe a outra', () => {
+    const ordem = Array.from({ length: 6 }, (_, i) => `p${i}`);
+    const { faixas } = montarGrade(ordem, 'p0');
+
+    for (let i = 0; i < faixas.length; i += 1) {
+      for (let j = i + 1; j < faixas.length; j += 1) {
+        const a = faixas[i]!;
+        const b = faixas[j]!;
+        const separadas =
+          a.esquerda + a.largura <= b.esquerda ||
+          b.esquerda + b.largura <= a.esquerda ||
+          a.topo + a.altura <= b.topo ||
+          b.topo + b.altura <= a.topo;
+        expect(separadas).toBe(true);
+      }
+    }
+  });
+
+  it('as células cabem na largura da mesa', () => {
+    for (const n of [2, 3, 4, 6, 8]) {
+      const ordem = Array.from({ length: n }, (_, i) => `p${i}`);
+      const mesa = montarGrade(ordem, 'p0');
+      for (const faixa of mesa.faixas) {
+        expect(faixa.esquerda).toBeGreaterThanOrEqual(0);
+        expect(faixa.esquerda + faixa.largura).toBeLessThanOrEqual(mesa.largura);
+      }
+    }
+  });
+
+  /**
+   * Na grade as células são iguais por definição: o foco vira cor de borda, não
+   * tamanho. Se o foco mexesse na escala, a grade deixaria de ser grade.
+   */
+  it('todas as células têm a MESMA escala, inclusive a em foco', () => {
+    const mesa = montarGrade(['a', 'b', 'c', 'd'], 'b');
+    const escalas = new Set(mesa.faixas.map((f) => f.escala));
+    expect(escalas.size).toBe(1);
+    expect(mesa.faixas.find((f) => f.playerId === 'b')!.emFoco).toBe(true);
+  });
+
+  it('as zonas ficam na fileira do rodapé, dentro da célula', () => {
+    const mesa = montarGrade(['a', 'b', 'c', 'd'], 'a');
+    for (const faixa of mesa.faixas) {
+      for (const ancora of [faixa.comando, faixa.grimorio, faixa.cemiterio, faixa.exilio]) {
+        expect(ancora.x).toBeGreaterThan(faixa.esquerda);
+        expect(ancora.x).toBeLessThan(faixa.esquerda + faixa.largura);
+        expect(ancora.y).toBeGreaterThan(faixa.zonas.topo);
+        expect(ancora.y).toBeLessThan(faixa.topo + faixa.altura);
+      }
+      // O campo não invade a fileira de zonas.
+      expect(faixa.topo + faixa.campo.y + faixa.campo.altura).toBeLessThanOrEqual(faixa.zonas.topo);
+    }
+  });
+
+  it('soltar no meio da célula é campo; sobre a âncora é a zona dela', () => {
+    const mesa = montarGrade(['a', 'b', 'c', 'd'], 'a');
+    for (const faixa of mesa.faixas) {
+      const meio = {
+        x: faixa.esquerda + faixa.campo.x + faixa.campo.largura / 2,
+        y: faixa.topo + faixa.campo.y + faixa.campo.altura / 2,
+      };
+      expect(zonaSolta(faixa, meio.x, meio.y)).toBe('BATTLEFIELD');
+      expect(zonaSolta(faixa, faixa.grimorio.x, faixa.grimorio.y)).toBe('LIBRARY');
+      expect(zonaSolta(faixa, faixa.cemiterio.x, faixa.cemiterio.y)).toBe('GRAVEYARD');
+      expect(zonaSolta(faixa, faixa.exilio.x, faixa.exilio.y)).toBe('EXILE');
+      expect(zonaSolta(faixa, faixa.comando.x, faixa.comando.y)).toBe('COMMAND');
+    }
+  });
+
+  it('ida e volta da coordenada preserva a posição DENTRO da célula certa', () => {
+    const mesa = montarGrade(['a', 'b', 'c', 'd'], 'a');
+    // A célula `d` é a que mais longe está da origem: se a origem da célula for
+    // esquecida em algum dos dois sentidos, é aqui que aparece.
+    const faixa = mesa.porJogador.get('d')!;
+    // (0,0) fica de fora de propósito: é o caso especial de "carta sem
+    // coordenada", que `posicaoNoCampo` CENTRALIZA na célula em vez de encostar
+    // no canto. A ida e volta ali não é identidade — e não deve ser.
+    for (const ponto of [
+      { x: 40, y: 90 },
+      { x: faixa.campo.largura - CARD_W, y: faixa.campo.altura - CARD_H },
+    ]) {
+      const tela = posicaoNoCampo(faixa, ponto.x, ponto.y);
+      expect(tela.x).toBeGreaterThan(faixa.esquerda);
+      expect(tela.x).toBeLessThan(faixa.esquerda + faixa.largura);
+      const volta = paraCoordenadaRelativa(faixa, tela.x, tela.y);
+      expect(Math.abs(volta.x - ponto.x)).toBeLessThanOrEqual(CARD_W);
+      expect(Math.abs(volta.y - ponto.y)).toBeLessThanOrEqual(CARD_H);
+    }
+  });
+
+  it('carta sem coordenada nasce no CENTRO da própria célula, não no canto', () => {
+    const mesa = montarGrade(['a', 'b', 'c', 'd'], 'a');
+    const faixa = mesa.porJogador.get('d')!;
+
+    const tela = posicaoNoCampo(faixa, 0, 0);
+
+    expect(tela.x).toBeCloseTo(faixa.esquerda + faixa.campo.x + faixa.campo.largura / 2, 0);
+    expect(tela.y).toBeCloseTo(faixa.topo + faixa.campo.y + faixa.campo.altura / 2, 0);
+  });
+
+  it('a mão continua numa faixa própria, abaixo da grade', () => {
+    const mesa = montarGrade(['a', 'b', 'c', 'd'], 'a');
+    const ultimaLinha = Math.max(...mesa.faixas.map((f) => f.topo + f.altura));
+    expect(mesa.mao.topo).toBeGreaterThanOrEqual(ultimaLinha);
+    expect(mesa.altura).toBe(mesa.mao.topo + mesa.mao.altura);
   });
 });

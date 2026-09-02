@@ -31,6 +31,8 @@ import { useCosmeticos } from '@/cosmetics/store';
 import { RoomLobby } from '@/overlay/RoomLobby';
 import { MulliganModal } from '@/overlay/MulliganModal';
 import { PlayersModal } from '@/overlay/PlayersModal';
+import { ViewRequestPrompt } from '@/overlay/ViewRequestPrompt';
+import { FimDeJogo } from '@/overlay/FimDeJogo';
 import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { VoiceBridge } from '@/net/voice';
 import { ToastHost } from '@/components/Toast';
@@ -193,12 +195,15 @@ export default function PlayRoomPage() {
       */}
       {emPartida && (
         <div className="pointer-events-none absolute inset-0 z-10">
-          <div className="border-panel-border bg-panel/80 pointer-events-auto absolute left-2 top-2 hidden flex-col rounded border px-3 py-1.5 shadow-lg backdrop-blur sm:flex">
-            <span className="text-text-muted text-[10px]">SALA</span>
-            <span className="text-primary font-mono text-sm font-bold tracking-widest">
-              {roomId}
-            </span>
-          </div>
+          {/*
+            O CRACHÁ FIXO DA SALA SAIU.
+
+            Ele ocupava o canto superior esquerdo a partida inteira para mostrar
+            um código que só se usa uma vez: na hora de convidar alguém. Depois
+            disso é decoração ancorada em cima do tabuleiro. O código continua
+            em dois lugares onde ele é de fato procurado — a sala de espera, com
+            botão de copiar, e o painel "Mesa" no topo direito.
+          */}
 
           {/* Fileira do topo direito: Camera e Mesa lado a lado. Cada um
               ancorado no proprio canto se sobrepunha ao outro e ao log. */}
@@ -223,7 +228,13 @@ export default function PlayRoomPage() {
           <ContextMenu room={room} setModoAnexar={setModoAnexar} />
           <ScryModal room={room} />
           <CardEditor room={room} />
-          <PlayersModal />
+          <PlayersModal room={room} />
+          {/* Pedidos de "me deixa ver sua mão". Fora do wrapper recortado: eles
+              chegam a qualquer momento e precisam ficar por cima do HUD. */}
+          <ViewRequestPrompt room={room} />
+          {/* Derrota e vitória. Fora do wrapper recortado: o fim de partida
+              ocupa a tela inteira. */}
+          <FimDeJogo />
           <MulliganModal room={room} />
           <SorteioOverlay />
         </>

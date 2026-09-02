@@ -31,6 +31,7 @@ import {
   Skull,
   Sparkles,
   StickyNote,
+  Send,
   Swords,
   Trash2,
   Users,
@@ -69,6 +70,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   const catalogo = useCardCatalog((s) => s.cartas);
 
   const cards = useGameStore((s) => s.cards);
+  const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
 
   const ref = useRef<HTMLDivElement>(null);
@@ -372,6 +374,29 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             }),
           },
         );
+
+        /**
+         * ENVIAR PARA A MESA DE OUTRO JOGADOR.
+         *
+         * `INTENT_SET_CONTROLLER` existia no servidor desde sempre e NENHUMA
+         * tela o emitia: doar uma criatura, ou resolver qualquer efeito de
+         * troca de controle, não tinha superfície nenhuma. Uma entrada por
+         * oponente em vez de um submenu porque a mesa tem no máximo sete —
+         * e um submenu a mais é um clique a mais numa ação que já é rara.
+         *
+         * Quem controla passa a desenhar a carta na PRÓPRIA faixa: é isso que
+         * faz "dar o controle" e "mandar para a mesa dele" serem a mesma coisa.
+         */
+        Object.values(players)
+          .filter((p) => p.id !== myId)
+          .sort((a, b) => a.seat - b.seat)
+          .forEach((p) => {
+            acoes.push({
+              rotulo: `Enviar para a mesa de ${p.name}`,
+              icone: <Send className="h-4 w-4" />,
+              onClick: executar(() => intents.giveCard(room, card.id, p.id)),
+            });
+          });
       }
 
       acoes.push(

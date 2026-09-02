@@ -15,6 +15,20 @@
  *
  * 3. Em telas baixas a coluna cobria a mesa inteira. Agora ela é limitada e
  *    vira uma faixa compacta no mobile.
+ *
+ * ─── POR QUE SÓ A SUA VIDA APARECE ─────────────────────────────────────────
+ *
+ * O painel desenhava um cartão COMPLETO por jogador: avatar, título, vida,
+ * veneno, energia, experiência, dano de comandante por oponente, grimório e
+ * mão. Numa mesa de quatro isso é uma coluna de ~700px encostada na borda
+ * esquerda — mais alta que a maioria das telas — para mostrar, sobre os
+ * oponentes, números que já estão escritos na faixa deles no tabuleiro
+ * ("Fulano · 34 PV").
+ *
+ * Agora o padrão é UM cartão: o seu. O resto da mesa continua a um clique, no
+ * botão de expandir — que é onde o dano de comandante e os contadores alheios
+ * fazem sentido, porque são consultados algumas vezes por partida, não o tempo
+ * todo. A preferência é lembrada.
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -30,13 +44,17 @@ import {
   Shield,
   Crown,
   Settings,
+  ChevronDown,
+  ChevronUp,
+  Minus,
 } from 'lucide-react';
 import type { Room } from 'colyseus.js';
-import { useGameStore, type PlayerData } from '../store/game.store';
+import { useGameStore, useUIStore, type PlayerData } from '../store/game.store';
 import { intents } from '../net/intents';
 import { useVoiceStore } from '../net/voice';
 import { Avatar, TituloDeChat } from '../components/Avatar';
 import { useCosmeticos, cosmeticosVisiveis } from '../cosmetics/store';
+import { useCardCatalog } from '../cards/catalog';
 import type { RoomState } from '../net/schema/RoomState';
 
 interface LifePanelProps {
@@ -69,6 +87,9 @@ function PlayerCard({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const isSpeaking = useVoiceStore((s) => s.speaking.includes(player.userId));
+  const cards = useGameStore((s) => s.cards);
+  const players = useGameStore((s) => s.players);
+  const catalogo = useCardCatalog((s) => s.cartas);
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
   const cosmeticos = cosmeticosVisiveis(player, isMe, permitirDeOponentes);
 
@@ -133,15 +154,30 @@ function PlayerCard({
     };
   }, [showMenu]);
 
-  const handleLifeWheel = (e: React.WheelEvent) => {
-    const delta = e.deltaY < 0 ? 1 : -1;
-    intents.setLife(room, delta);
-  };
-
   const handleLifeConfirm = () => {
     const v = parseInt(lifeInput, 10);
     if (!Number.isNaN(v)) intents.setLife(room, undefined, v);
     setEditing(false);
+  };
+
+  /**
+   * Nome do comandante de um jogador, para a linha de dano.
+   *
+   * `isCommander` vem do DECK e acompanha a carta por todas as zonas — a zona
+   * de comando não serve para essa pergunta, porque o comandante passa a maior
+   * parte da partida fora dela. Parceiros aparecem juntos.
+   *
+   * Cai no nome do jogador quando o catálogo ainda não hidratou ou quando o
+   * deck não tem comandante (formato sem comandante): é melhor mostrar algo
+   * verdadeiro do que um traço.
+   */
+  const nomeDoComandante = (playerId: string): string => {
+    const nomes = Object.values(cards)
+      .filter((c) => c.isCommander && c.ownerId === playerId && c.scryfallId)
+      .map((c) => catalogo[c.scryfallId]?.name)
+      .filter((n): n is string => Boolean(n));
+    if (nomes.length === 0) return players[playerId]?.name ?? 'comandante';
+    return nomes.join(' + ');
   };
 
   const lifePct = Math.max(0, Math.min(100, (player.life / 40) * 100));
@@ -153,15 +189,22 @@ function PlayerCard({
       // A borda dourada da VEZ vem antes de "quem está falando": as duas são
       // temporárias, mas de quem é a vez decide o que a mesa inteira faz a
       // seguir. Quem fala já tem o próprio áudio como sinal.
-      className={`bg-panel/90 relative shrink-0 rounded-xl border p-2 backdrop-blur transition-all sm:p-3 ${compacto ? 'w-36' : 'w-full'} ${
+      className={`bg-panel/90 relative shrink-0 rounded-xl border p-2 backdrop-blur transition-all ${compacto ? 'w-36' : 'w-full'} ${
         naVez
-          ? 'border-2 border-[#facc15] shadow-[0_0_18px_rgba(250,204,21,0.55)]'
+          ? // A borda dourada basta. O halo de 18px que existia aqui era a "luz
+            // em volta do usuário": ele sangrava para fora do painel, esbarrava
+            // no tabuleiro e pulsava junto com o brilho da faixa em foco no
+            // canvas — dois avisos concorrentes para o mesmo fato.
+            'border-2 border-[#facc15]'
           : isSpeaking
-            ? 'border-warning shadow-[0_0_15px_rgba(245,158,11,0.6)]'
-            : !player.connected
-              ? 'border-warning/50 opacity-70'
-              : player.conceded
-                ? 'border-danger/50 opacity-60'
+            ? 'border-warning'
+            : player.eliminated
+              ? // Fora do jogo: o cartao apaga, mas continua na tela. O
+                // eliminado nao sai da sala, e a mesa precisa continuar vendo
+                // a vida e o dano com que ele terminou.
+                'border-danger/60 opacity-50 grayscale'
+              : !player.connected
+                ? 'border-warning/50 opacity-70'
                 : 'border-panel-border'
       }`}
     >
@@ -216,8 +259,13 @@ function PlayerCard({
               <Shield className="text-primary h-3 w-3" aria-hidden="true" />
             </span>
           )}
-          {player.conceded && (
-            <span title="Desistiu" className="shrink-0">
+          {player.eliminated && (
+            <span
+              title={
+                player.eliminationReason === 'CONCEDED' ? 'Desistiu da partida' : 'Fora do jogo'
+              }
+              className="shrink-0"
+            >
               <Skull className="text-danger h-3 w-3" aria-hidden="true" />
             </span>
           )}
@@ -395,11 +443,22 @@ function PlayerCard({
         </div>
       )}
 
-      {/* Vida — só editável pelo próprio jogador */}
-      <div
-        className="flex select-none items-center gap-2"
-        onWheel={isMe ? handleLifeWheel : undefined}
-      >
+      {/*
+        Vida — só editável pelo próprio jogador.
+
+        ─── A RODA DO MOUSE SAIU DAQUI ────────────────────────────────────────
+
+        Girar a roda sobre este bloco somava e subtraía vida. Parecia atalho, e
+        era uma armadilha: com o painel expandido a coluna PRECISA rolar, e a
+        roda que o jogador usa para descer até o terceiro cartão caía sobre a
+        vida do primeiro e a alterava — em silêncio, sem confirmação, num número
+        que decide a partida. Um gesto escondido que corrompe estado enquanto
+        você tenta navegar é pior do que gesto nenhum.
+
+        Ajustar continua a um clique: os botões −1/+1 abaixo, ou clicar no total
+        para digitar.
+      */}
+      <div className="flex select-none items-center gap-2">
         <Heart
           className={`h-4 w-4 shrink-0 ${
             lifeCritical ? 'text-danger' : lifeDanger ? 'text-warning' : 'text-success'
@@ -416,7 +475,7 @@ function PlayerCard({
               if (e.key === 'Enter') handleLifeConfirm();
               if (e.key === 'Escape') setEditing(false);
             }}
-            className="border-primary text-primary w-16 border-b bg-transparent font-mono text-2xl font-bold outline-none"
+            className="border-primary text-primary w-14 border-b bg-transparent font-mono text-xl font-bold outline-none"
           />
         ) : (
           <button
@@ -426,7 +485,7 @@ function PlayerCard({
               setEditing(true);
               setLifeInput(String(player.life));
             }}
-            className={`font-mono text-2xl font-bold ${lifeCritical ? 'text-danger' : 'text-text'} ${
+            className={`font-mono text-xl font-bold ${lifeCritical ? 'text-danger' : 'text-text'} ${
               isMe ? 'cursor-pointer' : 'cursor-default'
             }`}
           >
@@ -484,13 +543,22 @@ function PlayerCard({
           <div className="flex flex-col gap-1">
             {opponents.map((opp) => {
               const dmg = player.commanderDamage?.[opp.id] ?? 0;
+              const comandante = nomeDoComandante(opp.id);
               return (
                 <div
                   key={opp.id}
                   className="border-panel-border bg-table-deep/50 flex items-center justify-between gap-2 rounded border px-2 py-1 text-xs"
                 >
-                  <span className="text-text-faint min-w-0 truncate" title={opp.name}>
-                    {opp.name}
+                  {/* O NOME DO COMANDANTE, não o do jogador.
+                      "21 de dano de aether_bruno" não diz nada que a tela já
+                      não mostre; "21 de Krenko, Mob Boss" é a informação que a
+                      mesa usa — ainda mais com parceiros, em que o mesmo
+                      jogador tem dois comandantes que contam separado. */}
+                  <span
+                    className="text-text-faint min-w-0 truncate"
+                    title={`${comandante} — comandante de ${opp.name}`}
+                  >
+                    {comandante}
                   </span>
                   <div className="flex shrink-0 items-center gap-1 font-mono">
                     {isMe && (
@@ -537,64 +605,113 @@ export function LifePanel({ room }: LifePanelProps) {
   const playersMap = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
   const activePlayerId = useGameStore((s) => s.activePlayerId);
-  const players = Object.values(playersMap).sort((a, b) => a.seat - b.seat);
+  const modo = useUIStore((s) => s.vidaModo);
+  const setModo = useUIStore((s) => s.setVidaModo);
+
+  const todos = Object.values(playersMap).sort((a, b) => a.seat - b.seat);
+  const eu = myId ? playersMap[myId] : undefined;
+
+  /**
+   * MINIMIZADO NÃO É "SUMIU".
+   *
+   * Um painel que desaparece por inteiro deixa a mesa sem o número que mais se
+   * consulta na partida, e obriga o jogador a lembrar onde estava o botão de
+   * trazê-lo de volta. O selo resolve os dois: mostra o próprio total e É o
+   * botão de restaurar.
+   */
+  if (modo === 'minima') {
+    return (
+      <div className="pointer-events-none absolute inset-x-2 top-12 z-20 flex sm:inset-x-auto sm:left-3 sm:top-16">
+        <button
+          onClick={() => setModo('minha')}
+          className="border-panel-border bg-panel/90 text-text hover:border-primary pointer-events-auto flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 shadow-lg backdrop-blur transition-colors"
+          title="Mostrar o painel de vida"
+        >
+          <Heart className="text-success h-3.5 w-3.5" />
+          <span className="font-mono text-sm font-bold">{eu?.life ?? 40}</span>
+          <ChevronDown className="text-text-muted h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+
+  const visiveis = modo === 'mesa' ? todos : eu ? [eu] : [];
+
+  const cartao = (player: PlayerData, compacto: boolean) => (
+    <PlayerCard
+      player={player}
+      room={room}
+      isMe={player.id === myId}
+      naVez={player.id === activePlayerId}
+      opponents={todos.filter((p) => p.id !== player.id)}
+      compacto={compacto}
+    />
+  );
+
+  const botao =
+    'border-panel-border bg-panel/90 text-text-muted hover:text-primary hover:border-primary pointer-events-auto flex shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[10px] font-bold uppercase backdrop-blur transition-colors';
 
   return (
-    // Duas formas, uma por classe de tela:
-    //
-    //  - MOBILE: faixa HORIZONTAL logo abaixo do botão de câmera. Uma coluna de
-    //    quatro cartões de vida ocupa ~700px de altura — em 390x780 ela cobria a
-    //    mesa inteira e ainda colidia com o log.
-    //  - sm+: coluna à esquerda, com a altura limitada para não encostar na
-    //    barra de ações da base (a colisão que sobrava em 820x600).
-    //
-    // `pointer-events-auto` fica no container que ROLA: com `none` (como estava)
-    // a roda do mouse nunca chegava nele e a lista simplesmente não rolava.
-    <div
-      className={
-        // AS BARRAS NO FIM DE CADA LINHA NAO SAO ESTILO: SEM ELAS O PAINEL QUEBRA.
-        //
-        // Estas quatro strings eram concatenadas sem espaco entre elas. O
-        // resultado colava a ultima classe de uma linha na primeira da
-        // seguinte e produzia `pb-1sm:inset-x-auto` e
-        // `sm:gap-3sm:max-h-[calc(100dvh-11rem)]` — quatro classes viravam
-        // duas invencionices que o Tailwind ignora.
-        //
-        // A que mais doia era `sm:max-h-`. Sem altura maxima, `overflow-y-auto`
-        // nao tem o que rolar: a coluna simplesmente crescia para fora da tela.
-        // Numa mesa de quatro, o jogador via os dois primeiros cartoes de vida
-        // e os outros dois ficavam abaixo da borda inferior, inalcancaveis —
-        // com a roda do mouse sem efeito, porque nao havia rolagem nenhuma.
-        'custom-scrollbar pointer-events-auto absolute z-20 flex gap-2 ' +
-        'inset-x-2 top-12 flex-row overflow-x-auto overflow-y-hidden pb-1' +
-        'sm:inset-x-auto sm:left-3 sm:top-16 sm:w-44 sm:flex-col sm:gap-3' +
-        'sm:max-h-[calc(100dvh-11rem)] sm:overflow-y-auto sm:overflow-x-visible sm:pb-2 sm:pr-1'
-      }
-    >
-      {players.map((player) => (
-        <React.Fragment key={player.id}>
-          <div className="contents sm:hidden">
-            <PlayerCard
-              player={player}
-              room={room}
-              isMe={player.id === myId}
-              naVez={player.id === activePlayerId}
-              opponents={players.filter((p) => p.id !== player.id)}
-              compacto
-            />
-          </div>
-          <div className="hidden sm:contents">
-            <PlayerCard
-              player={player}
-              room={room}
-              isMe={player.id === myId}
-              naVez={player.id === activePlayerId}
-              opponents={players.filter((p) => p.id !== player.id)}
-              compacto={false}
-            />
-          </div>
-        </React.Fragment>
-      ))}
+    /**
+     * ─── OS BOTÕES FICAM FORA DA ÁREA QUE ROLA ─────────────────────────────
+     *
+     * Antes era tudo um contêiner só: os cartões E os controles dentro do mesmo
+     * `overflow-y-auto`. Com a mesa expandida o conteúdo passava da altura
+     * máxima, os controles desciam junto com a rolagem e sumiam — e como a
+     * coluna termina colada na borda inferior, não havia pista de que ainda
+     * havia conteúdo abaixo. A leitura era "abri a mesa toda e não consigo
+     * descer".
+     *
+     * Agora o pai só posiciona, o miolo rola, e os controles são irmãos fixos
+     * embaixo: nunca saem do lugar, seja qual for o número de jogadores.
+     */
+    <div className="pointer-events-none absolute inset-x-2 top-12 z-20 flex flex-col gap-2 sm:inset-x-auto sm:left-3 sm:top-16 sm:max-h-[calc(100dvh-9rem)] sm:w-40">
+      <div
+        className={
+          // AS BARRAS NO FIM DE CADA LINHA NÃO SÃO ESTILO: sem elas a última
+          // classe de uma linha cola na primeira da seguinte e o Tailwind
+          // ignora as duas. Foi assim que `sm:max-h-` sumiu daqui uma vez, e
+          // sem altura máxima `overflow-y-auto` não tem o que rolar.
+          'custom-scrollbar pointer-events-auto flex min-h-0 gap-2 ' +
+          'flex-row overflow-x-auto overflow-y-hidden pb-1' +
+          'sm:flex-col sm:gap-2 sm:overflow-y-auto sm:overflow-x-hidden sm:pb-1 sm:pr-1'
+        }
+      >
+        {visiveis.map((player) => (
+          <React.Fragment key={player.id}>
+            <div className="contents sm:hidden">{cartao(player, true)}</div>
+            <div className="hidden sm:contents">{cartao(player, false)}</div>
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="flex shrink-0 gap-1">
+        <button onClick={() => setModo('minima')} className={botao} title="Minimizar o painel">
+          <Minus className="h-3 w-3" /> minimizar
+        </button>
+
+        {todos.length > 1 && (
+          <button
+            onClick={() => setModo(modo === 'mesa' ? 'minha' : 'mesa')}
+            className={`${botao} flex-1`}
+            title={
+              modo === 'mesa'
+                ? 'Mostrar só a sua vida'
+                : 'Mostrar a mesa inteira (dano de comandante, contadores)'
+            }
+          >
+            {modo === 'mesa' ? (
+              <>
+                <ChevronUp className="h-3 w-3" /> só a minha
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" /> mesa ({todos.length})
+              </>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

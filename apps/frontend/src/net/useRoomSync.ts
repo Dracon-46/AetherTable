@@ -16,10 +16,28 @@ import {
   type LogEntry,
 } from '../store/game.store';
 import { useToast } from '../components/Toast';
+import { useUIStore } from '../store/game.store';
 import { mensagemDeErro } from './erros';
 import type { RoomState } from './schema/RoomState';
 import type { Card } from './schema/Card';
 import type { Player } from './schema/Player';
+
+/** Por que o jogador saiu, em português de mesa. */
+const MOTIVO_DE_DERROTA: Record<string, string> = {
+  LIFE: 'a vida chegou a zero',
+  POISON: '10 marcadores de veneno',
+  COMMANDER: '21 de dano de comandante',
+  DECKED: 'grimório vazio na hora de comprar',
+  CONCEDED: 'desistiu da partida',
+};
+
+/** Nome legível da zona, para as mensagens de pedido/resposta de visualização. */
+const ROTULO_DE_ZONA: Record<string, string> = {
+  HAND: 'a mão',
+  LIBRARY: 'o grimório',
+  GRAVEYARD: 'o cemitério',
+  EXILE: 'o exílio',
+};
 
 function snapCard(card: Card): CardData {
   return {
@@ -52,6 +70,7 @@ function snapCard(card: Card): CardData {
     goadedBy: card.goadedBy ?? '',
     hasPtOverride: card.hasPtOverride ?? false,
     enteredThisTurn: card.enteredThisTurn ?? false,
+    isCommander: card.isCommander ?? false,
   };
 }
 
@@ -87,6 +106,13 @@ function snapPlayer(p: Player): PlayerData {
     profileBorder: p.profileBorder ?? '',
     chatTitle: p.chatTitle ?? '',
     petId: p.petId ?? '',
+    ready: p.ready ?? false,
+    keptHand: p.keptHand ?? false,
+    deckName: p.deckName ?? '',
+    sharedZones: Object.fromEntries(p.sharedZones?.entries?.() ?? []),
+    eliminated: p.eliminated ?? false,
+    eliminationReason: p.eliminationReason ?? '',
+    decked: p.decked ?? false,
   };
 }
 
@@ -107,11 +133,33 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     // ── Cartas ─────────────────────────────────────────────────────────────
 
+    /**
+     * ─── MAPA ANINHADO NÃO DISPARA O `onChange` DO PAI ─────────────────────
+     *
+     * `$(card).onChange` avisa quando um CAMPO da carta muda. `card.counters` é
+     * um `MapSchema`: pôr um marcador dentro dele não troca a referência do
+     * campo, então o `onChange` do `Card` NÃO dispara.
+     *
+     * O efeito era exatamente este: o servidor gravava `+1/+1`, o patch saía, e
+     * o cliente nunca reescrevia a carta no store. Marcador não aparecia na
+     * mesa nem no editor — e como a ação era aceita (nenhum erro, nenhum
+     * toast), a leitura natural era "o botão de marcador não funciona".
+     *
+     * A assinatura no próprio mapa fecha o buraco. Vale para TODO `MapSchema`
+     * aninhado do schema: aqui, `Card.counters`; abaixo,
+     * `Player.commanderDamage` e `Player.sharedZones`.
+     */
+    const assinarCarta = (card: Card, id: string) => {
+      const reSnap = () => useGameStore.getState().upsertCard(id, snapCard(card));
+      $(card).onChange(reSnap);
+      $(card).counters.onAdd(reSnap);
+      $(card).counters.onChange(reSnap);
+      $(card).counters.onRemove(reSnap);
+      reSnap();
+    };
+
     $(room.state).cards.onAdd((card: Card, id: string) => {
-      $(card).onChange(() => {
-        useGameStore.getState().upsertCard(id, snapCard(card));
-      });
-      useGameStore.getState().upsertCard(id, snapCard(card));
+      assinarCarta(card, id);
     });
 
     $(room.state).cards.onRemove((_card: Card, id: string) => {
@@ -121,10 +169,19 @@ export function useRoomSync(room: Room<RoomState> | null) {
     // ── Jogadores ──────────────────────────────────────────────────────────
 
     $(room.state).players.onAdd((player: Player, id: string) => {
-      $(player).onChange(() => {
-        useGameStore.getState().upsertPlayer(id, snapPlayer(player));
-      });
-      useGameStore.getState().upsertPlayer(id, snapPlayer(player));
+      // Mesmo motivo da carta: `commanderDamage` e `sharedZones` são mapas
+      // aninhados, e mutá-los não dispara o `onChange` do `Player`. Sem estas
+      // assinaturas, o dano de comandante subia no servidor e o painel de vida
+      // continuava mostrando zero.
+      const reSnap = () => useGameStore.getState().upsertPlayer(id, snapPlayer(player));
+      $(player).onChange(reSnap);
+      $(player).commanderDamage.onAdd(reSnap);
+      $(player).commanderDamage.onChange(reSnap);
+      $(player).commanderDamage.onRemove(reSnap);
+      $(player).sharedZones.onAdd(reSnap);
+      $(player).sharedZones.onChange(reSnap);
+      $(player).sharedZones.onRemove(reSnap);
+      reSnap();
     });
 
     $(room.state).players.onRemove((_p: Player, id: string) => {
@@ -209,6 +266,103 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     room.onMessage('matchStarted', () => {
       useGameStore.getState().setPhase('PLAYING');
+    });
+
+    /**
+     * O grimório entrou na mesa. Confirma a escolha feita na sala de espera —
+     * sem isto, escolher um deck e ver o contador subir sozinho é indistinguível
+     * de "não aconteceu nada" quando o deck é pequeno.
+     */
+    room.onMessage('deckReady', (payload: any) => {
+      useToast
+        .getState()
+        .mostrar(
+          `Grimório "${payload?.name ?? ''}" pronto (${payload?.cards ?? 0} cartas).`,
+          'info',
+        );
+    });
+
+    /**
+     * ALGUÉM PEDIU PARA VER UMA ZONA OCULTA MINHA.
+     *
+     * Chega só para o dono da zona, e não concede nada: é um convite a decidir.
+     * A permissão só existe depois de `INTENT_RESPOND_VIEW` com `accept: true`.
+     */
+    room.onMessage('viewRequest', (payload: any) => {
+      if (!payload?.requesterId) return;
+      useTableStore.getState().addPedidoDeVista({
+        requesterId: payload.requesterId,
+        requesterName: payload.requesterName ?? 'Alguém',
+        zone: payload.zone,
+      });
+    });
+
+    room.onMessage('viewResponse', (payload: any) => {
+      const zona = ROTULO_DE_ZONA[payload?.zone] ?? 'a zona';
+      const nome = payload?.ownerName ?? 'O jogador';
+      useToast
+        .getState()
+        .mostrar(
+          payload?.accepted
+            ? `${nome} abriu ${zona} para você.`
+            : `${nome} recusou mostrar ${zona}.`,
+          payload?.accepted ? 'sucesso' : 'info',
+        );
+      // Aceito: abre a zona daquele jogador direto, senão o jogador teria de
+      // adivinhar onde a permissão recém-concedida aparece.
+      if (payload?.accepted && payload?.ownerId) {
+        const ui = useUIStore.getState();
+        ui.setZoneOwner(payload.ownerId);
+        ui.setInspectedZone(payload.zone);
+      }
+    });
+
+    /**
+     * ALGUÉM SAIU DO JOGO.
+     *
+     * O estado autoritativo já viaja no patch (`Player.eliminated`); este
+     * evento existe para o MOMENTO — o toast e a linha no log. Sem ele, a
+     * eliminação seria um ícone que muda de cor num painel para o qual ninguém
+     * está olhando.
+     */
+    room.onMessage('playerEliminated', (payload: any) => {
+      const souEu = payload?.playerId === useGameStore.getState().mySessionId;
+      const porQuem = payload?.byName ? ` (comandante de ${payload.byName})` : '';
+      const motivo = MOTIVO_DE_DERROTA[payload?.reason] ?? 'saiu da partida';
+      useToast
+        .getState()
+        .mostrar(
+          souEu
+            ? `Você saiu do jogo: ${motivo}${porQuem}.`
+            : `${payload?.name}: ${motivo}${porQuem}.`,
+          souEu ? 'erro' : 'info',
+        );
+    });
+
+    room.onMessage('matchEnded', (payload: any) => {
+      const souEu = payload?.winnerId === useGameStore.getState().mySessionId;
+      useToast
+        .getState()
+        .mostrar(
+          souEu ? 'Você venceu a partida!' : `${payload?.winnerName} venceu a partida.`,
+          'sucesso',
+        );
+    });
+
+    /**
+     * Fui removido pelo anfitrião.
+     *
+     * Sem este canal, a expulsão chegava como uma conexão que simplesmente caiu
+     * — e o jogador tentava voltar em looping, sem entender por que o passe já
+     * não valia.
+     */
+    room.onMessage('kicked', (payload: any) => {
+      useToast.getState().mostrar(payload?.message ?? 'Você foi removido da sala.', 'erro');
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          window.location.href = '/dashboard?motivo=expulso';
+        }, 1500);
+      }
     });
 
     /**

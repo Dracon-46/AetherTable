@@ -58,8 +58,16 @@ interface GameBoardProps {
   onAlvoEscolhido: () => void;
 }
 
-const COR_FAIXA_FOCO = 'rgba(59,130,246,0.055)';
-const COR_FAIXA = 'rgba(30,41,59,0.30)';
+/**
+ * Base da faixa. OPACA, e não um véu translúcido.
+ *
+ * Eram `rgba(...,0.055)` e `rgba(...,0.30)` desenhados POR CIMA do playmat —
+ * que já embute 40% de preto por diretriz (DOC-060 §2.2). Somados, a arte
+ * chegava com quase 60% de escurecimento: nítida no seletor de cosméticos,
+ * quase invisível na mesa. Agora a base fica ATRÁS e o playmat por cima dela.
+ */
+const COR_FAIXA_FOCO = 'rgba(15,23,42,0.55)';
+const COR_FAIXA = 'rgba(15,23,42,0.72)';
 /** Borda de quem está na vez. Dourado, e nunca usado para mais nada. */
 const COR_VEZ = 'rgba(250,204,21,0.9)';
 /** Âmbar da zona de comando — a mesma família do ícone de coroa da UI. */
@@ -494,6 +502,7 @@ function Pilha({
   quantidade,
   cor,
   verso,
+  versoImagem,
   topo,
   escala,
   onClick,
@@ -504,6 +513,8 @@ function Pilha({
   quantidade: number;
   cor: string;
   verso: boolean;
+  /** Sleeve de quem é dono da pilha — o verso das cartas dele (DOC-060). */
+  versoImagem?: HTMLCanvasElement | null;
   topo?: HTMLImageElement | null;
   escala: number;
   onClick?: () => void;
@@ -513,16 +524,36 @@ function Pilha({
   const w = CARD_W * escala;
   const h = CARD_H * escala;
 
+  /**
+   * O BOTÃO DIREITO NÃO COMPRA.
+   *
+   * O Konva dispara `click` para QUALQUER botão do mouse — inclusive o direito,
+   * que também dispara `contextmenu`. Na pilha do grimório os dois handlers
+   * estavam ligados: um clique com o botão direito abria o menu de contexto E
+   * comprava uma carta. Da cadeira do jogador, o grimório roubava uma carta
+   * toda vez que ele tentava abrir as opções — e o menu que aparecia por cima
+   * escondia justamente a mão onde a carta tinha acabado de cair.
+   *
+   * `button === 2` é o direito; `1` é o do meio. Só o esquerdo (`0`) e o toque
+   * (que não traz `button`) compram.
+   */
+  const cliqueEsquerdo = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    const evt = e.evt as MouseEvent;
+    if (typeof evt?.button === 'number' && evt.button !== 0) return;
+    onClick?.();
+  };
+
   return (
     <Group
       x={centro.x}
       y={centro.y}
       offsetX={w / 2}
       offsetY={h / 2}
-      onClick={onClick}
+      onClick={onClick ? cliqueEsquerdo : undefined}
       onTap={onClick}
       onContextMenu={(e) => {
         e.evt.preventDefault();
+        e.cancelBubble = true;
         const p = e.target.getStage()?.getPointerPosition();
         if (p && onContextMenu) onContextMenu(p.x, p.y);
       }}
@@ -544,6 +575,23 @@ function Pilha({
 
       {topo && !verso && (
         <KonvaImage image={topo} width={w} height={h} cornerRadius={6} listening={false} />
+      )}
+
+      {/* O SLEEVE APARECE AQUI, E SÓ AQUI.
+          O cosmético mais visível da mesa é o verso do grimório — é a única
+          carta virada para baixo que fica na tela a partida inteira. A pilha
+          desenhava um retângulo cinza fixo (`cor`) e ignorava o sleeve
+          equipado: quem escolhia um protetor nas configurações não via
+          diferença nenhuma na mesa, o que virou "os cosméticos não aparecem". */}
+      {verso && versoImagem && quantidade > 0 && (
+        <KonvaImage
+          image={versoImagem}
+          width={w}
+          height={h}
+          cornerRadius={6}
+          listening={false}
+          perfectDrawEnabled={false}
+        />
       )}
 
       <Text
@@ -811,6 +859,21 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     // sem nenhuma explicação. Some o jogador, volta para a minha mesa.
     const foco = (alvoValido ? boardView : myId) || myId;
 
+    /**
+     * "VER A MESA DE FULANO" PRECISA SER UMA ESCOLHA VÁLIDA.
+     *
+     * `boardView` guarda o sessionId do oponente, e sessionId muda a cada
+     * conexão. Persistido entre partidas, ele apontava para um assento que não
+     * existe mais: `alvoValido` dava falso, o foco caía em mim — mas o ramo
+     * `boardView !== 'ALL'` continuava valendo, e a mesa era montada com UMA
+     * faixa. O jogador via só a própria mesa, o seletor marcava "Mesa", e
+     * escolher outro oponente parecia não fazer nada porque a tela já estava
+     * naquele formato.
+     *
+     * Um alvo inválido agora se comporta como "todos", que é o padrão honesto.
+     */
+    const umaFaixaSo = boardView === 'ME' || alvoValido;
+
     // NO CELULAR, UMA FAIXA POR VEZ.
     //
     // Encaixar quatro faixas (≈1920x1300) numa tela de 390px deixa cada carta
@@ -823,7 +886,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     }
 
     // Uma mesa só: a minha, ou a do oponente escolhido.
-    if (boardView !== 'ALL') {
+    if (umaFaixaSo) {
       return montarMesa([foco], foco);
     }
 
@@ -833,9 +896,19 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     return montarMesa(ordem.length ? ordem : ['—'], foco);
   }, [players, myId, boardView, estreito]);
 
+  /**
+   * Espaço reservado ao HUD em volta da mesa.
+   *
+   * Encolheu junto com o HUD: o painel de vida passou de 176px para 160px e
+   * mostra só o próprio jogador, o log nasce recolhido (~224px viraram ~56px de
+   * cabeçalho) e a barra de ações vive escondida atrás de uma aba de ~90px.
+   * Reservar os 300px antigos à direita era guardar espaço para painéis que não
+   * estão mais lá — e cada pixel devolvido aqui vira carta maior, porque a
+   * escala da mesa é `área útil / largura lógica`.
+   */
   const margens = estreito
-    ? { esquerda: 8, direita: 8, topo: 212, base: 116 }
-    : { esquerda: 196, direita: 300, topo: 56, base: 74 };
+    ? { esquerda: 8, direita: 8, topo: 176, base: 72 }
+    : { esquerda: 176, direita: 244, topo: 52, base: 48 };
 
   const utilW = Math.max(120, dims.w - margens.esquerda - margens.direita);
   const utilH = Math.max(120, dims.h - margens.topo - margens.base);
@@ -932,6 +1005,8 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
         faixa,
         player: p,
         playmat: playmatCanvas(cosmeticos.playmatId),
+        // O verso das pilhas ocultas daquele jogador. Ver `Pilha`.
+        verso: sleeveCanvas(cosmeticos.sleeveId),
         petId: cosmeticos.petId,
         library: p?.libraryCount ?? contar('LIBRARY', faixa.playerId),
         command: contar('COMMAND', faixa.playerId),
@@ -1073,6 +1148,10 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
               }}
               onClick={(e) => {
                 const evt = e.evt as MouseEvent;
+                // Konva dispara `click` para todo botão do mouse: sem isto, o
+                // botão direito abria o menu da mesa E limpava a seleção — quer
+                // dizer, o menu abria já sem alvo nenhum.
+                if (typeof evt?.button === 'number' && evt.button !== 0) return;
                 const p = e.target.getStage()?.getPointerPosition();
                 if (evt.altKey && p) {
                   intents.ping(room, (p.x - offsetX) / escala, (p.y - offsetY) / escala);
@@ -1090,6 +1169,19 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
             {/* ── Faixas ─────────────────────────────────────────────────── */}
             {resumoFaixas.map((r) => (
               <Group key={r.faixa.playerId} listening={false}>
+                {/* Base opaca da faixa. Vem ANTES do playmat de propósito: com
+                    ela por cima, o `rgba(30,41,59,0.30)` somava-se ao véu preto
+                    de 40% que o próprio playmat já embute, e a arte chegava ao
+                    jogador com ~58% de escurecimento — visível no editor de
+                    cosméticos, invisível na mesa. */}
+                <Rect
+                  x={6}
+                  y={r.faixa.topo + 3}
+                  width={mesa.largura - 12}
+                  height={r.faixa.altura - 6}
+                  fill={r.faixa.emFoco ? COR_FAIXA_FOCO : COR_FAIXA}
+                  cornerRadius={12}
+                />
                 {/* Playmat: o fundo da área de jogo daquele jogador. Já vem com
                     o overlay preto a 40% embutido (DOC-060 §2.2), para a arte
                     nunca competir com a carta. */}
@@ -1117,16 +1209,24 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     de um jogador — era uma superfície contínua com cartas de
                     todo mundo. Agora cada uma é um painel com borda que se vê
                     e um respiro em volta (ESPACO_ENTRE_FAIXAS). */}
+                {/* Só a MOLDURA. O preenchimento virou a base, acima.
+                    Dourado vence o azul do foco: de quem é a VEZ é a informação
+                    mais urgente da mesa, e ela precisa ser legível de relance,
+                    sem ler nome nenhum. O foco da câmera é uma preferência de
+                    quem olha; a vez é um fato da partida.
+
+                    O HALO SAIU. Era `shadowBlur: 22` em dourado, sangrando ~22px
+                    para dentro da mesa em volta da faixa inteira — "a luz ao
+                    redor do usuário". Numa faixa em foco isso é um retângulo
+                    brilhante atrás das cartas do próprio jogador, que compete
+                    com o destaque de seleção e com o realce de carta. Uma borda
+                    de 3.5px na cor certa diz a mesma coisa e não invade o
+                    tabuleiro. */}
                 <Rect
                   x={6}
                   y={r.faixa.topo + 3}
                   width={mesa.largura - 12}
                   height={r.faixa.altura - 6}
-                  fill={r.faixa.emFoco ? COR_FAIXA_FOCO : COR_FAIXA}
-                  /* Dourado vence o azul do foco: de quem é a VEZ é a
-                     informação mais urgente da mesa, e ela precisa ser legível
-                     de relance, sem ler nome nenhum. O foco da câmera é uma
-                     preferência de quem olha; a vez é um fato da partida. */
                   stroke={
                     r.faixa.playerId === activePlayerId
                       ? COR_VEZ
@@ -1138,10 +1238,6 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     r.faixa.playerId === activePlayerId ? 3.5 : r.faixa.emFoco ? 2.5 : 1.5
                   }
                   cornerRadius={12}
-                  shadowColor={r.faixa.playerId === activePlayerId ? COR_VEZ : 'black'}
-                  shadowBlur={r.faixa.playerId === activePlayerId ? 22 : 12}
-                  shadowOpacity={r.faixa.playerId === activePlayerId ? 0.55 : 0.35}
-                  shadowOffsetY={2}
                 />
                 <Text
                   text={
@@ -1183,6 +1279,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     quantidade={r.library}
                     cor="#2f3446"
                     verso
+                    versoImagem={r.verso}
                     escala={esc}
                     onClick={meu ? () => intents.draw(room, 1) : undefined}
                     onContextMenu={meu ? (x, y) => openContextMenu('library', x, y) : undefined}
@@ -1196,6 +1293,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     topo={r.topoCemiterio}
                     escala={esc}
                     onClick={() => abrirZona('GRAVEYARD', r.faixa.playerId)}
+                    onContextMenu={
+                      meu ? (x: number, y: number) => openContextMenu('zone', x, y) : undefined
+                    }
                   />
                   <Pilha
                     rotulo="EXÍLIO"
@@ -1214,6 +1314,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                       quantidade={r.sideboard}
                       cor="#2b3a33"
                       verso
+                      versoImagem={r.verso}
                       escala={esc}
                       onClick={() => abrirZona('SIDEBOARD', r.faixa.playerId)}
                     />

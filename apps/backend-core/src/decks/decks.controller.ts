@@ -8,7 +8,9 @@ import {
   Param,
   UseGuards,
   Request,
+  Query,
   ParseUUIDPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
@@ -24,6 +26,7 @@ import {
 } from './decks.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
+import { validarDeckParaFormato, type DeckValidavel } from './formato.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
 @ApiTags('Decks')
@@ -139,9 +142,41 @@ export class InternalDecksController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Deck completo para o game-server (uso interno)' })
-  getDeckForServer(@Param('id', ParseUUIDPipe) id: string) {
+  async getDeckForServer(
+    @Param('id', ParseUUIDPipe) id: string,
+    // Quem está pedindo. O game-server envia o `sub` do seat token quando o
+    // grimório é escolhido dentro da sala de espera — ali o id vem de uma
+    // intenção do cliente, e sem esta checagem qualquer jogador poderia
+    // carregar (e ler) o deck de outra pessoa.
+    @Query('ownerId') ownerId?: string,
+    // Formato da SALA. Quando informado, o deck é recusado aqui com a mesma
+    // regra que `joinMatch` aplica — e com a mesma mensagem. Sem isso, escolher
+    // um deck de 97 cartas na sala de espera dava certo, e a partida só quebrava
+    // depois, com todo mundo já sentado.
+    @Query('gameType') gameType?: string,
+  ) {
+    /**
+     * COM `ownerId`, PASSA PELO CAMINHO COMPLETO.
+     *
+     * `getDeckById` faz duas coisas que `getDeckForServer` não faz: confere o
+     * dono e HIDRATA as cartas na Scryfall. A hidratação é o que traz `name` e
+     * `isBanned` — sem ela, a trava de cartas banidas simplesmente não dispara,
+     * porque `isBanned` chega `undefined` em todas.
+     *
+     * Custa uma ida à Scryfall na escolha do grimório, que acontece na sala de
+     * espera, fora de qualquer caminho crítico. O fluxo antigo (deck dentro do
+     * seat token) já foi validado em `joinMatch` e segue pelo caminho barato.
+     */
+    if (ownerId) {
+      const deck = await this.decksService.getDeckById(ownerId, id);
+      validarDeckParaFormato(deck as unknown as DeckValidavel, gameType);
+      return deck;
+    }
+
     // Antes: `(this.decksService as any).prisma.deck.findUnique(...)` — o
     // controller alcançava um campo privado do serviço por asserção `any`.
-    return this.decksService.getDeckForServer(id);
+    const deck = await this.decksService.getDeckForServer(id);
+    if (!deck) throw new NotFoundException('Deck não encontrado');
+    return deck;
   }
 }

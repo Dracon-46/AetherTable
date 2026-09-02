@@ -37,4 +37,5 @@ export class Card extends Schema {
   @type({ map: 'number' }) public counters: MapSchema<number> = new MapSchema<number>();
   @type('boolean') public hasPtOverride!: boolean;
   @type('boolean') public enteredThisTurn!: boolean;
+  @type('boolean') public isCommander!: boolean;
 }

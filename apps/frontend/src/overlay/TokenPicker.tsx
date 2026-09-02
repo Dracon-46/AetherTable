@@ -8,6 +8,7 @@ import type { Room } from 'colyseus.js';
 import type { RoomState } from '../net/schema/RoomState';
 import { API_URL } from '@/lib/api';
 import { cardImageUrl } from '../canvas/textureCache';
+import { useFecharComEsc } from './useFecharComEsc';
 
 interface TokenPickerProps {
   room: Room<RoomState>;
@@ -47,6 +48,8 @@ export function TokenPicker({ room }: TokenPickerProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [presetEmCurso, setPresetEmCurso] = useState<string | null>(null);
+
+  useFecharComEsc(isActive, () => toggleModal('tokens'));
 
   // Busca inicial genérica de tokens comuns
   useEffect(() => {

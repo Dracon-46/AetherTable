@@ -19,6 +19,7 @@ import { useTableStore } from '../store/game.store';
 import { intents } from '../net/intents';
 import { cardImageUrl } from '../canvas/textureCache';
 import type { RoomState } from '../net/schema/RoomState';
+import { useFecharComEsc } from './useFecharComEsc';
 
 interface ScryModalProps {
   room: Room<RoomState>;
@@ -32,12 +33,31 @@ export function ScryModal({ room }: ScryModalProps) {
 
   const [destinos, setDestinos] = React.useState<Record<string, Destino>>({});
 
+  // `confirmar` é declarado depois do `return null` (precisa de `scry`), então
+  // o hook de Escape — que vem antes de qualquer retorno — o alcança por ref.
+  const confirmarRef = React.useRef<(() => void) | null>(null);
+
   // Cada abertura começa do zero: reaproveitar a escolha anterior faria o
   // jogador confirmar sem querer o que decidiu no scry passado.
   React.useEffect(() => {
     if (!scry) return;
     setDestinos(Object.fromEntries(scry.cards.map((c) => [c.id, 'TOPO' as Destino])));
   }, [scry]);
+
+  /**
+   * ESCAPE CONFIRMA — não cancela, e não prende.
+   *
+   * Este modal não tinha saída nenhuma: o único caminho era "Confirmar". Um
+   * overlay `fixed inset-0` sem escape é a mesma armadilha que o mulligan já
+   * tinha, e a mesa continua jogando atrás dele.
+   *
+   * Cancelar também não serve: quando o painel abre, as cartas JÁ foram
+   * olhadas — o servidor concedeu a visibilidade e registrou a olhada no log
+   * público. Não existe estado anterior para voltar. Escape confirma o arranjo
+   * que está na tela (por padrão, tudo permanece no topo, na ordem em que
+   * estava), que é o resultado neutro e honesto de um scry sem decisão.
+   */
+  useFecharComEsc(Boolean(scry), () => confirmarRef.current?.());
 
   if (!scry) return null;
 
@@ -54,6 +74,7 @@ export function ScryModal({ room }: ScryModalProps) {
 
     fecharScry();
   };
+  confirmarRef.current = confirmar;
 
   const mover = (id: string, direcao: -1 | 1) => {
     // Reordenar o topo importa: scry 3 sem poder ordenar é meio scry.
