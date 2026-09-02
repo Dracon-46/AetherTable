@@ -113,12 +113,25 @@ export class ScryfallClient {
     return this.get<{ data: ScryfallCard[]; has_more: boolean }>(`/cards/search?${qs}`);
   }
 
-  /** `GET /cards/autocomplete?q=...` — ate 20 nomes. */
+  /**
+   * `GET /cards/autocomplete?q=...` — ate 20 nomes.
+   *
+   * Aceita as DUAS formas de resposta de proposito. A Scryfall devolve o
+   * envelope `{ data: [...] }`; uma instancia do proprio AetherTable apontada
+   * por `SCRYFALL_API_URL` devolve o array ja desembrulhado, porque o
+   * `CardsService` repassa o retorno DESTE metodo, que e o array.
+   *
+   * Encadear duas instancias e o caminho previsto quando a rede intercepta
+   * `api.scryfall.com` (DOC-054 §9). Sem esta tolerancia, o espelho funcionaria
+   * para busca, colecao e carta por id, e so o autocomplete devolveria
+   * `undefined` — a falha mais dificil de diagnosticar do conjunto, porque
+   * nenhuma requisicao falha.
+   */
   async autocomplete(query: string): Promise<string[]> {
-    const res = await this.get<{ data: string[] }>(
+    const res = await this.get<{ data: string[] } | string[]>(
       `/cards/autocomplete?${new URLSearchParams({ q: query })}`,
     );
-    return res.data;
+    return Array.isArray(res) ? res : (res?.data ?? []);
   }
 
   /** `GET /cards/:id` — printing especifico. */
