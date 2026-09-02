@@ -17,19 +17,26 @@
  * oponentes ficam acima, em ordem de assento.
  *
  *   ┌──────────────────────────────────────────┐
- *   │ oponente 2   [cmd] campo …    [pilhas]   │  ← painel próprio
+ *   │ oponente 2   [pilhas] campo …    [cmd]   │  ← painel próprio
  *   └──────────────────────────────────────────┘
  *                    (respiro)
  *   ┌──────────────────────────────────────────┐
- *   │ oponente 1   [cmd] campo …    [pilhas]   │
+ *   │ oponente 1   [pilhas] campo …    [cmd]   │
  *   └──────────────────────────────────────────┘
  *                    (respiro)
  *   ┌──────────────────────────────────────────┐
- *   │ EU          [cmd] campo …     [pilhas]   │  ← em foco (maior)
+ *   │ EU           [pilhas] campo …    [cmd]   │  ← em foco (maior)
  *   └──────────────────────────────────────────┘
  *   ┌──────────────────────────────────────────┐
  *   │ minha mão                                │
  *   └──────────────────────────────────────────┘
+ *
+ * As pilhas — grimório, cemitério, exílio e reserva — vivem no canto INFERIOR
+ * ESQUERDO da faixa, e a zona de comando na direita. Era o contrário, e o lado
+ * errado custava caro no gesto mais repetido do jogo: comprar. O grimório é a
+ * pilha que se clica dezenas de vezes por partida, enquanto a zona de comando
+ * é consultada uma vez a cada poucos turnos — a mais usada é que merece o canto
+ * de origem da leitura.
  *
  * `ordem` decide QUANTAS faixas existem. Ver só a própria mesa é passar uma
  * lista de um elemento — não é um modo à parte, é a mesma função com menos
@@ -114,10 +121,10 @@ export const escalaDaFaixa = (emFoco: boolean) => (emFoco ? 1 : ESCALA_FORA_DE_F
  */
 const MARGEM_BASE = 20;
 
-/** Reservado à esquerda de cada faixa para a zona de comando. */
+/** Reservado à direita de cada faixa para a zona de comando. */
 export const LARGURA_COMANDO = CARD_W + 48;
 /**
- * Reservado à direita para as pilhas.
+ * Reservado à esquerda para as pilhas.
  *
  * Em fileira única, quatro pilhas comem 560px — 29% da mesa só para grimório,
  * cemitério, exílio e reserva. Em tela estreita elas passam a ocupar uma grade
@@ -217,8 +224,10 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
     // porque as pilhas passam a ocupar duas fileiras.
     const altura = estreito ? FAIXA_FOCO_H + CARD_H : emFoco ? FAIXA_FOCO_H : FAIXA_H;
 
-    const campoX = larguraComando;
-    const campoLargura = largura - larguraComando - larguraPilhas;
+    // Pilhas à ESQUERDA, comando à direita: o campo começa depois das pilhas e
+    // termina antes do comando.
+    const campoX = larguraPilhas;
+    const campoLargura = largura - larguraPilhas - larguraComando;
     const campoY = 26;
     const campoAltura = altura - campoY - 10;
 
@@ -235,7 +244,9 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
      */
     const base = y + altura - alturaCarta / 2 - MARGEM_BASE;
 
-    const pilhaX = largura - larguraPilhas + 24;
+    // Encostadas na borda esquerda da faixa, com a mesma folga que a antiga
+    // fileira da direita tinha da borda oposta.
+    const pilhaX = 24;
     const col = (i: number) => pilhaX + CARD_W / 2 + i * (CARD_W + 14);
     /** Grade 2x2 do modo estreito: a fileira 1 é a que encosta na base. */
     const linha = (i: number) => base - (1 - i) * (alturaCarta + 22);
@@ -249,7 +260,7 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
       emFoco,
       escala: escalaDaFaixa(emFoco),
       campo: { x: campoX, y: campoY, largura: campoLargura, altura: campoAltura },
-      comando: { x: larguraComando / 2 + 8, y: base },
+      comando: { x: largura - larguraComando / 2 - 8, y: base },
       grimorio: estreito ? { x: col(0), y: linha(0) } : { x: col(0), y: base },
       cemiterio: estreito ? { x: col(1), y: linha(0) } : { x: col(1), y: base },
       exilio: estreito ? { x: col(0), y: linha(1) } : { x: col(2), y: base },
@@ -292,8 +303,8 @@ export function colunasDaGrade(jogadores: number): number {
  * As duas respondem a perguntas diferentes, e por isso arranjam as zonas de
  * formas diferentes.
  *
- * O EMPILHADO é para JOGAR: a sua faixa é larga e baixa, com o comando à
- * esquerda e as pilhas à direita, porque a mão está logo abaixo e o gesto que
+ * O EMPILHADO é para JOGAR: a sua faixa é larga e baixa, com as pilhas à
+ * esquerda e o comando à direita, porque a mão está logo abaixo e o gesto que
  * importa é mão → campo. Numa faixa de 1920x584 as zonas cabem nas pontas sem
  * roubar espaço do campo.
  *

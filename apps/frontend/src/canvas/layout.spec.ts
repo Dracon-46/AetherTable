@@ -49,10 +49,13 @@ describe('zona de comando', () => {
       const meiaLargura = (CARD_W * esc) / 2;
       const meiaAltura = (CARD_H * esc) / 2;
 
-      // Não pode vazar para a esquerda da mesa...
-      expect(faixa.comando.x - meiaLargura).toBeGreaterThanOrEqual(0);
-      // ...nem invadir o campo de batalha, que começa em `campo.x`.
-      expect(faixa.comando.x + meiaLargura).toBeLessThanOrEqual(faixa.campo.x);
+      // O comando vive na ponta DIREITA: não pode invadir o campo de batalha,
+      // que termina em `campo.x + campo.largura`...
+      expect(faixa.comando.x - meiaLargura).toBeGreaterThanOrEqual(
+        faixa.campo.x + faixa.campo.largura,
+      );
+      // ...nem vazar pela borda direita da mesa.
+      expect(faixa.comando.x + meiaLargura).toBeLessThanOrEqual(faixa.largura);
 
       // E tem de caber verticalmente na própria faixa.
       expect(faixa.comando.y - meiaAltura).toBeGreaterThanOrEqual(faixa.topo);
@@ -105,12 +108,27 @@ describe('zonas fixas ancoradas na base', () => {
 });
 
 describe('zonaSolta', () => {
-  it('a faixa da esquerda é a zona de comando', () => {
+  it('a faixa da direita é a zona de comando', () => {
     for (const { mesa } of cenarios) {
       for (const faixa of mesa.faixas) {
         expect(zonaSolta(faixa, faixa.comando.x, faixa.comando.y)).toBe('COMMAND');
-        expect(zonaSolta(faixa, 0, faixa.topo + 10)).toBe('COMMAND');
+        expect(zonaSolta(faixa, faixa.largura, faixa.topo + 10)).toBe('COMMAND');
       }
+    }
+  });
+
+  /**
+   * O pedido era o canto INFERIOR ESQUERDO para grimório, cemitério e exílio.
+   * Sem esta trava, mover as âncoras de volta para a direita passaria batido:
+   * o desenho segue as âncoras e `zonaSolta` segue as âncoras, então nada mais
+   * no código acusaria a troca de lado.
+   */
+  it.each(cenarios)('$nome: as pilhas ficam à esquerda e o comando à direita', ({ mesa }) => {
+    for (const faixa of mesa.faixas) {
+      for (const ancora of [faixa.grimorio, faixa.cemiterio, faixa.exilio, faixa.reserva]) {
+        expect(ancora.x).toBeLessThan(faixa.campo.x);
+      }
+      expect(faixa.comando.x).toBeGreaterThan(faixa.campo.x + faixa.campo.largura);
     }
   });
 
