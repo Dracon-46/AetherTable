@@ -62,6 +62,22 @@ if (corte < 0) {
 const raizPacote = entrada.slice(0, corte + marca.length);
 const codegen = join(raizPacote, 'bin/schema-codegen');
 
+/**
+ * Fim de linha não é divergência de schema.
+ *
+ * O prettier já normalizava aspas e quebras, mas emite LF; num clone no Windows
+ * o `core.autocrlf` entrega os arquivos do mirror com CRLF. A comparação de
+ * texto cru então acusava os CINCO schemas como defasados numa árvore recém
+ * clonada e intocada — `pnpm test` falhava na primeira execução, antes de
+ * qualquer alteração.
+ *
+ * É o mesmo alarme falso que o parágrafo abaixo descreve, pela mesma razão: o
+ * que o `@colyseus/schema` serializa é a ORDEM e o TIPO dos campos, e nenhum
+ * dos dois muda com o byte que termina a linha. Um guard que grita sem motivo
+ * ensina a ser ignorado justo quando tiver razão.
+ */
+const normalizar = (texto) => texto.replace(/\r\n/g, '\n');
+
 /** Config do prettier do repositório, resolvida a partir do destino do mirror. */
 const prettierConfig = (await resolveConfig(join(DESTINO, 'Player.ts'))) ?? {};
 
@@ -116,7 +132,7 @@ try {
       /* arquivo novo */
     }
 
-    if (atual === conteudo) continue;
+    if (atual !== null && normalizar(atual) === normalizar(conteudo)) continue;
 
     defasados.push(nome);
     if (!CHECK) {
