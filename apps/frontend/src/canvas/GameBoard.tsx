@@ -40,7 +40,7 @@ import type { RoomState } from '../net/schema/RoomState';
 import {
   CARD_W,
   CARD_H,
-  escalaDaFaixa,
+  montarGrade,
   montarMesa,
   posicaoNaMao,
   posicaoNoCampo,
@@ -890,10 +890,23 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
       return montarMesa([foco], foco);
     }
 
-    // Visão geral. Ordem visual: oponentes de cima para baixo, eu sempre por
-    // último — é como se vê uma mesa física da própria cadeira.
+    /**
+     * VISÃO GERAL = GRADE DE QUADRADOS.
+     *
+     * Eram faixas empilhadas: cada jogador uma tira de 1920 de largura por ~200
+     * de altura. Quatro tiras dão uma mesa de 1920x2100 — mais alta que larga,
+     * numa tela que é o contrário — e o que se via era uma lista, não uma mesa.
+     * A carta ficava com ~30px porque a escala é limitada pela altura.
+     *
+     * Em grade, quatro células de 933x933 cabem em 1920x1900, cada uma com o
+     * campo no meio e as zonas no rodapé — que é como uma mesa de verdade se
+     * organiza vista de cima, e é o arranjo que todo VTT de Commander usa.
+     *
+     * A ordem continua sendo "oponentes primeiro, eu por último": na grade isso
+     * põe o jogador local na célula inferior direita, que é a cadeira dele.
+     */
     const ordem = myId ? [...oponentes, myId] : oponentes;
-    return montarMesa(ordem.length ? ordem : ['—'], foco);
+    return montarGrade(ordem.length ? ordem : ['—'], foco);
   }, [players, myId, boardView, estreito]);
 
   /**
@@ -939,7 +952,10 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
       cosmeticosVisiveis(players[ownerId], ownerId === myId, cosmeticosDeOponentes).sleeveId;
 
     for (const faixa of mesa.faixas) {
-      const escalaFaixa = escalaDaFaixa(faixa.emFoco);
+      // A escala vem da CÉLULA, não do foco: na grade as células são iguais e o
+      // foco é só cor de borda. Derivar de `emFoco` aqui encolhia três das
+      // quatro células de uma grade que deveria ser uniforme.
+      const escalaFaixa = faixa.escala;
 
       // Campo de batalha: quem CONTROLA define a faixa. É a semântica correta —
       // roubar uma criatura a traz para o seu lado da mesa.
@@ -1093,8 +1109,40 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     [setZoneOwner, setInspectedZone],
   );
 
+  /**
+   * O MEU PLAYMAT É O FUNDO DA TELA, E NÃO UM RETÂNGULO DENTRO DELA.
+   *
+   * Ele era desenhado DENTRO da camada do Konva, recortado na minha faixa e
+   * sujeito à mesma escala e ao mesmo pan das cartas. Duas consequências:
+   * ocupava uma fração da tela (uma faixa entre outras) e, ao dar zoom, o
+   * "tapete" crescia junto e mostrava a costura nas bordas — que é justamente o
+   * contrário do que um tapete faz numa mesa.
+   *
+   * Aqui ele sai da camada desenhada e vira o fundo do contêiner: cobre a
+   * viewport inteira, e o zoom/pan da câmera passa a mexer só no tabuleiro que
+   * está POR CIMA dele. O tapete fica parado; as cartas é que se movem.
+   */
+  const meuPlaymat = useMemo(() => {
+    const cosmeticos = cosmeticosVisiveis(myId ? players[myId] : undefined, true, true);
+    const canvas = playmatCanvas(cosmeticos.playmatId);
+    // `toDataURL` roda uma vez por troca de playmat, não por quadro: o canvas é
+    // cacheado por id em `cosmetics/render.ts`.
+    return canvas ? canvas.toDataURL() : null;
+  }, [players, myId]);
+
   return (
     <div ref={containerRef} className="absolute inset-0">
+      {meuPlaymat && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: `url(${meuPlaymat})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+      )}
       {dims.w > 0 && dims.h > 0 && (
         <Stage
           width={dims.w}
@@ -1175,9 +1223,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     jogador com ~58% de escurecimento — visível no editor de
                     cosméticos, invisível na mesa. */}
                 <Rect
-                  x={6}
+                  x={r.faixa.esquerda + 6}
                   y={r.faixa.topo + 3}
-                  width={mesa.largura - 12}
+                  width={r.faixa.largura - 12}
                   height={r.faixa.altura - 6}
                   fill={r.faixa.emFoco ? COR_FAIXA_FOCO : COR_FAIXA}
                   cornerRadius={12}
@@ -1185,19 +1233,29 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 {/* Playmat: o fundo da área de jogo daquele jogador. Já vem com
                     o overlay preto a 40% embutido (DOC-060 §2.2), para a arte
                     nunca competir com a carta. */}
-                {r.playmat && (
+                {/* O playmat do OPONENTE fica na célula dele. O MEU não é
+                    desenhado aqui: ele virou o fundo fixo da tela inteira, atrás
+                    do tabuleiro — ver `<Playmat>` no fim deste arquivo. Desenhar
+                    nos dois lugares deixaria a minha célula com o playmat duas
+                    vezes, uma delas fora de escala. */}
+                {r.playmat && r.faixa.playerId !== myId && (
                   <Group
                     clipFunc={(ctx) => {
                       ctx.beginPath();
-                      ctx.rect(6, r.faixa.topo + 3, mesa.largura - 12, r.faixa.altura - 6);
+                      ctx.rect(
+                        r.faixa.esquerda + 6,
+                        r.faixa.topo + 3,
+                        r.faixa.largura - 12,
+                        r.faixa.altura - 6,
+                      );
                       ctx.closePath();
                     }}
                   >
                     <KonvaImage
                       image={r.playmat}
-                      x={6}
+                      x={r.faixa.esquerda + 6}
                       y={r.faixa.topo + 3}
-                      width={mesa.largura - 12}
+                      width={r.faixa.largura - 12}
                       height={r.faixa.altura - 6}
                       listening={false}
                     />
@@ -1223,9 +1281,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     de 3.5px na cor certa diz a mesma coisa e não invade o
                     tabuleiro. */}
                 <Rect
-                  x={6}
+                  x={r.faixa.esquerda + 6}
                   y={r.faixa.topo + 3}
-                  width={mesa.largura - 12}
+                  width={r.faixa.largura - 12}
                   height={r.faixa.altura - 6}
                   stroke={
                     r.faixa.playerId === activePlayerId
@@ -1262,13 +1320,17 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                         : 'rgba(255,255,255,0.4)'
                   }
                 />
-                <Mascote petId={r.petId} x={mesa.largura - 30} y={r.faixa.topo + 26} />
+                <Mascote
+                  petId={r.petId}
+                  x={r.faixa.esquerda + r.faixa.largura - 30}
+                  y={r.faixa.topo + 26}
+                />
               </Group>
             ))}
 
             {/* ── Pilhas por faixa ───────────────────────────────────────── */}
             {resumoFaixas.map((r) => {
-              const esc = escalaDaFaixa(r.faixa.emFoco);
+              const esc = r.faixa.escala;
               const meu = r.faixa.playerId === myId;
               return (
                 <Group key={`pilhas-${r.faixa.playerId}`}>
