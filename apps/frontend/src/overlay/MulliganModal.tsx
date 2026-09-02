@@ -43,15 +43,40 @@ export function MulliganModal({ room }: MulliganModalProps) {
   const [isSelectingBottom, setIsSelectingBottom] = React.useState(false);
   const [selectedCards, setSelectedCards] = React.useState<string[]>([]);
 
-  // Lê a decisão já tomada nesta sala (sobrevive a um F5).
+  const eu = myId ? players[myId] : undefined;
+  const keptHandNoServidor = eu?.keptHand;
+
+  /**
+   * Lê a decisão já tomada nesta sala — mas o SERVIDOR manda.
+   *
+   * O `sessionStorage` é indexado por `roomId`, e o `roomId` NÃO muda entre uma
+   * partida e a seguinte: `INTENT_RESET_MATCH` devolve a mesa para a sala de
+   * espera reabrindo a janela (zera `keptHand` e `mulliganCount`), mas a chave
+   * `aether:kept-hand:<roomId>` continuava marcada de antes. Na segunda partida
+   * da mesma sala o modal nunca mais abria — da cadeira do jogador, "o mulligan
+   * parou de funcionar", sem erro nenhum no console.
+   *
+   * Por isso o reforço local é DESCARTADO assim que o servidor diz que a janela
+   * está aberta. Ele continua cobrindo o caso para o qual existe — o F5 no meio
+   * da decisão, antes de o estado chegar — e deixa de sobreviver a ela.
+   */
   React.useEffect(() => {
     if (!roomId) return;
+    if (keptHandNoServidor === false) {
+      try {
+        sessionStorage.removeItem(chaveDecisao(roomId));
+      } catch {
+        /* sessionStorage indisponível — o estado em memória já basta */
+      }
+      setDecidiu(false);
+      return;
+    }
     try {
       setDecidiu(sessionStorage.getItem(chaveDecisao(roomId)) === '1');
     } catch {
       setDecidiu(false);
     }
-  }, [roomId]);
+  }, [roomId, keptHandNoServidor]);
 
   const registrarDecisao = React.useCallback(() => {
     try {
@@ -66,7 +91,6 @@ export function MulliganModal({ room }: MulliganModalProps) {
     setDecidiu(true);
   }, [roomId, room]);
 
-  const eu = myId ? players[myId] : undefined;
   const mulliganCount = eu?.mulliganCount ?? 0;
   /**
    * A decisão agora vive no SERVIDOR (`Player.keptHand`).
