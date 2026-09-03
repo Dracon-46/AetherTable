@@ -108,11 +108,56 @@ describe('zonas fixas ancoradas na base', () => {
 });
 
 describe('zonaSolta', () => {
-  it('a faixa da direita é a zona de comando', () => {
+  it('soltar sobre o slot de comando manda para a zona de comando', () => {
     for (const { mesa } of cenarios) {
       for (const faixa of mesa.faixas) {
         expect(zonaSolta(faixa, faixa.comando.x, faixa.comando.y)).toBe('COMMAND');
-        expect(zonaSolta(faixa, faixa.largura, faixa.topo + 10)).toBe('COMMAND');
+      }
+    }
+  });
+
+  /**
+   * ─── A COLUNA INTEIRA NÃO PERTENCE MAIS À ZONA ───────────────────────────
+   *
+   * Antes, tudo que caísse fora do retângulo do campo era atribuído à âncora
+   * MAIS PRÓXIMA — sem limite de distância. O canto superior direito, a dez
+   * pixels do topo da faixa, virava zona de comando; a margem esquerda virava
+   * exílio. O jogador soltava a carta perto de uma borda e ela sumia da mesa
+   * para uma zona que nada na tela tinha indicado.
+   *
+   * Agora o destino padrão é o inofensivo: não acertou um slot, é campo — e o
+   * clamp de `posicaoNoCampo` traz a carta de volta para dentro.
+   */
+  it('soltar LONGE de qualquer slot é campo, não a zona mais próxima', () => {
+    for (const { mesa } of cenarios) {
+      for (const faixa of mesa.faixas) {
+        // Canto superior direito: era COMMAND por proximidade.
+        expect(zonaSolta(faixa, faixa.esquerda + faixa.largura, faixa.topo + 10)).toBe(
+          'BATTLEFIELD',
+        );
+        // Canto superior esquerdo: era LIBRARY por proximidade.
+        expect(zonaSolta(faixa, faixa.esquerda, faixa.topo + 10)).toBe('BATTLEFIELD');
+      }
+    }
+  });
+
+  /**
+   * A COLUNA de um slot não pertence a ele.
+   *
+   * Este é o caso que produzia o sumiço: a carta era solta no alto da faixa,
+   * alinhada com uma pilha, e ia parar nela. Alinhamento horizontal não é
+   * intenção — o jogador tem de soltar SOBRE o slot.
+   *
+   * A altura escolhida é o topo da faixa porque ela é a mesma nos três
+   * arranjos: no estreito as pilhas ficam em 2x2, então "uma carta acima do
+   * exílio" é o grimório, e a asserção precisaria conhecer o arranjo.
+   */
+  it('estar alinhado com um slot não basta: a coluna dele não é dele', () => {
+    for (const { mesa } of cenarios) {
+      for (const faixa of mesa.faixas) {
+        expect(zonaSolta(faixa, faixa.exilio.x, faixa.topo + 10)).toBe('BATTLEFIELD');
+        expect(zonaSolta(faixa, faixa.grimorio.x, faixa.topo + 10)).toBe('BATTLEFIELD');
+        expect(zonaSolta(faixa, faixa.comando.x, faixa.topo + 10)).toBe('BATTLEFIELD');
       }
     }
   });
@@ -156,10 +201,14 @@ describe('zonaSolta', () => {
 
   it('a reserva nunca é destino de arrasto', () => {
     // É zona oculta: cair nela por imprecisão sumiria com a carta da mesa.
+    //
+    // Antes o arrasto sobre a reserva era desviado para a pilha vizinha — o que
+    // resolvia o sumiço, mas mandava a carta para um lugar que o jogador também
+    // não pediu. Agora cai no campo, que é onde ela fica VISÍVEL e de onde dá
+    // para tentar de novo.
     for (const { mesa } of cenarios) {
       for (const faixa of mesa.faixas) {
-        const destino = zonaSolta(faixa, faixa.reserva.x, faixa.reserva.y);
-        expect(['LIBRARY', 'GRAVEYARD', 'EXILE']).toContain(destino);
+        expect(zonaSolta(faixa, faixa.reserva.x, faixa.reserva.y)).toBe('BATTLEFIELD');
       }
     }
   });

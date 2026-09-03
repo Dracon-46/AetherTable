@@ -461,27 +461,40 @@ export type ZonaDeSoltura = 'COMMAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE' | 'BAT
  * A reserva não é destino: é zona oculta e de pré-jogo, e cair nela por um
  * arrasto impreciso esconderia a carta da mesa inteira.
  */
+/**
+ * Folga em volta do slot. Pequena de propósito: é o "quase acertei" do arrasto,
+ * não uma área de captura. Menor que metade do vão entre dois slots
+ * (`CARD_W + 14`), então dois destinos nunca disputam o mesmo pixel.
+ */
+const TOLERANCIA_DE_SOLTURA = 6;
+
 export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
-  const { campo } = faixa;
-  const campoX = faixa.esquerda + campo.x;
-  const campoY = faixa.topo + campo.y;
+  /**
+   * SÓ PEGA QUEM SOLTOU EM CIMA DA ZONA.
+   *
+   * ─── O QUE ESTAVA ERRADO ───────────────────────────────────────────────
+   *
+   * A regra anterior era "dentro do retângulo do campo é campo; FORA dele,
+   * vale a âncora mais próxima". O `fora` não tinha limite: a margem da faixa,
+   * o vão entre o campo e as pilhas, a tira acima do rótulo — tudo caía no
+   * `else` e era atribuído a alguma zona, por mais longe que ela estivesse.
+   *
+   * Na prática o exílio (e qualquer slot de ponta) virava um ímã: soltar uma
+   * carta perto da borda da faixa a mandava para lá, sem que nada na tela
+   * tivesse indicado o destino. Da cadeira do jogador isso é a mesa comendo a
+   * carta — o pior tipo de defeito, porque some com a peça e ainda parece
+   * intencional.
+   *
+   * Agora cada zona tem a área do PRÓPRIO slot, mais uma folga de alguns
+   * pixels. Não acertou nenhuma? É campo de batalha, e `posicaoNoCampo` traz a
+   * carta de volta para dentro. O destino padrão passa a ser o inofensivo.
+   */
+  const meiaLargura = (CARD_W * faixa.escala) / 2 + TOLERANCIA_DE_SOLTURA;
+  const meiaAltura = (CARD_H * faixa.escala) / 2 + TOLERANCIA_DE_SOLTURA;
 
-  // Dentro do retângulo do campo (bordas inclusive) é campo de batalha. Fora
-  // dele, vale a âncora mais próxima.
-  //
-  // ─── POR QUE DISTÂNCIA, E NÃO RETÂNGULOS ────────────────────────────────
-  //
-  // As mesmas cinco zonas são arranjadas de três formas: comando à esquerda e
-  // pilhas à direita (empilhado), grade 2x2 (tela estreita) e fileira no rodapé
-  // (grade). Com retângulos, cada arranjo precisaria da sua própria conta — e
-  // mover uma âncora em `montarMesa` deixaria a área de acerto para trás, em
-  // silêncio. A distância acompanha a âncora de graça.
-  const dentro =
-    x >= campoX && x <= campoX + campo.largura && y >= campoY && y <= campoY + campo.altura;
-  if (dentro) return 'BATTLEFIELD';
-
-  // A reserva não é destino: é zona oculta e de pré-jogo, e cair nela por um
-  // arrasto impreciso esconderia a carta da mesa inteira.
+  // A reserva NÃO entra: é zona oculta e de pré-jogo, e cair nela por um
+  // arrasto impreciso esconderia a carta da mesa inteira. Soltar sobre ela é
+  // soltar no campo.
   const alvos: Array<[ZonaDeSoltura, Ponto]> = [
     ['COMMAND', faixa.comando],
     ['LIBRARY', faixa.grimorio],
@@ -489,14 +502,11 @@ export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
     ['EXILE', faixa.exilio],
   ];
 
-  let zona: ZonaDeSoltura = 'GRAVEYARD';
-  let menor = Number.POSITIVE_INFINITY;
-  for (const [candidata, ancora] of alvos) {
-    const distancia = Math.hypot(ancora.x - x, ancora.y - y);
-    if (distancia < menor) {
-      menor = distancia;
-      zona = candidata;
+  for (const [zona, ancora] of alvos) {
+    if (Math.abs(x - ancora.x) <= meiaLargura && Math.abs(y - ancora.y) <= meiaAltura) {
+      return zona;
     }
   }
-  return zona;
+
+  return 'BATTLEFIELD';
 }

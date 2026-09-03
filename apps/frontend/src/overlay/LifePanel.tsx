@@ -141,16 +141,43 @@ function PlayerCard({
     setShowMenu(true);
   }, [showMenu]);
 
-  // Rolar a coluna ou redimensionar a janela deixaria o menu para trás, preso
-  // na coordenada antiga. Mais honesto fechá-lo do que exibi-lo desalinhado.
+  /**
+   * Rolar a coluna ou redimensionar a janela deixaria o menu para trás, preso
+   * na coordenada antiga (ele é `fixed`, posicionado à mão). Mais honesto
+   * fechá-lo do que exibi-lo desalinhado.
+   *
+   * ─── MAS SÓ QUANDO A ROLAGEM O AFETA ───────────────────────────────────
+   *
+   * O listener era `scroll` com `capture: true`, o que pega QUALQUER rolagem
+   * de QUALQUER elemento da página. E o log da mesa se auto-rola para o fim a
+   * cada linha nova — ou seja, a cada ação de qualquer jogador.
+   *
+   * O resultado: ajustar contadores era quase impossível. Cada clique em
+   * "+veneno" gerava uma linha de log, o log rolava, o evento subia capturado,
+   * e o menu fechava na cara do jogador. Quem tentava chegar a dez marcadores
+   * reabria o menu dez vezes — e foi assim que o teste de veneno parou em 8.
+   *
+   * A rolagem só desloca o menu se aconteceu num ANCESTRAL do botão que o
+   * ancora. O log não é ancestral de nada aqui; a coluna de vida e o documento
+   * são.
+   */
   useEffect(() => {
     if (!showMenu) return;
     const fechar = () => setShowMenu(false);
+    const fecharSeDeslocou = (e: Event) => {
+      const alvo = e.target;
+      const botao = botaoRef.current;
+      if (!botao) return;
+      // `document` não é `Node.contains`-ável a partir de si mesmo em todos os
+      // casos, mas rolagem de documento move tudo: fecha.
+      if (alvo === document || alvo === window) return fechar();
+      if (alvo instanceof Node && alvo.contains(botao)) fechar();
+    };
     window.addEventListener('resize', fechar);
-    window.addEventListener('scroll', fechar, true);
+    window.addEventListener('scroll', fecharSeDeslocou, true);
     return () => {
       window.removeEventListener('resize', fechar);
-      window.removeEventListener('scroll', fechar, true);
+      window.removeEventListener('scroll', fecharSeDeslocou, true);
     };
   }, [showMenu]);
 

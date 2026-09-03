@@ -60,25 +60,6 @@ export function FimDeJogo() {
 
   const mostrarDerrota = Boolean(eu?.eliminated) && !acabou && dispensado !== eu?.eliminationReason;
 
-  // SONDA TEMPORARIA
-  if (typeof window !== 'undefined') {
-    console.log(
-      'FIMDEJOGO',
-      JSON.stringify({
-        myId,
-        temEu: Boolean(eu),
-        eliminated: eu?.eliminated,
-        reason: eu?.eliminationReason,
-        phase,
-        vivos: vivos.length,
-        total: Object.keys(players).length,
-        acabou,
-        dispensado,
-        mostrarDerrota,
-      }),
-    );
-  }
-
   if (acabou && vencedor) {
     const venci = vencedor.id === myId;
     return (
