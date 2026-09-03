@@ -54,7 +54,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ConfirmDialog, ToastHost, useToast } from '../../../../components/Toast';
 import { CardSearch } from '../../../../deckbuilder/CardSearch';
 import { PrintingPicker } from '../../../../deckbuilder/PrintingPicker';
-import { useAuthStore } from '../../../../store/auth.store';
 import {
   COLUNAS_DA_GALERIA,
   useAparencia,
@@ -136,7 +135,6 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const { id } = use(params);
   const searchParams = useSearchParams();
-  const { accessToken } = useAuthStore();
   const avisar = useToast((s) => s.mostrar);
 
   const { data: deck, isPending, isError } = useDeck(id);
@@ -627,11 +625,10 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
           </section>
         </div>
 
-        {cartaParaArte && accessToken && (
+        {cartaParaArte && (
           <PrintingPicker
             card={cartaParaArte}
             deckId={deck.id}
-            accessToken={accessToken}
             onClose={() => setCartaParaArte(null)}
             onSuccess={() => {
               // O `PrintingPicker` grava direto na API (troca a impressão da
