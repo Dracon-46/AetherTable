@@ -97,6 +97,15 @@ interface CardSpriteProps {
   meta: CardMeta | null;
   room: Room<RoomState>;
   isSelected: boolean;
+  /**
+   * Interpolar o movimento entre patches. Vem de UMA media query, medida no
+   * `GameBoard` — antes cada sprite chamava `useMovimentoReduzido()`, o que
+   * criava um listener de `matchMedia` POR CARTA: cem cartas na mesa eram cem
+   * assinaturas do sistema operacional para responder à mesma pergunta.
+   */
+  interpolar: boolean;
+  /** Sombra por carta — o item mais caro do quadro num Canvas cheio. */
+  sombras: boolean;
   onContextMenu: (cardId: string, x: number, y: number) => void;
   onInspect: (scryfallId: string) => void;
   onAlvo: ((cardId: string) => void) | null;
@@ -104,399 +113,472 @@ interface CardSpriteProps {
   onHover: (cardId: string | null) => void;
 }
 
-const CardSprite = React.memo(function CardSprite({
-  item,
-  meta,
-  room,
-  isSelected,
-  onContextMenu,
-  onInspect,
-  onAlvo,
-  onSelecionar,
-  onHover,
-}: CardSpriteProps) {
-  const { card, pos, faixa, arrastavel, frente, face, escala, sleeveId } = item;
-  const myId = useGameStore((s) => s.mySessionId);
-  const isController = card.controllerId === myId;
-  const isLocked = Boolean(card.lockedBy) && card.lockedBy !== myId;
-  const isDraggingMe = card.lockedBy === myId;
+const CardSprite = React.memo(
+  function CardSprite({
+    item,
+    meta,
+    room,
+    isSelected,
+    interpolar,
+    sombras,
+    onContextMenu,
+    onInspect,
+    onAlvo,
+    onSelecionar,
+    onHover,
+  }: CardSpriteProps) {
+    const { card, pos, faixa, arrastavel, frente, face, escala, sleeveId } = item;
+    const myId = useGameStore((s) => s.mySessionId);
+    const isController = card.controllerId === myId;
+    const isLocked = Boolean(card.lockedBy) && card.lockedBy !== myId;
+    const isDraggingMe = card.lockedBy === myId;
 
-  const w = CARD_W * escala;
-  const h = CARD_H * escala;
+    const w = CARD_W * escala;
+    const h = CARD_H * escala;
 
-  const [imgEl, setImgEl] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
+    const [imgEl, setImgEl] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
 
-  useEffect(() => {
-    // Carta oculta mostra o SLEEVE, desenhado localmente. Nada de rede, e
-    // nada de arte da WotC (DOC-060 §2.1).
-    if (!frente || !card.scryfallId) {
-      setImgEl(sleeveCanvas(sleeveId));
-      return;
-    }
-
-    let active = true;
-    const alvo = getTexture(card.scryfallId, 'normal', face === 1 ? 'back' : 'front');
-
-    if (alvo.complete) {
-      // DOC-060 §4: a mesa nunca fica sem verso enquanto a arte carrega.
-      setImgEl(alvo.naturalWidth > 0 ? alvo : sleeveCanvas(sleeveId));
-      return;
-    }
-
-    setImgEl(null);
-    const onLoad = () => {
-      if (active && alvo.naturalWidth > 0) setImgEl(alvo);
-    };
-    alvo.addEventListener('load', onLoad);
-    return () => {
-      active = false;
-      alvo.removeEventListener('load', onLoad);
-    };
-  }, [card.scryfallId, frente, face, sleeveId]);
-
-  const rotation = card.isTapped ? 90 : (card.rotation ?? 0);
-  const [drag, setDrag] = useState<Ponto | null>(null);
-  const visivel = drag ?? pos;
-
-  /**
-   * MOVIMENTO INTERPOLADO.
-   *
-   * Sem isto a carta TELEPORTA: uma compra, um mulligan ou um efeito que move
-   * seis permanentes de uma vez viram um piscar de posições, e é impossível
-   * acompanhar o que saiu de onde. O patch do Colyseus chega a 20 Hz — a
-   * interpolação é o que transforma esses saltos em movimento.
-   *
-   * Nunca interpola o que o PRÓPRIO jogador está arrastando: ali a carta tem de
-   * seguir o dedo sem atraso.
-   */
-  const grupoRef = useRef<Konva.Group>(null);
-  const reduzido = useMovimentoReduzido();
-
-  useEffect(() => {
-    const node = grupoRef.current;
-    if (!node || drag) return;
-
-    const alvo = { x: pos.x, y: pos.y, rotation };
-    const distancia = Math.hypot(node.x() - alvo.x, node.y() - alvo.y);
-
-    if (reduzido || distancia < 1) {
-      node.position({ x: alvo.x, y: alvo.y });
-      node.rotation(alvo.rotation);
-      return;
-    }
-
-    // Percursos longos (mão → campo) ganham um pouco mais de tempo; ajustes
-    // finos continuam instantâneos ao olho.
-    const duracao = Math.min(0.34, 0.12 + distancia / 2600);
-    node.to({ ...alvo, duration: duracao, easing: Konva.Easings.EaseOut });
-  }, [pos.x, pos.y, rotation, drag, reduzido]);
-
-  const handleDragStart = useCallback(
-    (e: Konva.KonvaEventObject<DragEvent>) => {
-      if (!isController || !arrastavel) {
-        e.target.stopDrag();
-        return;
-      }
-      intents.grab(room, card.id);
-    },
-    [room, card.id, isController, arrastavel],
-  );
-
-  const handleDragMove = useCallback(
-    (e: Konva.KonvaEventObject<DragEvent>) => {
-      const x = Math.round(e.target.x());
-      const y = Math.round(e.target.y());
-      setDrag({ x, y });
-      if (!faixa) return;
-      const rel = paraCoordenadaRelativa(faixa, x, y);
-      intents.moveCard(room, card.id, rel.x, rel.y);
-    },
-    [room, card.id, faixa],
-  );
-
-  const handleDragEnd = useCallback(
-    (e: Konva.KonvaEventObject<DragEvent>) => {
-      const x = Math.round(e.target.x());
-      const y = Math.round(e.target.y());
-      setDrag(null);
-
-      const minhaFaixa = faixa;
-      // Soltar abaixo da última faixa = faixa de mão.
-      const naMao = minhaFaixa ? y > minhaFaixa.topo + minhaFaixa.altura : true;
-
-      if (naMao && card.zone !== 'HAND') {
-        intents.changeZone(room, card.id, 'HAND');
-        return;
-      }
-      if (!minhaFaixa) return;
-
-      // Quem decide a zona é a geometria — ver `zonaSolta` em layout.ts. Antes
-      // daqui só existiam mão e campo: soltar sobre o cemitério, o exílio, o
-      // grimório ou a zona de comando caía no ramo do campo, e o clamp de
-      // `posicaoNoCampo` devolvia a carta para o meio da mesa.
-      const destino = zonaSolta(minhaFaixa, x, y);
-
-      if (destino !== 'BATTLEFIELD') {
-        if (card.zone !== destino) intents.changeZone(room, card.id, destino);
+    useEffect(() => {
+      // Carta oculta mostra o SLEEVE, desenhado localmente. Nada de rede, e
+      // nada de arte da WotC (DOC-060 §2.1).
+      if (!frente || !card.scryfallId) {
+        setImgEl(sleeveCanvas(sleeveId));
         return;
       }
 
-      const rel = paraCoordenadaRelativa(minhaFaixa, x, y);
-      if (card.zone !== 'BATTLEFIELD')
-        intents.changeZone(room, card.id, 'BATTLEFIELD', rel.x, rel.y);
-      else intents.release(room, card.id, rel.x, rel.y);
-    },
-    [room, card.id, card.zone, faixa],
-  );
+      let active = true;
+      const alvo = getTexture(card.scryfallId, 'normal', face === 1 ? 'back' : 'front');
 
-  const handleClick = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-      const evt = e.evt as MouseEvent;
-      if (evt.button === 2) return;
-
-      if (onAlvo) {
-        onAlvo(card.id);
+      if (alvo.complete) {
+        // DOC-060 §4: a mesa nunca fica sem verso enquanto a arte carrega.
+        setImgEl(alvo.naturalWidth > 0 ? alvo : sleeveCanvas(sleeveId));
         return;
       }
 
-      if (evt.altKey) {
-        if (card.scryfallId) onInspect(card.scryfallId);
+      setImgEl(null);
+      const onLoad = () => {
+        if (active && alvo.naturalWidth > 0) setImgEl(alvo);
+      };
+      alvo.addEventListener('load', onLoad);
+      return () => {
+        active = false;
+        alvo.removeEventListener('load', onLoad);
+      };
+    }, [card.scryfallId, frente, face, sleeveId]);
+
+    const rotation = card.isTapped ? 90 : (card.rotation ?? 0);
+    const [drag, setDrag] = useState<Ponto | null>(null);
+    const visivel = drag ?? pos;
+
+    /**
+     * MOVIMENTO INTERPOLADO.
+     *
+     * Sem isto a carta TELEPORTA: uma compra, um mulligan ou um efeito que move
+     * seis permanentes de uma vez viram um piscar de posições, e é impossível
+     * acompanhar o que saiu de onde. O patch do Colyseus chega a 20 Hz — a
+     * interpolação é o que transforma esses saltos em movimento.
+     *
+     * Nunca interpola o que o PRÓPRIO jogador está arrastando: ali a carta tem de
+     * seguir o dedo sem atraso.
+     */
+    const grupoRef = useRef<Konva.Group>(null);
+
+    useEffect(() => {
+      const node = grupoRef.current;
+      if (!node || drag) return;
+
+      const alvo = { x: pos.x, y: pos.y, rotation };
+      const distancia = Math.hypot(node.x() - alvo.x, node.y() - alvo.y);
+
+      if (!interpolar || distancia < 1) {
+        node.position({ x: alvo.x, y: alvo.y });
+        node.rotation(alvo.rotation);
         return;
       }
 
-      if (evt.shiftKey || evt.ctrlKey || evt.metaKey) {
-        onSelecionar(card.id, true);
-        return;
-      }
+      // Percursos longos (mão → campo) ganham um pouco mais de tempo; ajustes
+      // finos continuam instantâneos ao olho.
+      const duracao = Math.min(0.34, 0.12 + distancia / 2600);
+      node.to({ ...alvo, duration: duracao, easing: Konva.Easings.EaseOut });
+    }, [pos.x, pos.y, rotation, drag, interpolar]);
 
-      if (evt.detail === 2 && isController && card.zone === 'BATTLEFIELD') {
-        intents.tap(room, card.id, !card.isTapped);
-        return;
-      }
+    const handleDragStart = useCallback(
+      (e: Konva.KonvaEventObject<DragEvent>) => {
+        if (!isController || !arrastavel) {
+          e.target.stopDrag();
+          return;
+        }
+        intents.grab(room, card.id);
+      },
+      [room, card.id, isController, arrastavel],
+    );
 
-      onSelecionar(card.id, false);
-    },
-    [
-      room,
-      card.id,
-      card.scryfallId,
-      card.isTapped,
-      card.zone,
-      isController,
-      onInspect,
-      onAlvo,
-      onSelecionar,
-    ],
-  );
+    const handleDragMove = useCallback(
+      (e: Konva.KonvaEventObject<DragEvent>) => {
+        const x = Math.round(e.target.x());
+        const y = Math.round(e.target.y());
+        setDrag({ x, y });
+        if (!faixa) return;
+        const rel = paraCoordenadaRelativa(faixa, x, y);
+        intents.moveCard(room, card.id, rel.x, rel.y);
+      },
+      [room, card.id, faixa],
+    );
 
-  const handleRightClick = useCallback(
-    (e: Konva.KonvaEventObject<PointerEvent>) => {
-      e.evt.preventDefault();
-      const p = e.target.getStage()?.getPointerPosition();
-      if (p) onContextMenu(card.id, p.x, p.y);
-    },
-    [card.id, onContextMenu],
-  );
+    const handleDragEnd = useCallback(
+      (e: Konva.KonvaEventObject<DragEvent>) => {
+        const x = Math.round(e.target.x());
+        const y = Math.round(e.target.y());
+        setDrag(null);
 
-  const faceMeta = meta?.faces[face] ?? meta?.faces[0];
-  const ptImpresso =
-    faceMeta?.power && faceMeta?.toughness ? `${faceMeta.power}/${faceMeta.toughness}` : null;
-  const ptExibido = card.hasPtOverride
-    ? `${card.powerOverride}/${card.toughnessOverride}`
-    : ptImpresso;
+        const minhaFaixa = faixa;
+        // Soltar abaixo da última faixa = faixa de mão.
+        const naMao = minhaFaixa ? y > minhaFaixa.topo + minhaFaixa.altura : true;
 
-  return (
-    <Group
-      ref={grupoRef}
-      x={visivel.x}
-      y={visivel.y}
-      draggable={arrastavel && isController && !isLocked}
-      rotation={rotation}
-      offsetX={w / 2}
-      offsetY={h / 2}
-      onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
-      onDragEnd={handleDragEnd}
-      onClick={handleClick}
-      onTap={handleClick}
-      onContextMenu={handleRightClick}
-      onMouseEnter={() => onHover(card.id)}
-      onMouseLeave={() => onHover(null)}
-      opacity={card.phasedOut ? 0.4 : 1}
-    >
-      <Rect
-        width={w}
-        height={h}
-        fill={frente ? '#1e1e2e' : '#2a2a3a'}
-        cornerRadius={6}
-        shadowColor="black"
-        shadowBlur={isDraggingMe ? 20 : 6}
-        shadowOpacity={isDraggingMe ? 0.8 : 0.4}
-        shadowOffsetY={isDraggingMe ? 8 : 3}
-        perfectDrawEnabled={false}
-      />
+        if (naMao && card.zone !== 'HAND') {
+          intents.changeZone(room, card.id, 'HAND');
+          return;
+        }
+        if (!minhaFaixa) return;
 
-      {imgEl && (
-        <KonvaImage
-          image={imgEl}
+        // Quem decide a zona é a geometria — ver `zonaSolta` em layout.ts. Antes
+        // daqui só existiam mão e campo: soltar sobre o cemitério, o exílio, o
+        // grimório ou a zona de comando caía no ramo do campo, e o clamp de
+        // `posicaoNoCampo` devolvia a carta para o meio da mesa.
+        const destino = zonaSolta(minhaFaixa, x, y);
+
+        if (destino !== 'BATTLEFIELD') {
+          if (card.zone !== destino) intents.changeZone(room, card.id, destino);
+          return;
+        }
+
+        const rel = paraCoordenadaRelativa(minhaFaixa, x, y);
+        if (card.zone !== 'BATTLEFIELD')
+          intents.changeZone(room, card.id, 'BATTLEFIELD', rel.x, rel.y);
+        else intents.release(room, card.id, rel.x, rel.y);
+      },
+      [room, card.id, card.zone, faixa],
+    );
+
+    const handleClick = useCallback(
+      (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+        const evt = e.evt as MouseEvent;
+        if (evt.button === 2) return;
+
+        if (onAlvo) {
+          onAlvo(card.id);
+          return;
+        }
+
+        if (evt.altKey) {
+          if (card.scryfallId) onInspect(card.scryfallId);
+          return;
+        }
+
+        if (evt.shiftKey || evt.ctrlKey || evt.metaKey) {
+          onSelecionar(card.id, true);
+          return;
+        }
+
+        if (evt.detail === 2 && isController && card.zone === 'BATTLEFIELD') {
+          intents.tap(room, card.id, !card.isTapped);
+          return;
+        }
+
+        onSelecionar(card.id, false);
+      },
+      [
+        room,
+        card.id,
+        card.scryfallId,
+        card.isTapped,
+        card.zone,
+        isController,
+        onInspect,
+        onAlvo,
+        onSelecionar,
+      ],
+    );
+
+    const handleRightClick = useCallback(
+      (e: Konva.KonvaEventObject<PointerEvent>) => {
+        e.evt.preventDefault();
+        const p = e.target.getStage()?.getPointerPosition();
+        if (p) onContextMenu(card.id, p.x, p.y);
+      },
+      [card.id, onContextMenu],
+    );
+
+    const faceMeta = meta?.faces[face] ?? meta?.faces[0];
+    const ptImpresso =
+      faceMeta?.power && faceMeta?.toughness ? `${faceMeta.power}/${faceMeta.toughness}` : null;
+    const ptExibido = card.hasPtOverride
+      ? `${card.powerOverride}/${card.toughnessOverride}`
+      : ptImpresso;
+
+    return (
+      <Group
+        ref={grupoRef}
+        x={visivel.x}
+        y={visivel.y}
+        draggable={arrastavel && isController && !isLocked}
+        rotation={rotation}
+        offsetX={w / 2}
+        offsetY={h / 2}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragEnd={handleDragEnd}
+        onClick={handleClick}
+        onTap={handleClick}
+        onContextMenu={handleRightClick}
+        onMouseEnter={() => onHover(card.id)}
+        onMouseLeave={() => onHover(null)}
+        opacity={card.phasedOut ? 0.4 : 1}
+      >
+        <Rect
           width={w}
           height={h}
+          fill={frente ? '#1e1e2e' : '#2a2a3a'}
           cornerRadius={6}
+          /* A sombra da carta ARRASTADA sobrevive em qualquer qualidade: ela é o
+           que diz "esta está na sua mão agora" e é uma carta só. O que sai em
+           qualidade reduzida é a sombra de repouso, que é por carta — e num
+           campo de batalha cheio, dezenas de blurs por quadro. */
+          shadowColor={sombras || isDraggingMe ? 'black' : undefined}
+          shadowBlur={isDraggingMe ? 20 : sombras ? 6 : 0}
+          shadowOpacity={isDraggingMe ? 0.8 : sombras ? 0.4 : 0}
+          shadowOffsetY={isDraggingMe ? 8 : sombras ? 3 : 0}
           perfectDrawEnabled={false}
-          listening={false}
         />
-      )}
 
-      {/* Enquanto a textura não chega, o NOME já dá para jogar. Antes ficava
+        {imgEl && (
+          <KonvaImage
+            image={imgEl}
+            width={w}
+            height={h}
+            cornerRadius={6}
+            perfectDrawEnabled={false}
+            listening={false}
+          />
+        )}
+
+        {/* Enquanto a textura não chega, o NOME já dá para jogar. Antes ficava
           um retângulo com "…" e ninguém sabia o que era a carta. */}
-      {!imgEl && frente && (
-        <Text
-          text={faceMeta?.name ?? '…'}
-          width={w - 10}
-          height={h}
-          x={5}
-          align="center"
-          verticalAlign="middle"
-          fill="#94A3B8"
-          fontSize={11 * escala}
-          listening={false}
-        />
-      )}
-
-      {isLocked && (
-        <Rect width={w} height={h} fill="rgba(239,68,68,0.25)" cornerRadius={6} listening={false} />
-      )}
-
-      {isSelected && (
-        <Rect
-          width={w}
-          height={h}
-          stroke="#3B82F6"
-          strokeWidth={3}
-          cornerRadius={6}
-          fill="rgba(59,130,246,0.12)"
-          listening={false}
-        />
-      )}
-
-      {card.highlight && (
-        <Rect
-          width={w}
-          height={h}
-          stroke={card.highlight}
-          strokeWidth={3}
-          cornerRadius={6}
-          listening={false}
-        />
-      )}
-
-      {/* Marcadores nomeados */}
-      {Object.entries(card.counters ?? {}).map(([name, value], idx) => (
-        <Group key={name} x={4 + idx * 24 * escala} y={h - 20 * escala} listening={false}>
-          <Circle
-            radius={10 * escala}
-            fill={name.includes('+1') ? '#22C55E' : name.includes('-1') ? '#EF4444' : '#3B82F6'}
-          />
+        {!imgEl && frente && (
           <Text
-            text={String(value)}
-            fontSize={9 * escala}
-            fill="white"
-            width={20 * escala}
-            height={20 * escala}
-            offsetX={10 * escala}
-            offsetY={10 * escala}
+            text={faceMeta?.name ?? '…'}
+            width={w - 10}
+            height={h}
+            x={5}
             align="center"
             verticalAlign="middle"
+            fill="#94A3B8"
+            fontSize={11 * escala}
+            listening={false}
           />
-        </Group>
-      ))}
+        )}
 
-      {/* P/T: o sobreposto vence o impresso, e a cor diz qual dos dois é. */}
-      {ptExibido && card.zone === 'BATTLEFIELD' && frente && (
-        <Group x={w / 2} y={h - 11 * escala} listening={false}>
+        {isLocked && (
           <Rect
-            x={-24 * escala}
-            y={-10 * escala}
-            width={48 * escala}
-            height={20 * escala}
-            fill="rgba(0,0,0,0.82)"
-            cornerRadius={5}
+            width={w}
+            height={h}
+            fill="rgba(239,68,68,0.25)"
+            cornerRadius={6}
+            listening={false}
           />
+        )}
+
+        {isSelected && (
+          <Rect
+            width={w}
+            height={h}
+            stroke="#3B82F6"
+            strokeWidth={3}
+            cornerRadius={6}
+            fill="rgba(59,130,246,0.12)"
+            listening={false}
+          />
+        )}
+
+        {card.highlight && (
+          <Rect
+            width={w}
+            height={h}
+            stroke={card.highlight}
+            strokeWidth={3}
+            cornerRadius={6}
+            listening={false}
+          />
+        )}
+
+        {/* Marcadores nomeados */}
+        {Object.entries(card.counters ?? {}).map(([name, value], idx) => (
+          <Group key={name} x={4 + idx * 24 * escala} y={h - 20 * escala} listening={false}>
+            <Circle
+              radius={10 * escala}
+              fill={name.includes('+1') ? '#22C55E' : name.includes('-1') ? '#EF4444' : '#3B82F6'}
+            />
+            <Text
+              text={String(value)}
+              fontSize={9 * escala}
+              fill="white"
+              width={20 * escala}
+              height={20 * escala}
+              offsetX={10 * escala}
+              offsetY={10 * escala}
+              align="center"
+              verticalAlign="middle"
+            />
+          </Group>
+        ))}
+
+        {/* P/T: o sobreposto vence o impresso, e a cor diz qual dos dois é. */}
+        {ptExibido && card.zone === 'BATTLEFIELD' && frente && (
+          <Group x={w / 2} y={h - 11 * escala} listening={false}>
+            <Rect
+              x={-24 * escala}
+              y={-10 * escala}
+              width={48 * escala}
+              height={20 * escala}
+              fill="rgba(0,0,0,0.82)"
+              cornerRadius={5}
+            />
+            <Text
+              text={ptExibido}
+              width={48 * escala}
+              height={20 * escala}
+              offsetX={24 * escala}
+              offsetY={10 * escala}
+              align="center"
+              verticalAlign="middle"
+              fontSize={12 * escala}
+              fontStyle="bold"
+              fill={card.hasPtOverride ? '#FBBF24' : '#F8FAFC'}
+            />
+          </Group>
+        )}
+
+        {card.damage > 0 && (
+          <Group x={w - 14 * escala} y={14 * escala} listening={false}>
+            <Circle radius={11 * escala} fill="#EF4444" />
+            <Text
+              text={String(card.damage)}
+              fontSize={10 * escala}
+              fill="white"
+              width={22 * escala}
+              height={22 * escala}
+              offsetX={11 * escala}
+              offsetY={11 * escala}
+              align="center"
+              verticalAlign="middle"
+            />
+          </Group>
+        )}
+
+        {card.note && (
+          <Group x={4} y={h - 34 * escala} listening={false}>
+            <Rect width={w - 8} height={14 * escala} fill="rgba(0,0,0,0.75)" cornerRadius={3} />
+            <Text
+              text={card.note}
+              width={w - 12}
+              height={14 * escala}
+              x={2}
+              align="center"
+              verticalAlign="middle"
+              fontSize={9 * escala}
+              fill="#E2E8F0"
+              ellipsis
+              wrap="none"
+            />
+          </Group>
+        )}
+
+        {card.goadedBy && (
           <Text
-            text={ptExibido}
-            width={48 * escala}
-            height={20 * escala}
-            offsetX={24 * escala}
-            offsetY={10 * escala}
-            align="center"
-            verticalAlign="middle"
-            fontSize={12 * escala}
-            fontStyle="bold"
-            fill={card.hasPtOverride ? '#FBBF24' : '#F8FAFC'}
+            text="provocada"
+            fontSize={8 * escala}
+            fill="#F59E0B"
+            x={4}
+            y={4}
+            listening={false}
           />
-        </Group>
-      )}
+        )}
 
-      {card.damage > 0 && (
-        <Group x={w - 14 * escala} y={14 * escala} listening={false}>
-          <Circle radius={11 * escala} fill="#EF4444" />
+        {card.faceDown && (
+          <Text text="face ↓" fontSize={9 * escala} fill="#94A3B8" x={4} y={4} listening={false} />
+        )}
+
+        {face === 1 && (
           <Text
-            text={String(card.damage)}
-            fontSize={10 * escala}
-            fill="white"
-            width={22 * escala}
-            height={22 * escala}
-            offsetX={11 * escala}
-            offsetY={11 * escala}
-            align="center"
-            verticalAlign="middle"
+            text="⟲"
+            fontSize={13 * escala}
+            fill="#FBBF24"
+            x={w - 16 * escala}
+            y={h - 20 * escala}
+            listening={false}
           />
-        </Group>
-      )}
-
-      {card.note && (
-        <Group x={4} y={h - 34 * escala} listening={false}>
-          <Rect width={w - 8} height={14 * escala} fill="rgba(0,0,0,0.75)" cornerRadius={3} />
-          <Text
-            text={card.note}
-            width={w - 12}
-            height={14 * escala}
-            x={2}
-            align="center"
-            verticalAlign="middle"
-            fontSize={9 * escala}
-            fill="#E2E8F0"
-            ellipsis
-            wrap="none"
-          />
-        </Group>
-      )}
-
-      {card.goadedBy && (
-        <Text text="provocada" fontSize={8 * escala} fill="#F59E0B" x={4} y={4} listening={false} />
-      )}
-
-      {card.faceDown && (
-        <Text text="face ↓" fontSize={9 * escala} fill="#94A3B8" x={4} y={4} listening={false} />
-      )}
-
-      {face === 1 && (
-        <Text
-          text="⟲"
-          fontSize={13 * escala}
-          fill="#FBBF24"
-          x={w - 16 * escala}
-          y={h - 20 * escala}
-          listening={false}
-        />
-      )}
-    </Group>
-  );
-});
+        )}
+      </Group>
+    );
+  },
+  /**
+   * ─── O `React.memo` DESTE COMPONENTE NÃO ESTAVA PEGANDO NADA ────────────────
+   *
+   * `CardSprite` era `React.memo(...)` com a comparação rasa padrão, e a prop
+   * principal é `item` — um objeto CONSTRUÍDO dentro do `useMemo` que deriva a
+   * mesa. Esse `useMemo` depende de `cards`, e `cards` é substituído por
+   * `upsertCard` a cada patch do servidor (20 Hz). Quer dizer: a cada patch,
+   * TODOS os `item` eram objetos novos, a comparação rasa falhava para todos, e
+   * as cem cartas re-renderizavam — por causa de UMA que se mexeu.
+   *
+   * O efeito prático era o pior possível: arrastar uma carta reconciliava a mesa
+   * inteira vinte vezes por segundo, exatamente durante o gesto que mais precisa
+   * de quadro estável. E o `React.memo` no código dava a impressão de que o
+   * problema já estava resolvido.
+   *
+   * A comparação por CAMPO resolve porque `item.card` continua sendo a mesma
+   * referência para as cartas que não mudaram (`upsertCard` só troca a entrada
+   * daquela carta), e `pos` só precisa ser comparado por valor — ele é derivado,
+   * então é sempre um objeto novo mesmo quando as coordenadas são idênticas.
+   */
+  (anterior, proximo) => {
+    const a = anterior.item;
+    const b = proximo.item;
+    return (
+      a.card === b.card &&
+      a.pos.x === b.pos.x &&
+      a.pos.y === b.pos.y &&
+      a.faixa === b.faixa &&
+      a.arrastavel === b.arrastavel &&
+      a.frente === b.frente &&
+      a.face === b.face &&
+      a.escala === b.escala &&
+      a.sleeveId === b.sleeveId &&
+      anterior.meta === proximo.meta &&
+      anterior.room === proximo.room &&
+      anterior.isSelected === proximo.isSelected &&
+      anterior.interpolar === proximo.interpolar &&
+      anterior.sombras === proximo.sombras &&
+      anterior.onAlvo === proximo.onAlvo &&
+      anterior.onContextMenu === proximo.onContextMenu &&
+      anterior.onInspect === proximo.onInspect &&
+      anterior.onSelecionar === proximo.onSelecionar &&
+      anterior.onHover === proximo.onHover
+    );
+  },
+);
 
 // ─── Pilhas ──────────────────────────────────────────────────────────────────
 
-function Pilha({
+/**
+ * `React.memo` nas pilhas: elas são reconstruídas a cada render do `GameBoard`,
+ * e o `GameBoard` re-renderiza a cada patch do servidor (20 Hz) e a cada quadro
+ * de pan da câmera. Cada pilha desenha até três retângulos, uma imagem de
+ * sleeve e dois textos — multiplicado por cinco zonas e quatro jogadores, são
+ * ~100 nós de Konva reconciliados por quadro para mostrar contadores que só
+ * mudam quando uma carta troca de zona.
+ */
+const Pilha = React.memo(function Pilha({
   rotulo,
   centro,
   quantidade,
@@ -622,7 +704,7 @@ function Pilha({
       </Group>
     </Group>
   );
-}
+});
 
 // ─── Zona de comando ─────────────────────────────────────────────────────────
 
@@ -640,14 +722,17 @@ function Pilha({
  * direita. O `LARGURA_COMANDO` continuou reservado e os comandantes continuaram
  * sendo posicionados aqui — só que flutuando sobre nada.
  */
-function SlotComando({
+const SlotComando = React.memo(function SlotComando({
   centro,
   quantidade,
   escala,
+  contorno,
 }: {
   centro: Ponto;
   quantidade: number;
   escala: number;
+  /** Preferência de exibição: o tracejado que marca o slot vazio. */
+  contorno: boolean;
 }) {
   const w = CARD_W * escala;
   const h = CARD_H * escala;
@@ -664,7 +749,7 @@ function SlotComando({
         // Tracejado só quando vazia: cheia, a moldura sólida emoldura a carta;
         // vazia, o tracejado a lê como espaço reservado e não como carta virada
         // para baixo.
-        dash={vazia ? [7, 5] : undefined}
+        dash={vazia && contorno ? [7, 5] : undefined}
         cornerRadius={6}
       />
       <Text
@@ -695,7 +780,7 @@ function SlotComando({
       )}
     </Group>
   );
-}
+});
 
 // ─── Mascote ─────────────────────────────────────────────────────────────────
 
@@ -707,34 +792,70 @@ function SlotComando({
  * Respeita `prefers-reduced-motion`: quem pediu menos movimento vê a silhueta
  * parada, não uma silhueta pulsando.
  */
-function Mascote({ petId, x, y }: { petId: string; x: number; y: number }) {
+const Mascote = React.memo(function Mascote({
+  petId,
+  x,
+  y,
+  animar,
+}: {
+  petId: string;
+  x: number;
+  y: number;
+  /** `false` em qualidade reduzida ou `prefers-reduced-motion`. */
+  animar: boolean;
+}) {
   const pet = acharPet(petId);
   const pontos = caminhoDoPet(pet);
-  const [t, setT] = useState(0);
-  const reduzido = useMovimentoReduzido();
+  const grupoRef = useRef<Konva.Group>(null);
 
+  /**
+   * ─── A ANIMAÇÃO SAIU DO REACT ──────────────────────────────────────────────
+   *
+   * Isto era `requestAnimationFrame` chamando `setT()` a cada quadro. Cada
+   * `setT` é um `setState`: 60 re-renderizações de React por segundo, POR
+   * MASCOTE. Numa mesa de quatro jogadores, 240 re-renderizações por segundo
+   * gastas em três círculos e um polígono — um enfeite consumindo mais tempo
+   * de reconciliação do que a mesa inteira de cartas.
+   *
+   * `Konva.Animation` escreve direto nas propriedades do nó, sem passar pelo
+   * React. Mesmo movimento, zero render.
+   */
   useEffect(() => {
-    if (!pontos || reduzido) return;
-    let raf = 0;
-    const inicio = performance.now();
-    const passo = (agora: number) => {
-      setT((agora - inicio) / 1000);
-      raf = requestAnimationFrame(passo);
+    const node = grupoRef.current;
+    if (!node || !pontos) return;
+
+    if (!animar) {
+      // Volta à pose neutra: sem isto, desligar a animação no meio de um ciclo
+      // congelaria o mascote torto ou fora do lugar.
+      node.position({ x, y });
+      node.rotation(0);
+      node.scale({ x: 1, y: 1 });
+      node.getLayer()?.batchDraw();
+      return;
+    }
+
+    const anim = new Konva.Animation((quadro) => {
+      if (!quadro) return;
+      const fase = Math.sin((quadro.time / 1000) * 1.6);
+      if (pet.animacao === 'flutuar') node.y(y + fase * 5);
+      else if (pet.animacao === 'pulsar') {
+        const e = 1 + fase * 0.07;
+        node.scale({ x: e, y: e });
+      } else if (pet.animacao === 'balancar') node.rotation(fase * 7);
+    }, node.getLayer());
+
+    anim.start();
+    return () => {
+      anim.stop();
     };
-    raf = requestAnimationFrame(passo);
-    return () => cancelAnimationFrame(raf);
-  }, [pontos, reduzido]);
+  }, [pontos, animar, pet.animacao, x, y]);
 
   if (!pontos) return null;
 
   const R = 17;
-  const fase = Math.sin(t * 1.6);
-  const dy = pet.animacao === 'flutuar' ? fase * 5 : 0;
-  const escala = pet.animacao === 'pulsar' ? 1 + fase * 0.07 : 1;
-  const giro = pet.animacao === 'balancar' ? fase * 7 : 0;
 
   return (
-    <Group x={x} y={y + dy} rotation={giro} scaleX={escala} scaleY={escala} listening={false}>
+    <Group ref={grupoRef} x={x} y={y} listening={false}>
       <Circle radius={R * 1.5} fill={pet.cor} opacity={0.1} />
       <Line
         points={pontos.flatMap(([px, py]) => [px * R, py * R])}
@@ -749,7 +870,7 @@ function Mascote({ petId, x, y }: { petId: string; x: number; y: number }) {
       <Circle x={R * 0.28} y={-R * 0.12} radius={2.2} fill="#0b0f16" />
     </Group>
   );
-}
+});
 
 /** `prefers-reduced-motion` do sistema. */
 function useMovimentoReduzido(): boolean {
@@ -790,6 +911,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const toggleSelectedCard = useUIStore((s) => s.toggleSelectedCard);
   const setSelectedCards = useUIStore((s) => s.setSelectedCards);
   const setHoveredCard = useUIStore((s) => s.setHoveredCard);
+  const layoutMesa = useUIStore((s) => s.layoutMesa);
+  const qualidade = useUIStore((s) => s.qualidade);
+  const mostrarContornos = useUIStore((s) => s.mostrarContornos);
 
   const pings = useTableStore((s) => s.pings);
   const expirarPings = useTableStore((s) => s.expirarPings);
@@ -824,14 +948,49 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     hidratar(Object.values(cards).map((c) => c.scryfallId));
   }, [cards, hidratar]);
 
-  const [estreito, setEstreito] = useState(false);
+  const [estreitoDeFato, setEstreitoDeFato] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 640px)');
-    const aplicar = () => setEstreito(!mq.matches);
+    const aplicar = () => setEstreitoDeFato(!mq.matches);
     aplicar();
     mq.addEventListener('change', aplicar);
     return () => mq.removeEventListener('change', aplicar);
   }, []);
+
+  /**
+   * ORÇAMENTO DE RENDER, EM UM LUGAR SÓ.
+   *
+   * `prefers-reduced-motion` era medido DENTRO de cada `CardSprite` — cem
+   * cartas na mesa criavam cem listeners de `matchMedia` respondendo à mesma
+   * pergunta. Aqui é uma medição, e o resultado desce como prop.
+   *
+   * A preferência explícita do jogador (`qualidade`) e a do sistema se somam:
+   * quem pediu menos movimento no sistema operacional não deve ter de repetir
+   * o pedido aqui, e quem escolheu 'desempenho' não deve precisar mexer no
+   * sistema.
+   */
+  const movimentoReduzidoPeloSistema = useMovimentoReduzido();
+  const interpolar = qualidade !== 'desempenho' && !movimentoReduzidoPeloSistema;
+  const sombras = qualidade === 'alta';
+  const animarMascotes = qualidade === 'alta' && !movimentoReduzidoPeloSistema;
+
+  /**
+   * ─── DUAS PERGUNTAS DIFERENTES QUE ERAM UMA SÓ ────────────────────────────
+   *
+   * `estreito` respondia ao mesmo tempo "a tela é pequena?" e "desenho uma
+   * faixa por vez?". Colar as duas funcionava enquanto o arranjo era decidido
+   * exclusivamente pela media query — mas com o seletor de layout elas
+   * divergem:
+   *
+   *   - quem joga em ultrawide pode querer FAIXAS numa tela larga (e as
+   *     margens do HUD continuam sendo as de desktop);
+   *   - quem joga no celular pode querer a GRADE (e as margens continuam
+   *     sendo as de celular, senão o HUD come a mesa).
+   *
+   * `estreitoDeFato` é a medida da tela: manda nas margens do HUD e em ajustar
+   * a mesa pela largura. `faixaUnica` é o arranjo.
+   */
+  const estreito = estreitoDeFato;
 
   // ── Geometria da mesa ────────────────────────────────────────────────────
   const mesa: Mesa = useMemo(() => {
@@ -874,20 +1033,34 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
      */
     const umaFaixaSo = boardView === 'ME' || alvoValido;
 
-    // NO CELULAR, UMA FAIXA POR VEZ.
+    /**
+     * A CÂMERA MANDA MAIS QUE O LAYOUT.
+     *
+     * "Minha mesa" e "Mesa de Fulano" são pedidos de UM assento; nenhum
+     * arranjo de vários assentos atende a isso. Então esta escolha vem antes,
+     * qualquer que seja o layout.
+     *
+     * A geometria compacta das pilhas (grade 2x2 em vez de fila de quatro) só
+     * entra quando a TELA é estreita — em desktop as quatro cabem em fila, e
+     * empilhá-las em 2x2 desperdiçaria a largura.
+     */
+    if (umaFaixaSo) {
+      return montarMesa([foco], foco, { estreito: estreitoDeFato });
+    }
+
+    // NO CELULAR, UMA FAIXA POR VEZ — enquanto o layout está em 'auto'.
     //
     // Encaixar quatro faixas (≈1920x1300) numa tela de 390px deixa cada carta
     // com 15px de largura: tudo aparece e nada é jogável. A resposta certa não
     // é reduzir mais — é mostrar só a faixa em foco e trocar de faixa pelo
     // painel de Câmera. A vida e a contagem dos oponentes continuam visíveis na
     // faixa de vida no topo.
-    if (estreito) {
+    //
+    // Em 'grade' ou 'faixas' o jogador pediu explicitamente outra coisa, e
+    // sobrescrever um pedido explícito com uma media query é o que faz um
+    // seletor de layout parecer sem efeito.
+    if (layoutMesa === 'auto' && estreitoDeFato) {
       return montarMesa([foco], foco, { estreito: true });
-    }
-
-    // Uma mesa só: a minha, ou a do oponente escolhido.
-    if (umaFaixaSo) {
-      return montarMesa([foco], foco);
     }
 
     /**
@@ -906,8 +1079,19 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
      * põe o jogador local na célula inferior direita, que é a cadeira dele.
      */
     const ordem = myId ? [...oponentes, myId] : oponentes;
-    return montarGrade(ordem.length ? ordem : ['—'], foco);
-  }, [players, myId, boardView, estreito]);
+    const lista = ordem.length ? ordem : ['—'];
+
+    /**
+     * 'faixas' devolve o arranjo ANTERIOR à refatoração de grade: uma tira de
+     * largura cheia por jogador, empilhadas. Ele foi trocado por ser ruim em
+     * 16:9 — mas em ultrawide é o contrário: 3440 px de largura por faixa dão
+     * uma mesa por jogador mais larga do que qualquer célula de grade, e a
+     * altura sobra. A escolha certa depende do monitor, então ela é do jogador.
+     */
+    return layoutMesa === 'faixas'
+      ? montarMesa(lista, foco, { estreito: estreitoDeFato })
+      : montarGrade(lista, foco);
+  }, [players, myId, boardView, layoutMesa, estreitoDeFato]);
 
   /**
    * Espaço reservado ao HUD em volta da mesa.
@@ -1037,6 +1221,16 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     return { itens: out, resumoFaixas: resumo };
   }, [cards, players, myId, mesa, cosmeticosDeOponentes]);
 
+  /**
+   * A seleção como `Set`.
+   *
+   * O JSX fazia `selectedCardIds.includes(item.card.id)` DENTRO do `map` das
+   * cartas: uma varredura do array de seleção por carta desenhada. Com uma
+   * seleção de vinte cartas numa mesa de duzentas, são 4.000 comparações por
+   * quadro para responder uma pergunta de pertencimento.
+   */
+  const selecionadas = useMemo(() => new Set(selectedCardIds), [selectedCardIds]);
+
   const ancoras = useMemo(() => {
     const mapa = new Map<string, Ponto>();
     for (const item of itens) mapa.set(item.card.id, item.pos);
@@ -1095,6 +1289,48 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
 
   const panRef = useRef<{ x: number; y: number } | null>(null);
 
+  /**
+   * ─── O ARRASTE DO FUNDO CHAMAVA `setCamera` A CADA `mousemove` ─────────────
+   *
+   * `onMouseMove` dispara na taxa do dispositivo de entrada, que num mouse
+   * gamer chega a 1.000 Hz — bem acima dos 60 quadros que a tela pode mostrar.
+   * Cada chamada era um `set` do zustand: uma re-renderização completa do
+   * `GameBoard` e (antes da correção em `storage.ts`) uma escrita síncrona em
+   * `localStorage`. Renderizar dezesseis vezes para pintar um quadro é o
+   * mesmo que renderizar uma vez, com quinze vezes mais trabalho.
+   *
+   * O deslocamento agora é acumulado num ref e aplicado UMA vez por quadro.
+   */
+  const deltaPendente = useRef({ x: 0, y: 0 });
+  const quadroDePan = useRef<number | null>(null);
+
+  const empurrarCamera = useCallback(
+    (dx: number, dy: number) => {
+      deltaPendente.current.x += dx;
+      deltaPendente.current.y += dy;
+      if (quadroDePan.current !== null) return;
+      quadroDePan.current = requestAnimationFrame(() => {
+        quadroDePan.current = null;
+        const { x, y } = deltaPendente.current;
+        deltaPendente.current = { x: 0, y: 0 };
+        if (x === 0 && y === 0) return;
+        // Lê o estado no momento da aplicação, e não o `cameraPosition` do
+        // closure: entre o gesto e o quadro a câmera pode ter sido zerada por
+        // uma troca de visão, e somar sobre o valor velho a devolveria.
+        const atual = useUIStore.getState().cameraPosition;
+        setCamera(atual.x + x, atual.y + y);
+      });
+    },
+    [setCamera],
+  );
+
+  useEffect(
+    () => () => {
+      if (quadroDePan.current !== null) cancelAnimationFrame(quadroDePan.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     setCamera(0, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1151,6 +1387,26 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
           onWheel={handleWheel}
           onContextMenu={(e) => e.evt.preventDefault()}
         >
+          {/*
+            ─── DUAS CAMADAS, E O MOTIVO É O CUSTO DO QUADRO ──────────────────
+
+            Tudo vivia numa `<Layer>` só. O Konva redesenha a camada INTEIRA
+            quando qualquer nó dentro dela muda — então mover uma carta
+            repintava, a cada patch (20 Hz) e a cada quadro de arraste:
+
+              - o playmat de cada oponente, que é uma `KonvaImage` dentro de um
+                `Group` com `clipFunc` (o item mais caro do quadro);
+              - as molduras, os rótulos e os mascotes de todas as faixas;
+              - as vinte pilhas de zona com seus contadores.
+
+            Nada disso muda quando uma carta anda. Separado, o fundo é pintado
+            quando a geometria da mesa muda — trocar de visão, entrar um jogador,
+            redimensionar a janela — e o arraste de uma carta redesenha só a
+            camada de cima.
+
+            Duas é o número certo: o Konva recomenda no máximo três a cinco
+            camadas, porque cada uma é um `<canvas>` de verdade no DOM.
+          */}
           <Layer scale={{ x: escala, y: escala }} x={offsetX} y={offsetY}>
             {/* Fundo: pan, ping e menu da mesa */}
             <Rect
@@ -1165,7 +1421,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 const dx = e.evt.clientX - panRef.current.x;
                 const dy = e.evt.clientY - panRef.current.y;
                 panRef.current = { x: e.evt.clientX, y: e.evt.clientY };
-                setCamera(cameraPosition.x + dx, cameraPosition.y + dy);
+                empurrarCamera(dx, dy);
               }}
               onMouseUp={() => {
                 panRef.current = null;
@@ -1184,7 +1440,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 const dx = t.clientX - panRef.current.x;
                 const dy = t.clientY - panRef.current.y;
                 panRef.current = { x: t.clientX, y: t.clientY };
-                setCamera(cameraPosition.x + dx, cameraPosition.y + dy);
+                empurrarCamera(dx, dy);
               }}
               onTouchEnd={() => {
                 panRef.current = null;
@@ -1324,17 +1580,51 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                   petId={r.petId}
                   x={r.faixa.esquerda + r.faixa.largura - 30}
                   y={r.faixa.topo + 26}
+                  animar={animarMascotes}
                 />
               </Group>
             ))}
 
+            {/* ── Faixa de mão ───────────────────────────────────────────── */}
+            {/* Fica no FUNDO: é o tapete onde as cartas da mão pousam, e ele
+                não muda quando elas se movem. */}
+            <Group listening={false}>
+              <Rect
+                x={6}
+                y={mesa.mao.topo + 3}
+                width={mesa.largura - 12}
+                height={mesa.mao.altura - 6}
+                fill="rgba(15,23,42,0.55)"
+                stroke="rgba(255,255,255,0.05)"
+                cornerRadius={10}
+                dash={mostrarContornos ? [8, 6] : undefined}
+              />
+              <Text
+                text="MÃO"
+                x={18}
+                y={mesa.mao.topo + 10}
+                fontSize={11}
+                fontStyle="bold"
+                fill="rgba(255,255,255,0.18)"
+                letterSpacing={2}
+              />
+            </Group>
+          </Layer>
+
+          {/* ── Camada dinâmica: tudo que se move a cada patch ────────────── */}
+          <Layer scale={{ x: escala, y: escala }} x={offsetX} y={offsetY}>
             {/* ── Pilhas por faixa ───────────────────────────────────────── */}
             {resumoFaixas.map((r) => {
               const esc = r.faixa.escala;
               const meu = r.faixa.playerId === myId;
               return (
                 <Group key={`pilhas-${r.faixa.playerId}`}>
-                  <SlotComando centro={r.faixa.comando} quantidade={r.command} escala={esc} />
+                  <SlotComando
+                    centro={r.faixa.comando}
+                    quantidade={r.command}
+                    escala={esc}
+                    contorno={mostrarContornos}
+                  />
                   <Pilha
                     rotulo="GRIMÓRIO"
                     centro={r.faixa.grimorio}
@@ -1385,29 +1675,6 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
               );
             })}
 
-            {/* ── Faixa de mão ───────────────────────────────────────────── */}
-            <Group listening={false}>
-              <Rect
-                x={6}
-                y={mesa.mao.topo + 3}
-                width={mesa.largura - 12}
-                height={mesa.mao.altura - 6}
-                fill="rgba(15,23,42,0.55)"
-                stroke="rgba(255,255,255,0.05)"
-                cornerRadius={10}
-                dash={[8, 6]}
-              />
-              <Text
-                text="MÃO"
-                x={18}
-                y={mesa.mao.topo + 10}
-                fontSize={11}
-                fontStyle="bold"
-                fill="rgba(255,255,255,0.18)"
-                letterSpacing={2}
-              />
-            </Group>
-
             {/* ── Vínculos de anexo ──────────────────────────────────────── */}
             {itens
               .filter((i) => i.card.attachedTo)
@@ -1434,7 +1701,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 item={item}
                 meta={item.card.scryfallId ? (catalogo[item.card.scryfallId] ?? null) : null}
                 room={room}
-                isSelected={selectedCardIds.includes(item.card.id)}
+                isSelected={selecionadas.has(item.card.id)}
+                interpolar={interpolar}
+                sombras={sombras}
                 onContextMenu={handleContextMenu}
                 onInspect={handleInspect}
                 onAlvo={arrowSource ? handleAlvo : null}

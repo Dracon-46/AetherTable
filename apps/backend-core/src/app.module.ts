@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { DecksModule } from './decks/decks.module.js';
 import { MatchesModule } from './matches/matches.module.js';
 import { CardsModule } from './cards/cards.module.js';
+import { AdminModule } from './admin/admin.module.js';
 
 /**
  * Root Module of the application.
@@ -66,6 +67,7 @@ import { CardsModule } from './cards/cards.module.js';
     DecksModule,
     MatchesModule,
     CardsModule,
+    AdminModule,
   ],
   providers: [
     // Global: vale para toda rota, inclusive as que ainda não existem. Ligar o

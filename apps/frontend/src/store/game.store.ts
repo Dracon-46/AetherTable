@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { armazenamentoSeguro } from './storage';
+import { armazenamentoAgrupado } from './storage';
 
 // ─── gameStore: espelho do estado do servidor ──────────────────────────────
 
@@ -280,6 +280,44 @@ interface UIState {
    * quisesse a mesa limpa era obrigado a conviver com o próprio cartão.
    */
   vidaModo: 'minima' | 'minha' | 'mesa';
+  /**
+   * COMO AS MESAS DOS JOGADORES SÃO ARRUMADAS.
+   *
+   *   'auto'   — grade em telas largas, faixa única no celular (padrão).
+   *   'grade'  — sempre a grade de células, mesmo em tela estreita.
+   *   'faixas' — uma tira por jogador, empilhadas: mais largura por jogador,
+   *              menos jogadores visíveis de uma vez.
+   *
+   * O arranjo era decidido só pelo código, a partir de uma media query. Duas
+   * pessoas na mesma mesa podem querer coisas diferentes — quem joga em
+   * ultrawide cabe quatro faixas confortavelmente, quem joga num notebook 16:9
+   * prefere a grade — e nenhuma das duas tinha como escolher.
+   */
+  layoutMesa: 'auto' | 'grade' | 'faixas';
+  /**
+   * ORÇAMENTO DE RENDER.
+   *
+   *   'alta'         — sombras, interpolação de movimento, mascotes animados.
+   *   'equilibrada'  — sombra só na carta arrastada, interpolação mantida.
+   *   'desempenho'   — nada de sombra, nada de interpolação, mascote parado.
+   *
+   * Não é enfeite: a mesa é um Canvas que redesenha a cada patch (20 Hz). Numa
+   * máquina modesta com quatro campos de batalha cheios, sombra por carta é o
+   * item mais caro do quadro — e ele estava ligado incondicionalmente, sem
+   * ninguém poder desligá-lo.
+   */
+  qualidade: 'alta' | 'equilibrada' | 'desempenho';
+  /** Contorno tracejado das zonas. Existia no estado e não tinha interruptor. */
+  mostrarContornos: boolean;
+  /**
+   * Log da partida aberto.
+   *
+   * Era estado local do `ChatLog`, recolhido à força a cada montagem: F5 no
+   * meio da partida trazia o log de volta por cima do tabuleiro. Nasce
+   * recolhido — o log é consulta, e aberto ele come a coluna direita, onde
+   * ficam as pilhas de cada faixa — e a escolha sobrevive.
+   */
+  logAberto: boolean;
 
   setZoom: (z: number) => void;
   setCamera: (x: number, y: number) => void;
@@ -301,6 +339,10 @@ interface UIState {
   setMulliganCount: (count: number) => void;
   setBarraAberta: (v: boolean) => void;
   setVidaModo: (v: UIState['vidaModo']) => void;
+  setLayoutMesa: (v: UIState['layoutMesa']) => void;
+  setQualidade: (v: UIState['qualidade']) => void;
+  setMostrarContornos: (v: boolean) => void;
+  setLogAberto: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -331,6 +373,10 @@ export const useUIStore = create<UIState>()(
       mulliganCount: 0,
       barraAberta: false,
       vidaModo: 'minha',
+      layoutMesa: 'auto',
+      qualidade: 'alta',
+      mostrarContornos: true,
+      logAberto: false,
 
       setZoom: (zoomLevel) => set({ zoomLevel: Math.min(2.5, Math.max(0.4, zoomLevel)) }),
       setCamera: (x, y) => set({ cameraPosition: { x, y } }),
@@ -386,12 +432,33 @@ export const useUIStore = create<UIState>()(
       setMulliganCount: (mulliganCount) => set({ mulliganCount }),
       setBarraAberta: (barraAberta) => set({ barraAberta }),
       setVidaModo: (vidaModo) => set({ vidaModo }),
+      setLayoutMesa: (layoutMesa) => set({ layoutMesa }),
+      setQualidade: (qualidade) => set({ qualidade }),
+      setMostrarContornos: (mostrarContornos) => set({ mostrarContornos }),
+      setLogAberto: (logAberto) => set({ logAberto }),
     }),
     {
       name: 'aether-ui-store',
-      storage: armazenamentoSeguro,
+      /**
+       * ─── POR QUE O STORAGE AQUI É O AGRUPADO ─────────────────────────────
+       *
+       * O `persist` grava a cada `set`, e neste store os `set` mais frequentes
+       * são de interação contínua: `setCamera` roda em `onMouseMove` enquanto
+       * o jogador arrasta o fundo da mesa, e `setHoveredCard` roda ao entrar e
+       * sair de CADA carta. Cada um custava um `JSON.stringify` mais uma
+       * escrita SÍNCRONA em `localStorage`, na thread principal, no meio do
+       * quadro — dezenas por segundo, de um objeto que não tinha mudado.
+       *
+       * Era um travamento de arraste causado inteiramente por gravar
+       * preferências que ninguém pediu para gravar naquele instante.
+       */
+      storage: armazenamentoAgrupado,
       partialize: (s) => ({
         showZoneOutlines: s.showZoneOutlines,
+        layoutMesa: s.layoutMesa,
+        qualidade: s.qualidade,
+        mostrarContornos: s.mostrarContornos,
+        logAberto: s.logAberto,
         // `boardView` guarda um sessionId quando aponta para um oponente, e
         // sessionId muda a cada conexão. Persistido cru, o jogador voltava numa
         // partida nova com a câmera fixada num assento que não existe mais: a

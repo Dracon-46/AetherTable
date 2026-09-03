@@ -20,6 +20,7 @@ import { CardInspector } from '@/overlay/CardInspector';
 import { TokenPicker } from '@/overlay/TokenPicker';
 import { ZoneInspector } from '@/overlay/ZoneInspector';
 import { CameraControls } from '@/overlay/CameraControls';
+import { ExibicaoControls } from '@/overlay/ExibicaoControls';
 import { ContextMenu } from '@/overlay/ContextMenu';
 import { ScryModal } from '@/overlay/ScryModal';
 import { TableMenu } from '@/overlay/TableMenu';
@@ -207,7 +208,11 @@ export default function PlayRoomPage() {
 
           {/* Fileira do topo direito: Camera e Mesa lado a lado. Cada um
               ancorado no proprio canto se sobrepunha ao outro e ao log. */}
-          <div className="pointer-events-none absolute right-2 top-2 z-30 flex items-start justify-end gap-2 sm:right-3 sm:top-3">
+          {/* `flex-wrap` porque agora são TRÊS painéis: em tela estreita, três
+              botões lado a lado com o rótulo escondido cabem, mas com o
+              rótulo visível (>= sm) eles empurrariam o log para fora. */}
+          <div className="pointer-events-none absolute right-2 top-2 z-30 flex max-w-[calc(100vw-1rem)] flex-wrap items-start justify-end gap-2 sm:right-3 sm:top-3">
+            <ExibicaoControls />
             <CameraControls />
             <TableMenu room={room} />
           </div>

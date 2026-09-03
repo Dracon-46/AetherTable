@@ -15,7 +15,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Minimize2, ChevronDown } from 'lucide-react';
 import type { Room } from 'colyseus.js';
-import { useGameStore } from '../store/game.store';
+import { useGameStore, useUIStore } from '../store/game.store';
 import { useCardCatalog } from '../cards/catalog';
 import { TituloDeChat } from '../components/Avatar';
 import { useCosmeticos } from '../cosmetics/store';
@@ -49,7 +49,17 @@ export function ChatLog({ room }: ChatLogProps) {
   const log = useGameStore((s) => s.log);
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
-  const [collapsed, setCollapsed] = useState(false);
+  /**
+   * O ESTADO RECOLHIDO VIROU PREFERÊNCIA.
+   *
+   * Era `useState` local: recolher o log e dar F5 no meio da partida trazia
+   * ele de volta aberto, por cima do tabuleiro. Quem recolhe o log quer o log
+   * recolhido — e agora o painel de Exibição também consegue mexer nele, o que
+   * é impossível com estado privado do componente.
+   */
+  const aberto = useUIStore((s) => s.logAberto);
+  const setAberto = useUIStore((s) => s.setLogAberto);
+  const collapsed = !aberto;
   const [chatInput, setChatInput] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'CHAT' | 'ACTION'>('ALL');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,20 +68,19 @@ export function ChatLog({ room }: ChatLogProps) {
   const hidratar = useCardCatalog((s) => s.hidratar);
 
   /**
-   * RECOLHIDO POR PADRÃO, EM QUALQUER TELA.
+   * ─── O `setCollapsed(true)` NA MONTAGEM SAIU DAQUI ────────────────────────
    *
-   * O log é consulta, não painel de controle: ele responde "o que aconteceu
-   * enquanto eu olhava para outro canto". Aberto o tempo todo, ele ocupa a
-   * coluna direita inteira — justamente onde ficam as pilhas de grimório,
-   * cemitério e exílio de cada faixa — e a mesa perde a borda direita para um
-   * texto que ninguém está lendo.
+   * Havia um efeito que recolhia o log a cada montagem, para garantir o padrão
+   * recolhido. Isso funcionava porque o estado era local e nascia do zero —
+   * mas agora ele é uma PREFERÊNCIA persistida, e o efeito passaria por cima
+   * dela: quem gosta do log aberto o veria fechar sozinho a cada entrada na
+   * mesa, e o interruptor no painel de Exibição pareceria não guardar nada.
    *
-   * A barra de título continua visível e clicável, então nada some: o que muda
-   * é quem decide quando ele ocupa espaço.
+   * O padrão continua sendo recolhido — ele mora em `logAberto: false`, no
+   * valor inicial do store, que é o lugar de um padrão. O motivo original
+   * segue valendo: o log é consulta, e aberto o tempo todo ele ocupa a coluna
+   * direita inteira, justamente onde ficam as pilhas de cada faixa.
    */
-  useEffect(() => {
-    setCollapsed(true);
-  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -125,7 +134,7 @@ export function ChatLog({ room }: ChatLogProps) {
           )}
         </div>
         <button
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={() => setAberto(collapsed)}
           className="text-text-muted hover:text-text transition-colors"
           aria-label={collapsed ? 'Expandir log' : 'Recolher log'}
         >

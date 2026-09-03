@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import { DecksService } from '../decks/decks.service.js';
 import { validarDeckParaFormato, type DeckValidavel } from '../decks/formato.js';
+import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class MatchesService {
   constructor(
     private jwtService: JwtService,
     private decksService: DecksService,
+    private sistema: AdminSistemaService,
   ) {}
 
   /**
@@ -36,6 +38,24 @@ export class MatchesService {
   private static readonly SEAT_TOKEN_TTL = '1d';
 
   async createMatch(_userId: string, _username: string) {
+    /**
+     * O INTERRUPTOR DE MESAS (DOC-061 §5).
+     *
+     * Serve à manutenção: derrubar o game-server sem fechar a criação de mesas
+     * faz cada jogador descobrir a manutenção como uma conexão que falha, na
+     * hora em que ele já convidou os amigos. Com o interruptor, a recusa
+     * acontece antes, com o motivo escrito.
+     *
+     * Note que ele NÃO derruba partida em andamento: quem já está na mesa
+     * continua jogando, porque o estado vive no game node e este interruptor
+     * só fecha a porta de entrada.
+     */
+    if (!(await this.sistema.flagLigada(FLAGS.MESAS))) {
+      throw new ForbiddenException(
+        'A criação de novas mesas está pausada para manutenção. As partidas em andamento seguem normalmente.',
+      );
+    }
+
     // Gera um roomCode de 6 caracteres
     const roomCode = randomBytes(3).toString('hex').toUpperCase();
     return { roomCode };
@@ -75,7 +95,25 @@ export class MatchesService {
     return { seatToken, roomCode };
   }
 
+  /**
+   * Passe de voz do LiveKit.
+   *
+   * ─── O KILL SWITCH DE VOZ MORA AQUI (DOC-061 §5) ─────────────────────────
+   *
+   * O documento pede "um botao de emergencia que desabilita a flag do LiveKit
+   * para todo mundo, caso o faturamento do SFU atinja um teto alarmante ou haja
+   * um ataque". Este e o unico ponto por onde um cliente obtem credencial de
+   * voz — negar aqui desliga a voz da plataforma inteira sem redeploy.
+   *
+   * A resposta e `null` em vez de um erro: o cliente ja trata token ausente
+   * como "esta mesa nao tem voz" e monta a partida sem o LiveKit. Um 403 faria
+   * a tela mostrar falha de conexao numa mesa que esta perfeitamente jogavel.
+   */
   async getVoiceToken(userId: string, username: string, roomCode: string) {
+    if (!(await this.sistema.flagLigada(FLAGS.VOZ))) {
+      return { token: null, motivo: 'A voz esta temporariamente desativada na plataforma.' };
+    }
+
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
     const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
 

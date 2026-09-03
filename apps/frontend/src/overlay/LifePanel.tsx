@@ -693,17 +693,27 @@ export function LifePanel({ room }: LifePanelProps) {
      * embaixo: nunca saem do lugar, seja qual for o número de jogadores.
      */
     <div className="pointer-events-none absolute inset-x-2 top-12 z-20 flex flex-col gap-2 sm:inset-x-auto sm:left-3 sm:top-16 sm:max-h-[calc(100dvh-9rem)] sm:w-40">
-      <div
-        className={
-          // AS BARRAS NO FIM DE CADA LINHA NÃO SÃO ESTILO: sem elas a última
-          // classe de uma linha cola na primeira da seguinte e o Tailwind
-          // ignora as duas. Foi assim que `sm:max-h-` sumiu daqui uma vez, e
-          // sem altura máxima `overflow-y-auto` não tem o que rolar.
-          'custom-scrollbar pointer-events-auto flex min-h-0 gap-2 ' +
-          'flex-row overflow-x-auto overflow-y-hidden pb-1' +
-          'sm:flex-col sm:gap-2 sm:overflow-y-auto sm:overflow-x-hidden sm:pb-1 sm:pr-1'
-        }
-      >
+      {/*
+        ─── ESTE BUG ESTAVA AQUI, DENTRO DO AVISO SOBRE ELE ────────────────────
+
+        A lista era montada por concatenação de strings, e a segunda linha
+        terminava em `pb-1` SEM espaço antes de `'sm:flex-col ...'`. O
+        resultado era o token `pb-1sm:flex-col` — uma classe que não existe,
+        levando embora as DUAS que a compunham.
+
+        Perder `sm:flex-col` é grave: `flex-row` continuava valendo no desktop,
+        então a coluna de vida de 160 px empilhava os cartões na HORIZONTAL,
+        com `sm:overflow-x-hidden` cortando tudo depois do primeiro. Escolher
+        "mesa (4)" numa tela grande mostrava um cartão e meio e nenhuma forma
+        de alcançar os outros — indistinguível de "o painel de mesa está
+        quebrado".
+
+        A lista virou uma string única de template. O problema não era o autor
+        ter esquecido um espaço; era a concatenação manual permitir esquecê-lo
+        de novo — e ela já tinha custado `sm:max-h-` uma vez antes, como o
+        comentário original registrava.
+      */}
+      <div className="custom-scrollbar pointer-events-auto flex min-h-0 flex-row gap-2 overflow-x-auto overflow-y-hidden pb-1 sm:flex-col sm:overflow-y-auto sm:overflow-x-hidden sm:pr-1">
         {visiveis.map((player) => (
           <React.Fragment key={player.id}>
             <div className="contents sm:hidden">{cartao(player, true)}</div>
