@@ -118,7 +118,17 @@ export class AetherRoom extends Room<RoomState> {
       // jogadores" nao era o maximo de jogadores. Uma sala aceitava o dobro do
       // que qualquer outra parte do sistema assumia — inclusive a mesa, que
       // desenha uma faixa por assento.
-      this.maxClients = Math.max(2, Math.min(REALTIME_LIMITS.MAX_PLAYERS, options.maxClients));
+      //
+      // O PISO DESCEU DE 2 PARA 1: a mesa de UM jogador existe.
+      //
+      // DOC-037 §7.1 chama o `solo` de caso de uso numero 1 do documento de
+      // visao ("O Testador — vale a pena comprar?") e observa que o custo dele
+      // e zero, bastando permitir `players.min = 1`. Este `Math.max(2, ...)`
+      // era o que faltava: o preset de solo pedia uma mesa de um e a sala
+      // abria com dois assentos, entao o painel mostrava um lugar vazio
+      // esperando alguem que nunca vinha — e o jogador ficava aguardando o
+      // lobby liberar.
+      this.maxClients = Math.max(1, Math.min(REALTIME_LIMITS.MAX_PLAYERS, options.maxClients));
     }
     this.state.maxSeats = this.maxClients;
     this.state.gameType = options.gameType ?? 'COMMANDER';
