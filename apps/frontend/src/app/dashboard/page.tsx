@@ -1,45 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Play, KeyRound, Library, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { Play, KeyRound, Library, Plus, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuthStore } from '../../store/auth.store';
-import { API_URL } from '@/lib/api';
-
-// Tipagem básica de um deck real no futuro
-interface Deck {
-  id: string;
-  name: string;
-  commander: string;
-  colors: string[];
-  /** Contagem desnormalizada vinda da API (docs/modelo_de_dados.md §3.3). */
-  cardCount?: number;
-}
+import { api, mensagemDaApi } from '@/lib/fetcher';
+import { useListaDeDecks } from '../../deckbuilder/useDecks';
+import { FORMATOS_JOGAVEIS, acharFormato } from '@aethertable/shared-types';
 
 export default function DashboardPage() {
-  const { user, accessToken } = useAuthStore();
+  const { user } = useAuthStore();
+  const router = useRouter();
 
-  const [myDecks, setMyDecks] = useState<Deck[]>([]);
-  const [, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchDecks() {
-      if (!accessToken) return;
-      try {
-        const res = await fetch(`${API_URL}/decks`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setMyDecks(data);
-        }
-      } catch (err) {
-        console.error('Falha ao buscar decks', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchDecks();
-  }, [accessToken]);
+  /**
+   * A lista vem do CACHE compartilhado com `/dashboard/decks`.
+   *
+   * Esta tela tinha o próprio `useEffect` + `fetch` + `useState` para buscar
+   * exatamente a mesma coisa que a tela de grimórios busca. Alternar entre as
+   * duas fazia duas requisições idênticas, sempre — e a lista aqui alimenta o
+   * seletor de deck do modal, então ela era refeita também no meio do fluxo de
+   * entrar numa mesa.
+   */
+  const { data: decks, isPending: carregandoDecks } = useListaDeDecks();
+  const myDecks = decks ?? [];
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'CREATE' | 'JOIN'>('CREATE');
@@ -47,8 +31,22 @@ export default function DashboardPage() {
   const [selectedDeckId, setSelectedDeckId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [maxClients, setMaxClients] = useState(4);
-  const [gameType, setGameType] = useState('COMMANDER');
+  /**
+   * ─── O FORMATO DA MESA VEM DO CATÁLOGO, E ELE DECIDE A CONTAGEM ───────────
+   *
+   * Este seletor tinha quatro formatos escritos à mão em MAIÚSCULAS
+   * (`COMMANDER`, `STANDARD`, `MODERN`, `PAUPER`), enquanto o deck usa ids em
+   * minúsculas e a validação do backend conhecia oito. Criar uma mesa de
+   * "TIMELESS" era impossível; criar uma de "PAUPER" mandava uma string que a
+   * validação de formato do deck não reconhecia.
+   *
+   * E a contagem de jogadores era uma lista fixa de 2 a 8 para qualquer
+   * formato: dava para abrir uma mesa de Duel Commander com seis pessoas, ou
+   * um teste solo com quatro.
+   */
+  const [gameType, setGameType] = useState('commander');
+  const formato = acharFormato(gameType);
+  const [maxClients, setMaxClients] = useState(formato.jogadores.padrao);
 
   /**
    * Abre o modal de conexão.
@@ -91,56 +89,58 @@ export default function DashboardPage() {
 
       // Se for CREATE, chamamos a rota create primeiro
       if (modalAction === 'CREATE') {
-        const createRes = await fetch(`${API_URL}/matches/create`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!createRes.ok) throw new Error('Falha ao criar sala.');
-        const createData = await createRes.json();
-        code = createData.roomCode;
+        const criada = await api<{ roomCode: string }>('/matches/create', { method: 'POST' });
+        code = criada.roomCode;
       }
 
-      // Em ambos os casos, chamamos o JOIN para validar o deck e pegar o seatToken
-      const joinRes = await fetch(`${API_URL}/matches/${code}/join`, {
+      // Em ambos os casos, o JOIN valida o deck e devolve o seatToken.
+      // Sem deck: o passe sai sem `deckId` e o jogador escolhe no lobby.
+      const passe = await api<{ seatToken: string }>(`/matches/${code}/join`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        // Sem deck: o passe sai sem `deckId` e o jogador escolhe no lobby.
-        body: JSON.stringify(selectedDeckId ? { deckId: selectedDeckId } : {}),
+        body: selectedDeckId ? { deckId: selectedDeckId } : {},
       });
 
-      const joinData = await joinRes.json();
-
-      if (!joinRes.ok) {
-        // Exibe o erro da trava de validação!
-        throw new Error(joinData.message || 'Falha ao entrar na sala.');
-      }
-
-      // Sucesso! Temos o seatToken. Vamos para a Mesa de Jogo!
-      // Passaremos o token na URL ou em estado global. Para o MVP, URL query param.
-      let redirectUrl = `/play/${code}?token=${joinData.seatToken}`;
+      let destino = `/play/${code}?token=${passe.seatToken}`;
       if (modalAction === 'CREATE') {
-        redirectUrl += `&maxClients=${maxClients}&gameType=${gameType}`;
+        destino += `&maxClients=${maxClients}&gameType=${gameType}`;
       }
-      window.location.href = redirectUrl;
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Erro desconhecido ao conectar.');
+
+      /**
+       * ─── `window.location.href` RECARREGAVA O APLICATIVO INTEIRO ──────────
+       *
+       * Era uma navegação de navegador, não de aplicação: o bundle do Next
+       * voltava a ser baixado e avaliado, os stores do zustand nasciam de novo
+       * e o `persist` tinha de reidratar antes de a tela decidir qualquer
+       * coisa. Entrar numa mesa custava um carregamento a frio — segundos de
+       * tela branca — e era o passo do fluxo em que a espera mais dói, porque
+       * do outro lado já tem gente esperando.
+       *
+       * `router.push` faz a transição no cliente: só o código da rota da mesa é
+       * buscado, e o resto já está em memória.
+       */
+      router.push(destino);
+    } catch (erro) {
+      setErrorMsg(mensagemDaApi(erro));
       setIsConnecting(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-6xl animate-[fadeIn_0.3s_ease-out]">
+    <div className="mx-auto max-w-7xl animate-[fadeIn_0.3s_ease-out]">
       {/* Header do Saguão */}
-      <header className="mb-10">
-        <h1 className="text-text mb-2 text-3xl font-bold">Bem-vindo à Taverna, {user?.username}</h1>
-        <p className="text-text-muted">A mesa está limpa. Suas cartas aguardam comandos.</p>
+      <header className="mb-8 sm:mb-10">
+        {/* `break-words`: um nome de usuário longo estourava a largura da tela
+            no celular e criava rolagem horizontal na página inteira. */}
+        <h1 className="text-text mb-2 break-words text-2xl font-bold sm:text-3xl">
+          Bem-vindo à Taverna, {user?.username}
+        </h1>
+        <p className="text-text-muted text-sm sm:text-base">
+          A mesa está limpa. Suas cartas aguardam comandos.
+        </p>
       </header>
 
       {/* Ações Principais (Entrar na Mesa) */}
-      <section className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-2">
+      <section className="mb-10 grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:mb-12">
         {/* Card: Criar Nova Sala */}
         <div
           onClick={() => handleOpenModal('CREATE')}
@@ -175,17 +175,25 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="relative z-10 flex gap-2">
+          {/* Empilha no celular: `tracking-widest` numa fonte monoespaçada
+              come largura, e lado a lado com o botão o campo ficava com espaço
+              para uns cinco caracteres — menos do que um código de sala. */}
+          <div className="relative z-10 flex flex-col gap-2 sm:flex-row">
             <input
               type="text"
               placeholder="EX: DRG-402"
               value={roomCodeInput}
               onChange={(e) => setRoomCodeInput(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success flex-1 rounded-md border px-4 py-2.5 font-mono uppercase tracking-widest focus:outline-none"
+              onKeyDown={(e) => {
+                // Enter conecta: o campo é de código, e digitar um código e
+                // procurar o botão com o mouse é um passo a mais sem motivo.
+                if (e.key === 'Enter' && roomCodeInput.trim()) handleOpenModal('JOIN');
+              }}
+              className="bg-table-deep border-panel-border text-text focus:border-success min-w-0 flex-1 rounded-md border px-4 py-2.5 font-mono uppercase tracking-widest focus:outline-none"
             />
             <button
               onClick={() => handleOpenModal('JOIN')}
-              className="bg-success flex items-center gap-2 rounded-md px-5 py-2.5 font-medium text-white shadow-md transition-all hover:brightness-110 active:scale-95"
+              className="bg-success flex shrink-0 items-center justify-center gap-2 rounded-md px-5 py-2.5 font-medium text-white shadow-md transition-all hover:brightness-110 active:scale-95"
             >
               Conectar
             </button>
@@ -201,20 +209,36 @@ export default function DashboardPage() {
             <h2 className="text-text text-xl font-bold">Seu Grimório (Decks)</h2>
           </div>
           <span className="text-text-muted bg-panel border-panel-border rounded-full border px-3 py-1 text-xs font-semibold">
-            {myDecks.length} DE 100
+            {myDecks.length} {myDecks.length === 1 ? 'GRIMÓRIO' : 'GRIMÓRIOS'}
           </span>
         </div>
 
-        {myDecks.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 pb-4 md:grid-cols-2 lg:grid-cols-3">
-            {myDecks.map((deck) => (
+        {carregandoDecks ? (
+          <div className="grid grid-cols-1 gap-4 pb-4 sm:grid-cols-2 xl:grid-cols-3">
+            {[0, 1, 2].map((i) => (
               <div
+                key={i}
+                className="bg-panel border-panel-border h-24 animate-pulse rounded-xl border"
+              />
+            ))}
+          </div>
+        ) : myDecks.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 pb-4 sm:grid-cols-2 xl:grid-cols-3">
+            {myDecks.map((deck) => (
+              // Vira link para o próprio grimório: o cartão mostrava nome e
+              // contagem e não levava a lugar nenhum — quem quisesse abrir o
+              // deck tinha de ir ao menu lateral e achá-lo de novo na lista.
+              <Link
                 key={deck.id}
-                className="bg-panel border-panel-border flex flex-col rounded-xl border p-4"
+                href={`/dashboard/decks/${deck.id}`}
+                className="bg-panel border-panel-border hover:border-primary flex flex-col rounded-xl border p-4 text-left transition-colors"
               >
-                <h3 className="text-text mb-1 text-lg font-bold">{deck.name}</h3>
-                <span className="text-text-muted text-sm">Cartas: {deck.cardCount ?? 0}/100</span>
-              </div>
+                <h3 className="text-text mb-1 w-full truncate text-lg font-bold">{deck.name}</h3>
+                <span className="text-text-muted text-sm">
+                  Cartas: {deck.cardCount ?? 0}
+                  <span className="text-text-faint uppercase"> · {deck.formatId}</span>
+                </span>
+              </Link>
             ))}
           </div>
         ) : (
@@ -232,8 +256,19 @@ export default function DashboardPage() {
 
       {/* Modal de Conexão */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex animate-[fadeIn_0.2s_ease-out] items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-panel border-panel-border w-full max-w-md scale-[1] animate-[popIn_0.2s_ease-out] rounded-xl border p-6 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex animate-[fadeIn_0.2s_ease-out] items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            // Clicar fora fecha — mas nunca no meio de uma conexão, senão o
+            // modal some enquanto a requisição continua e a tela não diz nada.
+            if (e.target === e.currentTarget && !isConnecting) setIsModalOpen(false);
+          }}
+        >
+          {/* `max-h`+rolagem: com o formato e a contagem de jogadores, o modal
+              passa de 560px e não caberia numa tela de celular em paisagem. */}
+          <div className="bg-panel border-panel-border custom-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-md animate-[popIn_0.2s_ease-out] overflow-y-auto rounded-xl border p-5 shadow-2xl sm:p-6">
             <h2 className="text-text mb-1 text-xl font-bold">
               {modalAction === 'CREATE' ? 'Forjar Nova Sala' : 'Entrar na Sala'}
             </h2>
@@ -261,40 +296,62 @@ export default function DashboardPage() {
             </div>
 
             {modalAction === 'CREATE' && (
-              <div className="mb-6 flex gap-4">
-                <div className="flex-1">
+              <div className="mb-6 space-y-4">
+                <div>
+                  <label className="text-text-muted mb-2 block text-xs font-bold uppercase">
+                    Formato
+                  </label>
+                  <select
+                    value={gameType}
+                    onChange={(e) => {
+                      const novo = e.target.value;
+                      setGameType(novo);
+                      // Reajusta a contagem para a faixa do formato novo:
+                      // manter "6 jogadores" ao trocar para Duel Commander
+                      // criaria uma mesa que o próprio formato não permite.
+                      const preset = acharFormato(novo);
+                      setMaxClients(preset.jogadores.padrao);
+                    }}
+                    className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 focus:outline-none"
+                  >
+                    {FORMATOS_JOGAVEIS.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.nome}
+                        {f.status === 'BETA' ? ' (beta)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-text-faint mt-1.5 text-xs">{formato.resumo}</p>
+                </div>
+
+                <div>
                   <label className="text-text-muted mb-2 block text-xs font-bold uppercase">
                     Jogadores
                   </label>
                   <select
                     value={maxClients}
                     onChange={(e) => setMaxClients(Number(e.target.value))}
-                    className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 focus:outline-none"
+                    disabled={formato.jogadores.min === formato.jogadores.max}
+                    className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 focus:outline-none disabled:opacity-60"
                   >
-                    {/* O teto vem de `REALTIME_LIMITS.MAX_PLAYERS` (8). O
-                        seletor parava em 6 enquanto o servidor recusava acima
-                        de 4: dois números diferentes, nenhum deles o real. */}
-                    {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+                    {/* A faixa vem do preset, não de uma lista fixa de 2 a 8.
+                        O teto absoluto do sistema continua sendo
+                        `REALTIME_LIMITS.MAX_PLAYERS`; o preset é mais estreito
+                        onde o formato é mais estreito. */}
+                    {Array.from(
+                      { length: formato.jogadores.max - formato.jogadores.min + 1 },
+                      (_, i) => formato.jogadores.min + i,
+                    ).map((n) => (
                       <option key={n} value={n}>
-                        {n} Jogadores
+                        {n === 1 ? '1 jogador (solo)' : `${n} jogadores`}
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="flex-1">
-                  <label className="text-text-muted mb-2 block text-xs font-bold uppercase">
-                    Formato
-                  </label>
-                  <select
-                    value={gameType}
-                    onChange={(e) => setGameType(e.target.value)}
-                    className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 focus:outline-none"
-                  >
-                    <option value="COMMANDER">Commander</option>
-                    <option value="STANDARD">Standard</option>
-                    <option value="MODERN">Modern</option>
-                    <option value="PAUPER">Pauper</option>
-                  </select>
+                  {formato.jogadores.min === formato.jogadores.max && (
+                    <p className="text-text-faint mt-1.5 text-xs">
+                      {formato.nome} é jogado com exatamente {formato.jogadores.max}.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -318,6 +375,7 @@ export default function DashboardPage() {
                 disabled={isConnecting}
                 className="bg-primary hover:bg-primary-hover flex items-center gap-2 rounded-md px-6 py-2 font-medium text-white shadow-md transition-all active:scale-95 disabled:opacity-50"
               >
+                {isConnecting && <Loader2 className="h-4 w-4 animate-spin" />}
                 {isConnecting ? 'Conectando...' : 'Entrar na Mesa'}
               </button>
             </div>

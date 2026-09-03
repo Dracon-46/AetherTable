@@ -27,9 +27,25 @@ import { SCRYFALL_CLIENT } from './scryfall.provider.js';
  */
 
 /** Cartas não mudam. O que muda é o catálogo, e devagar. */
-const TTL_CARTA_MS = 60 * 60 * 1000;
+const TTL_CARTA_MS = 12 * 60 * 60 * 1000;
 const TTL_BUSCA_MS = 10 * 60 * 1000;
-const MAX_ENTRADAS = 500;
+
+/**
+ * DOIS BALDES, E NÃO UM.
+ *
+ * Carta e busca dividiam o mesmo LRU de 500 entradas. Um deck de Commander
+ * hidratado ocupa 100 delas; o deckbuilder gera uma entrada por tecla digitada
+ * (com `unique=prints`, cada busca guarda até 20 cartas num objeto só). Meia
+ * dúzia de buscas empurrava o deck inteiro para fora do cache, e a próxima
+ * abertura do grimório voltava a pagar dois round-trips na Scryfall — o cache
+ * existia e não segurava justamente o dado que mais se relê.
+ *
+ * Separados, uma busca nunca expulsa uma carta. O teto de cartas é generoso
+ * porque a entrada é pequena (~3 KB) e o ganho é grande: 6.000 impressões
+ * cobrem o catálogo ativo de uma mesa cheia por várias partidas.
+ */
+const MAX_CARTAS = 6000;
+const MAX_BUSCAS = 300;
 
 interface Entrada<T> {
   valor: T;
@@ -39,7 +55,10 @@ interface Entrada<T> {
 @Injectable()
 export class CardsService {
   private readonly logger = new Logger(CardsService.name);
-  private readonly cache = new Map<string, Entrada<unknown>>();
+  /** Impressões por id — o dado imutável, guardado com folga. */
+  private readonly cartas = new Map<string, Entrada<unknown>>();
+  /** Buscas e autocomplete — voláteis, e nunca disputam espaço com as cartas. */
+  private readonly buscas = new Map<string, Entrada<unknown>>();
 
   constructor(@Inject(SCRYFALL_CLIENT) private readonly scryfall: ScryfallClient) {}
 
@@ -91,6 +110,23 @@ export class CardsService {
     return resposta;
   }
 
+  /**
+   * Esvazia os dois baldes. Devolve quantas entradas saíram.
+   *
+   * Existe para o botão do painel administrativo (DOC-061 §5): depois dos
+   * spoilers de uma coleção, o que atrapalha é uma entrada ANTIGA ainda válida
+   * por TTL — a carta nova chega na primeira consulta, mas a errata da antiga
+   * espera 12 horas. Sem isto, a única forma de forçar a releitura era
+   * reiniciar a API.
+   */
+  esvaziarCache(): number {
+    const total = this.cartas.size + this.buscas.size;
+    this.cartas.clear();
+    this.buscas.clear();
+    this.logger.warn(`Cache de cartas esvaziado: ${total} entradas removidas.`);
+    return total;
+  }
+
   // ─── Cache ─────────────────────────────────────────────────────────────────
 
   private async memo<T>(chave: string, ttl: number, produzir: () => Promise<T>): Promise<T> {
@@ -102,25 +138,34 @@ export class CardsService {
     return valor;
   }
 
+  /** O balde de uma chave. `card:` é impressão; todo o resto é volátil. */
+  private balde(chave: string): { mapa: Map<string, Entrada<unknown>>; teto: number } {
+    return chave.startsWith('card:')
+      ? { mapa: this.cartas, teto: MAX_CARTAS }
+      : { mapa: this.buscas, teto: MAX_BUSCAS };
+  }
+
   private ler<T>(chave: string): T | undefined {
-    const entrada = this.cache.get(chave);
+    const { mapa } = this.balde(chave);
+    const entrada = mapa.get(chave);
     if (!entrada) return undefined;
     if (Date.now() > entrada.expiraEm) {
-      this.cache.delete(chave);
+      mapa.delete(chave);
       return undefined;
     }
     // Renova a posição na LRU.
-    this.cache.delete(chave);
-    this.cache.set(chave, entrada);
+    mapa.delete(chave);
+    mapa.set(chave, entrada);
     return entrada.valor as T;
   }
 
   private gravar(chave: string, valor: unknown, ttl: number): void {
-    this.cache.set(chave, { valor, expiraEm: Date.now() + ttl });
-    while (this.cache.size > MAX_ENTRADAS) {
-      const maisAntiga = this.cache.keys().next();
+    const { mapa, teto } = this.balde(chave);
+    mapa.set(chave, { valor, expiraEm: Date.now() + ttl });
+    while (mapa.size > teto) {
+      const maisAntiga = mapa.keys().next();
       if (maisAntiga.done) break;
-      this.cache.delete(maisAntiga.value);
+      mapa.delete(maisAntiga.value);
     }
   }
 

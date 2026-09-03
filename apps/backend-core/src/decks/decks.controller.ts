@@ -12,6 +12,7 @@ import {
   ParseUUIDPipe,
   NotFoundException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -29,10 +30,39 @@ import { InternalApiGuard } from '../common/internal-api.guard.js';
 import { validarDeckParaFormato, type DeckValidavel } from './formato.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
+/**
+ * O LIMITE GLOBAL (10 req/5 s) NÃO CABE NO DECKBUILDER.
+ *
+ * Ele é dimensionado para navegação. A edição de grimório é o oposto: ajustar
+ * quantidades, promover comandante e remover cartas são cliques em sequência
+ * na MESMA tela. Sob o balde padrão, o sexto clique em cinco segundos voltava
+ * 429 — e como o cliente só recarregava o deck em caso de sucesso, a tela
+ * simplesmente parava de responder, sem erro visível. A leitura da cadeira do
+ * usuário é "o site travou", que foi exatamente o relato.
+ *
+ * O teto continua existindo, e sobre rota autenticada por JWT: o que ele
+ * protege aqui é o banco contra um script, não a tela contra o próprio dono.
+ */
+const LIMITE_DECK = {
+  curto: { limit: 60, ttl: 5_000 },
+  longo: { limit: 600, ttl: 60_000 },
+};
+
+/**
+ * Importação é o oposto: uma chamada resolve até centenas de nomes na Scryfall.
+ * Fica com um balde próprio, estreito, para não virar um gerador de tráfego
+ * contra o provedor.
+ */
+const LIMITE_IMPORTACAO = {
+  curto: { limit: 3, ttl: 10_000 },
+  longo: { limit: 20, ttl: 60_000 },
+};
+
 @ApiTags('Decks')
 @ApiBearerAuth()
 @Controller('decks')
 @UseGuards(JwtAuthGuard)
+@Throttle(LIMITE_DECK)
 export class DecksController {
   constructor(private readonly decksService: DecksService) {}
 
@@ -60,6 +90,7 @@ export class DecksController {
   }
 
   @Post(':id/import')
+  @Throttle(LIMITE_IMPORTACAO)
   importDeck(
     @Request() req: RequisicaoAutenticada,
     @Param('id', ParseUUIDPipe) id: string,

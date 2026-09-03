@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { Providers } from './Providers';
 
 export const metadata: Metadata = {
   title: 'AetherTable - O Seu Novo Card Game',
@@ -21,7 +22,9 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-table-deep text-text min-h-dvh w-full antialiased">{children}</body>
+      <body className="bg-table-deep text-text min-h-dvh w-full antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

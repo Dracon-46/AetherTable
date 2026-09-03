@@ -60,7 +60,28 @@ export interface ScryfallCard {
   mana_cost?: string;
   color_identity?: string[];
   layout: string;
+  /**
+   * `common` | `uncommon` | `rare` | `mythic` | `special` | `bonus`.
+   *
+   * Faltava, e sem ela Pauper e Peasant nao tinham como ser validados: o teto
+   * de raridade E a regra inteira desses formatos.
+   */
+  rarity?: string;
   legalities?: Record<string, string>;
+  /**
+   * Precos, em texto, como a Scryfall devolve (`"12.34"`) ou `null`.
+   *
+   * Estava faltando na interface e o campo JA VINHA na resposta: quem quisesse
+   * o preco era obrigado a chamar `api.scryfall.com` por fora do cliente — o
+   * que `DecksService` fazia, pagando um round-trip sem cache e sem fila a cada
+   * abertura de grimorio.
+   */
+  prices?: {
+    usd?: string | null;
+    usd_foil?: string | null;
+    eur?: string | null;
+    tix?: string | null;
+  };
   image_uris?: { small?: string; normal?: string; large?: string };
   /**
    * ATENCAO (DOC-035 §2.2): cartas de dupla face NAO tem `image_uris` na raiz —

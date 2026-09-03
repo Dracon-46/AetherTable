@@ -1,26 +1,39 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
+import { CardsService } from '../cards/cards.service.js';
 import { BoardType } from '@prisma/client';
+import type { CardIdentifier, ScryfallCard } from '@aethertable/scryfall-client';
 
-interface ScryCard {
-  id: string;
-  name: string;
-  set: string;
-  type_line?: string;
-  legalities?: { commander?: string };
-  image_uris?: { normal?: string; small?: string };
-  card_faces?: Array<{ image_uris?: { normal?: string; small?: string } }>;
-  prices?: { usd?: string; eur?: string; tix?: string };
-}
-
-interface ScryResponse {
-  data?: ScryCard[];
-  not_found?: Array<{ name?: string; set?: string }>;
-}
+/**
+ * ─── POR QUE ESTE SERVIÇO NÃO FALA MAIS COM A SCRYFALL ─────────────────────
+ *
+ * `getDeckById` e `importDeckList` chamavam `https://api.scryfall.com` com
+ * `fetch` cru, cada um com o próprio laço de lotes e o próprio
+ * `setTimeout(100)` "para respeitar o rate limit". Três consequências, e a
+ * primeira é a que o jogador sentia:
+ *
+ *  1. NENHUM CACHE. Abrir um grimório de 100 cartas custava dois round-trips à
+ *     Scryfall + 100 ms de espera artificial — ~1 s, TODA vez. E o deckbuilder
+ *     recarregava o deck inteiro depois de cada `+1`, `−1` e remoção: um clique
+ *     de quantidade custava a viagem completa. Era a lentidão principal da tela.
+ *  2. FURAVA A FILA GLOBAL (DOC-035 §3). O `ScryfallClient` serializa as
+ *     chamadas com 100 ms entre inícios; quem passa por cima dispara em
+ *     paralelo com ela, que é exatamente o que a Scryfall bloqueia.
+ *  3. DUAS IMPLEMENTAÇÕES do mesmo lote, com backoff só numa delas.
+ *
+ * `CardsService.collection` resolve os três: responde carta a carta do LRU,
+ * pergunta à Scryfall só o que falta, e o que falta vai pela fila única com
+ * backoff. Num deck reaberto, a hidratação passa a custar ZERO requisições.
+ */
 
 @Injectable()
 export class DecksService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(DecksService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private cards: CardsService,
+  ) {}
 
   async createDeck(userId: string, name: string, formatId: string = 'commander') {
     return this.prisma.deck.create({
@@ -46,28 +59,15 @@ export class DecksService {
     });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
-    // Hidratação via Scryfall
+    // Hidratação via Scryfall — pelo espelho cacheado, nunca pela CDN crua.
     if (deck.cards.length > 0) {
       try {
-        const identifiers = deck.cards.map((c) => ({ id: c.scryfallId }));
-        const scryMap = new Map<string, ScryCard>();
-        const chunkSize = 75;
-
-        for (let i = 0; i < identifiers.length; i += chunkSize) {
-          const chunk = identifiers.slice(i, i + chunkSize);
-          const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'User-Agent': 'AetherTable/1.0' },
-            body: JSON.stringify({ identifiers: chunk }),
-          });
-          const scryData = (await scryRes.json()) as ScryResponse;
-
-          if (scryData.data) {
-            scryData.data.forEach((d) => scryMap.set(d.id, d));
-          }
-
-          if (identifiers.length > chunkSize) await new Promise((r) => setTimeout(r, 100)); // Respect rate limits
-        }
+        // Ids REPETIDOS não viram identificadores repetidos: um deck com
+        // quatro cópias da mesma impressão pedia a mesma carta quatro vezes e
+        // consumia o teto de 75 do lote com duplicatas.
+        const unicos = [...new Set(deck.cards.map((c) => c.scryfallId))];
+        const resposta = await this.cards.collection(unicos.map((id) => ({ id })));
+        const scryMap = new Map<string, ScryfallCard>(resposta.data.map((d) => [d.id, d]));
 
         // Injeta dados virtuais para o frontend usar (nome, legalidade, set)
         (deck as { cards: unknown[] }).cards = deck.cards.map((c) => {
@@ -88,12 +88,48 @@ export class DecksService {
             imageNormal:
               extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
             priceUsd: extra?.prices?.usd || 0,
+            /**
+             * COR, CUSTO E CMC — já vinham na resposta e eram jogados fora.
+             *
+             * A tela oferecia "Agrupar por tipo" e nada mais, porque era o
+             * único critério derivável de `typeLine`. Agrupar por cor ou por
+             * custo é o corte que todo deckbuilder tem, e ele estava
+             * bloqueado por três campos que a Scryfall já havia mandado nesta
+             * mesma requisição.
+             *
+             * Carta de dupla face não tem `mana_cost` na raiz: o custo mora
+             * nas faces (DOC-035 §2.2). Sem o recuo, toda MDFC apareceria
+             * como custo zero.
+             */
+            colorIdentity: extra?.color_identity ?? [],
+            cmc: typeof extra?.cmc === 'number' ? extra.cmc : null,
+            manaCost: extra?.mana_cost || extra?.card_faces?.[0]?.mana_cost || '',
+            /**
+             * RARIDADE E O OBJETO `legalities` INTEIRO.
+             *
+             * `isBanned` acima é uma leitura de UMA chave, reduzida a um
+             * booleano — e essa redução jogava fora as outras duas respostas
+             * que a Scryfall dá no mesmo campo:
+             *
+             *   'restricted' — Vintage limita a UMA cópia. Não é banida, e
+             *                  colapsada num booleano ela sumia por completo.
+             *   'not_legal'  — a carta não existe no pool do formato, que é
+             *                  diferente de ter sido proibida nele.
+             *
+             * Mandar o objeto cru deixa o validador compartilhado
+             * (`avaliarLegalidade`) distinguir os três, e deixa o CLIENTE
+             * reavaliar a legalidade contra outro formato sem uma ida ao
+             * servidor — é o que faz o painel de legalidade reagir na hora
+             * quando o jogador troca o formato do deck.
+             */
+            rarity: extra?.rarity ?? '',
+            legalities: extra?.legalities ?? {},
           };
         });
       } catch (erro) {
         // A hidratação é enriquecimento: se a Scryfall cair, o deck ainda
         // precisa ser devolvido — só sem nome, set e legalidade.
-        console.error('[decks] Falha ao hidratar cartas na Scryfall:', erro);
+        this.logger.error(`Falha ao hidratar cartas na Scryfall: ${String(erro)}`);
       }
     }
 
@@ -305,13 +341,12 @@ export class DecksService {
     if (parsedCards.length === 0)
       throw new BadRequestException('Nenhuma carta válida encontrada no texto');
 
-    const identifiers = parsedCards.map((c) => {
-      const idObj: Record<string, string> = { name: c.name };
-      if (c.set) idObj['set'] = c.set.toLowerCase();
+    const identifiers: CardIdentifier[] = parsedCards.map((c) => {
+      const idObj: CardIdentifier = { name: c.name };
+      if (c.set) idObj.set = c.set.toLowerCase();
       return idObj;
     });
 
-    const chunkSize = 75;
     const resolvedCards: {
       quantity: number;
       scryfallId: string;
@@ -320,23 +355,16 @@ export class DecksService {
     }[] = [];
     const notFound: string[] = [];
 
-    for (let i = 0; i < identifiers.length; i += chunkSize) {
-      const chunk = identifiers.slice(i, i + chunkSize);
-
+    // Um `collection` só: o fatiamento em lotes de 75, o espaçamento entre
+    // chamadas e o backoff de 429 vivem no `ScryfallClient` (DOC-035 §3), não
+    // aqui. O laço manual duplicava os dois primeiros e não tinha o terceiro.
+    {
       try {
-        const scryRes = await fetch('https://api.scryfall.com/cards/collection', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'User-Agent': 'AetherTable/1.0' },
-          body: JSON.stringify({ identifiers: chunk }),
-        });
+        const scryData = await this.cards.collection(identifiers);
 
-        const scryData = (await scryRes.json()) as ScryResponse;
+        scryData.not_found.forEach((nf) => notFound.push(nf.name ?? nf.set ?? 'desconhecido'));
 
-        if (scryData.not_found) {
-          scryData.not_found.forEach((nf) => notFound.push(nf.name ?? nf.set ?? 'desconhecido'));
-        }
-
-        if (scryData.data) {
+        {
           scryData.data.forEach((cardData) => {
             /**
              * CASAMENTO DE NOME — o buraco silencioso do import.
@@ -377,12 +405,10 @@ export class DecksService {
             }
           });
         }
-
-        if (identifiers.length > chunkSize) await new Promise((r) => setTimeout(r, 150));
       } catch (erro) {
         // A causa real ia para o vazio: sem log, uma queda da Scryfall e um
         // bug de parsing viravam a mesma mensagem genérica.
-        console.error('[decks] Falha ao consultar a Scryfall:', erro);
+        this.logger.error(`Falha ao consultar a Scryfall: ${String(erro)}`);
         throw new BadRequestException('Falha ao comunicar com a Scryfall');
       }
     }
