@@ -4,10 +4,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MatchesController } from './matches.controller.js';
 import { MatchesService } from './matches.service.js';
 import { DecksModule } from '../decks/decks.module.js';
+// Criar mesa consulta o interruptor MATCHMAKING_ENABLED (DOC-061 §5).
+import { AdminModule } from '../admin/admin.module.js';
 
 @Module({
   imports: [
     DecksModule, // Para usar o DecksService
+    AdminModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({

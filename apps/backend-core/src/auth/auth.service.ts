@@ -1,8 +1,14 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { UsersService } from '../users/users.service.js';
 import { PrismaService } from '../common/prisma/prisma.service.js';
+import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { ttlEmSegundos } from './ttl.js';
 
 @Injectable()
@@ -11,6 +17,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private prisma: PrismaService,
+    private sistema: AdminSistemaService,
   ) {}
 
   /**
@@ -45,6 +52,16 @@ export class AuthService {
     });
 
     if (account) {
+      /**
+       * OAuth também passa pela suspensão.
+       *
+       * Sem esta linha, "Entrar com Google" seria a porta lateral que ignora a
+       * punição — e ela é o caminho mais usado, não uma exceção.
+       */
+      this.exigirContaLiberada(account.user);
+      if (account.user.deletedAt) {
+        throw new ForbiddenException('Esta conta foi encerrada.');
+      }
       return account.user;
     }
 
@@ -102,6 +119,21 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
+    /**
+     * ─── A SUSPENSÃO PRECISA VALER NO LOGIN ──────────────────────────────────
+     *
+     * DOC-061 §2 define a suspensão como algo que "impede login e invalida
+     * JWT". O campo passou a existir com o backoffice, e sem esta checagem ele
+     * seria uma anotação decorativa: o `PapeisGuard` barra o suspenso do
+     * PAINEL, e o resto do sistema o deixaria entrar e jogar normalmente — quer
+     * dizer, suspender alguém por conduta na mesa não o tiraria da mesa.
+     *
+     * A checagem vem DEPOIS da senha de propósito. Antes dela, a mensagem de
+     * suspensão viraria um oráculo: qualquer pessoa descobriria quais contas
+     * estão punidas digitando e-mails com senha errada.
+     */
+    this.exigirContaLiberada(user);
+
     // Descarte intencional: a hash da senha nunca sai do serviço.
     const { passwordHash: _hash, ...result } = user;
 
@@ -117,9 +149,44 @@ export class AuthService {
   }
 
   /**
+   * Recusa o acesso de uma conta suspensa, dizendo até quando e por quê.
+   *
+   * A data e o motivo são MOSTRADOS: uma recusa sem prazo é indistinguível de
+   * um banimento, e a pessoa suspensa por sete dias abriria um ticket de
+   * suporte todo dia até o prazo vencer.
+   */
+  private exigirContaLiberada(user: {
+    suspendedUntil?: Date | null;
+    suspensionReason?: string | null;
+  }): void {
+    const ate = user.suspendedUntil;
+    if (!ate || ate.getTime() <= Date.now()) return;
+
+    const quando = ate.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    const porque = user.suspensionReason ? ` Motivo: ${user.suspensionReason}` : '';
+    throw new ForbiddenException(`Sua conta está suspensa até ${quando}.${porque}`);
+  }
+
+  /**
    * Registra um novo usuário no banco de dados
    */
   async register(email: string, username: string, pass: string) {
+    /**
+     * O INTERRUPTOR DE CADASTRO (DOC-061 §5).
+     *
+     * Sem esta linha, `REGISTRATION_ENABLED` seria um botão no painel que não
+     * liga nada — e o administrador acreditaria ter fechado o cadastro durante
+     * um ataque de contas automatizadas.
+     *
+     * A consulta é uma leitura por registro, não por requisição de jogo, e
+     * cadastro é a operação mais rara da API.
+     */
+    if (!(await this.sistema.flagLigada(FLAGS.CADASTRO))) {
+      throw new ForbiddenException(
+        'O cadastro de novas contas está temporariamente fechado. Tente mais tarde.',
+      );
+    }
+
     // Verifica unicidade
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
     if (existingEmail) throw new ConflictException({ error: 'EMAIL_IN_USE' });

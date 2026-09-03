@@ -14,15 +14,16 @@
  * (RN13). É por isso que o botão diz "pedir", e não "ver".
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { Room } from 'colyseus.js';
 import { useUIStore, useGameStore } from '../store/game.store';
-import { X, Users, Mic, Eye, BookOpen, Send, UserX, Crown } from 'lucide-react';
+import { X, Users, Mic, Eye, BookOpen, Send, UserX, Crown, Flag } from 'lucide-react';
 import { useVoiceStore } from '../net/voice';
 import { intents } from '../net/intents';
 import { useToast } from '../components/Toast';
 import type { RoomState } from '../net/schema/RoomState';
 import { useFecharComEsc } from './useFecharComEsc';
+import { DenunciarJogador } from './DenunciarJogador';
 
 interface PlayersModalProps {
   room: Room<RoomState>;
@@ -37,6 +38,20 @@ export function PlayersModal({ room }: PlayersModalProps) {
   const cards = useGameStore((s) => s.cards);
   const myId = useGameStore((s) => s.mySessionId);
   const speaking = useVoiceStore((s) => s.speaking);
+
+  /**
+   * O jogador que está sendo denunciado, se algum.
+   *
+   * Estado aqui e não no `uiStore`: a denúncia é sobre UMA pessoa e morre
+   * quando o modal fecha — não é preferência nem estado da mesa, e persistir um
+   * alvo de denúncia entre partidas seria só uma forma de reabrir o formulário
+   * apontado para quem não está mais na sala.
+   */
+  const [denunciando, setDenunciando] = useState<{
+    id: string;
+    userId: string;
+    name: string;
+  } | null>(null);
 
   // Hook ANTES de qualquer retorno antecipado: o `CardInspector` já derrubou a
   // mesa uma vez por chamar um `useEffect` depois de um `return null`.
@@ -204,6 +219,36 @@ export function PlayersModal({ room }: PlayersModalProps) {
                       Enviar carta para a mesa dele
                     </button>
 
+                    {/* ── DENUNCIAR ────────────────────────────────────────
+                        A tabela `reports` existia no banco desde o início e
+                        NENHUMA tela escrevia nela: denunciar era impossível, e
+                        a fila da moderação nunca enchia por construção.
+
+                        Fica ao lado de "remover da sala" porque as duas são a
+                        resposta a uma conduta — mas só o anfitrião remove, e
+                        qualquer pessoa denuncia. Numa mesa em que o próprio
+                        anfitrião é o problema, expulsar não é uma opção
+                        disponível a quem sofre. */}
+                    <button
+                      onClick={() =>
+                        setDenunciando({
+                          id: player.id,
+                          userId: player.userId,
+                          name: player.name,
+                        })
+                      }
+                      disabled={!player.userId}
+                      className="border-warning/40 text-warning hover:bg-warning/20 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                      title={
+                        player.userId
+                          ? `Envia uma denúncia à moderação com as últimas linhas do log`
+                          : 'Este jogador não tem conta identificada nesta sala'
+                      }
+                    >
+                      <Flag className="h-3.5 w-3.5" />
+                      Denunciar
+                    </button>
+
                     {souAnfitriao && (
                       <button
                         onClick={() => remover(player.id)}
@@ -248,6 +293,10 @@ export function PlayersModal({ room }: PlayersModalProps) {
           })}
         </div>
       </div>
+
+      {denunciando && (
+        <DenunciarJogador jogador={denunciando} onFechar={() => setDenunciando(null)} />
+      )}
     </div>
   );
 }

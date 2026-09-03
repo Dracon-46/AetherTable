@@ -96,6 +96,16 @@ services:
       - key: LIVEKIT_URL
         sync: false
 
+      # Backoffice (DOC-061). Contas que devem ser ADMIN, separadas por vírgula.
+      # `sync: false` porque é dado de identidade e não deve ficar no repositório
+      # — preencha no painel do Render.
+      #
+      # SEM ISTO O PAINEL /admin FICA INALCANÇÁVEL: toda rota que promove alguém
+      # a ADMIN exige um ADMIN autenticado, e numa base nova ninguém é. A API
+      # reconcilia esta lista a cada boot.
+      - key: ADMIN_EMAILS
+        sync: false
+
   # ─── Game server (Colyseus) ───────────────────────────────────────────────
   - type: web
     name: aethertable-game

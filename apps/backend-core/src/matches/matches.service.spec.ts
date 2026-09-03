@@ -31,10 +31,20 @@ type Deck = { formatId: string; cardCount: number; cards: Carta[] };
 function montarServico(deck: Deck) {
   const decksService = { getDeckById: jest.fn().mockResolvedValue(deck) };
   const jwtService = { sign: jest.fn().mockReturnValue('token-falso') };
+  /**
+   * Todos os interruptores LIGADOS.
+   *
+   * `createMatch` e `getVoiceToken` passaram a consultar `platform_flags`
+   * (DOC-061 §5). O que estes testes verificam é a validação de deck, e um
+   * duplo que devolvesse `false` faria todos eles falharem por um motivo que
+   * não é o assunto deles.
+   */
+  const sistema = { flagLigada: jest.fn().mockResolvedValue(true) };
 
   return new MatchesService(
     jwtService as unknown as ConstructorParameters<typeof MatchesService>[0],
     decksService as unknown as ConstructorParameters<typeof MatchesService>[1],
+    sistema as unknown as ConstructorParameters<typeof MatchesService>[2],
   );
 }
 

@@ -82,6 +82,27 @@ enum ReportStatus {
   DISMISSED
 }
 
+/// Toda acao do backoffice que muda algo. O enum e fechado de proposito: o log
+/// de auditoria precisa ser AGRUPAVEL e FILTRAVEL, e uma string livre viraria
+/// vinte grafias da mesma acao em seis meses (DOC-061 §6).
+enum AdminAction {
+  USER_SUSPEND
+  USER_UNSUSPEND
+  USER_BAN
+  USER_RESTORE
+  USER_ROLE_CHANGE
+  INVENTORY_GRANT
+  INVENTORY_REVOKE
+  COSMETIC_CREATE
+  COSMETIC_UPDATE
+  COSMETIC_DELETE
+  REPORT_CLAIM
+  REPORT_RESOLVE
+  REPORT_DISMISS
+  FLAG_CHANGE
+  CARD_CACHE_PURGE
+}
+
 // ─── Usuario e identidade ─────────────────────────────────────────────────────
 
 model User {
@@ -99,6 +120,17 @@ model User {
   lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz
   /// Soft delete para LGPD: expurgo fisico em 30 dias (§7.1).
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  /// SUSPENSAO TEMPORARIA (DOC-061 §2).
+  ///
+  /// Uma DATA, e nao um booleano `suspended`: suspensao tem prazo, e um
+  /// booleano exigiria alguem (ou um cron) para desligar. Com a data, a
+  /// suspensao expira sozinha e o login volta a funcionar sem intervencao —
+  /// que e a diferenca entre "suspenso por 7 dias" e "banido ate alguem
+  /// lembrar".
+  suspendedUntil   DateTime? @map("suspended_until") @db.Timestamptz
+  /// O motivo mostrado ao usuario na tentativa de login.
+  suspensionReason String?   @map("suspension_reason")
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -112,7 +144,12 @@ model User {
   cosmetics    UserCosmetic[]
   participions MatchParticipant[]
 
+  auditActions    AuditLog[] @relation("auditActor")
+  reportsResolved Report[]   @relation("reportResolver")
+
   @@index([deletedAt])
+  @@index([role])
+  @@index([suspendedUntil])
   @@map("users")
 }
 
@@ -269,11 +306,49 @@ model Report {
   status     ReportStatus @default(OPEN)
   createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
-  reporter User @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
-  reported User @relation("reported", fields: [reportedId], references: [id], onDelete: Cascade)
+  /// EVIDENCIA CONGELADA (DOC-061 §4).
+  ///
+  /// As ultimas linhas de log e chat, capturadas no momento da denuncia. Tem de
+  /// ser um snapshot e nao uma referencia: o estado da sala vive na RAM do game
+  /// node (ADR-006, RN12) e desaparece quando a partida acaba. Sem copiar aqui,
+  /// toda denuncia chegaria ao moderador sem nada para analisar.
+  ///
+  /// Audio NAO e gravado — ofensa verbal depende de denuncias multiplas para
+  /// gerar padrao, como o documento preve.
+  snapshot Json @default("[]")
 
+  /// Resolucao. `resolvedById` e SetNull para a auditoria sobreviver ao expurgo
+  /// da conta do moderador.
+  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedById String?   @map("resolved_by_id") @db.Uuid
+  /// O que o moderador decidiu, em texto livre. Fica visivel na fila.
+  resolution String?
+
+  reporter   User  @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported   User  @relation("reported", fields: [reportedId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("reportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  /// DEDUPLICACAO FICA NA APLICACAO, E NAO NUM INDICE UNICO.
+  ///
+  /// A intencao e clara — uma pessoa nao empilha dez denuncias da mesma conduta
+  /// na mesma sala — mas um `@@unique` sobre estas quatro colunas nao entrega
+  /// isso, por duas razoes que se somam:
+  ///
+  ///   1. `room_code` e ANULAVEL (denuncia feita fora de partida). No Postgres,
+  ///      NULLs sao DISTINTOS num indice unico: duas denuncias sem sala nao
+  ///      colidem. A garantia falharia exatamente no caso mais aberto a abuso.
+  ///   2. O Prisma nao aceita `findUnique`/`upsert` sobre um unique composto que
+  ///      contenha coluna anulavel, porque a chave gerada exige todos os campos
+  ///      nao-nulos. O codigo teria de contornar o proprio indice.
+  ///
+  /// Entao o indice aqui e de BUSCA, e a deduplicacao vive em
+  /// `AdminDenunciasService.criar` — onde `room_code` nulo pode ser comparado
+  /// com `null` de verdade. O risco que sobra e uma corrida entre dois cliques
+  /// simultaneos do mesmo usuario, cujo pior resultado e um item repetido na
+  /// fila. Aceitavel: o moderador descarta em um clique.
+  @@index([reporterId, reportedId, reason])
   @@index([reportedId])
-  @@index([status])
+  @@index([status, createdAt(sort: Desc)])
   @@map("reports")
 }
 
@@ -314,6 +389,77 @@ model MatchParticipant {
   @@unique([matchId, userId])
   @@index([userId])
   @@map("match_participants")
+}
+
+// ─── Backoffice (DOC-061) ─────────────────────────────────────────────────────
+
+/// RASTRO INALTERAVEL de toda acao administrativa (DOC-061 §6).
+///
+/// O checklist de seguranca do documento pede que TODO endpoint do modulo admin
+/// gere uma linha aqui. O modulo nao tinha endpoint nenhum, e a tabela nao
+/// existia — quer dizer, promover um usuario a ADMIN ou apagar uma conta era
+/// uma escrita sem testemunha.
+///
+/// NADA aqui e editavel ou apagavel pela aplicacao: nao existe rota de update
+/// nem de delete. Um log de auditoria que o proprio admin pode limpar responde
+/// a pergunta errada.
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Quem fez. SetNull no expurgo da conta (§7.1) — o rastro sobrevive ao autor.
+  actorId String? @map("actor_id") @db.Uuid
+
+  /// O username de quem fez, CONGELADO no momento da acao.
+  ///
+  /// Redundante com a relacao de proposito: `actorId` vira NULL no expurgo, e
+  /// um username muda. Sem a copia, o historico viraria "alguem suspendeu
+  /// alguem", que e o mesmo que nao ter historico.
+  actorLabel String @map("actor_label") @db.VarChar(64)
+
+  action AdminAction
+
+  /// Sobre o que a acao foi: 'user', 'cosmetic', 'report', 'flag', 'system'.
+  targetType String  @map("target_type") @db.VarChar(24)
+  targetId   String? @map("target_id") @db.VarChar(64)
+  /// Rotulo legivel do alvo, tambem congelado.
+  targetLabel String? @map("target_label") @db.VarChar(160)
+
+  /// Justificativa que o admin digitou. Obrigatoria nas acoes punitivas.
+  reason String?
+  /// Detalhe estruturado da acao (role anterior e nova, dias de suspensao...).
+  metadata Json @default("{}")
+  /// IP de origem, para investigar acesso indevido a conta administrativa.
+  ip String? @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  actor User? @relation("auditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+/// Interruptor global de plataforma (DOC-061 §5).
+///
+/// O documento pede um "Kill Switch de Voz": um botao de emergencia que
+/// desabilita o LiveKit para todo mundo se o faturamento do SFU disparar ou
+/// houver abuso. Uma variavel de ambiente nao serve para isso — mudar env exige
+/// redeploy, e uma emergencia de faturamento nao espera build.
+///
+/// Tabela e nao JSON num registro so: cada flag tem historico de quem mexeu.
+model PlatformFlag {
+  key         String   @id @db.VarChar(48)
+  enabled     Boolean  @default(true)
+  /// Por que esta assim. Aparece no painel, ao lado do interruptor.
+  note        String?
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.VarChar(64)
+
+  @@map("platform_flags")
 }
 
 // ─── Cosmeticos e monetizacao (DOC-060) ──────────────────────────────────────

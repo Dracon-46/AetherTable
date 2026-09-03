@@ -9,6 +9,8 @@ import { JwtStrategy } from './jwt.strategy.js';
 import { GoogleStrategy } from './google.strategy.js';
 import { DiscordStrategy } from './discord.strategy.js';
 import { UsersModule } from '../users/users.module.js';
+// O registro consulta o interruptor REGISTRATION_ENABLED (DOC-061 §5).
+import { AdminModule } from '../admin/admin.module.js';
 
 /**
  * Módulo de Autenticação (AuthModule).
@@ -17,6 +19,7 @@ import { UsersModule } from '../users/users.module.js';
 @Module({
   imports: [
     UsersModule,
+    AdminModule,
     PassportModule,
     // Registra o Módulo JWT assincronamente para ler o JWT_SECRET do arquivo .env
     JwtModule.registerAsync({
