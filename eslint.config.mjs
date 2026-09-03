@@ -59,11 +59,7 @@ export default tseslint.config(
     // contas e os decks da suíte multijogador. Ele é um script de linha de
     // comando como os de `tools/` — não é código de navegador, e tratá-lo como
     // tal fazia o lint acusar `fetch`, `console` e `process` como indefinidos.
-    files: [
-      '**/scripts/**/*.{js,cjs,mjs,ts}',
-      '**/tools/**/*.{js,mjs}',
-      '**/e2e/**/*.{js,mjs}',
-    ],
+    files: ['**/scripts/**/*.{js,cjs,mjs,ts}', '**/tools/**/*.{js,mjs}', '**/e2e/**/*.{js,mjs}'],
     languageOptions: {
       globals: {
         require: 'readonly',

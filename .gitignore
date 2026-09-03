@@ -43,3 +43,8 @@ desktop.ini
 
 # credenciais locais do git (conta dedicada do projeto)
 .git-credentials
+
+# Retratos gerados pelo E2E de mesa: artefato de inspecao, nao fonte.
+apps/frontend/e2e/retratos/
+# Fixture com tokens de sessao das contas de teste.
+apps/frontend/e2e/fixtures/jogadores.json

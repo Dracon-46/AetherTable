@@ -30,14 +30,21 @@ for (const { rota, nome } of TELAS) {
     // Nada pode empurrar a página para os lados.
     expect(medidas.larguraRolagem).toBeLessThanOrEqual(medidas.larguraVisivel + 1);
 
-    // E se o conteúdo é mais alto que a tela, ele PRECISA poder rolar.
-    if (medidas.alturaRolagem > medidas.alturaVisivel + 1) {
-      const rolou = await page.evaluate(() => {
-        window.scrollTo(0, 200);
-        return window.scrollY > 0;
-      });
-      expect(rolou).toBe(true);
-    }
+    /**
+     * ─── CABER, E NÃO "PODER ROLAR" ────────────────────────────────────────
+     *
+     * A asserção anterior aceitava o transbordo desde que a página rolasse. É
+     * uma garantia fraca para a PRIMEIRA tela do produto: quem chega no login
+     * não deve precisar rolar para achar o botão de entrar — e, pior, a rolagem
+     * numa tela que parece completa é invisível, então o botão simplesmente não
+     * existe para quem não pensou em descer.
+     *
+     * Agora as duas telas públicas têm de caber inteiras nos viewports em que a
+     * suíte roda (1280x720 no desktop, 412x915 no Pixel 7). O que isso trava é
+     * o crescimento silencioso: um campo a mais no cadastro, um aviso a mais no
+     * login, e a tela volta a transbordar sem ninguém perceber.
+     */
+    expect(medidas.alturaRolagem).toBeLessThanOrEqual(medidas.alturaVisivel + 1);
   });
 
   test(`${nome}: sem erro de página no carregamento`, async ({ page }) => {

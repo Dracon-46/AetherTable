@@ -69,18 +69,18 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden">
+    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-y-auto overflow-x-hidden px-3 py-4">
       <CenaDoDragao fase={fase} carregar={carregar} relaxar={relaxar} cuspir={cuspir} />
 
       <div
-        className={`bg-panel/80 border-panel-border relative z-10 w-full max-w-md rounded-lg border p-8 shadow-2xl backdrop-blur-md transition-transform duration-300 ${error ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
+        className={`bg-panel/80 border-panel-border relative z-10 my-auto w-full max-w-md rounded-lg border p-5 shadow-2xl backdrop-blur-md transition-transform duration-300 sm:p-7 ${error ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
       >
-        <div className="mb-8 flex flex-col items-center text-center">
-          <div className="bg-table-deep border-panel-border mb-4 rounded-full border p-3 shadow-inner">
-            <ShieldCheck className="text-success h-8 w-8" />
+        <div className="mb-5 flex flex-col items-center text-center">
+          <div className="bg-table-deep border-panel-border mb-3 rounded-full border p-2.5 shadow-inner">
+            <ShieldCheck className="text-success h-7 w-7" />
           </div>
-          <h1 className="text-text text-2xl font-bold">Alistar-se</h1>
-          <p className="text-text-muted mt-2 text-sm">Junte-se à mesa e forje seu destino.</p>
+          <h1 className="text-text text-xl font-bold sm:text-2xl">Alistar-se</h1>
+          <p className="text-text-muted mt-1 text-sm">Junte-se à mesa e forje seu destino.</p>
         </div>
 
         {estadoServidor === 'acordando' && (
@@ -97,7 +97,7 @@ export default function RegisterPage() {
           </div>
         )}
 
-        <form onSubmit={handleRegister} className="space-y-6">
+        <form onSubmit={handleRegister} className="space-y-4">
           <div className="space-y-2">
             <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
               Nome de Usuário
@@ -108,7 +108,7 @@ export default function RegisterPage() {
               disabled={isRegistering}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-3 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
+              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
               placeholder="Jace Beleren"
             />
           </div>
@@ -123,7 +123,7 @@ export default function RegisterPage() {
               disabled={isRegistering}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-3 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
+              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
               placeholder="seuemail@exemplo.com"
             />
           </div>
@@ -138,7 +138,7 @@ export default function RegisterPage() {
               disabled={isRegistering}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-3 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
+              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
               placeholder="••••••••••••"
             />
           </div>
@@ -148,7 +148,7 @@ export default function RegisterPage() {
             disabled={isRegistering}
             onMouseEnter={carregar}
             onMouseLeave={relaxar}
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold transition-all duration-150 ${
+            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-150 ${
               isRegistering
                 ? 'bg-success cursor-wait text-white'
                 : 'bg-success text-white hover:brightness-110 active:scale-95'
@@ -168,7 +168,7 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <div className="border-panel-border mt-8 border-t pt-6 text-center">
+        <div className="border-panel-border mt-5 border-t pt-4 text-center">
           <p className="text-text-muted text-sm">
             Já tem uma conta?{' '}
             <Link

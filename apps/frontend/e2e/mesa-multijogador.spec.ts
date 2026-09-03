@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { montarMesa, posicaoNaMao, CARD_W, CARD_H } from '../src/canvas/layout';
+import { montarGrade, posicaoNaMao, CARD_W, CARD_H } from '../src/canvas/layout';
 
 /**
  * mesa-multijogador.spec.ts — quatro jogadores de verdade, numa sala de verdade.
@@ -86,10 +86,6 @@ test.describe('mesa multijogador', () => {
     page.on('pageerror', (e: Error) =>
       console.error(`[${jogador.username}] pageerror:`, e.message),
     );
-    page.on('console', (m) => {
-      const t = m.text();
-      if (t.startsWith('FIMDEJOGO')) console.log(`[${jogador.username}] ${t}`);
-    });
     return { ctx, page };
   }
 
@@ -284,7 +280,8 @@ test.describe('mesa multijogador', () => {
   /**
    * Onde está a pilha do grimório da MINHA faixa, em pixels de tela.
    *
-   * Usa `montarMesa` — o mesmo módulo que o GameBoard usa — em vez de números
+   * Usa `montarGrade` — o mesmo módulo E O MESMO ARRANJO que o GameBoard usa
+   * na visão "todos" — em vez de números
    * mágicos: se a geometria mudar, este teste muda junto em vez de passar a
    * clicar no vazio e continuar verde.
    *
@@ -293,7 +290,7 @@ test.describe('mesa multijogador', () => {
    */
   function centroDoGrimorio(jogadores: number, largura: number, altura: number) {
     const ordem = [...Array.from({ length: jogadores - 1 }, (_, i) => `op${i}`), 'me'];
-    const mesa = montarMesa(ordem, 'me');
+    const mesa = montarGrade(ordem, 'me');
 
     const margens = { esquerda: 176, direita: 244, topo: 52, base: 48 };
     const utilW = Math.max(120, largura - margens.esquerda - margens.direita);
@@ -501,7 +498,7 @@ test.describe('mesa multijogador', () => {
   //  6. MECÂNICAS DE CARTA
   //
   //  Tudo aqui acontece no CANVAS, que não tem DOM para o Playwright agarrar.
-  //  A saída é calcular as coordenadas com o mesmo `montarMesa` que o
+  //  A saída é calcular as coordenadas com o mesmo `montarGrade` que o
   //  GameBoard usa — e depois ASSERTAR pelo DOM, no editor de carta e nos
   //  painéis, que é onde o estado do servidor vira texto.
   // ═══════════════════════════════════════════════════════════════════════
@@ -511,7 +508,7 @@ test.describe('mesa multijogador', () => {
   /** Transforma coordenada lógica da mesa em pixel de tela. */
   function projetor(jogadores: number) {
     const ordem = [...Array.from({ length: jogadores - 1 }, (_, i) => `op${i}`), 'me'];
-    const mesa = montarMesa(ordem, 'me');
+    const mesa = montarGrade(ordem, 'me');
     const margens = { esquerda: 176, direita: 244, topo: 52, base: 48 };
     const utilW = Math.max(120, VIEW.largura - margens.esquerda - margens.direita);
     const utilH = Math.max(120, VIEW.altura - margens.topo - margens.base);
@@ -749,7 +746,12 @@ test.describe('mesa multijogador', () => {
      * no seletor CSS, e uma troca de opacidade no design quebraria o teste sem
      * nada ter mudado de comportamento.
      */
-    const linhaBruno = ana.locator('[title="aether_bruno"]:visible').locator('xpath=..');
+    // O rótulo mostra o COMANDANTE ("Krenko, Mob Boss"), e o `title` completa
+    // com o dono: "Krenko, Mob Boss — comandante de aether_bruno". Ancorar no
+    // dono dentro do title é o que sobrevive à troca de deck da fixture.
+    const linhaBruno = ana
+      .locator('[title*="comandante de aether_bruno"]:visible')
+      .locator('xpath=..');
     await linhaBruno.getByRole('button', { name: '+' }).click();
     await linhaBruno.getByRole('button', { name: '+' }).click();
 
@@ -757,6 +759,10 @@ test.describe('mesa multijogador', () => {
       '2',
       { timeout: 10_000 },
     );
+
+    // E o nome que aparece é o do COMANDANTE, não o do jogador: "21 de dano de
+    // aether_bruno" não diz nada que a tela já não mostre.
+    await expect(ana.locator('[title*="comandante de aether_bruno"]:visible')).toHaveText(/Krenko/);
   });
 
   test('criar ficha põe a ficha na mesa', async () => {
@@ -793,12 +799,16 @@ test.describe('mesa multijogador', () => {
     await campo.fill('0');
     await campo.press('Enter');
 
-    // O aviso é do jogador que saiu…
-    await ana.waitForSelector('text=Você saiu do jogo', { timeout: 15_000 }).catch(async () => {
-      console.log('--- DEBUG innerText da Ana ---');
-      console.log((await ana.locator('body').innerText()).slice(0, 2000));
+    /**
+     * `exact: true` porque DUAS coisas anunciam a derrota, de propósito: o toast
+     * ("Você saiu do jogo: a vida chegou a zero.") e o banner, que fica até ser
+     * dispensado. Sem o `exact`, o locator casa com os dois e o Playwright falha
+     * por ambiguidade — o que já mandou esta suíte caçar um defeito de produto
+     * que não existia.
+     */
+    await expect(ana.getByText('Você saiu do jogo', { exact: true })).toBeVisible({
+      timeout: 15_000,
     });
-    await expect(ana.getByText('Você saiu do jogo')).toBeVisible({ timeout: 5_000 });
     await expect(ana.getByText(/sua vida chegou a zero/)).toBeVisible();
 
     // …e a mesa toda fica sabendo pelo log.
@@ -811,7 +821,9 @@ test.describe('mesa multijogador', () => {
      * alguém sem volta.
      */
     await ana.getByRole('button', { name: '+1', exact: true }).first().click();
-    await expect(ana.getByText('Você saiu do jogo')).toHaveCount(0, { timeout: 15_000 });
+    await expect(ana.getByText('Você saiu do jogo', { exact: true })).toHaveCount(0, {
+      timeout: 15_000,
+    });
   });
 
   test('desistir marca o jogador como fora do jogo', async () => {
@@ -832,7 +844,9 @@ test.describe('mesa multijogador', () => {
     await confirmar.click();
 
     // Quem desistiu vê o próprio aviso…
-    await expect(caio.getByText('Você saiu do jogo')).toBeVisible({ timeout: 15_000 });
+    await expect(caio.getByText('Você saiu do jogo', { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
 
     // …e a mesa inteira fica sabendo, pelo log.
     await garantirLogAberto(ana);
@@ -842,11 +856,38 @@ test.describe('mesa multijogador', () => {
   test('veneno 10 elimina', async () => {
     const bruno = paginas[1]!;
 
-    await bruno.getByRole('button', { name: 'Status do jogador' }).first().click();
     const menu = bruno.locator('div.fixed.z-\\[55\\]');
-    const linhaVeneno = menu.locator('div', { hasText: 'Veneno' }).last();
-    for (let i = 0; i < 10; i += 1) {
-      await linhaVeneno.getByRole('button', { name: 'Aumentar Veneno' }).click();
+
+    const abrirStatus = async () => {
+      if (await menu.count()) return;
+      await bruno.getByRole('button', { name: 'Status do jogador' }).first().click();
+      await expect(menu).toBeVisible({ timeout: 10_000 });
+    };
+
+    /**
+     * ─── O MENU DESMONTA NO MEIO DO LAÇO, E ISSO É ESPERADO ────────────────
+     *
+     * O décimo marcador ELIMINA o jogador, e a eliminação re-renderiza o cartão
+     * de vida — o menu de status, que vive num portal ancorado nesse cartão,
+     * some junto. Um laço de dez cliques preso ao mesmo locator ficava pendurado
+     * em "element was detached from the DOM, retrying" até estourar o timeout do
+     * teste inteiro, e o relatório culpava o clique em vez da eliminação.
+     *
+     * Reabrir quando fechou, tolerar o clique perdido e parar assim que o
+     * resultado aparece é o que descreve o comportamento real. O teto de 15
+     * existe para o laço terminar mesmo se nada funcionar.
+     */
+    for (let i = 0; i < 15; i += 1) {
+      if (await bruno.getByRole('heading', { name: /venceu/ }).count()) break;
+      await abrirStatus();
+      await menu
+        .locator('div', { hasText: 'Veneno' })
+        .last()
+        .getByRole('button', { name: 'Aumentar Veneno' })
+        .click({ timeout: 4_000 })
+        .catch(() => {
+          /* o menu fechou entre o resolve e o clique: a próxima volta reabre */
+        });
     }
 
     /**
@@ -855,8 +896,11 @@ test.describe('mesa multijogador', () => {
      * tela de fim de jogo. Quem morre por último não vê "você saiu do jogo":
      * vê quem venceu.
      */
-    await expect(bruno.getByRole('heading', { name: /venceu/ })).toBeVisible({ timeout: 15_000 });
-    await expect(bruno.getByText(/aether_ana venceu/i)).toBeVisible();
+    // O nome do vencedor aparece em TRÊS lugares de propósito (linha do log,
+    // título da tela de fim e toast). O `heading` é o único não ambíguo.
+    await expect(bruno.getByRole('heading', { name: /aether_ana venceu/i })).toBeVisible({
+      timeout: 15_000,
+    });
 
     const ana = paginas[0]!;
     await expect(ana.getByRole('heading', { name: 'Você venceu!' })).toBeVisible({
