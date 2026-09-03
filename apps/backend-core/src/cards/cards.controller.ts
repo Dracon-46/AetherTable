@@ -155,6 +155,20 @@ export class CardsController {
   }
 
   /**
+   * `GET /cards/printings/:scryfallId` — todas as impressões daquela carta.
+   *
+   * Declarada ANTES de `:scryfallId` — ver a nota na rota seguinte sobre a
+   * ordem de casamento do Nest. Sob o prefixo `printings/` ela não colide,
+   * mas manter a ordem evita que a próxima rota adicionada aqui esbarre nisso.
+   */
+  @Get('printings/:scryfallId')
+  @Throttle(LIMITE_BUSCA)
+  @ApiOperation({ summary: 'Todas as impressões de uma carta, por oracle_id' })
+  printings(@Param('scryfallId', ParseUUIDPipe) scryfallId: string) {
+    return this.cards.printings(scryfallId);
+  }
+
+  /**
    * `GET /cards/:scryfallId` — impressão específica.
    *
    * Declarada por ÚLTIMO de propósito: o Nest casa rotas na ordem em que são

@@ -82,6 +82,40 @@ export class CardsService {
   }
 
   /**
+   * Todas as impressões da carta, a partir de UMA impressão dela.
+   *
+   * ─── ISTO ERAM DUAS REQUISIÇÕES NO CLIENTE ────────────────────────────────
+   *
+   * O `PrintingPicker` fazia a dança inteira no navegador: buscava
+   * `GET /cards/:id` só para descobrir o `oracle_id`, e só então
+   * `GET /cards/search?q=oracleid:...`. Duas viagens EM SÉRIE — a segunda nem
+   * começava antes da primeira voltar — para abrir um seletor de arte.
+   *
+   * Aqui as duas acontecem do lado do servidor, onde as duas respondem do
+   * cache: o cliente faz uma requisição e recebe a lista pronta.
+   *
+   * `ScryfallClient.printings` existia na main e NENHUM arquivo a chamava —
+   * era o resto morto de uma tentativa anterior. Esta rota a acorda.
+   */
+  async printings(scryfallId: string): Promise<{ data: ScryfallCard[] }> {
+    const carta = await this.cardById(scryfallId);
+    const oracleId = carta.oracle_id;
+
+    /**
+     * Sem `oracle_id`, devolve a própria carta em vez de erro.
+     *
+     * Token e carta de emblema podem não ter o campo. Estourar 500 aqui faria
+     * o seletor de arte quebrar num caso em que a resposta honesta é "esta
+     * carta tem uma impressão só" — que é a verdade.
+     */
+    if (!oracleId) return { data: [carta] };
+
+    return this.memo(`prints:${oracleId}`, TTL_BUSCA_MS, () =>
+      this.traduzirErros(() => this.scryfall.printings(oracleId)),
+    );
+  }
+
+  /**
    * `POST /cards/collection` — a hidratação do catálogo da mesa.
    *
    * Responde do cache carta a carta e só pergunta à Scryfall o que falta. Numa

@@ -160,9 +160,31 @@ export class ScryfallClient {
     return this.get<ScryfallCard>(`/cards/${encodeURIComponent(scryfallId)}`);
   }
 
-  /** Todas as impressoes de uma carta — alimenta o seletor de arte (F04). */
-  printings(exactName: string) {
-    return this.search(`!"${exactName}"`, { unique: 'prints' });
+  /**
+   * Todas as impressoes de uma carta — alimenta o seletor de arte (F04).
+   *
+   * ─── POR ORACLE_ID, E NAO POR NOME ────────────────────────────────────────
+   *
+   * A versao anterior buscava `!"Nome Exato"`, e isso erra em dois casos que
+   * nao sao raros:
+   *
+   *   - DUPLA FACE. O nome canonico e "Delver of Secrets // Insectile
+   *     Aberration". Buscar pela frente com `!"..."` nao casa, e buscar pelo
+   *     nome inteiro depende de o chamador te-lo por completo.
+   *   - NOMES REPETIDOS entre cartas diferentes (as varias "Wastes", os tokens
+   *     homonimos). O resultado misturava impressoes de cartas distintas.
+   *
+   * `oracle_id` e a identidade da CARTA, independente de impressao, idioma e
+   * face — e o campo que a Scryfall criou justamente para esta pergunta.
+   *
+   * `order=released` sem `dir` deixa a Scryfall aplicar o padrao dela para este
+   * campo, que e DECRESCENTE — impressao mais recente primeiro. E o que serve
+   * ao seletor de arte: as artes novas de uma carta velha (Secret Lair, os
+   * reprints de Commander) sao as que as pessoas procuram, e num Sol Ring com
+   * 141 impressoes a alternativa seria rolar de 1994 para baixo.
+   */
+  printings(oracleId: string) {
+    return this.search(`oracleid:${oracleId}`, { unique: 'prints', order: 'released' });
   }
 
   /**
