@@ -3,11 +3,29 @@
 /**
  * store.ts — cosméticos equipados e a preferência de acessibilidade.
  *
- * O equipamento vive em `localStorage` e é anunciado à sala por
- * `INTENT_SET_COSMETICS` assim que a partida começa. O banco já tem
- * `UserPreference.activeSleeveId` e companhia (DOC-030), e a persistência por
- * conta entra por ali — mas a mesa não pode depender de um round-trip de API
- * para saber com que sleeve desenhar as cartas.
+ * ─── OS COSMÉTICOS NÃO ERAM SALVOS, E O MOTIVO ERA ESTRUTURAL ──────────────
+ *
+ * O equipamento vivia SÓ em `localStorage`. Trocar de navegador, limpar dados
+ * do site ou entrar de outra máquina perdia a escolha inteira — foi o relato
+ * "os cosméticos não estão sendo salvos".
+ *
+ * O cabeçalho anterior deste arquivo dizia que a persistência por conta
+ * "entra por" `UserPreference.activeSleeveId`. Não entrava, e não era
+ * desleixo: aquelas colunas são `Uuid` com foreign key para `cosmetic_items`,
+ * enquanto os cosméticos que o jogo desenha vêm do catálogo PROCEDURAL em
+ * código e têm id de texto (`aether-classic`). Uma string dessas não cabe num
+ * Uuid — ninguém poderia ter escrito ali.
+ *
+ * Agora há colunas de texto próprias (`user_preferences.sleeve_id` e
+ * companhia), e o fluxo é: o servidor é a fonte da verdade entre dispositivos,
+ * o `localStorage` continua sendo o CACHE que faz a mesa abrir sem piscar. A
+ * mesa não pode esperar um round-trip para saber com que sleeve desenhar as
+ * cartas, então ela lê o cache; a hidratação do servidor corrige em seguida se
+ * houver divergência.
+ *
+ * A gravação é OTIMISTA e silenciosa: equipar aplica na hora, e o PATCH sai
+ * atrás. Falha de rede não desfaz a escolha na tela — o `localStorage` já a
+ * guardou, e a próxima hidratação bem-sucedida reconcilia.
  *
  * `cosmeticosDeOponentes` é requisito de acessibilidade, não de gosto
  * (DOC-060 §4): quem tem dificuldade de contraste precisa poder desligar o
@@ -16,6 +34,7 @@
 
 import { create } from 'zustand';
 import { COSMETICOS_PADRAO, type CosmeticosEquipados } from '@aethertable/shared-types';
+import { api } from '../lib/fetcher';
 
 const CHAVE = 'aether-cosmeticos-v1';
 
@@ -24,6 +43,22 @@ interface CosmeticState extends CosmeticosEquipados {
   cosmeticosDeOponentes: boolean;
   equipar: (patch: Partial<CosmeticosEquipados>) => void;
   setCosmeticosDeOponentes: (v: boolean) => void;
+  /** Aplica o que vem do servidor, sem reenviar. Ver `useHidratarCosmeticos`. */
+  aplicarDoServidor: (p: Partial<CosmeticosEquipados & { cosmeticosDeOponentes: boolean }>) => void;
+}
+
+/**
+ * Envia o patch ao servidor, e engole a falha.
+ *
+ * Um erro aqui NÃO pode desfazer a escolha na tela: o `localStorage` já
+ * guardou, a mesa já está desenhando, e transformar uma queda de rede em
+ * "o cosmético voltou sozinho" é pior do que ficar dessincronizado até a
+ * próxima hidratação. O `console.warn` deixa rastro para quem investigar.
+ */
+function salvarNaConta(patch: Record<string, unknown>): void {
+  void api('/users/me', { method: 'PATCH', body: patch }).catch((erro) => {
+    console.warn('[cosmeticos] não foi possível salvar na conta:', erro);
+  });
 }
 
 function ler(): CosmeticosEquipados & { cosmeticosDeOponentes: boolean } {
@@ -62,10 +97,24 @@ export const useCosmeticos = create<CosmeticState>((set, get) => ({
   equipar: (patch) => {
     set(patch);
     gravar(get());
+    salvarNaConta(patch);
   },
 
   setCosmeticosDeOponentes: (cosmeticosDeOponentes) => {
     set({ cosmeticosDeOponentes });
+    gravar(get());
+    salvarNaConta({ cosmeticosDeOponentes });
+  },
+
+  aplicarDoServidor: (p) => {
+    // Só os campos que o servidor de fato tem. Um `null` lá significa "nunca
+    // escolheu", e sobrescrever a escolha local com o padrão nesse caso
+    // apagaria o que o jogador acabou de equipar em outra aba.
+    const limpo = Object.fromEntries(
+      Object.entries(p).filter(([, v]) => v !== null && v !== undefined),
+    );
+    if (Object.keys(limpo).length === 0) return;
+    set(limpo as Partial<CosmeticState>);
     gravar(get());
   },
 }));

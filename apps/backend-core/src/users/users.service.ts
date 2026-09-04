@@ -23,6 +23,25 @@ export class UsersService {
         _count: {
           select: { participions: true },
         },
+        /**
+         * As preferências vêm no `GET /users/me` porque é o cliente que
+         * DESENHA os cosméticos. Sem elas na resposta, o navegador não teria de
+         * onde hidratar o equipamento salvo, e a única fonte continuaria sendo
+         * o `localStorage` — que é exatamente o que fazia trocar de máquina
+         * perder tudo.
+         */
+        preference: {
+          select: {
+            theme: true,
+            language: true,
+            sleeveId: true,
+            playmatId: true,
+            borderId: true,
+            titleId: true,
+            petId: true,
+            cosmeticosDeOponentes: true,
+          },
+        },
       },
     });
 
@@ -92,7 +111,18 @@ export class UsersService {
    */
   async updateUser(
     id: string,
-    data: { username?: string; displayName?: string; language?: string },
+    data: {
+      username?: string;
+      displayName?: string;
+      language?: string;
+      /** Cosméticos equipados. `null` num campo = volta ao padrão. */
+      sleeveId?: string | null;
+      playmatId?: string | null;
+      borderId?: string | null;
+      titleId?: string | null;
+      petId?: string | null;
+      cosmeticosDeOponentes?: boolean;
+    },
   ) {
     const { username, displayName, language } = data;
 
@@ -110,11 +140,36 @@ export class UsersService {
       select: { id: true, username: true, displayName: true, avatarUrl: true },
     });
 
-    if (language) {
+    /**
+     * ─── PREFERÊNCIAS NUM UPSERT SÓ ──────────────────────────────────────────
+     *
+     * `language` já vinha por aqui; os cosméticos entraram no mesmo caminho
+     * porque vivem na mesma linha de `user_preferences` — e porque a linha pode
+     * NÃO EXISTIR: `UserPreference` é criada sob demanda, então um `update`
+     * puro falharia na primeira vez que alguém equipasse um protetor.
+     *
+     * Só os campos presentes no corpo são tocados. Montar o objeto com
+     * `undefined` nos ausentes é o que impede um PATCH de tema de apagar o
+     * sleeve equipado — o Prisma ignora `undefined` e grava `null`, que aqui
+     * significa "voltar ao padrão".
+     */
+    const prefs = {
+      ...(language ? { language } : {}),
+      ...(data.sleeveId !== undefined ? { sleeveId: data.sleeveId } : {}),
+      ...(data.playmatId !== undefined ? { playmatId: data.playmatId } : {}),
+      ...(data.borderId !== undefined ? { borderId: data.borderId } : {}),
+      ...(data.titleId !== undefined ? { titleId: data.titleId } : {}),
+      ...(data.petId !== undefined ? { petId: data.petId } : {}),
+      ...(data.cosmeticosDeOponentes !== undefined
+        ? { cosmeticosDeOponentes: data.cosmeticosDeOponentes }
+        : {}),
+    };
+
+    if (Object.keys(prefs).length > 0) {
       await this.prisma.userPreference.upsert({
         where: { userId: id },
-        update: { language },
-        create: { userId: id, language },
+        update: prefs,
+        create: { userId: id, ...prefs },
       });
     }
 

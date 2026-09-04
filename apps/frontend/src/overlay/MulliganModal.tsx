@@ -165,7 +165,18 @@ export function MulliganModal({ room }: MulliganModalProps) {
 
       {/* `flex-wrap` + largura por breakpoint: com 7 cartas de 192px fixos a
           linha estourava a tela em qualquer notebook. */}
-      <div className="mb-8 flex max-w-6xl flex-wrap justify-center gap-3 px-2">
+      {/* ─── AS SETE CARTAS EM UMA FILEIRA ─────────────────────────────────
+          Era `max-w-6xl` (1152px) com `flex-wrap`, e a carta parava de crescer
+          em `lg:w-40` (160px). Sete cartas de 160 mais os vãos dão 1192px: a
+          SÉTIMA quebrava para uma segunda linha, sozinha, no meio de uma tela
+          vazia — e num monitor grande as cartas continuavam com 160px enquanto
+          sobrava metade da largura.
+
+          `clamp` deixa a carta crescer com a viewport até 208px e encolher até
+          88px, e o teto de largura sai do caminho. O `flex-wrap` fica como
+          recuo para telas muito estreitas, onde uma fileira de sete é
+          impossível de qualquer forma. */}
+      <div className="mb-8 flex w-full flex-wrap justify-center gap-3 px-2">
         {handCards.map((c) => {
           const isSelected = selectedCards.includes(c.id);
           return (
@@ -180,7 +191,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
               {c.scryfallId ? (
                 <img
                   src={cardImageUrl(c.scryfallId, 'normal')}
-                  className={`aspect-[63/88] w-24 rounded-xl border object-cover shadow-[0_0_20px_rgba(0,0,0,0.8)] transition-all duration-300 sm:w-32 lg:w-40 ${
+                  className={`aspect-[63/88] w-[clamp(88px,11.5vw,208px)] rounded-xl border object-cover shadow-[0_0_20px_rgba(0,0,0,0.8)] transition-all duration-300 ${
                     isSelected
                       ? 'border-primary shadow-primary/50'
                       : 'border-panel-border group-hover:-translate-y-2'
@@ -188,7 +199,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
                   alt="Carta da mão inicial"
                 />
               ) : (
-                <div className="border-panel-border bg-panel text-text-faint flex aspect-[63/88] w-24 items-center justify-center rounded-xl border p-2 text-center text-[10px] sm:w-32 lg:w-40">
+                <div className="border-panel-border bg-panel text-text-faint flex aspect-[63/88] w-[clamp(88px,11.5vw,208px)] items-center justify-center rounded-xl border p-2 text-center text-[10px]">
                   carta sem imagem
                 </div>
               )}

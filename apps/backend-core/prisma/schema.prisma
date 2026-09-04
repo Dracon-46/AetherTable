@@ -178,10 +178,44 @@ model UserPreference {
   keybindings Json @default("{}")
 
   theme            Theme     @default(DARK)
+  /// ─── FK PARA `CosmeticItem`. NAO E ONDE O EQUIPAMENTO VIVE. ──────────────
+  ///
+  /// Estas quatro colunas sao `Uuid` e apontam para `cosmetic_items` — o
+  /// registro de itens CONCEDIVEIS (o premio de campeonato de DOC-061 §2).
+  /// Elas nunca foram escritas por ninguem, e nao por desleixo: os cosmeticos
+  /// que o jogo desenha vem do catalogo PROCEDURAL em codigo
+  /// (`shared-types/cosmetics.ts`, DOC-060 §1.1) e tem id de texto —
+  /// 'aether-classic', 'mesa-padrao'. Uma string dessas nao entra num Uuid.
+  ///
+  /// Ficam para o dia em que o inventario concedido virar equipavel. O
+  /// equipamento de verdade mora nas colunas de texto abaixo.
   activePlaymatId  String?   @map("active_playmat_id") @db.Uuid
   activeSleeveId   String?   @map("active_sleeve_id") @db.Uuid
   activeBorderId   String?   @map("active_border_id") @db.Uuid
   activeTitleId    String?   @map("active_title_id") @db.Uuid
+
+  /// ─── O EQUIPAMENTO, POR CONTA ────────────────────────────────────────────
+  ///
+  /// Os cosmeticos so existiam em `localStorage`. Trocar de navegador, limpar
+  /// dados do site ou entrar de outra maquina perdia tudo — foi o relato "os
+  /// cosmeticos nao estao sendo salvos".
+  ///
+  /// VarChar e nao FK: o catalogo e fechado e versionado em codigo, entao a
+  /// validacao de um id e `ehSleeveValido()` e nao uma foreign key. Um id que
+  /// sai do catalogo cai no padrao pelo `acharSleeve`, sem migracao e sem
+  /// linha orfa no banco.
+  ///
+  /// `localStorage` CONTINUA sendo o caminho rapido: a mesa nao pode esperar um
+  /// round-trip de API para saber com que sleeve desenhar as cartas. O banco e
+  /// a fonte da verdade entre dispositivos; o cache local e o que faz a mesa
+  /// abrir sem piscar.
+  sleeveId  String? @map("sleeve_id") @db.VarChar(48)
+  playmatId String? @map("playmat_id") @db.VarChar(48)
+  borderId  String? @map("border_id") @db.VarChar(48)
+  titleId   String? @map("title_id") @db.VarChar(48)
+  petId     String? @map("pet_id") @db.VarChar(48)
+  /// Acessibilidade (DOC-060 §4): desligar o visual dos outros na minha tela.
+  cosmeticosDeOponentes Boolean @default(true) @map("cosmeticos_de_oponentes")
   voiceMode        VoiceMode @default(VAD)
   pttKey           String?   @map("ptt_key") @db.VarChar(24)
   /// 0..100

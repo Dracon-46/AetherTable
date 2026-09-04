@@ -393,10 +393,30 @@ export function posicaoNoCampo(faixa: Faixa, x: number, y: number): Ponto {
   // `esquerda` é a origem da célula: 0 no empilhado, o canto da célula na grade.
   const campoX = faixa.esquerda + campo.x;
   const campoY = faixa.topo + campo.y;
-  const minX = campoX + CARD_W / 2;
-  const maxX = campoX + campo.largura - CARD_W / 2;
-  const minY = campoY + CARD_H / 2;
-  const maxY = campoY + campo.altura - CARD_H / 2;
+
+  /**
+   * ─── O CLAMP PRECISA DA ESCALA DA FAIXA ────────────────────────────────
+   *
+   * Era `CARD_W / 2`, sem escala. A carta é DESENHADA com
+   * `CARD_W * faixa.escala`, então o clamp usava a meia-largura errada em toda
+   * faixa cuja escala não fosse exatamente 1:
+   *
+   *   escala < 1 (faixa fora de foco, célula de grade, trilho): o clamp era
+   *     generoso demais e parava a carta antes da borda — sobrava uma margem
+   *     morta de até 22px que o jogador não conseguia usar;
+   *   escala > 1 (a mesa focada em monitor alto): o clamp era APERTADO demais
+   *     e a carta transbordava a borda do campo.
+   *
+   * O segundo caso só apareceu quando a mesa focada passou a poder crescer
+   * acima de 1 — um teste o pegou com 2,79px de transbordo. O primeiro estava
+   * lá desde sempre, silencioso.
+   */
+  const meiaLargura = (CARD_W * faixa.escala) / 2;
+  const meiaAltura = (CARD_H * faixa.escala) / 2;
+  const minX = campoX + meiaLargura;
+  const maxX = campoX + campo.largura - meiaLargura;
+  const minY = campoY + meiaAltura;
+  const maxY = campoY + campo.altura - meiaAltura;
 
   // Uma carta jogada por INTENT_CHANGE_ZONE sem coordenada chega em (0,0):
   // centraliza em vez de empilhar tudo no canto superior esquerdo.
@@ -509,4 +529,242 @@ export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
   }
 
   return 'BATTLEFIELD';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MESA FOCADA — a mesa fixa que ocupa a tela inteira
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ─── POR QUE ESTA GEOMETRIA EXISTE ─────────────────────────────────────────
+ *
+ * `montarMesa` e `montarGrade` montam um plano LÓGICO de largura fixa (1920) e
+ * deixam o desenho encolher tudo até caber na área útil. Isso tem uma
+ * consequência que ninguém tinha medido, e que o jogador relatou como "as
+ * cartas estão muito pequenas e não dá para ler". Num monitor de 1600x950, com
+ * as margens do HUD, a área útil é 1180x850 — e a escala sai assim:
+ *
+ *     minha mesa (1 faixa)   mesa 1920x968    escala 0.61  ->  carta de  74px
+ *     grade de 4 jogadores   mesa 1920x2120   escala 0.40  ->  carta de  48px
+ *
+ * Contra 120px, que é a largura em que a arte de uma carta é legível. Não era
+ * questão de ajustar uma constante: a conta partia de um plano que não cabe na
+ * tela e depois reduzia o mundo inteiro para caber.
+ *
+ * Aqui a conta é invertida. A geometria é montada em PIXELS REAIS da área
+ * disponível, ancorada no tamanho da carta: a carta tem o tamanho que precisa
+ * ter, e o campo de batalha fica com o espaço que sobra. O desenho passa a usar
+ * escala 1 — não existe mais reduzir a mesa para "caber".
+ *
+ * ─── E POR QUE NÃO TEM ZOOM ────────────────────────────────────────────────
+ *
+ * Com a mesa fixa, o zoom só serviria para uma coisa: afastar a câmera e voltar
+ * a ter cartas ilegíveis. O jogador pediu explicitamente que a mesa dele ocupe
+ * a tela inteira e que não dê para se afastar. Uma mesa que sempre cabe não
+ * precisa de zoom nem de arraste de câmera — os dois existiam para compensar
+ * uma mesa que não cabia.
+ *
+ * ─── A COLUNA DA DIREITA NUNCA MUDA ────────────────────────────────────────
+ *
+ * Comando no topo, e abaixo dele grimório, cemitério e exílio, sempre nessa
+ * ordem, sempre no mesmo lugar. Zona não é conteúdo: é móvel da mesa. O jogador
+ * compra dezenas de vezes por partida e a mão dele precisa saber onde o
+ * grimório está sem olhar. Qualquer arranjo que reordene as pilhas por
+ * conveniência de espaço troca memória muscular por pixels.
+ */
+
+/**
+ * Altura de área útil em que a carta tem exatamente `CARD_W` de largura.
+ *
+ * Acima disto a carta cresce (monitor grande merece carta grande); abaixo, ela
+ * encolhe — mas com piso, porque abaixo de um certo tamanho a mesa deixa de ser
+ * jogável e o caminho certo passa a ser o layout de tela estreita.
+ */
+export const ALTURA_DE_REFERENCIA = 860;
+export const ESCALA_MIN = 0.72;
+export const ESCALA_MAX = 1.6;
+
+/** Folga entre a coluna de zonas e a borda direita. */
+const FOLGA_COLUNA = 18;
+/** Espaço acima do campo, para o rótulo do jogador. */
+const ALTURA_ROTULO = 26;
+
+/**
+ * Largura do trilho de oponentes, em múltiplos da largura da carta.
+ *
+ * O trilho FLUTUA sobre o campo: abrir e fechar não muda a geometria da mesa,
+ * então a carta do jogador nunca muda de tamanho por causa dele. Foi a escolha
+ * explícita do jogador entre as duas alternativas — a outra era o trilho
+ * empurrar o campo, que redimensiona a mão a cada clique.
+ */
+const TRILHO_EM_CARTAS = 1.7;
+
+/**
+ * Folga entre o trilho e a coluna de zonas.
+ *
+ * Sem ela os dois ficam encostados, e num retrato da mesa os rótulos das zonas
+ * do oponente ("CEMITÉRIO", "EXÍLIO") colidem com os meus — duas colunas de
+ * pilhas coladas, sem nada dizendo onde uma acaba.
+ */
+const FOLGA_TRILHO = 14;
+
+/**
+ * Teto de altura de uma célula do trilho, em alturas de carta.
+ *
+ * Sem teto, UM oponente recebia a coluna inteira: uma tira altíssima e estreita
+ * com quatro pilhas perdidas no meio de um vazio vertical. A mesa de alguém em
+ * miniatura precisa PARECER uma mesa, e para isso a célula tem de manter
+ * proporção — o que sobra fica sobrando, não é esticado.
+ */
+const ALTURA_MAX_DA_CELULA = 2.9;
+
+export interface OpcoesMesaFocada {
+  /** Pixels disponíveis para a mesa (já descontado o HUD). */
+  largura: number;
+  altura: number;
+  /** Assento desenhado grande, ocupando a tela. */
+  focoId: string;
+  /** Assentos do trilho da direita, de cima para baixo. */
+  oponentes?: string[];
+  /** `false` = o trilho está recolhido e nenhuma faixa de oponente é montada. */
+  trilhoAberto?: boolean;
+}
+
+/** As zonas da coluna da direita, de cima para baixo. A ORDEM É A REGRA. */
+const ORDEM_DA_COLUNA = ['comando', 'grimorio', 'cemiterio', 'exilio', 'reserva'] as const;
+
+export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
+  const { focoId, oponentes = [], trilhoAberto = true } = opcoes;
+
+  const largura = Math.max(480, Math.round(opcoes.largura));
+  const altura = Math.max(420, Math.round(opcoes.altura));
+
+  const escala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, altura / ALTURA_DE_REFERENCIA));
+  const cardW = CARD_W * escala;
+  const cardH = CARD_H * escala;
+
+  const maoAltura = cardH + 32 * escala;
+  const colunaLargura = cardW + FOLGA_COLUNA * 2;
+  const rotulo = ALTURA_ROTULO * escala;
+
+  // ── Campo de batalha: tudo menos a coluna da direita e a mão ─────────────
+  const campoLargura = largura - colunaLargura;
+  const campoAltura = altura - maoAltura - rotulo;
+
+  /**
+   * Passo vertical da coluna.
+   *
+   * Cinco slots de `cardH` só cabem numa tela alta. Quando não cabem, os slots
+   * se SOBREPÕEM — como pilhas de carta empilhadas numa mesa de verdade — em
+   * vez de a coluna reordenar ou esconder alguma. A ordem é a regra; o passo é
+   * negociável.
+   */
+  const passo = Math.min(cardH + 12 * escala, campoAltura / ORDEM_DA_COLUNA.length);
+  const colunaX = campoLargura + colunaLargura / 2;
+  const slot = (i: number): Ponto => ({ x: colunaX, y: rotulo + cardH / 2 + i * passo });
+
+  const posicoes = Object.fromEntries(ORDEM_DA_COLUNA.map((nome, i) => [nome, slot(i)])) as Record<
+    (typeof ORDEM_DA_COLUNA)[number],
+    Ponto
+  >;
+
+  const faixaDoFoco: Faixa = {
+    playerId: focoId,
+    esquerda: 0,
+    largura,
+    topo: 0,
+    altura: altura - maoAltura,
+    emFoco: true,
+    escala,
+    campo: { x: 0, y: rotulo, largura: campoLargura, altura: campoAltura },
+    comando: posicoes.comando,
+    grimorio: posicoes.grimorio,
+    cemiterio: posicoes.cemiterio,
+    exilio: posicoes.exilio,
+    reserva: posicoes.reserva,
+    rotulo: { x: 12, y: 4 },
+    /**
+     * A coluna INTEIRA é a faixa de zonas, e ela é VERTICAL.
+     *
+     * Nos arranjos antigos as zonas eram uma fileira horizontal no rodapé, e
+     * `zonas` era uma tira de altura. Aqui elas são uma coluna, então a tira
+     * cobre do primeiro ao último slot. `zonaSolta` não usa este campo para
+     * acertar o alvo (ele testa slot por slot), mas o desenho usa, e uma tira
+     * com a altura de UM slot deixaria a coluna sem moldura.
+     */
+    zonas: { topo: rotulo, altura: passo * (ORDEM_DA_COLUNA.length - 1) + cardH },
+  };
+
+  const faixas: Faixa[] = [faixaDoFoco];
+
+  // ── Trilho dos oponentes: FLUTUA sobre o campo, à esquerda da coluna ─────
+  if (trilhoAberto && oponentes.length > 0) {
+    const trilhoLargura = cardW * TRILHO_EM_CARTAS;
+    const trilhoX = campoLargura - trilhoLargura - FOLGA_TRILHO;
+    const disponivel = altura - maoAltura - rotulo;
+    const alturaPorOponente = Math.min(
+      disponivel / oponentes.length,
+      CARD_H * ALTURA_MAX_DA_CELULA,
+    );
+    // A escala do trilho vem da CÉLULA dele, não da mesa: é o que faz a mesa do
+    // oponente caber "de forma pequena mesmo" sem deformar nada.
+    const escalaTrilho = Math.min(
+      trilhoLargura / (CARD_W * 2.4),
+      alturaPorOponente / (CARD_H * 2.1),
+    );
+    const cardWt = CARD_W * escalaTrilho;
+    const cardHt = CARD_H * escalaTrilho;
+
+    // Empilha a partir do topo do campo, não da borda da tela: a fileira de
+    // botões do HUD vive ali e cobriria a primeira célula.
+    oponentes.forEach((playerId, i) => {
+      const topo = rotulo + i * alturaPorOponente;
+      const rotuloT = 18 * escalaTrilho;
+      // Mesmo arranjo da mesa grande, em miniatura: campo à esquerda, coluna de
+      // zonas à direita. Um arranjo diferente no trilho obrigaria o jogador a
+      // reaprender onde está o cemitério do vizinho.
+      const colunaT = cardWt + 10 * escalaTrilho;
+      const campoLarguraT = trilhoLargura - colunaT;
+      const passoT = Math.min(
+        cardHt + 6 * escalaTrilho,
+        (alturaPorOponente - rotuloT) / ORDEM_DA_COLUNA.length,
+      );
+      const colunaXt = trilhoX + campoLarguraT + colunaT / 2;
+      const slotT = (k: number): Ponto => ({
+        x: colunaXt,
+        y: topo + rotuloT + cardHt / 2 + k * passoT,
+      });
+
+      faixas.push({
+        playerId,
+        esquerda: trilhoX,
+        largura: trilhoLargura,
+        topo,
+        altura: alturaPorOponente,
+        emFoco: false,
+        escala: escalaTrilho,
+        campo: {
+          x: 0,
+          y: rotuloT,
+          largura: campoLarguraT,
+          altura: alturaPorOponente - rotuloT - 4,
+        },
+        comando: slotT(0),
+        grimorio: slotT(1),
+        cemiterio: slotT(2),
+        exilio: slotT(3),
+        reserva: slotT(4),
+        rotulo: { x: trilhoX + 6, y: topo + 2 },
+        zonas: { topo: topo + rotuloT, altura: passoT * (ORDEM_DA_COLUNA.length - 1) + cardHt },
+      });
+    });
+  }
+
+  return {
+    largura,
+    altura,
+    faixas,
+    porJogador: new Map(faixas.map((f) => [f.playerId, f])),
+    mao: { topo: altura - maoAltura, altura: maoAltura },
+  };
 }

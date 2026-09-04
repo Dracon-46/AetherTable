@@ -40,8 +40,6 @@ const PRESETS: Array<{ rotulo: string; query: string; emoji: string }> = [
 export function TokenPicker({ room }: TokenPickerProps) {
   const isActive = useUIStore((s) => s.activeModals.tokens);
   const toggleModal = useUIStore((s) => s.toggleModal);
-  const cameraPos = useUIStore((s) => s.cameraPosition);
-  const zoomLevel = useUIStore((s) => s.zoomLevel);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
@@ -114,19 +112,29 @@ export function TokenPicker({ room }: TokenPickerProps) {
   const handleCreate = (card: any) => {
     setCreatingId(card.id);
 
-    // Centro da MESA LÓGICA (1920x1080), não da janela: usar pixels de tela
-    // fazia o token nascer fora do campo em qualquer resolução diferente.
-    const centerX = 1920 / 2 - cameraPos.x / zoomLevel;
-    const centerY = 1080 / 2 - cameraPos.y / zoomLevel;
-
+    /**
+     * ─── (0, 0) SIGNIFICA "CENTRO DO MEU CAMPO" ────────────────────────────
+     *
+     * Isto calculava `1920 / 2 - camera.x / zoom` — o centro de um plano lógico
+     * de 1920x1080 que NÃO EXISTE MAIS (a mesa é montada em pixels reais), e
+     * que já era o plano errado antes: `Card.x/y` de uma permanente é RELATIVO
+     * ao campo de quem a controla, não absoluto na mesa. Mandar 960 sempre caiu
+     * fora do campo e só não apareceu como defeito porque `posicaoNoCampo`
+     * fazia o clamp de volta para dentro.
+     *
+     * `posicaoNoCampo` trata (0, 0) explicitamente como "centraliza no campo" —
+     * é o caso de uma carta que chega por `INTENT_CHANGE_ZONE` sem coordenada.
+     * É exatamente o que se quer de uma ficha criada por menu, e funciona em
+     * qualquer resolução porque quem resolve a posição é a geometria.
+     */
     intents.createToken(room, {
       scryfallId: card.id,
       name: card.name,
       power: card.power,
       toughness: card.toughness,
       amount: 1,
-      x: centerX,
-      y: centerY,
+      x: 0,
+      y: 0,
     });
 
     setTimeout(() => {

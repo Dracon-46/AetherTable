@@ -40,8 +40,7 @@ import type { RoomState } from '../net/schema/RoomState';
 import {
   CARD_W,
   CARD_H,
-  montarGrade,
-  montarMesa,
+  montarMesaFocada,
   posicaoNaMao,
   posicaoNoCampo,
   posicaoNoComando,
@@ -781,10 +780,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const setZoneOwner = useUIStore((s) => s.setZoneOwner);
   const selectedCardIds = useUIStore((s) => s.selectedCardIds);
   const boardView = useUIStore((s) => s.boardView);
-  const zoomLevel = useUIStore((s) => s.zoomLevel);
-  const setZoom = useUIStore((s) => s.setZoom);
-  const cameraPosition = useUIStore((s) => s.cameraPosition);
-  const setCamera = useUIStore((s) => s.setCamera);
+  const trilhoAberto = useUIStore((s) => s.trilhoAberto);
+  const seguirTurno = useUIStore((s) => s.seguirTurno);
+  const setBoardView = useUIStore((s) => s.setBoardView);
   const arrowSource = useUIStore((s) => s.arrowSource);
   const setArrowSource = useUIStore((s) => s.setArrowSource);
   const toggleSelectedCard = useUIStore((s) => s.toggleSelectedCard);
@@ -834,109 +832,73 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   }, []);
 
   // ── Geometria da mesa ────────────────────────────────────────────────────
+  /**
+   * ─── MARGENS DO HUD ────────────────────────────────────────────────────────
+   *
+   * O que sobra depois delas É a mesa — não existe mais "encolher para caber".
+   * Por isso elas encolheram: os 244px que a coluna da direita reservava para o
+   * log viravam carta menor, e o log nasce recolhido e flutuante. Cada pixel
+   * devolvido aqui vira carta maior, porque a escala vem da ALTURA útil.
+   *
+   * Sobra apenas: a coluna do painel de vida à esquerda, a fileira de botões no
+   * topo e a aba da barra de ações embaixo.
+   */
+  const margens = estreito
+    ? { esquerda: 6, direita: 6, topo: 118, base: 10 }
+    : { esquerda: 168, direita: 10, topo: 44, base: 10 };
+
+  const utilW = Math.max(320, dims.w - margens.esquerda - margens.direita);
+  const utilH = Math.max(300, dims.h - margens.topo - margens.base);
+
   const mesa: Mesa = useMemo(() => {
-    const oponentes = Object.values(players)
+    const porAssento = Object.values(players)
       .filter((p) => p.id !== myId)
       .sort((a, b) => a.seat - b.seat)
       .map((p) => p.id);
 
     /**
-     * O SELETOR DE CÂMERA PRECISA FILTRAR, NÃO SÓ DESTACAR.
+     * QUEM APARECE GRANDE.
      *
-     * "Minha mesa" e "Mesa de Fulano" só mudavam qual faixa recebia o foco —
-     * todas continuavam desenhadas, uma embaixo da outra. Escolher "Minha
-     * mesa" e continuar vendo a mesa dos outros empilhada não é o que a opção
-     * promete, e em quatro jogadores o efeito é justamente o oposto do
-     * pedido: mais coisa na tela, não menos.
-     *
-     * Agora `ALL` é a única visão com várias faixas. Qualquer outra escolha
-     * monta a mesa com UM assento — a mesma função, com uma lista de um
-     * elemento.
+     * O padrão é a minha mesa. O seletor de câmera pode apontar para um
+     * oponente — e nesse caso ele troca de lugar comigo: ele ocupa a tela e eu
+     * vou para o trilho. `boardView` guarda um sessionId, que muda a cada
+     * conexão, então um alvo que já não existe cai de volta em mim em vez de
+     * desenhar uma mesa vazia.
      */
     const alvoValido = boardView !== 'ALL' && boardView !== 'ME' && Boolean(players[boardView]);
-    // Um oponente escolhido que depois SAIU da sala deixava `boardView`
-    // apontando para um assento inexistente, e a mesa era desenhada em branco
-    // sem nenhuma explicação. Some o jogador, volta para a minha mesa.
-    const foco = (alvoValido ? boardView : myId) || myId;
+    const foco = (alvoValido ? boardView : myId) || myId || '—';
 
-    /**
-     * "VER A MESA DE FULANO" PRECISA SER UMA ESCOLHA VÁLIDA.
-     *
-     * `boardView` guarda o sessionId do oponente, e sessionId muda a cada
-     * conexão. Persistido entre partidas, ele apontava para um assento que não
-     * existe mais: `alvoValido` dava falso, o foco caía em mim — mas o ramo
-     * `boardView !== 'ALL'` continuava valendo, e a mesa era montada com UMA
-     * faixa. O jogador via só a própria mesa, o seletor marcava "Mesa", e
-     * escolher outro oponente parecia não fazer nada porque a tela já estava
-     * naquele formato.
-     *
-     * Um alvo inválido agora se comporta como "todos", que é o padrão honesto.
-     */
-    const umaFaixaSo = boardView === 'ME' || alvoValido;
+    /** Todos menos quem está grande, na ordem de assento. */
+    const noTrilho = (myId ? [...porAssento, myId] : porAssento).filter((id) => id !== foco);
 
-    // NO CELULAR, UMA FAIXA POR VEZ.
-    //
-    // Encaixar quatro faixas (≈1920x1300) numa tela de 390px deixa cada carta
-    // com 15px de largura: tudo aparece e nada é jogável. A resposta certa não
-    // é reduzir mais — é mostrar só a faixa em foco e trocar de faixa pelo
-    // painel de Câmera. A vida e a contagem dos oponentes continuam visíveis na
-    // faixa de vida no topo.
-    if (estreito) {
-      return montarMesa([foco], foco, { estreito: true });
-    }
-
-    // Uma mesa só: a minha, ou a do oponente escolhido.
-    if (umaFaixaSo) {
-      return montarMesa([foco], foco);
-    }
-
-    /**
-     * VISÃO GERAL = GRADE DE QUADRADOS.
-     *
-     * Eram faixas empilhadas: cada jogador uma tira de 1920 de largura por ~200
-     * de altura. Quatro tiras dão uma mesa de 1920x2100 — mais alta que larga,
-     * numa tela que é o contrário — e o que se via era uma lista, não uma mesa.
-     * A carta ficava com ~30px porque a escala é limitada pela altura.
-     *
-     * Em grade, quatro células de 933x933 cabem em 1920x1900, cada uma com o
-     * campo no meio e as zonas no rodapé — que é como uma mesa de verdade se
-     * organiza vista de cima, e é o arranjo que todo VTT de Commander usa.
-     *
-     * A ordem continua sendo "oponentes primeiro, eu por último": na grade isso
-     * põe o jogador local na célula inferior direita, que é a cadeira dele.
-     */
-    const ordem = myId ? [...oponentes, myId] : oponentes;
-    return montarGrade(ordem.length ? ordem : ['—'], foco);
-  }, [players, myId, boardView, estreito]);
+    return montarMesaFocada({
+      largura: utilW,
+      altura: utilH,
+      focoId: foco,
+      oponentes: noTrilho,
+      /**
+       * Em tela estreita o trilho não abre: não há largura para uma miniatura
+       * legível, e sobrepor a mesa de um oponente ao campo de 390px esconderia
+       * justamente as cartas do jogador. No celular a troca de assento continua
+       * pelo painel de Câmera.
+       */
+      trilhoAberto: trilhoAberto && !estreito,
+    });
+  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH]);
 
   /**
-   * Espaço reservado ao HUD em volta da mesa.
+   * ─── ESCALA 1, SEM CENTRALIZAR ─────────────────────────────────────────────
    *
-   * Encolheu junto com o HUD: o painel de vida passou de 176px para 160px e
-   * mostra só o próprio jogador, o log nasce recolhido (~224px viraram ~56px de
-   * cabeçalho) e a barra de ações vive escondida atrás de uma aba de ~90px.
-   * Reservar os 300px antigos à direita era guardar espaço para painéis que não
-   * estão mais lá — e cada pixel devolvido aqui vira carta maior, porque a
-   * escala da mesa é `área útil / largura lógica`.
+   * A mesa já vem com o tamanho exato da área útil, em pixels. Multiplicar por
+   * uma escala aqui é o que produzia a carta de 74px: a geometria antiga
+   * devolvia um plano de 1920 de largura e esta linha o reduzia a 61%.
+   *
+   * O deslocamento é só a margem — não há sobra para centralizar nem câmera
+   * para somar.
    */
-  const margens = estreito
-    ? { esquerda: 8, direita: 8, topo: 176, base: 72 }
-    : { esquerda: 176, direita: 244, topo: 52, base: 48 };
-
-  const utilW = Math.max(120, dims.w - margens.esquerda - margens.direita);
-  const utilH = Math.max(120, dims.h - margens.topo - margens.base);
-  // Em tela estreita a mesa é ajustada pela LARGURA e o excedente vira rolagem
-  // vertical (arrastar o fundo): reduzir mais para caber a altura toda deixaria
-  // a carta com 23px.
-  const escalaBase =
-    dims.w && dims.h
-      ? estreito
-        ? utilW / mesa.largura
-        : Math.min(utilW / mesa.largura, utilH / mesa.altura)
-      : 0;
-  const escala = escalaBase * zoomLevel;
-  const offsetX = margens.esquerda + (utilW - mesa.largura * escala) / 2 + cameraPosition.x;
-  const offsetY = margens.topo + (utilH - mesa.altura * escala) / 2 + cameraPosition.y;
+  const escala = 1;
+  const offsetX = margens.esquerda;
+  const offsetY = margens.topo;
 
   // ── Derivação do que vai para a tela ─────────────────────────────────────
   const { itens, resumoFaixas } = useMemo(() => {
@@ -1046,6 +1008,33 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     return mapa;
   }, [itens, mesa]);
 
+  /**
+   * ─── A CÂMERA SEGUE DE QUEM É A VEZ ────────────────────────────────────────
+   *
+   * Quando o jogador liga `seguirTurno`, passar o turno leva a tela para a mesa
+   * de quem entrou na vez — sem ninguém precisar abrir o painel de câmera.
+   *
+   * Três decisões dentro deste efeito:
+   *
+   *  1. QUEM ESTÁ NA VEZ VÊ A PRÓPRIA MESA. Quando `activePlayerId` sou eu, a
+   *     visão volta para 'ME' em vez de ficar apontada para o vizinho anterior.
+   *  2. SÓ MEXE QUANDO A VEZ MUDA, não a cada render: `boardView` fora das
+   *     dependências de propósito. Incluí-lo faria o efeito reverter qualquer
+   *     escolha manual de câmera no mesmo instante em que o jogador a fizesse —
+   *     o painel de câmera pareceria não funcionar durante o turno alheio.
+   *  3. UM ASSENTO QUE JÁ SAIU não é destino: `players[id]` é conferido antes,
+   *     senão a mesa seria desenhada em branco.
+   */
+  useEffect(() => {
+    if (!seguirTurno || !activePlayerId) return;
+    if (activePlayerId === myId) {
+      setBoardView('ME');
+      return;
+    }
+    if (players[activePlayerId]) setBoardView(activePlayerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlayerId, seguirTurno, myId, setBoardView]);
+
   const handleContextMenu = useCallback(
     (cardId: string, x: number, y: number) => openContextMenu(cardId, x, y),
     [openContextMenu],
@@ -1085,20 +1074,16 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     return () => window.removeEventListener('keydown', onEsc);
   }, [arrowSource, setArrowSource, onAlvoEscolhido]);
 
-  const handleWheel = useCallback(
-    (e: Konva.KonvaEventObject<WheelEvent>) => {
-      e.evt.preventDefault();
-      setZoom(zoomLevel * (e.evt.deltaY > 0 ? 0.92 : 1.08));
-    },
-    [zoomLevel, setZoom],
-  );
-
-  const panRef = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    setCamera(0, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardView]);
+  /**
+   * ─── NÃO EXISTE MAIS ZOOM NEM ARRASTE DE CÂMERA ──────────────────────────
+   *
+   * `handleWheel` e o `panRef` viviam aqui. Os dois existiam para compensar
+   * uma mesa que não cabia na tela — com `montarMesaFocada` a mesa É a tela, e
+   * afastar a câmera só serviria para voltar a ter carta ilegível.
+   *
+   * A roda do mouse continua com `preventDefault` no `Stage`: sem ele o
+   * navegador rola a página por trás do Canvas.
+   */
 
   /** Abre uma zona de pilha, lembrando de quem ela é. */
   const abrirZona = useCallback(
@@ -1148,47 +1133,15 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
           width={dims.w}
           height={dims.h}
           style={{ background: 'transparent', touchAction: 'none' }}
-          onWheel={handleWheel}
+          onWheel={(e) => e.evt.preventDefault()}
           onContextMenu={(e) => e.evt.preventDefault()}
         >
           <Layer scale={{ x: escala, y: escala }} x={offsetX} y={offsetY}>
-            {/* Fundo: pan, ping e menu da mesa */}
+            {/* Fundo: ping e menu da mesa. Já não arrasta a câmera. */}
             <Rect
               width={mesa.largura}
               height={mesa.altura}
               fill="rgba(0,0,0,0.001)"
-              onMouseDown={(e) => {
-                panRef.current = { x: e.evt.clientX, y: e.evt.clientY };
-              }}
-              onMouseMove={(e) => {
-                if (!panRef.current) return;
-                const dx = e.evt.clientX - panRef.current.x;
-                const dy = e.evt.clientY - panRef.current.y;
-                panRef.current = { x: e.evt.clientX, y: e.evt.clientY };
-                setCamera(cameraPosition.x + dx, cameraPosition.y + dy);
-              }}
-              onMouseUp={() => {
-                panRef.current = null;
-              }}
-              onMouseLeave={() => {
-                panRef.current = null;
-              }}
-              onTouchStart={(e) => {
-                const t = e.evt.touches[0];
-                if (t) panRef.current = { x: t.clientX, y: t.clientY };
-              }}
-              onTouchMove={(e) => {
-                const t = e.evt.touches[0];
-                if (!t || !panRef.current) return;
-                e.evt.preventDefault();
-                const dx = t.clientX - panRef.current.x;
-                const dy = t.clientY - panRef.current.y;
-                panRef.current = { x: t.clientX, y: t.clientY };
-                setCamera(cameraPosition.x + dx, cameraPosition.y + dy);
-              }}
-              onTouchEnd={() => {
-                panRef.current = null;
-              }}
               onContextMenu={(e) => {
                 e.evt.preventDefault();
                 const p = e.target.getStage()?.getPointerPosition();

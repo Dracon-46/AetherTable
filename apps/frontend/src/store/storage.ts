@@ -46,15 +46,21 @@ export const armazenamentoSeguro = createJSONStorage(() =>
  * O middleware `persist` grava a CADA `set`. Não a cada mudança do que é
  * persistido — a cada `set`, qualquer um. No `uiStore` da mesa isso significa:
  *
- *   - `setCamera` roda em `onMouseMove` enquanto o jogador arrasta o fundo;
  *   - `setHoveredCard` roda ao entrar e sair de CADA carta;
- *   - `setZoom` roda a cada tique da roda do mouse.
+ *   - `setSelectedCards` roda a cada clique e a cada Shift+clique;
+ *   - `openContextMenu` roda a cada botão direito sobre uma permanente.
  *
- * Cada um desses disparava um `JSON.stringify` + uma escrita SINCRONA em
+ * Cada um desses disparava um `JSON.stringify` + uma escrita SÍNCRONA em
  * `localStorage`, na thread principal, no meio do quadro. Numa mesa de
  * Commander, passar o mouse pelo campo de batalha gerava dezenas de escritas
  * por segundo de um objeto que não tinha mudado em nada — e `localStorage` é
  * a API síncrona mais lenta que uma animação pode encostar.
+ *
+ * NOTA: os dois exemplos originais eram `setCamera` (em `onMouseMove` do
+ * arraste de câmera) e `setZoom` (na roda do mouse). Os dois deixaram de
+ * existir quando a mesa passou a ser montada em pixels reais e a ocupar a tela
+ * inteira — zoom e pan existiam para compensar uma mesa que não cabia. O
+ * hover, que é o mais frequente de todos, continua.
  *
  * A gravação agora é agrupada: a última chamada dentro da janela vence, e ela
  * sai fora do caminho crítico. Perder o último quadro de pan num fechamento
