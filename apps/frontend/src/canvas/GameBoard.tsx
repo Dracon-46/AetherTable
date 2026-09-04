@@ -1283,7 +1283,10 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
 
             {/* ── Pilhas por faixa ───────────────────────────────────────── */}
             {resumoFaixas.map((r) => {
-              const esc = r.faixa.escala;
+              // `escalaZonas` e nao `escala`: numa janela baixa o bloco de
+              // zonas encolhe sozinho para o rotulo de cada pilha caber, e o
+              // desenho tem de acompanhar a geometria. Ver `Faixa.escalaZonas`.
+              const esc = r.faixa.escalaZonas;
               const meu = r.faixa.playerId === myId;
               return (
                 <Group key={`pilhas-${r.faixa.playerId}`}>
