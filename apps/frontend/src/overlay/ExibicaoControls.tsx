@@ -1,47 +1,42 @@
 'use client';
 
 /**
- * ExibicaoControls.tsx — como o jogador quer VER a mesa.
+ * ExibicaoControls.tsx — o que o jogador escolhe sobre o HUD da mesa.
  *
- * ─── POR QUE ISTO PRECISAVA EXISTIR ────────────────────────────────────────
+ * ─── POR QUE ISTO EXISTE ───────────────────────────────────────────────────
  *
- * A mesa tinha exatamente uma escolha de visualização: o foco da câmera
- * (`CameraControls`), que responde "de QUEM eu quero ver a mesa". Tudo o mais
- * era decidido pelo código, e cada decisão vinha com um trade-off real que
- * depende do monitor, da máquina e do gosto de quem joga:
+ * O painel de vida (`vidaModo`), a barra de ações (`barraAberta`) e o log já
+ * eram preferências PERSISTIDAS, e o único jeito de mexer nelas era achar o
+ * botãozinho dentro de cada painel. Não havia um lugar onde "como eu quero a
+ * tela" fosse uma pergunta única — e `zoom`/recentrar só existiam pela roda do
+ * mouse e pelo arraste, sem valor de referência nem forma de voltar ao 100 %.
  *
- *  - o ARRANJO das mesas era uma media query de 640 px. Quem joga em 16:9
- *    ganha com a grade; quem joga em ultrawide ganha com faixas de largura
- *    cheia. Nenhum dos dois tinha voz.
- *  - o painel de vida (`vidaModo`) e a barra de ações (`barraAberta`) já eram
- *    preferências PERSISTIDAS, e o único jeito de mexer nelas era achar o
- *    botãozinho de cada painel. Não havia lugar onde "como eu quero a tela"
- *    fosse uma pergunta única.
- *  - o custo de render era fixo: sombra por carta e interpolação de movimento
- *    ligadas sempre. Numa máquina modesta com quatro campos cheios, é isso que
- *    derruba o quadro — e não havia como desligar.
- *  - `showZoneOutlines` existia no estado desde o início e NENHUMA tela lia ou
- *    escrevia nele.
+ * ─── E POR QUE ELE NÃO TEM MAIS ARRANJO NEM QUALIDADE ──────────────────────
  *
- * Fica ao lado da Câmera de propósito: as duas respondem à mesma família de
- * perguntas, e separá-las mandaria o jogador procurar em dois cantos.
+ * Uma versão anterior deste painel oferecia três coisas a mais: arranjo das
+ * mesas (grade/faixas), qualidade de desenho (sombras e interpolação) e
+ * contornos de zona. As três dependiam de mudanças no `GameBoard` que eu
+ * escrevi sem nunca abrir a mesa, e que quebraram o tabuleiro: cartas
+ * minúsculas, travamento e arraste/compra sem funcionar. O `GameBoard` foi
+ * revertido para a versão que funcionava, e estes controles saíram junto.
+ *
+ * Deixá-los aqui apontando para um estado que ninguém mais lê seria pior do
+ * que não tê-los: o jogador desligaria a sombra, veria o mesmo quadro travado
+ * e concluiria que o problema é outro. Um interruptor que não liga nada mente.
+ *
+ * Eles voltam quando o ganho de render estiver medido na mesa de verdade, não
+ * deduzido do código.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import type { Grid2x2 } from 'lucide-react';
 import {
   ChevronDown,
-  Grid2x2,
-  Rows3,
-  SlidersHorizontal,
-  Sparkle,
-  Gauge,
-  Zap,
   Heart,
-  PanelBottom,
-  MessageSquare,
-  SquareDashed,
   Maximize,
-  Smartphone,
+  MessageSquare,
+  PanelBottom,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useUIStore } from '../store/game.store';
 
@@ -132,18 +127,12 @@ export function ExibicaoControls() {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const layoutMesa = useUIStore((s) => s.layoutMesa);
-  const setLayoutMesa = useUIStore((s) => s.setLayoutMesa);
-  const qualidade = useUIStore((s) => s.qualidade);
-  const setQualidade = useUIStore((s) => s.setQualidade);
   const vidaModo = useUIStore((s) => s.vidaModo);
   const setVidaModo = useUIStore((s) => s.setVidaModo);
   const barraAberta = useUIStore((s) => s.barraAberta);
   const setBarraAberta = useUIStore((s) => s.setBarraAberta);
   const logAberto = useUIStore((s) => s.logAberto);
   const setLogAberto = useUIStore((s) => s.setLogAberto);
-  const mostrarContornos = useUIStore((s) => s.mostrarContornos);
-  const setMostrarContornos = useUIStore((s) => s.setMostrarContornos);
   const zoomLevel = useUIStore((s) => s.zoomLevel);
   const setZoom = useUIStore((s) => s.setZoom);
   const setCamera = useUIStore((s) => s.setCamera);
@@ -186,58 +175,6 @@ export function ExibicaoControls() {
         // em qualquer tela de 720p e as últimas seções ficam inalcançáveis —
         // o mesmo problema que o menu da Mesa já tinha tido.
         <div className="painel-entra custom-scrollbar border-panel-border bg-panel absolute right-0 top-full mt-1 max-h-[calc(100dvh-5rem)] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border shadow-2xl">
-          <Segmentado
-            rotulo="Arranjo das mesas"
-            valor={layoutMesa}
-            onEscolher={setLayoutMesa}
-            opcoes={[
-              {
-                valor: 'auto',
-                texto: 'Auto',
-                Icone: Smartphone,
-                dica: 'Grade no computador, uma mesa por vez no celular',
-              },
-              {
-                valor: 'grade',
-                texto: 'Grade',
-                Icone: Grid2x2,
-                dica: 'Uma célula quadrada por jogador — melhor em telas 16:9',
-              },
-              {
-                valor: 'faixas',
-                texto: 'Faixas',
-                Icone: Rows3,
-                dica: 'Uma tira de largura cheia por jogador — melhor em ultrawide',
-              },
-            ]}
-          />
-
-          <Segmentado
-            rotulo="Qualidade do desenho"
-            valor={qualidade}
-            onEscolher={setQualidade}
-            opcoes={[
-              {
-                valor: 'alta',
-                texto: 'Alta',
-                Icone: Sparkle,
-                dica: 'Sombras, movimento interpolado e mascotes animados',
-              },
-              {
-                valor: 'equilibrada',
-                texto: 'Média',
-                Icone: Gauge,
-                dica: 'Sem sombra por carta; o movimento continua suave',
-              },
-              {
-                valor: 'desempenho',
-                texto: 'Leve',
-                Icone: Zap,
-                dica: 'Sem sombra e sem interpolação — a carta pula direto para o lugar',
-              },
-            ]}
-          />
-
           <Segmentado
             rotulo="Painel de vida"
             valor={vidaModo}
@@ -301,13 +238,6 @@ export function ExibicaoControls() {
             ligado={logAberto}
             onAlternar={() => setLogAberto(!logAberto)}
             dica="Recolhido, sobra só o cabeçalho com a última linha"
-          />
-          <Interruptor
-            rotulo="Contornos das zonas"
-            Icone={SquareDashed}
-            ligado={mostrarContornos}
-            onAlternar={() => setMostrarContornos(!mostrarContornos)}
-            dica="O tracejado que delimita a faixa de mão e a zona de comando"
           />
         </div>
       )}
