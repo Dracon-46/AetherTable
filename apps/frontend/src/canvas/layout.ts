@@ -163,6 +163,21 @@ export interface Faixa {
    * de quem monta a geometria, não de quem desenha.
    */
   escala: number;
+  /**
+   * Escala das CARTAS DE ZONA desta faixa (comando e pilhas).
+   *
+   * Normalmente igual a `escala`. Ela existe separada porque o bloco de zonas
+   * tem uma restrição que o campo não tem: três fileiras de carta MAIS o
+   * rótulo de cada pilha precisam caber na altura disponível. Numa janela
+   * baixa (500px) isso não cabe na escala do campo, e as opções eram encolher
+   * a mesa inteira — voltando a ter carta ilegível na mão, que é o defeito que
+   * esta geometria existe para corrigir — ou reordenar o bloco, que o jogador
+   * pediu explicitamente para nunca acontecer.
+   *
+   * Encolher só o bloco preserva as duas coisas: a mão continua legível e a
+   * ordem comando/pilhas continua a mesma em qualquer tela.
+   */
+  escalaZonas: number;
   /** Retângulo livre para permanentes, em coordenadas RELATIVAS à faixa. */
   campo: { x: number; y: number; largura: number; altura: number };
   /** Âncoras absolutas das zonas de pilha desta faixa. */
@@ -259,6 +274,7 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
       altura,
       emFoco,
       escala: escalaDaFaixa(emFoco),
+      escalaZonas: escalaDaFaixa(emFoco),
       campo: { x: campoX, y: campoY, largura: campoLargura, altura: campoAltura },
       comando: { x: largura - larguraComando / 2 - 8, y: base },
       grimorio: estreito ? { x: col(0), y: linha(0) } : { x: col(0), y: base },
@@ -359,6 +375,8 @@ export function montarGrade(ordem: string[], focoId: string): Mesa {
       emFoco: playerId === focoId,
       // Células iguais, escala igual. O foco aqui é cor de borda, não tamanho.
       escala: 1,
+      // A célula da grade não distingue: as zonas usam a escala da célula.
+      escalaZonas: 1,
       campo,
       comando: { x: col(0), y: baseY },
       grimorio: { x: col(1), y: baseY },
@@ -509,8 +527,17 @@ export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
    * pixels. Não acertou nenhuma? É campo de batalha, e `posicaoNoCampo` traz a
    * carta de volta para dentro. O destino padrão passa a ser o inofensivo.
    */
-  const meiaLargura = (CARD_W * faixa.escala) / 2 + TOLERANCIA_DE_SOLTURA;
-  const meiaAltura = (CARD_H * faixa.escala) / 2 + TOLERANCIA_DE_SOLTURA;
+  /**
+   * `escalaZonas`, e não `escala`.
+   *
+   * A área de acerto tem de ser a da carta DESENHADA no slot, e as cartas de
+   * zona podem ter escala própria (ver `Faixa.escalaZonas`). Usar a escala do
+   * campo faria a área de soltura ser maior que o slot visível numa janela
+   * baixa — o jogador soltaria a carta ao lado do cemitério e ela iria para o
+   * cemitério, sem nada na tela ter indicado isso.
+   */
+  const meiaLargura = (CARD_W * faixa.escalaZonas) / 2 + TOLERANCIA_DE_SOLTURA;
+  const meiaAltura = (CARD_H * faixa.escalaZonas) / 2 + TOLERANCIA_DE_SOLTURA;
 
   // A reserva NÃO entra: é zona oculta e de pré-jogo, e cair nela por um
   // arrasto impreciso esconderia a carta da mesa inteira. Soltar sobre ela é
@@ -597,7 +624,7 @@ const ALTURA_ROTULO = 26;
  * explícita do jogador entre as duas alternativas — a outra era o trilho
  * empurrar o campo, que redimensiona a mão a cada clique.
  */
-const TRILHO_EM_CARTAS = 1.7;
+const TRILHO_EM_CARTAS = 2.6;
 
 /**
  * Folga entre o trilho e a coluna de zonas.
@@ -630,8 +657,47 @@ export interface OpcoesMesaFocada {
   trilhoAberto?: boolean;
 }
 
-/** As zonas da coluna da direita, de cima para baixo. A ORDEM É A REGRA. */
-const ORDEM_DA_COLUNA = ['comando', 'grimorio', 'cemiterio', 'exilio', 'reserva'] as const;
+/**
+ * ─── O ARRANJO DO BLOCO DE ZONAS, E ELE É A REGRA ──────────────────────────
+ *
+ *     ┌───────────────────────┐
+ *     │       COMANDO         │   ← sozinho, acima e centralizado
+ *     ├───────┬───────┬───────┤
+ *     │GRIMÓR.│CEMITÉR│EXÍLIO │   ← LADO A LADO, na mesma linha
+ *     ├───────┴───────┴───────┤
+ *     │       RESERVA         │   ← abaixo, e só aparece com cartas
+ *     └───────────────────────┘
+ *
+ * A primeira versão disto empilhou os QUATRO numa coluna vertical de uma carta
+ * de largura. Estava errado por leitura minha: o pedido era "o comandante fica
+ * acima deles" — só ele. Os três de pilha ficam lado a lado.
+ *
+ * E a coluna única era ruim por conta própria: quatro slots de altura de carta
+ * não cabem numa tela de 900px junto com campo e mão, então o passo vertical
+ * comprimia e as pilhas se sobrepunham — viravam um empilhamento ilegível em
+ * vez de três zonas distinguíveis.
+ *
+ * O comandante fica em cima porque é a única carta do bloco que se OLHA: ele
+ * responde "para onde ele volta" e "quanto vai custar". As três pilhas se
+ * CLICAM, e lado a lado cada uma tem alvo próprio e previsível.
+ */
+const COLUNAS_DO_BLOCO = 3;
+/** Vão entre as pilhas e entre as fileiras do bloco. */
+const VAO_DO_BLOCO = 10;
+
+/**
+ * Espaço reservado ACIMA de cada pilha para o rótulo dela.
+ *
+ * `Pilha` desenha o nome da zona em `y = -16 * escala`, ou seja, FORA da carta,
+ * logo acima. Sem reservar isso entre a fileira do comandante e a das pilhas,
+ * a carta do comandante cobria exatamente a faixa dos rótulos — num retrato da
+ * mesa o "CEMITÉRIO" do meio simplesmente não aparecia, enquanto "GRIMÓRIO" e
+ * "EXÍLIO" (que sobram para os lados do comandante centralizado) apareciam.
+ *
+ * Uma zona sem nome numa mesa de Magic é uma pilha anônima de cartas viradas —
+ * e era a do MEIO, a mais fácil de confundir com as duas vizinhas.
+ */
+const ROTULO_DA_PILHA = 22;
 
 export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
   const { focoId, oponentes = [], trilhoAberto = true } = opcoes;
@@ -640,33 +706,82 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
   const altura = Math.max(420, Math.round(opcoes.altura));
 
   const escala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, altura / ALTURA_DE_REFERENCIA));
-  const cardW = CARD_W * escala;
+  /**
+   * Só a ALTURA da carta entra na geometria da mesa focada.
+   *
+   * A largura não: as permanentes são posicionadas por `posicaoNoCampo`, que
+   * usa `faixa.escala` por conta própria, e o bloco de zonas tem largura
+   * própria (`zonaW`, derivada de `escalaZonas`). Um `cardW` aqui seria uma
+   * variável que parece participar do arranjo e não participa.
+   */
   const cardH = CARD_H * escala;
 
   const maoAltura = cardH + 32 * escala;
-  const colunaLargura = cardW + FOLGA_COLUNA * 2;
   const rotulo = ALTURA_ROTULO * escala;
 
-  // ── Campo de batalha: tudo menos a coluna da direita e a mão ─────────────
-  const campoLargura = largura - colunaLargura;
   const campoAltura = altura - maoAltura - rotulo;
 
   /**
-   * Passo vertical da coluna.
+   * Escala do BLOCO DE ZONAS — a única coisa que encolhe numa janela baixa.
    *
-   * Cinco slots de `cardH` só cabem numa tela alta. Quando não cabem, os slots
-   * se SOBREPÕEM — como pilhas de carta empilhadas numa mesa de verdade — em
-   * vez de a coluna reordenar ou esconder alguma. A ordem é a regra; o passo é
-   * negociável.
+   * Três fileiras de carta mais o rótulo de cada pilha precisam caber em
+   * `campoAltura`. Quando não cabem na escala do campo, o bloco encolhe; a mão
+   * e as permanentes não. Ver `Faixa.escalaZonas`.
    */
-  const passo = Math.min(cardH + 12 * escala, campoAltura / ORDEM_DA_COLUNA.length);
-  const colunaX = campoLargura + colunaLargura / 2;
-  const slot = (i: number): Ponto => ({ x: colunaX, y: rotulo + cardH / 2 + i * passo });
+  const escalaZonas = Math.min(
+    escala,
+    campoAltura / (CARD_H * 3 + (VAO_DO_BLOCO + ROTULO_DA_PILHA) * 2),
+  );
+  const zonaW = CARD_W * escalaZonas;
+  const zonaH = CARD_H * escalaZonas;
+  const vao = VAO_DO_BLOCO * escalaZonas;
 
-  const posicoes = Object.fromEntries(ORDEM_DA_COLUNA.map((nome, i) => [nome, slot(i)])) as Record<
-    (typeof ORDEM_DA_COLUNA)[number],
-    Ponto
-  >;
+  /** Largura do bloco de zonas: três pilhas lado a lado, mais os vãos. */
+  const blocoLargura =
+    COLUNAS_DO_BLOCO * zonaW + (COLUNAS_DO_BLOCO - 1) * vao + FOLGA_COLUNA * escalaZonas * 2;
+
+  // ── Campo de batalha: tudo menos o bloco da direita e a mão ──────────────
+  const campoLargura = largura - blocoLargura;
+
+  /**
+   * Passo vertical entre as fileiras do bloco.
+   *
+   * Três fileiras (comando / pilhas / reserva) de altura de carta cabem em
+   * qualquer tela onde a mesa é jogável. Quando não cabem, o vão encolhe — e
+   * se ainda assim não couber, as fileiras se aproximam. O que NUNCA muda é a
+   * ordem e o fato de as três pilhas ficarem na mesma linha.
+   */
+  /**
+   * `(campoAltura - cardH) / 2`, e não `campoAltura / 3`.
+   *
+   * O centro da fileira `r` fica em `cardH/2 + r * passo`, então a BASE da
+   * última fileira está em `cardH + 2 * passo` — não em `3 * passo`. Dividir
+   * por três esquecia a meia-carta de cada ponta e a reserva estourava para
+   * baixo da faixa de mão; um teste pegou 7,5px de transbordo na tela mais
+   * baixa. É o mesmo tipo de erro do clamp de `posicaoNoCampo`: confundir o
+   * passo entre CENTROS com o espaço que a fileira ocupa.
+   */
+  const passo = zonaH + vao + ROTULO_DA_PILHA * escalaZonas;
+  const blocoX = campoLargura + FOLGA_COLUNA * escalaZonas;
+  /** Centro horizontal da coluna `c` do bloco (0, 1, 2). */
+  const colX = (c: number) => blocoX + zonaW / 2 + c * (zonaW + vao);
+  /** Centro vertical da fileira `r` do bloco. */
+  const rowY = (r: number) => rotulo + zonaH / 2 + r * passo;
+  /** Centro horizontal do bloco inteiro — para o que é centralizado. */
+  const centroDoBloco = colX(0) + ((COLUNAS_DO_BLOCO - 1) * (zonaW + vao)) / 2;
+
+  const posicoes = {
+    // Fileira 0: o comandante, sozinho e centralizado sobre as três pilhas.
+    comando: { x: centroDoBloco, y: rowY(0) },
+    // Fileira 1: as três pilhas, LADO A LADO. Grimório primeiro porque é a
+    // mais clicada da partida e a leitura começa pela esquerda.
+    grimorio: { x: colX(0), y: rowY(1) },
+    cemiterio: { x: colX(1), y: rowY(1) },
+    exilio: { x: colX(2), y: rowY(1) },
+    // Fileira 2: a reserva. Fica fora da fileira das três porque não é zona de
+    // partida — é pré-jogo e wishboard — e só é desenhada quando tem cartas.
+    reserva: { x: centroDoBloco, y: rowY(2) },
+  } satisfies Record<string, Ponto>;
 
   const faixaDoFoco: Faixa = {
     playerId: focoId,
@@ -676,6 +791,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
     altura: altura - maoAltura,
     emFoco: true,
     escala,
+    escalaZonas,
     campo: { x: 0, y: rotulo, largura: campoLargura, altura: campoAltura },
     comando: posicoes.comando,
     grimorio: posicoes.grimorio,
@@ -684,22 +800,20 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
     reserva: posicoes.reserva,
     rotulo: { x: 12, y: 4 },
     /**
-     * A coluna INTEIRA é a faixa de zonas, e ela é VERTICAL.
+     * A tira cobre as TRÊS fileiras do bloco.
      *
-     * Nos arranjos antigos as zonas eram uma fileira horizontal no rodapé, e
-     * `zonas` era uma tira de altura. Aqui elas são uma coluna, então a tira
-     * cobre do primeiro ao último slot. `zonaSolta` não usa este campo para
-     * acertar o alvo (ele testa slot por slot), mas o desenho usa, e uma tira
-     * com a altura de UM slot deixaria a coluna sem moldura.
+     * `zonaSolta` não usa este campo para acertar o alvo (ele testa slot por
+     * slot), mas o desenho usa para a moldura — e uma tira com a altura de uma
+     * fileira deixaria comando e reserva fora dela.
      */
-    zonas: { topo: rotulo, altura: passo * (ORDEM_DA_COLUNA.length - 1) + cardH },
+    zonas: { topo: rotulo, altura: passo * 2 + zonaH },
   };
 
   const faixas: Faixa[] = [faixaDoFoco];
 
   // ── Trilho dos oponentes: FLUTUA sobre o campo, à esquerda da coluna ─────
   if (trilhoAberto && oponentes.length > 0) {
-    const trilhoLargura = cardW * TRILHO_EM_CARTAS;
+    const trilhoLargura = zonaW * TRILHO_EM_CARTAS;
     const trilhoX = campoLargura - trilhoLargura - FOLGA_TRILHO;
     const disponivel = altura - maoAltura - rotulo;
     const alturaPorOponente = Math.min(
@@ -708,9 +822,10 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
     );
     // A escala do trilho vem da CÉLULA dele, não da mesa: é o que faz a mesa do
     // oponente caber "de forma pequena mesmo" sem deformar nada.
+    // A miniatura precisa caber um campinho MAIS o bloco de três pilhas.
     const escalaTrilho = Math.min(
-      trilhoLargura / (CARD_W * 2.4),
-      alturaPorOponente / (CARD_H * 2.1),
+      trilhoLargura / (CARD_W * 4),
+      alturaPorOponente / (CARD_H * 3 + (VAO_DO_BLOCO + ROTULO_DA_PILHA) * 2),
     );
     const cardWt = CARD_W * escalaTrilho;
     const cardHt = CARD_H * escalaTrilho;
@@ -723,17 +838,14 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
       // Mesmo arranjo da mesa grande, em miniatura: campo à esquerda, coluna de
       // zonas à direita. Um arranjo diferente no trilho obrigaria o jogador a
       // reaprender onde está o cemitério do vizinho.
-      const colunaT = cardWt + 10 * escalaTrilho;
-      const campoLarguraT = trilhoLargura - colunaT;
-      const passoT = Math.min(
-        cardHt + 6 * escalaTrilho,
-        (alturaPorOponente - rotuloT) / ORDEM_DA_COLUNA.length,
-      );
-      const colunaXt = trilhoX + campoLarguraT + colunaT / 2;
-      const slotT = (k: number): Ponto => ({
-        x: colunaXt,
-        y: topo + rotuloT + cardHt / 2 + k * passoT,
-      });
+      const vaoT = 5 * escalaTrilho;
+      const blocoLarguraT = COLUNAS_DO_BLOCO * cardWt + (COLUNAS_DO_BLOCO - 1) * vaoT;
+      const campoLarguraT = Math.max(cardWt * 0.6, trilhoLargura - blocoLarguraT - vaoT);
+      const passoT = cardHt + vaoT + ROTULO_DA_PILHA * escalaTrilho;
+      const blocoXt = trilhoX + campoLarguraT + vaoT;
+      const colXt = (c: number) => blocoXt + cardWt / 2 + c * (cardWt + vaoT);
+      const rowYt = (r: number) => topo + rotuloT + cardHt / 2 + r * passoT;
+      const centroT = colXt(0) + ((COLUNAS_DO_BLOCO - 1) * (cardWt + vaoT)) / 2;
 
       faixas.push({
         playerId,
@@ -743,19 +855,20 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
         altura: alturaPorOponente,
         emFoco: false,
         escala: escalaTrilho,
+        escalaZonas: escalaTrilho,
         campo: {
           x: 0,
           y: rotuloT,
           largura: campoLarguraT,
           altura: alturaPorOponente - rotuloT - 4,
         },
-        comando: slotT(0),
-        grimorio: slotT(1),
-        cemiterio: slotT(2),
-        exilio: slotT(3),
-        reserva: slotT(4),
+        comando: { x: centroT, y: rowYt(0) },
+        grimorio: { x: colXt(0), y: rowYt(1) },
+        cemiterio: { x: colXt(1), y: rowYt(1) },
+        exilio: { x: colXt(2), y: rowYt(1) },
+        reserva: { x: centroT, y: rowYt(2) },
         rotulo: { x: trilhoX + 6, y: topo + 2 },
-        zonas: { topo: topo + rotuloT, altura: passoT * (ORDEM_DA_COLUNA.length - 1) + cardHt },
+        zonas: { topo: topo + rotuloT, altura: passoT * 2 + cardHt },
       });
     });
   }

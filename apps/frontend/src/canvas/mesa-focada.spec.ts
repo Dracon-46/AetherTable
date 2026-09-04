@@ -89,7 +89,7 @@ describe('mesa focada — ocupa a tela inteira', () => {
   });
 });
 
-describe('mesa focada — a coluna da direita NUNCA muda', () => {
+describe('mesa focada — o bloco da direita NUNCA muda', () => {
   const tamanhos = [
     { largura: 1366, altura: 700 },
     { largura: 1600, altura: 900 },
@@ -98,32 +98,102 @@ describe('mesa focada — a coluna da direita NUNCA muda', () => {
     { largura: 900, altura: 500 },
   ];
 
-  it('comando em cima; grimório, cemitério e exílio abaixo, nesta ordem', () => {
+  /**
+   * ─── A REGRA, NAS PALAVRAS DO JOGADOR ────────────────────────────────────
+   *
+   * "o grimorio, exilo e cemiterio para a direita e o comandante fica acima
+   *  deles, nunca muda, nunca troca"
+   *
+   * SÓ o comandante fica acima. Os três de pilha ficam LADO A LADO. A primeira
+   * versão destes testes afirmava o contrário — que os quatro ficavam na mesma
+   * coluna — e por isso o layout errado passou verde. Um teste que afirma a
+   * regra errada é pior que teste nenhum: ele defende o defeito.
+   */
+  it('SÓ o comandante fica acima, e centralizado sobre as pilhas', () => {
     for (const t of tamanhos) {
       const f = montarMesaFocada({ ...t, focoId: 'eu' }).faixas[0]!;
       expect(f.comando.y).toBeLessThan(f.grimorio.y);
-      expect(f.grimorio.y).toBeLessThan(f.cemiterio.y);
-      expect(f.cemiterio.y).toBeLessThan(f.exilio.y);
+      expect(f.comando.y).toBeLessThan(f.cemiterio.y);
+      expect(f.comando.y).toBeLessThan(f.exilio.y);
+      // Centralizado: o x dele é a média dos extremos da fileira de pilhas.
+      expect(f.comando.x).toBeCloseTo((f.grimorio.x + f.exilio.x) / 2, 5);
     }
   });
 
-  it('as quatro zonas ficam na MESMA coluna, na direita', () => {
+  it('grimório, cemitério e exílio ficam LADO A LADO, na mesma linha', () => {
+    for (const t of tamanhos) {
+      const f = montarMesaFocada({ ...t, focoId: 'eu' }).faixas[0]!;
+      // Mesma altura: uma fileira, não uma pilha.
+      expect(f.grimorio.y).toBe(f.cemiterio.y);
+      expect(f.cemiterio.y).toBe(f.exilio.y);
+      // E nesta ordem da esquerda para a direita.
+      expect(f.grimorio.x).toBeLessThan(f.cemiterio.x);
+      expect(f.cemiterio.x).toBeLessThan(f.exilio.x);
+    }
+  });
+
+  it('as três pilhas NÃO se sobrepõem', () => {
+    // Era o sintoma relatado: "por que está uma em cima da outra". Com quatro
+    // slots empilhados numa coluna, o passo vertical comprimia e as pilhas se
+    // sobrepunham.
     for (const t of tamanhos) {
       const mesa = montarMesaFocada({ ...t, focoId: 'eu' });
       const f = mesa.faixas[0]!;
-      const xs = [f.comando.x, f.grimorio.x, f.cemiterio.x, f.exilio.x, f.reserva.x];
-      // Uma coluna só: todo x idêntico.
-      expect(new Set(xs).size).toBe(1);
-      // E ela está na metade direita da tela.
-      expect(f.comando.x).toBeGreaterThan(mesa.largura / 2);
+      // `escalaZonas`: é com ela que a carta do slot é desenhada.
+      const largura = CARD_W * f.escalaZonas;
+      expect(f.cemiterio.x - f.grimorio.x).toBeGreaterThanOrEqual(largura);
+      expect(f.exilio.x - f.cemiterio.x).toBeGreaterThanOrEqual(largura);
     }
   });
 
-  it('a coluna não invade o campo de batalha', () => {
+  it('a carta do comandante NÃO cobre o rótulo das pilhas', () => {
+    /**
+     * `Pilha` escreve o nome da zona 16px ACIMA da carta. Sem folga entre a
+     * fileira do comandante e a das pilhas, a carta dele cobria essa faixa — e
+     * o rótulo que sumia era o do CEMITÉRIO, o do meio, justamente o mais
+     * fácil de confundir com os vizinhos. Um retrato da mesa mostrou
+     * "GRIMÓRIO" e "EXÍLIO" e nada no meio.
+     */
+    for (const t of tamanhos) {
+      const f = montarMesaFocada({ ...t, focoId: 'eu' }).faixas[0]!;
+      const alturaCarta = CARD_H * f.escalaZonas;
+      const baseDoComandante = f.comando.y + alturaCarta / 2;
+      const rotuloDaPilha = f.grimorio.y - alturaCarta / 2 - 16 * f.escalaZonas;
+      expect(rotuloDaPilha).toBeGreaterThan(baseDoComandante);
+    }
+  });
+
+  it('a reserva fica abaixo das três, fora da fileira', () => {
+    for (const t of tamanhos) {
+      const f = montarMesaFocada({ ...t, focoId: 'eu' }).faixas[0]!;
+      expect(f.reserva.y).toBeGreaterThan(f.grimorio.y);
+    }
+  });
+
+  it('o bloco inteiro fica na metade direita da tela', () => {
+    for (const t of tamanhos) {
+      const mesa = montarMesaFocada({ ...t, focoId: 'eu' });
+      const f = mesa.faixas[0]!;
+      for (const ancora of [f.comando, f.grimorio, f.cemiterio, f.exilio, f.reserva]) {
+        expect(ancora.x).toBeGreaterThan(mesa.largura / 2);
+      }
+    }
+  });
+
+  it('o bloco não invade o campo de batalha', () => {
     const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
     const f = mesa.faixas[0]!;
-    const esquerdaDaColuna = f.comando.x - (CARD_W * f.escala) / 2;
-    expect(esquerdaDaColuna).toBeGreaterThanOrEqual(f.campo.x + f.campo.largura - 1);
+    const esquerdaDoBloco = f.grimorio.x - (CARD_W * f.escalaZonas) / 2;
+    expect(esquerdaDoBloco).toBeGreaterThanOrEqual(f.campo.x + f.campo.largura - 1);
+  });
+
+  it('o bloco cabe dentro da tela, sem estourar a direita', () => {
+    for (const t of tamanhos) {
+      const mesa = montarMesaFocada({ ...t, focoId: 'eu' });
+      const f = mesa.faixas[0]!;
+      expect(f.exilio.x + (CARD_W * f.escalaZonas) / 2).toBeLessThanOrEqual(mesa.largura + 1);
+      expect(f.reserva.y + (CARD_H * f.escalaZonas) / 2).toBeLessThanOrEqual(mesa.mao.topo + 1);
+    }
   });
 
   it('soltar sobre cada slot acerta a zona daquele slot', () => {
@@ -188,15 +258,16 @@ describe('mesa focada — trilho dos oponentes', () => {
     }
   });
 
-  it('a coluna do oponente segue a MESMA ordem da minha', () => {
+  it('o bloco do oponente segue o MESMO arranjo do meu', () => {
     // Um arranjo diferente na miniatura obrigaria o jogador a reaprender onde
     // está o cemitério do vizinho.
     const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes });
     for (const f of mesa.faixas.slice(1)) {
       expect(f.comando.y).toBeLessThan(f.grimorio.y);
-      expect(f.grimorio.y).toBeLessThan(f.cemiterio.y);
-      expect(f.cemiterio.y).toBeLessThan(f.exilio.y);
-      expect(new Set([f.comando.x, f.grimorio.x, f.cemiterio.x, f.exilio.x]).size).toBe(1);
+      expect(f.grimorio.y).toBe(f.cemiterio.y);
+      expect(f.cemiterio.y).toBe(f.exilio.y);
+      expect(f.grimorio.x).toBeLessThan(f.cemiterio.x);
+      expect(f.cemiterio.x).toBeLessThan(f.exilio.x);
     }
   });
 });
