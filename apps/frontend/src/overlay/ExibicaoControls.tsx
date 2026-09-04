@@ -8,8 +8,14 @@
  * O painel de vida (`vidaModo`), a barra de ações (`barraAberta`) e o log já
  * eram preferências PERSISTIDAS, e o único jeito de mexer nelas era achar o
  * botãozinho dentro de cada painel. Não havia um lugar onde "como eu quero a
- * tela" fosse uma pergunta única — e `zoom`/recentrar só existiam pela roda do
- * mouse e pelo arraste, sem valor de referência nem forma de voltar ao 100 %.
+ * tela" fosse uma pergunta única.
+ *
+ * ─── NÃO HÁ CONTROLE DE ZOOM, E ISSO É O PEDIDO ────────────────────────────
+ *
+ * Havia presets de zoom e um "recentrar" aqui. A mesa passou a ser montada em
+ * pixels reais e ocupa a tela inteira (`montarMesaFocada`), então zoom serviria
+ * para uma coisa só: afastar a câmera e voltar a ter carta ilegível — que é
+ * exatamente o que o jogador pediu para não existir.
  *
  * ─── E POR QUE ELE NÃO TEM MAIS ARRANJO NEM QUALIDADE ──────────────────────
  *
@@ -32,10 +38,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Grid2x2 } from 'lucide-react';
 import {
   ChevronDown,
+  Footprints,
   Heart,
-  Maximize,
   MessageSquare,
   PanelBottom,
+  PanelRight,
   SlidersHorizontal,
 } from 'lucide-react';
 import { useUIStore } from '../store/game.store';
@@ -116,13 +123,6 @@ function Interruptor({
   );
 }
 
-const ZOOMS = [
-  { valor: 0.7, texto: '70%' },
-  { valor: 1, texto: '100%' },
-  { valor: 1.4, texto: '140%' },
-  { valor: 1.9, texto: '190%' },
-];
-
 export function ExibicaoControls() {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -133,9 +133,10 @@ export function ExibicaoControls() {
   const setBarraAberta = useUIStore((s) => s.setBarraAberta);
   const logAberto = useUIStore((s) => s.logAberto);
   const setLogAberto = useUIStore((s) => s.setLogAberto);
-  const zoomLevel = useUIStore((s) => s.zoomLevel);
-  const setZoom = useUIStore((s) => s.setZoom);
-  const setCamera = useUIStore((s) => s.setCamera);
+  const trilhoAberto = useUIStore((s) => s.trilhoAberto);
+  const setTrilhoAberto = useUIStore((s) => s.setTrilhoAberto);
+  const seguirTurno = useUIStore((s) => s.seguirTurno);
+  const setSeguirTurno = useUIStore((s) => s.setSeguirTurno);
 
   useEffect(() => {
     if (!aberto) return;
@@ -190,41 +191,20 @@ export function ExibicaoControls() {
             ]}
           />
 
-          <div className="border-panel-border border-t px-3 py-2.5">
-            <span className="text-text-muted mb-1.5 block text-[10px] font-bold uppercase tracking-wider">
-              Zoom da mesa
-            </span>
-            <div className="flex gap-1">
-              {ZOOMS.map((z) => (
-                <button
-                  key={z.valor}
-                  onClick={() => setZoom(z.valor)}
-                  // Tolerância no casamento: o zoom também muda pela roda do
-                  // mouse, em passos de 8 %, então quase nunca cai exatamente
-                  // num preset. Sem a folga, nenhum botão pareceria ativo.
-                  aria-pressed={Math.abs(zoomLevel - z.valor) < 0.04}
-                  className={`border-panel-border bg-table-deep flex-1 rounded-md border px-1 py-1.5 text-[11px] transition-colors ${
-                    Math.abs(zoomLevel - z.valor) < 0.04
-                      ? 'border-primary text-primary font-bold'
-                      : 'text-text hover:border-primary hover:text-primary'
-                  }`}
-                >
-                  {z.texto}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setZoom(1);
-                setCamera(0, 0);
-              }}
-              className="border-panel-border bg-table-deep text-text hover:border-primary hover:text-primary mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] transition-colors"
-              title="Volta o zoom a 100 % e recentra a mesa"
-            >
-              <Maximize className="h-3.5 w-3.5" /> Recentrar
-            </button>
-          </div>
-
+          <Interruptor
+            rotulo="Mesa dos oponentes"
+            Icone={PanelRight}
+            ligado={trilhoAberto}
+            onAlternar={() => setTrilhoAberto(!trilhoAberto)}
+            dica="O trilho da direita mostra a mesa de cada oponente em miniatura. Ele flutua sobre o campo, então abrir e fechar NÃO muda o tamanho das suas cartas."
+          />
+          <Interruptor
+            rotulo="Câmera segue o turno"
+            Icone={Footprints}
+            ligado={seguirTurno}
+            onAlternar={() => setSeguirTurno(!seguirTurno)}
+            dica="Ao passar o turno, a tela vai sozinha para a mesa de quem entrou na vez. É preferência sua: ninguém move a câmera de ninguém."
+          />
           <Interruptor
             rotulo="Barra de ações fixa"
             Icone={PanelBottom}

@@ -1,0 +1,231 @@
+import {
+  ALTURA_DE_REFERENCIA,
+  CARD_H,
+  CARD_W,
+  ESCALA_MAX,
+  ESCALA_MIN,
+  montarMesaFocada,
+  posicaoNaMao,
+  posicaoNoCampo,
+  paraCoordenadaRelativa,
+  zonaSolta,
+} from './layout';
+
+/**
+ * mesa-focada.spec.ts — as regras que o jogador pediu, travadas em teste.
+ *
+ * O relato foi "as cartas estão muito pequenas e não dá para ler", e a causa
+ * era a geometria antiga montar um plano lógico de 1920 e encolher tudo para
+ * caber (carta de 48 a 74px num monitor de 1600x950). Estes testes existem para
+ * que isso não volte por um refactor que "só mexeu na constante".
+ *
+ * As duas invariantes de layout que ele foi explícito sobre:
+ *   1. a mesa dele ocupa a TELA INTEIRA, sem zoom para se afastar;
+ *   2. comando em cima, grimório/cemitério/exílio abaixo, na direita, NUNCA
+ *      trocando de lugar.
+ */
+
+const TELA = { largura: 1600, altura: 900 };
+
+describe('mesa focada — a carta é legível', () => {
+  it('a carta tem ao menos 100px de largura num monitor comum', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    const largura = CARD_W * mesa.faixas[0]!.escala;
+    // A geometria antiga entregava 74px aqui. 100 é o piso do legível.
+    expect(largura).toBeGreaterThanOrEqual(100);
+  });
+
+  it('a carta CRESCE num monitor grande em vez de sobrar espaço', () => {
+    const pequeno = montarMesaFocada({ largura: 1366, altura: 700, focoId: 'eu' });
+    const grande = montarMesaFocada({ largura: 3440, altura: 1400, focoId: 'eu' });
+    expect(grande.faixas[0]!.escala).toBeGreaterThan(pequeno.faixas[0]!.escala);
+  });
+
+  it('a escala respeita piso e teto', () => {
+    const minusculo = montarMesaFocada({ largura: 600, altura: 300, focoId: 'eu' });
+    const gigante = montarMesaFocada({ largura: 6000, altura: 4000, focoId: 'eu' });
+    expect(minusculo.faixas[0]!.escala).toBeGreaterThanOrEqual(ESCALA_MIN);
+    expect(gigante.faixas[0]!.escala).toBeLessThanOrEqual(ESCALA_MAX);
+  });
+
+  it('escala 1 exatamente na altura de referência', () => {
+    const mesa = montarMesaFocada({ largura: 1600, altura: ALTURA_DE_REFERENCIA, focoId: 'eu' });
+    expect(mesa.faixas[0]!.escala).toBeCloseTo(1, 5);
+  });
+});
+
+describe('mesa focada — ocupa a tela inteira', () => {
+  it('a mesa tem EXATAMENTE o tamanho da área disponível', () => {
+    // É isto que elimina o zoom: não existe mesa maior que a tela para
+    // "caber", nem menor deixando barra preta.
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    expect(mesa.largura).toBe(TELA.largura);
+    expect(mesa.altura).toBe(TELA.altura);
+  });
+
+  it('a mão fica na base e dentro da tela', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    expect(mesa.mao.topo + mesa.mao.altura).toBe(mesa.altura);
+    expect(mesa.mao.altura).toBeGreaterThan(CARD_H * mesa.faixas[0]!.escala);
+  });
+
+  it('o campo mais a coluna preenchem a largura, sem sobra', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    const f = mesa.faixas[0]!;
+    const direitaDaColuna = f.comando.x + (CARD_W * f.escala) / 2;
+    expect(f.campo.largura).toBeGreaterThan(mesa.largura * 0.7);
+    expect(direitaDaColuna).toBeLessThanOrEqual(mesa.largura);
+  });
+
+  it('uma carta da mão cabe na tela em qualquer quantidade', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    for (const total of [1, 7, 12, 20]) {
+      for (let i = 0; i < total; i++) {
+        const p = posicaoNaMao(i, total, mesa);
+        expect(p.x).toBeGreaterThanOrEqual(0);
+        expect(p.x).toBeLessThanOrEqual(mesa.largura);
+      }
+    }
+  });
+});
+
+describe('mesa focada — a coluna da direita NUNCA muda', () => {
+  const tamanhos = [
+    { largura: 1366, altura: 700 },
+    { largura: 1600, altura: 900 },
+    { largura: 1920, altura: 1080 },
+    { largura: 3440, altura: 1440 },
+    { largura: 900, altura: 500 },
+  ];
+
+  it('comando em cima; grimório, cemitério e exílio abaixo, nesta ordem', () => {
+    for (const t of tamanhos) {
+      const f = montarMesaFocada({ ...t, focoId: 'eu' }).faixas[0]!;
+      expect(f.comando.y).toBeLessThan(f.grimorio.y);
+      expect(f.grimorio.y).toBeLessThan(f.cemiterio.y);
+      expect(f.cemiterio.y).toBeLessThan(f.exilio.y);
+    }
+  });
+
+  it('as quatro zonas ficam na MESMA coluna, na direita', () => {
+    for (const t of tamanhos) {
+      const mesa = montarMesaFocada({ ...t, focoId: 'eu' });
+      const f = mesa.faixas[0]!;
+      const xs = [f.comando.x, f.grimorio.x, f.cemiterio.x, f.exilio.x, f.reserva.x];
+      // Uma coluna só: todo x idêntico.
+      expect(new Set(xs).size).toBe(1);
+      // E ela está na metade direita da tela.
+      expect(f.comando.x).toBeGreaterThan(mesa.largura / 2);
+    }
+  });
+
+  it('a coluna não invade o campo de batalha', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    const f = mesa.faixas[0]!;
+    const esquerdaDaColuna = f.comando.x - (CARD_W * f.escala) / 2;
+    expect(esquerdaDaColuna).toBeGreaterThanOrEqual(f.campo.x + f.campo.largura - 1);
+  });
+
+  it('soltar sobre cada slot acerta a zona daquele slot', () => {
+    const f = montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!;
+    expect(zonaSolta(f, f.comando.x, f.comando.y)).toBe('COMMAND');
+    expect(zonaSolta(f, f.grimorio.x, f.grimorio.y)).toBe('LIBRARY');
+    expect(zonaSolta(f, f.cemiterio.x, f.cemiterio.y)).toBe('GRAVEYARD');
+    expect(zonaSolta(f, f.exilio.x, f.exilio.y)).toBe('EXILE');
+  });
+
+  it('soltar no meio do campo é campo de batalha', () => {
+    const f = montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!;
+    expect(zonaSolta(f, f.campo.largura / 2, f.campo.y + f.campo.altura / 2)).toBe('BATTLEFIELD');
+  });
+});
+
+describe('mesa focada — trilho dos oponentes', () => {
+  const oponentes = ['op1', 'op2', 'op3'];
+
+  it('abrir o trilho NÃO muda a geometria da minha mesa', () => {
+    // Foi a escolha explícita do jogador: o trilho flutua por cima, então a
+    // carta dele nunca muda de tamanho ao abrir ou fechar.
+    const fechado = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: false });
+    const aberto = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: true });
+
+    const a = fechado.faixas[0]!;
+    const b = aberto.faixas[0]!;
+    expect(b.escala).toBe(a.escala);
+    expect(b.campo).toEqual(a.campo);
+    expect(b.comando).toEqual(a.comando);
+    expect(b.grimorio).toEqual(a.grimorio);
+    expect(fechado.mao).toEqual(aberto.mao);
+  });
+
+  it('recolhido, existe só a minha faixa', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: false });
+    expect(mesa.faixas).toHaveLength(1);
+    expect(mesa.faixas[0]!.playerId).toBe('eu');
+  });
+
+  it('aberto, cada oponente tem faixa própria, na ordem recebida', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes });
+    expect(mesa.faixas.map((f) => f.playerId)).toEqual(['eu', 'op1', 'op2', 'op3']);
+    // De cima para baixo.
+    expect(mesa.faixas[1]!.topo).toBeLessThan(mesa.faixas[2]!.topo);
+    expect(mesa.faixas[2]!.topo).toBeLessThan(mesa.faixas[3]!.topo);
+  });
+
+  it('o oponente é desenhado PEQUENO, e nunca maior que eu', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes });
+    for (const f of mesa.faixas.slice(1)) {
+      expect(f.escala).toBeLessThan(mesa.faixas[0]!.escala);
+      expect(f.escala).toBeGreaterThan(0);
+    }
+  });
+
+  it('o trilho fica na direita e não cobre a mão', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes });
+    for (const f of mesa.faixas.slice(1)) {
+      expect(f.esquerda).toBeGreaterThan(mesa.largura / 2);
+      expect(f.topo + f.altura).toBeLessThanOrEqual(mesa.mao.topo + 1);
+    }
+  });
+
+  it('a coluna do oponente segue a MESMA ordem da minha', () => {
+    // Um arranjo diferente na miniatura obrigaria o jogador a reaprender onde
+    // está o cemitério do vizinho.
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes });
+    for (const f of mesa.faixas.slice(1)) {
+      expect(f.comando.y).toBeLessThan(f.grimorio.y);
+      expect(f.grimorio.y).toBeLessThan(f.cemiterio.y);
+      expect(f.cemiterio.y).toBeLessThan(f.exilio.y);
+      expect(new Set([f.comando.x, f.grimorio.x, f.cemiterio.x, f.exilio.x]).size).toBe(1);
+    }
+  });
+});
+
+describe('mesa focada — coordenadas de permanente continuam válidas', () => {
+  it('ida e volta preserva a posição dentro do campo', () => {
+    const f = montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!;
+    const rel = { x: 200, y: 150 };
+    const abs = posicaoNoCampo(f, rel.x, rel.y);
+    const volta = paraCoordenadaRelativa(f, abs.x, abs.y);
+    expect(volta.x).toBeCloseTo(rel.x, 0);
+    expect(volta.y).toBeCloseTo(rel.y, 0);
+  });
+
+  it('uma permanente nunca sai do campo, por mais longe que a coordenada esteja', () => {
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    const f = mesa.faixas[0]!;
+    const meiaL = (CARD_W * f.escala) / 2;
+    const meiaA = (CARD_H * f.escala) / 2;
+    for (const [x, y] of [
+      [-9999, -9999],
+      [9999, 9999],
+      [0, 0],
+    ]) {
+      const p = posicaoNoCampo(f, x!, y!);
+      expect(p.x - meiaL).toBeGreaterThanOrEqual(f.campo.x - 1);
+      expect(p.x + meiaL).toBeLessThanOrEqual(f.campo.x + f.campo.largura + 1);
+      expect(p.y - meiaA).toBeGreaterThanOrEqual(f.topo + f.campo.y - 1);
+      expect(p.y + meiaA).toBeLessThanOrEqual(f.topo + f.campo.y + f.campo.altura + 1);
+    }
+  });
+});

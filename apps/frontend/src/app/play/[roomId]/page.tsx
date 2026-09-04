@@ -29,6 +29,7 @@ import { CardHoverPreview } from '@/overlay/CardHoverPreview';
 import { CardEditor } from '@/overlay/CardEditor';
 import { useAtalhosDaMesa } from '@/net/atalhos';
 import { useCosmeticos } from '@/cosmetics/store';
+import { useHidratarCosmeticos } from '@/cosmetics/useHidratarCosmeticos';
 import { RoomLobby } from '@/overlay/RoomLobby';
 import { MulliganModal } from '@/overlay/MulliganModal';
 import { PlayersModal } from '@/overlay/PlayersModal';
@@ -80,6 +81,17 @@ export default function PlayRoomPage() {
   // vivem no cliente (localStorage) porque a mesa não pode esperar um
   // round-trip de API para saber com que sleeve desenhar as cartas — mas os
   // OUTROS jogadores só sabem por aqui.
+  /**
+   * Hidrata da conta ANTES de anunciar a sala.
+   *
+   * `INTENT_SET_COSMETICS` avisa a mesa com que sleeve desenhar minhas cartas.
+   * Sem esta linha, entrar direto num link de mesa (sem passar pela taverna)
+   * anunciaria o que estivesse no `localStorage` deste navegador — o padrao,
+   * numa maquina nova — e o jogador apareceria para a mesa com um visual que
+   * ele nao escolheu. O efeito abaixo reenvia quando os valores chegam.
+   */
+  useHidratarCosmeticos();
+
   const sleeveId = useCosmeticos((s) => s.sleeveId);
   const playmatId = useCosmeticos((s) => s.playmatId);
   const borderId = useCosmeticos((s) => s.borderId);

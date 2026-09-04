@@ -118,7 +118,16 @@ export function ChatLog({ room }: ChatLogProps) {
   return (
     // No mobile o log fica ANCORADO NA BASE (acima da barra de ações): no topo
     // ele caía exatamente sobre a faixa de vida dos jogadores.
-    <div className="pointer-events-none absolute bottom-16 right-2 z-20 flex w-[min(14rem,calc(100vw-1rem))] flex-col sm:bottom-auto sm:right-3 sm:top-16">
+    /* ─── O LOG MUDOU DE CANTO, E O MOTIVO É A COLUNA DE ZONAS ──────────────
+       Ele vivia em `sm:right-3 sm:top-16`, e ali passou a cobrir exatamente o
+       slot do COMANDANTE: a coluna de zonas agora é fixa no canto superior
+       direito, com comando no topo. Num retrato da mesa o painel do log ficava
+       por cima da carta do comandante — a carta que precisa estar visível a
+       partida inteira, porque é ela que responde "para onde ele volta".
+
+       Foi para a ESQUERDA, embaixo do painel de vida, onde já havia coluna de
+       HUD reservada e nada do tabuleiro é desenhado. */
+    <div className="pointer-events-none absolute bottom-16 left-2 z-20 flex w-[min(14rem,calc(100vw-1rem))] flex-col sm:bottom-14 sm:left-3 sm:top-auto">
       <div
         className={`border-panel-border bg-panel/90 pointer-events-auto flex items-center justify-between border px-2.5 py-1.5 backdrop-blur ${collapsed ? 'rounded-xl' : 'rounded-t-xl'}`}
       >

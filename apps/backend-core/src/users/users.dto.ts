@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  ehBorderValido,
+  ehPetValido,
+  ehPlaymatValido,
+  ehSleeveValido,
+  ehTitleValido,
+} from '@aethertable/shared-types';
 
 /**
  * users.dto.ts — validação de borda do perfil.
@@ -26,9 +33,35 @@ const username = z
   .max(24)
   .regex(/^[a-zA-Z0-9_.-]+$/, 'Use apenas letras, números, ponto, hífen ou underline');
 
+/**
+ * ─── OS IDS DE COSMÉTICO SÃO VALIDADOS CONTRA O CATÁLOGO ───────────────────
+ *
+ * A coluna é `VarChar(48)` sem foreign key, porque o catálogo é fechado e
+ * versionado em CÓDIGO (`shared-types/cosmetics.ts`, DOC-060 §1.1) — não há
+ * tabela para referenciar. Sem esta validação, a coluna aceitaria qualquer
+ * string e o cliente desenharia o padrão em silêncio: o jogador equiparia algo,
+ * o servidor gravaria, e a mesa mostraria outra coisa.
+ *
+ * `null` é explicitamente permitido: significa "voltar ao padrão".
+ */
+const idDeCosmetico = (valido: (id: string) => boolean, rotulo: string) =>
+  z
+    .string()
+    .trim()
+    .max(48)
+    .refine(valido, { message: `Não existe ${rotulo} com esse id no catálogo.` })
+    .nullable()
+    .optional();
+
 export const AtualizarPerfilDto = z
   .object({
     username: username.optional(),
+    sleeveId: idDeCosmetico(ehSleeveValido, 'protetor'),
+    playmatId: idDeCosmetico(ehPlaymatValido, 'tapete'),
+    borderId: idDeCosmetico(ehBorderValido, 'borda'),
+    titleId: idDeCosmetico(ehTitleValido, 'título'),
+    petId: idDeCosmetico(ehPetValido, 'mascote'),
+    cosmeticosDeOponentes: z.boolean().optional(),
     /** Nome de exibição é livre, mas limitado — cabe acento e espaço. */
     displayName: z.string().trim().min(1).max(48).optional(),
     /** Código de idioma curto (`pt-BR`, `en`), não texto livre. */

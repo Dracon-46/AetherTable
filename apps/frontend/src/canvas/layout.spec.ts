@@ -227,7 +227,18 @@ describe('coordenadas do campo', () => {
   it('uma carta solta no campo nunca aterrissa sobre a zona de comando', () => {
     for (const faixa of desktop().faixas) {
       const bemAEsquerda = posicaoNoCampo(faixa, -500, 40);
-      expect(bemAEsquerda.x - CARD_W / 2).toBeGreaterThanOrEqual(faixa.campo.x);
+      /**
+       * A meia-largura é a DESENHADA, com a escala da faixa.
+       *
+       * Esta assertiva usava `CARD_W / 2` cru, e com isso codificava um bug do
+       * `posicaoNoCampo`: ele também ignorava a escala. Numa faixa fora de foco
+       * (escala 0,62) a carta é desenhada com 74px de largura, não 120 — exigir
+       * 60px de folga parava a carta 23px antes da borda e criava uma margem
+       * morta que o jogador não conseguia usar. O erro passou porque o teste e
+       * o código estavam errados da mesma forma.
+       */
+      const meiaLargura = (CARD_W * faixa.escala) / 2;
+      expect(bemAEsquerda.x - meiaLargura).toBeGreaterThanOrEqual(faixa.campo.x);
     }
   });
 

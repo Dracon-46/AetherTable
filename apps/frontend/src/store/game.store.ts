@@ -222,8 +222,34 @@ export const useGameStore = create<GameState>((set) => ({
 export type ZonaInspecionavel = 'GRAVEYARD' | 'EXILE' | 'LIBRARY' | 'SIDEBOARD' | 'HAND';
 
 interface UIState {
-  zoomLevel: number;
-  cameraPosition: { x: number; y: number };
+  /**
+   * ─── ZOOM E CÂMERA SAÍRAM ────────────────────────────────────────────────
+   *
+   * `zoomLevel` e `cameraPosition` existiam para compensar uma mesa que NÃO
+   * CABIA na tela: a geometria montava um plano lógico de 1920 e o desenho
+   * encolhia tudo para caber, então o jogador precisava de zoom e arraste para
+   * alcançar o que tinha ficado pequeno.
+   *
+   * A mesa agora é montada em pixels reais da área disponível
+   * (`montarMesaFocada`) e ocupa a tela inteira, sempre. Zoom passaria a
+   * servir para uma coisa só — se afastar e voltar a ter carta ilegível — que
+   * é exatamente o que o jogador pediu para não existir.
+   */
+  /** Trilho de oponentes na direita. FLUTUA: abrir não redimensiona a mesa. */
+  trilhoAberto: boolean;
+  /**
+   * A CÂMERA SEGUE DE QUEM É A VEZ.
+   *
+   * Ligado, passar o turno leva a tela para a mesa do próximo jogador
+   * automaticamente. É preferência de quem OLHA, não estado de mesa: cada
+   * pessoa decide se quer ser levada, e ninguém move a câmera de ninguém.
+   *
+   * Desligado por padrão, e não por timidez: ser arrastado para a mesa de outra
+   * pessoa no meio de uma decisão sua é desorientador, e o jogador que quer
+   * acompanhar sabe que quer. Um padrão que mexe na tela sem pedir vira a
+   * primeira coisa que todos procuram desligar.
+   */
+  seguirTurno: boolean;
   activeModals: {
     chat: boolean;
     dice: boolean;
@@ -290,8 +316,8 @@ interface UIState {
    */
   logAberto: boolean;
 
-  setZoom: (z: number) => void;
-  setCamera: (x: number, y: number) => void;
+  setTrilhoAberto: (v: boolean) => void;
+  setSeguirTurno: (v: boolean) => void;
   toggleModal: (modal: keyof UIState['activeModals']) => void;
   closeAllModals: () => void;
   setSelectedCards: (ids: string[]) => void;
@@ -316,8 +342,8 @@ interface UIState {
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
-      zoomLevel: 1,
-      cameraPosition: { x: 0, y: 0 },
+      trilhoAberto: true,
+      seguirTurno: false,
       activeModals: {
         chat: false,
         dice: false,
@@ -343,8 +369,8 @@ export const useUIStore = create<UIState>()(
       vidaModo: 'minha',
       logAberto: false,
 
-      setZoom: (zoomLevel) => set({ zoomLevel: Math.min(2.5, Math.max(0.4, zoomLevel)) }),
-      setCamera: (x, y) => set({ cameraPosition: { x, y } }),
+      setTrilhoAberto: (trilhoAberto) => set({ trilhoAberto }),
+      setSeguirTurno: (seguirTurno) => set({ seguirTurno }),
       toggleModal: (modal) =>
         set((s) => ({
           activeModals: { ...s.activeModals, [modal]: !s.activeModals[modal] },
@@ -418,6 +444,8 @@ export const useUIStore = create<UIState>()(
       partialize: (s) => ({
         showZoneOutlines: s.showZoneOutlines,
         logAberto: s.logAberto,
+        trilhoAberto: s.trilhoAberto,
+        seguirTurno: s.seguirTurno,
         // `boardView` guarda um sessionId quando aponta para um oponente, e
         // sessionId muda a cada conexão. Persistido cru, o jogador voltava numa
         // partida nova com a câmera fixada num assento que não existe mais: a

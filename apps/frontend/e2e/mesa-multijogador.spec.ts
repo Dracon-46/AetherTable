@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { montarGrade, posicaoNaMao, CARD_W, CARD_H } from '../src/canvas/layout';
+import { montarMesaFocada, posicaoNaMao, CARD_W, CARD_H } from '../src/canvas/layout';
 
 /**
  * mesa-multijogador.spec.ts — quatro jogadores de verdade, numa sala de verdade.
@@ -31,6 +31,43 @@ import { montarGrade, posicaoNaMao, CARD_W, CARD_H } from '../src/canvas/layout'
 // `__dirname`, e nao `import.meta.url`: o Playwright transpila os specs para
 // CommonJS, e `import.meta` e um erro de sintaxe ali.
 const AQUI = __dirname;
+
+/**
+ * ─── AS COORDENADAS DO CLIQUE VÊM DA MESMA GEOMETRIA DO GameBoard ──────────
+ *
+ * O teste precisa clicar em cima do grimório e arrastar da mão para o campo, e
+ * para isso converte uma âncora da mesa em pixel de tela. Fazer essa conta à
+ * mão aqui é o que quebrou quando a geometria mudou: o arranjo passou de
+ * `montarGrade` (plano lógico de 1920 reduzido para caber) para
+ * `montarMesaFocada` (pixels reais, escala 1), e as coordenadas antigas
+ * apontavam para lugar nenhum.
+ *
+ * Estes dois helpers existem para que só ELES saibam da conta. Se o
+ * enquadramento mudar de novo, muda em um lugar — e as margens abaixo são as
+ * MESMAS do `GameBoard`, porque um teste que usa margem própria testa uma tela
+ * que não existe.
+ */
+const MARGENS = { esquerda: 168, direita: 10, topo: 44, base: 10 };
+
+function enquadramento(largura: number, altura: number) {
+  // `montarMesaFocada` devolve a mesa já no tamanho da área útil, então a
+  // escala do desenho é 1 e o deslocamento é só a margem.
+  return { offsetX: MARGENS.esquerda, offsetY: MARGENS.topo, escala: 1, largura, altura };
+}
+
+function mesaDaTela(ordem: string[], largura: number, altura: number) {
+  const utilW = Math.max(320, largura - MARGENS.esquerda - MARGENS.direita);
+  const utilH = Math.max(300, altura - MARGENS.topo - MARGENS.base);
+  // `ordem` chega como "oponentes primeiro, eu por último" (o arranjo antigo);
+  // na mesa focada eu sou o foco e os demais vão para o trilho.
+  const eu = ordem[ordem.length - 1]!;
+  return montarMesaFocada({
+    largura: utilW,
+    altura: utilH,
+    focoId: eu,
+    oponentes: ordem.slice(0, -1),
+  });
+}
 
 interface Jogador {
   username: string;
@@ -290,14 +327,9 @@ test.describe('mesa multijogador', () => {
    */
   function centroDoGrimorio(jogadores: number, largura: number, altura: number) {
     const ordem = [...Array.from({ length: jogadores - 1 }, (_, i) => `op${i}`), 'me'];
-    const mesa = montarGrade(ordem, 'me');
+    const mesa = mesaDaTela(ordem, largura, altura);
 
-    const margens = { esquerda: 176, direita: 244, topo: 52, base: 48 };
-    const utilW = Math.max(120, largura - margens.esquerda - margens.direita);
-    const utilH = Math.max(120, altura - margens.topo - margens.base);
-    const escala = Math.min(utilW / mesa.largura, utilH / mesa.altura);
-    const offsetX = margens.esquerda + (utilW - mesa.largura * escala) / 2;
-    const offsetY = margens.topo + (utilH - mesa.altura * escala) / 2;
+    const { offsetX, offsetY, escala } = enquadramento(largura, altura);
 
     const faixa = mesa.porJogador.get('me')!;
     return {
@@ -508,13 +540,8 @@ test.describe('mesa multijogador', () => {
   /** Transforma coordenada lógica da mesa em pixel de tela. */
   function projetor(jogadores: number) {
     const ordem = [...Array.from({ length: jogadores - 1 }, (_, i) => `op${i}`), 'me'];
-    const mesa = montarGrade(ordem, 'me');
-    const margens = { esquerda: 176, direita: 244, topo: 52, base: 48 };
-    const utilW = Math.max(120, VIEW.largura - margens.esquerda - margens.direita);
-    const utilH = Math.max(120, VIEW.altura - margens.topo - margens.base);
-    const escala = Math.min(utilW / mesa.largura, utilH / mesa.altura);
-    const offsetX = margens.esquerda + (utilW - mesa.largura * escala) / 2;
-    const offsetY = margens.topo + (utilH - mesa.altura * escala) / 2;
+    const mesa = mesaDaTela(ordem, VIEW.largura, VIEW.altura);
+    const { offsetX, offsetY, escala } = enquadramento(VIEW.largura, VIEW.altura);
     return {
       mesa,
       faixa: mesa.porJogador.get('me')!,
