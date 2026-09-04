@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Play, KeyRound, Library, Plus, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '../../store/auth.store';
 import { api, mensagemDaApi } from '@/lib/fetcher';
@@ -11,7 +10,6 @@ import { FORMATOS_JOGAVEIS, acharFormato } from '@aethertable/shared-types';
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
-  const router = useRouter();
 
   /**
    * A lista vem do CACHE compartilhado com `/dashboard/decks`.
@@ -106,19 +104,32 @@ export default function DashboardPage() {
       }
 
       /**
-       * ─── `window.location.href` RECARREGAVA O APLICATIVO INTEIRO ──────────
+       * ─── ISTO PRECISA SER UMA CARGA COMPLETA DE PÁGINA. NÃO TROQUE. ───────
        *
-       * Era uma navegação de navegador, não de aplicação: o bundle do Next
-       * voltava a ser baixado e avaliado, os stores do zustand nasciam de novo
-       * e o `persist` tinha de reidratar antes de a tela decidir qualquer
-       * coisa. Entrar numa mesa custava um carregamento a frio — segundos de
-       * tela branca — e era o passo do fluxo em que a espera mais dói, porque
-       * do outro lado já tem gente esperando.
+       * Eu troquei este `window.location.href` por `router.push` para evitar o
+       * recarregamento do bundle, e isso QUEBROU a entrada na mesa por
+       * completo. O motivo, medido:
        *
-       * `router.push` faz a transição no cliente: só o código da rota da mesa é
-       * buscado, e o resto já está em memória.
+       *   goto / location.href  → "Sala de espera" abre
+       *   router.push           → TOKEN_ALREADY_USED, a mesa nunca monta
+       *
+       * O `seatToken` é de USO ÚNICO: o `AetherRoom` guarda o `jti` de cada
+       * passe consumido e recusa o segundo uso (FR-20). Com `router.push`, a
+       * página da mesa monta DENTRO da árvore React existente, e o
+       * `reactStrictMode: true` invoca o efeito de conexão duas vezes: a
+       * primeira chamada resolve e queima o passe, a segunda é recusada pelo
+       * servidor — corretamente.
+       *
+       * Numa carga completa de página as duas invocações acontecem antes de a
+       * primeira promessa resolver, então só UMA chega ao servidor. É por isso
+       * que o comportamento antigo funcionava e o "otimizado" não.
+       *
+       * A fragilidade de fundo é o efeito de conexão não ser idempotente com
+       * um passe de uso único. Consertar isso é mexer no caminho de conexão da
+       * mesa, e é uma mudança que precisa ser medida na mesa — não deduzida.
+       * Até lá, a navegação completa é o que funciona.
        */
-      router.push(destino);
+      window.location.href = destino;
     } catch (erro) {
       setErrorMsg(mensagemDaApi(erro));
       setIsConnecting(false);
