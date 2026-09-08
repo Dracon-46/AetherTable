@@ -29,7 +29,7 @@ import { CardHoverPreview } from '@/overlay/CardHoverPreview';
 import { CardEditor } from '@/overlay/CardEditor';
 import { useAtalhosDaMesa } from '@/net/atalhos';
 import { useCosmeticos } from '@/cosmetics/store';
-import { useHidratarCosmeticos } from '@/cosmetics/useHidratarCosmeticos';
+import { useHidratarPreferencias } from '@/store/useHidratarPreferencias';
 import { RoomLobby } from '@/overlay/RoomLobby';
 import { MulliganModal } from '@/overlay/MulliganModal';
 import { PlayersModal } from '@/overlay/PlayersModal';
@@ -90,7 +90,7 @@ export default function PlayRoomPage() {
    * numa maquina nova — e o jogador apareceria para a mesa com um visual que
    * ele nao escolheu. O efeito abaixo reenvia quando os valores chegam.
    */
-  useHidratarCosmeticos();
+  useHidratarPreferencias();
 
   const sleeveId = useCosmeticos((s) => s.sleeveId);
   const playmatId = useCosmeticos((s) => s.playmatId);

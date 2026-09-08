@@ -18,3 +18,4 @@ export * from './intents';
 export * from './events';
 export * from './cards-catalog';
 export * from './cosmetics';
+export * from './atalhos';

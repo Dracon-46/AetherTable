@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
-import { ATALHOS } from '../net/atalhos';
+import { AtalhosEditor } from './AtalhosEditor';
 import type { RoomState } from '../net/schema/RoomState';
 
 interface TableMenuProps {
@@ -361,9 +361,9 @@ export function TableMenu({ room }: TableMenuProps) {
             </div>
           )}
 
-          {/* Atalhos de teclado — a tabela vem de net/atalhos.ts, a mesma que
-              o listener usa. Documentar num lugar e implementar em outro é
-              como um atalho vira mentira. */}
+          {/* Atalhos de teclado — o editor e o listener leem a MESMA fonte
+              (`ACOES_DE_ATALHO` + a preferência da conta). Documentar num lugar
+              e implementar em outro é como um atalho vira mentira. */}
           <div className={secao}>
             <button
               onClick={() => setMostrarAtalhos((v) => !v)}
@@ -372,22 +372,7 @@ export function TableMenu({ room }: TableMenuProps) {
               <Keyboard className="h-3.5 w-3.5" />
               {mostrarAtalhos ? 'Esconder atalhos' : 'Atalhos de teclado'}
             </button>
-            {mostrarAtalhos && (
-              <dl className="mt-2 flex flex-col gap-1">
-                {ATALHOS.map((a) => (
-                  <div key={a.tecla} className="flex items-baseline justify-between gap-2">
-                    <dt className="shrink-0">
-                      <kbd className="border-panel-border bg-table-deep text-text rounded border px-1.5 py-0.5 font-mono text-[10px]">
-                        {a.comModificador ? `Ctrl+${a.tecla}` : a.tecla}
-                      </kbd>
-                    </dt>
-                    <dd className="text-text-muted min-w-0 flex-1 text-right text-[10px] leading-snug">
-                      {a.descricao}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
+            {mostrarAtalhos && <AtalhosEditor />}
           </div>
 
           {/* ── FIM DE PARTIDA ──────────────────────────────────────────

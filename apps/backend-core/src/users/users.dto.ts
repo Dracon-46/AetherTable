@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import {
+  ACOES_DE_ATALHO,
+  ehAcaoDeAtalho,
   ehBorderValido,
   ehPetValido,
   ehPlaymatValido,
   ehSleeveValido,
+  ehTeclaDeAtalho,
   ehTitleValido,
 } from '@aethertable/shared-types';
 
@@ -53,6 +56,37 @@ const idDeCosmetico = (valido: (id: string) => boolean, rotulo: string) =>
     .nullable()
     .optional();
 
+/**
+ * ─── OS ATALHOS SÃO VALIDADOS CONTRA O CATÁLOGO DE AÇÕES ───────────────────
+ *
+ * `user_preferences.keybindings` é JSONB, o que significa que o Postgres aceita
+ * qualquer coisa: um array, uma string, um objeto de 40 mil chaves. Sem esta
+ * validação a coluna seria armazenamento livre exposto num PATCH autenticado.
+ *
+ * A CHAVE é validada com rigor — tem de ser uma ação que existe
+ * (`ACOES_DE_ATALHO`), porque uma chave desconhecida é peso morto que o cliente
+ * vai ignorar para sempre.
+ *
+ * O VALOR é validado por abuso, não por gramática: a forma canônica de uma
+ * tecla (`'ctrl+z'`, `'P'`, `'='`) é definida no cliente por `normalizarTecla`,
+ * e reimplementar essa gramática aqui criaria duas fontes da verdade que
+ * envelhecem separado. E o modo de falhar é seguro, diferente de um id de
+ * cosmético: uma tecla que não corresponde a tecla nenhuma simplesmente nunca
+ * dispara. O que precisa ser barrado é o que ocupa banco — string enorme,
+ * espaço, caractere de controle. Ver `ehTeclaDeAtalho`.
+ */
+const keybindings = z
+  .record(z.string(), z.string())
+  .refine((mapa) => Object.keys(mapa).length <= ACOES_DE_ATALHO.length, {
+    message: 'Mais atalhos do que existem ações mapeáveis.',
+  })
+  .refine((mapa) => Object.keys(mapa).every(ehAcaoDeAtalho), {
+    message: 'Há uma ação de atalho que não existe no catálogo.',
+  })
+  .refine((mapa) => Object.values(mapa).every(ehTeclaDeAtalho), {
+    message: 'Há uma tecla com formato inválido.',
+  });
+
 export const AtualizarPerfilDto = z
   .object({
     username: username.optional(),
@@ -62,6 +96,8 @@ export const AtualizarPerfilDto = z
     titleId: idDeCosmetico(ehTitleValido, 'título'),
     petId: idDeCosmetico(ehPetValido, 'mascote'),
     cosmeticosDeOponentes: z.boolean().optional(),
+    /** Mapa completo ação → tecla. Ver o comentário de `keybindings`. */
+    keybindings: keybindings.optional(),
     /** Nome de exibição é livre, mas limitado — cabe acento e espaço. */
     displayName: z.string().trim().min(1).max(48).optional(),
     /** Código de idioma curto (`pt-BR`, `en`), não texto livre. */

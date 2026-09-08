@@ -41,7 +41,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { OAuthTokenCapture } from '../../components/OAuthTokenCapture';
 import { useSouAdmin } from '../../admin/useAdmin';
-import { useHidratarCosmeticos } from '../../cosmetics/useHidratarCosmeticos';
+import { useHidratarPreferencias } from '../../store/useHidratarPreferencias';
 
 interface ItemDeMenu {
   href: string;
@@ -83,8 +83,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
    */
   const { data: sessaoAdmin } = useSouAdmin();
 
-  // Traz o equipamento salvo na conta. Ver `useHidratarCosmeticos`.
-  useHidratarCosmeticos();
+  // Traz cosméticos e atalhos salvos na conta. Ver `useHidratarPreferencias`.
+  useHidratarPreferencias();
 
   // Fecha a gaveta ao trocar de rota.
   useEffect(() => {

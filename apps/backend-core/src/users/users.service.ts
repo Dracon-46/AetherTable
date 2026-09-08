@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 
 /**
@@ -40,6 +41,14 @@ export class UsersService {
             titleId: true,
             petId: true,
             cosmeticosDeOponentes: true,
+            /**
+             * Os atalhos vêm no `GET /users/me` pelo mesmo motivo dos
+             * cosméticos: é o CLIENTE que escuta o teclado. Sem eles na
+             * resposta, o navegador não teria de onde hidratar o remapeamento e
+             * a única fonte continuaria sendo o `localStorage` — que é o que
+             * faz trocar de máquina perder tudo.
+             */
+            keybindings: true,
           },
         },
       },
@@ -122,6 +131,8 @@ export class UsersService {
       titleId?: string | null;
       petId?: string | null;
       cosmeticosDeOponentes?: boolean;
+      /** Mapa completo ação → tecla. Validado em `AtualizarPerfilDto`. */
+      keybindings?: Record<string, string>;
     },
   ) {
     const { username, displayName, language } = data;
@@ -162,6 +173,20 @@ export class UsersService {
       ...(data.petId !== undefined ? { petId: data.petId } : {}),
       ...(data.cosmeticosDeOponentes !== undefined
         ? { cosmeticosDeOponentes: data.cosmeticosDeOponentes }
+        : {}),
+      /**
+       * Substitui o mapa inteiro, e é o contrato.
+       *
+       * O cliente sempre manda as treze entradas (ver `atalhos.store.ts`), então
+       * um merge parcial aqui só criaria a dúvida de como apagar um atalho: uma
+       * chave ausente significaria "não mexa" e a ação nunca poderia voltar a
+       * ficar sem tecla.
+       */
+      // O `as` segue o mesmo caminho de `snapshot` em `admin-denuncias.service`:
+      // um campo Json do Prisma tipa a entrada como `InputJsonValue`, e um
+      // `Record<string, string>` não é aceito sem a asserção.
+      ...(data.keybindings !== undefined
+        ? { keybindings: data.keybindings as Prisma.InputJsonValue }
         : {}),
     };
 
