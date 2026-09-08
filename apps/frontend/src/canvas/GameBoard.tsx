@@ -40,6 +40,8 @@ import type { RoomState } from '../net/schema/RoomState';
 import {
   CARD_W,
   CARD_H,
+  encaixarNaGrade,
+  escalasDaMesaFocada,
   montarMesaFocada,
   posicaoNaMao,
   posicaoNoCampo,
@@ -116,6 +118,16 @@ const CardSprite = React.memo(function CardSprite({
 }: CardSpriteProps) {
   const { card, pos, faixa, arrastavel, frente, face, escala, sleeveId } = item;
   const myId = useGameStore((s) => s.mySessionId);
+  /**
+   * As duas preferências abaixo são lidas por SPRITE, e não pelo tabuleiro.
+   *
+   * Alternar qualquer uma delas re-renderiza todas as cartas — o que é
+   * exatamente o desejado e acontece algumas vezes por partida, não por
+   * quadro. Passá-las por prop obrigaria a memoização do `CardSprite` a
+   * invalidar por um campo novo em cada item posicionado.
+   */
+  const alinharNaGrade = useUIStore((s) => s.alinharNaGrade);
+  const custoDeManaNaMao = useUIStore((s) => s.custoDeManaNaMao);
   const isController = card.controllerId === myId;
   const isLocked = Boolean(card.lockedBy) && card.lockedBy !== myId;
   const isDraggingMe = card.lockedBy === myId;
@@ -240,12 +252,21 @@ const CardSprite = React.memo(function CardSprite({
         return;
       }
 
-      const rel = paraCoordenadaRelativa(minhaFaixa, x, y);
+      /**
+       * O encaixe na grade acontece AQUI e não em `handleDragMove`.
+       *
+       * Durante o arraste a carta acompanha o cursor livremente; o encaixe é o
+       * último passo, no instante em que ela é soltada. Encaixar durante o
+       * movimento faz a carta pular a cada meia célula e o arraste parece
+       * travado — e, pior, cada pulo emitiria um `INTENT_MOVE_CARD`.
+       */
+      const bruta = paraCoordenadaRelativa(minhaFaixa, x, y);
+      const rel = alinharNaGrade ? encaixarNaGrade(minhaFaixa, bruta) : bruta;
       if (card.zone !== 'BATTLEFIELD')
         intents.changeZone(room, card.id, 'BATTLEFIELD', rel.x, rel.y);
       else intents.release(room, card.id, rel.x, rel.y);
     },
-    [room, card.id, card.zone, faixa],
+    [room, card.id, card.zone, faixa, alinharNaGrade],
   );
 
   const handleClick = useCallback(
@@ -409,6 +430,41 @@ const CardSprite = React.memo(function CardSprite({
           />
         </Group>
       ))}
+
+      {/* ── CUSTO DE MANA NA MÃO ─────────────────────────────────────────
+          Numa mesa sem motor de regras, decidir o que jogar no turno é uma
+          conta que o jogador faz de cabeça — e a arte em 120px não entrega o
+          custo de forma legível quando a mão tem oito cartas em leque, porque
+          o canto superior direito de cada carta fica coberto pela vizinha.
+
+          Só na PRÓPRIA mão, e só na frente: no campo de batalha o custo já foi
+          pago e o selo brigaria com marcadores, dano e P/T pelo mesmo pixel. */}
+      {custoDeManaNaMao && card.zone === 'HAND' && frente && faceMeta?.manaCost && (
+        <Group x={w / 2} y={11 * escala} listening={false}>
+          <Rect
+            x={-30 * escala}
+            y={-10 * escala}
+            width={60 * escala}
+            height={20 * escala}
+            fill="rgba(0,0,0,0.82)"
+            cornerRadius={5}
+          />
+          <Text
+            text={faceMeta.manaCost}
+            width={60 * escala}
+            height={20 * escala}
+            offsetX={30 * escala}
+            offsetY={10 * escala}
+            align="center"
+            verticalAlign="middle"
+            fontSize={11 * escala}
+            fontStyle="bold"
+            fill="#F8FAFC"
+            ellipsis
+            wrap="none"
+          />
+        </Group>
+      )}
 
       {/* P/T: o sobreposto vence o impresso, e a cor diz qual dos dois é. */}
       {ptExibido && card.zone === 'BATTLEFIELD' && frente && (
@@ -782,6 +838,8 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const boardView = useUIStore((s) => s.boardView);
   const trilhoAberto = useUIStore((s) => s.trilhoAberto);
   const seguirTurno = useUIStore((s) => s.seguirTurno);
+  const fatorCarta = useUIStore((s) => s.fatorCarta);
+  const registrarEscalaDaMesa = useUIStore((s) => s.registrarEscalaDaMesa);
   const setBoardView = useUIStore((s) => s.setBoardView);
   const arrowSource = useUIStore((s) => s.arrowSource);
   const setArrowSource = useUIStore((s) => s.setArrowSource);
@@ -850,6 +908,18 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const utilW = Math.max(320, dims.w - margens.esquerda - margens.direita);
   const utilH = Math.max(300, dims.h - margens.topo - margens.base);
 
+  /**
+   * Publica a escala para o painel de exibição.
+   *
+   * A conta vive em `layout.ts` e é a MESMA que `montarMesaFocada` usa — o
+   * painel não recalcula nada por conta própria, senão seria uma segunda fonte
+   * da verdade envelhecendo em silêncio.
+   */
+  useEffect(() => {
+    const { efetiva, pedida } = escalasDaMesaFocada(utilH, fatorCarta);
+    registrarEscalaDaMesa(efetiva, pedida);
+  }, [utilH, fatorCarta, registrarEscalaDaMesa]);
+
   const mesa: Mesa = useMemo(() => {
     const porAssento = Object.values(players)
       .filter((p) => p.id !== myId)
@@ -883,8 +953,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
        * pelo painel de Câmera.
        */
       trilhoAberto: trilhoAberto && !estreito,
+      fatorCarta,
     });
-  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH]);
+  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH, fatorCarta]);
 
   /**
    * ─── ESCALA 1, SEM CENTRALIZAR ─────────────────────────────────────────────

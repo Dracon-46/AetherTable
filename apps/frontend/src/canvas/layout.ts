@@ -459,6 +459,39 @@ export function paraCoordenadaRelativa(faixa: Faixa, x: number, y: number): Pont
 }
 
 /**
+ * ─── ALINHAR À GRADE, E POR QUE A CÉLULA É MEIA CARTA ──────────────────────
+ *
+ * O campo é livre: a carta fica onde foi solta, com precisão de pixel. Isso é
+ * o certo para quem arruma a mesa por região ("terrenos embaixo, criaturas no
+ * meio"), e é ruim para quem arruma por fileira — a olho, duas cartas quase
+ * alinhadas ficam PIORES do que duas claramente desalinhadas, porque o
+ * desalinho de 3px lê como descuido.
+ *
+ * A célula é meia carta, e não uma carta inteira, por dois motivos concretos:
+ *
+ *   - uma carta inteira dá 3 ou 4 colunas num campo típico, e um Commander
+ *     com 15 permanentes não caberia em fileiras sem sobreposição nenhuma;
+ *   - meia carta é exatamente o passo que produz a sobreposição PARELHA que
+ *     todo mundo usa para empilhar terrenos do mesmo tipo — o empilhamento
+ *     deixa de ser feito à mão e passa a acontecer de graça.
+ *
+ * O alinhamento acontece SÓ ao soltar, nunca durante o arraste. Encaixar a
+ * carta na célula enquanto o dedo está nela transforma um movimento contínuo
+ * num pulo a cada meia carta, e o jogador sente a mesa "resistindo".
+ */
+export const CELULA_DA_GRADE = 0.5;
+
+/** Encaixa uma coordenada RELATIVA (a que vai para o servidor) na grade. */
+export function encaixarNaGrade(faixa: Faixa, p: Ponto): Ponto {
+  const passoX = CARD_W * faixa.escala * CELULA_DA_GRADE;
+  const passoY = CARD_H * faixa.escala * CELULA_DA_GRADE;
+  return {
+    x: Math.round(Math.round(p.x / passoX) * passoX),
+    y: Math.round(Math.round(p.y / passoY) * passoY),
+  };
+}
+
+/**
  * Leque da mão: centraliza e comprime o espaçamento quando há muitas cartas,
  * para que 12+ cartas não saiam pela borda.
  */
@@ -617,6 +650,83 @@ const FOLGA_COLUNA = 18;
 const ALTURA_ROTULO = 26;
 
 /**
+ * Respiro entre a carta da mão e as bordas da faixa de mão.
+ *
+ * Estava embutido como `32` dentro de `montarMesaFocada`. Passou a ter nome
+ * porque `escalaDaMesaFocada` precisa da MESMA conta para saber até onde a
+ * carta pode crescer: se as duas divergirem, o teto de escala mente e o campo
+ * de batalha fica menor do que o mínimo prometido.
+ */
+const FOLGA_DA_MAO = 32;
+
+/**
+ * ─── O TAMANHO DA CARTA PASSA A SER ESCOLHA DO JOGADOR ─────────────────────
+ *
+ * `ALTURA_DE_REFERENCIA` diz qual é o tamanho CERTO de carta para uma janela
+ * de altura típica, e na média ele acerta. Média não é ninguém: quem joga num
+ * monitor grande a um metro de distância quer carta maior do que quem joga num
+ * notebook de 13", e a mesma pessoa quer carta menor quando o campo enche de
+ * fichas e maior quando está lendo um encantamento novo.
+ *
+ * O cabeçalho da mesa focada diz que ZOOM não existe, e continua verdade — o
+ * pedido era não poder AFASTAR a câmera e voltar a ter carta ilegível. Isto é o
+ * contrário disso: não move câmera, não muda o que cabe na tela, não reduz o
+ * mundo para caber. É a mesma geometria fixa, ancorada num tamanho de carta que
+ * agora tem um multiplicador.
+ *
+ * ─── E POR QUE O FATOR NÃO É OBEDECIDO CEGAMENTE ───────────────────────────
+ *
+ * A mão e o rótulo do jogador crescem junto com a carta, e o campo de batalha é
+ * o que sobra. Multiplicar sem teto tem um ponto em que `campoAltura` fica
+ * negativo — a mesa monta com o campo invertido e as permanentes desaparecem
+ * atrás da mão. Então há um teto DERIVADO DA JANELA: a carta cresce até o campo
+ * chegar no mínimo jogável, e para ali.
+ *
+ * Isso significa que 200% numa janela baixa não entrega 200%. Mentir sobre isso
+ * seria pior: o painel mostra a porcentagem EFETIVA ao lado do controle, para
+ * o jogador ver que o limite é a janela e não o botão.
+ */
+export const FATOR_CARTA_MIN = 0.5;
+export const FATOR_CARTA_MAX = 2;
+export const FATOR_CARTA_PADRAO = 1;
+/** Passo dos atalhos de teclado e do controle deslizante. */
+export const PASSO_DO_FATOR = 0.1;
+
+/**
+ * Alturas de carta que o campo de batalha nunca deixa de ter.
+ *
+ * Abaixo de uma carta e meia não sobra fileira: as permanentes empilham sobre
+ * a própria mão e o clamp de `posicaoNoCampo` junta tudo numa linha só.
+ */
+const CAMPO_MINIMO_EM_CARTAS = 1.6;
+
+/**
+ * Escala final da mesa focada: a automática, multiplicada pela preferência do
+ * jogador, limitada ao que a janela aceita.
+ *
+ * Exportada porque o painel de exibição precisa mostrar a porcentagem efetiva
+ * — e ele não pode recalcular a conta por conta própria sem virar uma segunda
+ * fonte da verdade que envelhece sozinha.
+ */
+export function escalasDaMesaFocada(
+  altura: number,
+  fator: number = FATOR_CARTA_PADRAO,
+): { pedida: number; efetiva: number } {
+  const automatica = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, altura / ALTURA_DE_REFERENCIA));
+  const fatorLimpo = Math.min(FATOR_CARTA_MAX, Math.max(FATOR_CARTA_MIN, fator));
+  const pedida = automatica * fatorLimpo;
+  const teto = altura / (CARD_H * (1 + CAMPO_MINIMO_EM_CARTAS) + FOLGA_DA_MAO + ALTURA_ROTULO);
+  // O piso não é `ESCALA_MIN`: quem pediu 50% quer 50%, e reduzir a carta nunca
+  // quebra a geometria — só o crescimento tem teto.
+  return { pedida, efetiva: Math.min(pedida, Math.max(teto, ESCALA_MIN * FATOR_CARTA_MIN)) };
+}
+
+/** Só a escala com que a mesa vai de fato ser desenhada. */
+export function escalaDaMesaFocada(altura: number, fator: number = FATOR_CARTA_PADRAO): number {
+  return escalasDaMesaFocada(altura, fator).efetiva;
+}
+
+/**
  * Largura do trilho de oponentes, em múltiplos da largura da carta.
  *
  * O trilho FLUTUA sobre o campo: abrir e fechar não muda a geometria da mesa,
@@ -655,6 +765,13 @@ export interface OpcoesMesaFocada {
   oponentes?: string[];
   /** `false` = o trilho está recolhido e nenhuma faixa de oponente é montada. */
   trilhoAberto?: boolean;
+  /**
+   * Multiplicador de tamanho de carta escolhido pelo jogador.
+   *
+   * Ausente = `FATOR_CARTA_PADRAO`, que reproduz exatamente a geometria de
+   * antes deste campo existir.
+   */
+  fatorCarta?: number;
 }
 
 /**
@@ -705,7 +822,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
   const largura = Math.max(480, Math.round(opcoes.largura));
   const altura = Math.max(420, Math.round(opcoes.altura));
 
-  const escala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, altura / ALTURA_DE_REFERENCIA));
+  const escala = escalaDaMesaFocada(altura, opcoes.fatorCarta);
   /**
    * Só a ALTURA da carta entra na geometria da mesa focada.
    *
@@ -716,7 +833,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
    */
   const cardH = CARD_H * escala;
 
-  const maoAltura = cardH + 32 * escala;
+  const maoAltura = cardH + FOLGA_DA_MAO * escala;
   const rotulo = ALTURA_ROTULO * escala;
 
   const campoAltura = altura - maoAltura - rotulo;

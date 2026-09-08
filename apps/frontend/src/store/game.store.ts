@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { armazenamentoAgrupado } from './storage';
+import {
+  FATOR_CARTA_MAX,
+  FATOR_CARTA_MIN,
+  FATOR_CARTA_PADRAO,
+  PASSO_DO_FATOR,
+} from '../canvas/layout';
 
 // ─── gameStore: espelho do estado do servidor ──────────────────────────────
 
@@ -315,6 +321,48 @@ interface UIState {
    * ficam as pilhas de cada faixa — e a escolha sobrevive.
    */
   logAberto: boolean;
+  /**
+   * ─── TAMANHO DA CARTA ────────────────────────────────────────────────────
+   *
+   * Multiplicador aplicado sobre a escala que `montarMesaFocada` deriva da
+   * altura da janela. `1` reproduz o comportamento anterior a este campo.
+   *
+   * É preferência de QUEM OLHA, como `seguirTurno`: não trafega para a mesa e
+   * não muda nada para os outros jogadores. Persistida, porque descobrir o
+   * próprio tamanho de carta uma vez e ter de redescobrir a cada partida é o
+   * tipo de coisa que faz o jogador desistir do controle.
+   *
+   * O teto real vem da janela — ver `escalaDaMesaFocada`.
+   */
+  fatorCarta: number;
+  /** Ao soltar, a permanente encaixa numa grade de meia carta. */
+  alinharNaGrade: boolean;
+  /**
+   * Esconde a ação "Anexar a…" do menu de contexto.
+   *
+   * Quem joga sem equipamentos nem auras nunca usa o gesto, e ele está entre
+   * "Transformar" e "Marcadores, P/T e dano" — dois itens frequentes. Desligar
+   * não desfaz anexos existentes: `INTENT_DETACH` continua alcançável em
+   * qualquer carta que já esteja anexada, senão a preferência prenderia a carta
+   * para sempre.
+   */
+  anexosDesativados: boolean;
+  /** Desenha o custo de mana impresso sobre as cartas da própria mão. */
+  custoDeManaNaMao: boolean;
+  /**
+   * ─── ESCALA REAL DA MESA, PARA O PAINEL NÃO MENTIR ───────────────────────
+   *
+   * `fatorCarta` é o que o jogador PEDIU; a janela tem a última palavra (ver
+   * `escalasDaMesaFocada`). Sem publicar as duas, o painel mostraria "200%"
+   * numa tela onde a carta cresceu 160% — e o jogador arrastaria o controle
+   * até o fim procurando um efeito que já tinha acabado.
+   *
+   * Efêmero de propósito: é geometria da sessão atual, derivada do tamanho da
+   * janela. Fica fora do `partialize` — persistir isto restauraria a escala de
+   * um monitor que talvez não seja este.
+   */
+  escalaDaMesa: number;
+  escalaPedida: number;
 
   setTrilhoAberto: (v: boolean) => void;
   setSeguirTurno: (v: boolean) => void;
@@ -337,6 +385,14 @@ interface UIState {
   setBarraAberta: (v: boolean) => void;
   setVidaModo: (v: UIState['vidaModo']) => void;
   setLogAberto: (v: boolean) => void;
+  setFatorCarta: (v: number) => void;
+  /** Soma `delta` ao fator, já limitado. É o que os atalhos `=` e `-` chamam. */
+  ajustarFatorCarta: (delta: number) => void;
+  setAlinharNaGrade: (v: boolean) => void;
+  setAnexosDesativados: (v: boolean) => void;
+  setCustoDeManaNaMao: (v: boolean) => void;
+  /** Chamado pelo `GameBoard` a cada remontagem da geometria. */
+  registrarEscalaDaMesa: (efetiva: number, pedida: number) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -368,6 +424,12 @@ export const useUIStore = create<UIState>()(
       barraAberta: false,
       vidaModo: 'minha',
       logAberto: false,
+      fatorCarta: FATOR_CARTA_PADRAO,
+      alinharNaGrade: false,
+      anexosDesativados: false,
+      custoDeManaNaMao: false,
+      escalaDaMesa: 1,
+      escalaPedida: 1,
 
       setTrilhoAberto: (trilhoAberto) => set({ trilhoAberto }),
       setSeguirTurno: (seguirTurno) => set({ seguirTurno }),
@@ -424,6 +486,32 @@ export const useUIStore = create<UIState>()(
       setBarraAberta: (barraAberta) => set({ barraAberta }),
       setVidaModo: (vidaModo) => set({ vidaModo }),
       setLogAberto: (logAberto) => set({ logAberto }),
+      setFatorCarta: (v) =>
+        set({ fatorCarta: Math.min(FATOR_CARTA_MAX, Math.max(FATOR_CARTA_MIN, v)) }),
+      ajustarFatorCarta: (delta) =>
+        set((s) => ({
+          // Arredondar no passo evita que uma sequência de `=` e `-` acumule
+          // ruído de ponto flutuante e o painel mostre "110.00000000000001%".
+          fatorCarta: Math.min(
+            FATOR_CARTA_MAX,
+            Math.max(
+              FATOR_CARTA_MIN,
+              Math.round((s.fatorCarta + delta) / PASSO_DO_FATOR) * PASSO_DO_FATOR,
+            ),
+          ),
+        })),
+      setAlinharNaGrade: (alinharNaGrade) => set({ alinharNaGrade }),
+      setAnexosDesativados: (anexosDesativados) => set({ anexosDesativados }),
+      setCustoDeManaNaMao: (custoDeManaNaMao) => set({ custoDeManaNaMao }),
+      registrarEscalaDaMesa: (escalaDaMesa, escalaPedida) =>
+        // Guarda só quando muda de verdade: o `GameBoard` remonta a geometria
+        // a cada redimensionamento, e um `set` idêntico aqui viraria uma
+        // gravação agrupada em `localStorage` por nada.
+        set((s) =>
+          s.escalaDaMesa === escalaDaMesa && s.escalaPedida === escalaPedida
+            ? s
+            : { escalaDaMesa, escalaPedida },
+        ),
     }),
     {
       name: 'aether-ui-store',
@@ -454,6 +542,10 @@ export const useUIStore = create<UIState>()(
         boardView: s.boardView === 'ALL' || s.boardView === 'ME' ? s.boardView : 'ALL',
         barraAberta: s.barraAberta,
         vidaModo: s.vidaModo,
+        fatorCarta: s.fatorCarta,
+        alinharNaGrade: s.alinharNaGrade,
+        anexosDesativados: s.anexosDesativados,
+        custoDeManaNaMao: s.custoDeManaNaMao,
       }),
     },
   ),

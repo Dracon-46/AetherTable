@@ -2,8 +2,14 @@ import {
   ALTURA_DE_REFERENCIA,
   CARD_H,
   CARD_W,
+  CELULA_DA_GRADE,
   ESCALA_MAX,
   ESCALA_MIN,
+  FATOR_CARTA_MAX,
+  FATOR_CARTA_MIN,
+  FATOR_CARTA_PADRAO,
+  encaixarNaGrade,
+  escalasDaMesaFocada,
   montarMesaFocada,
   posicaoNaMao,
   posicaoNoCampo,
@@ -298,5 +304,142 @@ describe('mesa focada — coordenadas de permanente continuam válidas', () => {
       expect(p.y - meiaA).toBeGreaterThanOrEqual(f.topo + f.campo.y - 1);
       expect(p.y + meiaA).toBeLessThanOrEqual(f.topo + f.campo.y + f.campo.altura + 1);
     }
+  });
+});
+
+/**
+ * ─── TAMANHO DA CARTA ESCOLHIDO PELO JOGADOR ───────────────────────────────
+ *
+ * O fator é um multiplicador sobre a escala automática, e o risco dele é
+ * geométrico, não visual: a mão e o rótulo crescem junto com a carta e o campo
+ * de batalha é o que sobra. Sem teto, existe um valor de fator em que
+ * `campoAltura` fica NEGATIVO — a mesa monta com o campo invertido e as
+ * permanentes desaparecem atrás da mão.
+ *
+ * Estes testes travam as duas metades do contrato: o fator É obedecido enquanto
+ * couber, e o campo NUNCA desaparece quando não couber.
+ */
+describe('mesa focada — fator de tamanho de carta', () => {
+  it('sem fator, a geometria é idêntica à de antes do campo existir', () => {
+    const semFator = montarMesaFocada({ ...TELA, focoId: 'eu' });
+    const comPadrao = montarMesaFocada({ ...TELA, focoId: 'eu', fatorCarta: FATOR_CARTA_PADRAO });
+    expect(comPadrao.faixas[0]!.escala).toBeCloseTo(semFator.faixas[0]!.escala, 10);
+    expect(comPadrao.mao.topo).toBe(semFator.mao.topo);
+  });
+
+  it('aumentar o fator aumenta a carta; reduzir, reduz', () => {
+    const base = montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!.escala;
+    const menor = montarMesaFocada({ ...TELA, focoId: 'eu', fatorCarta: 0.6 }).faixas[0]!.escala;
+    const maior = montarMesaFocada({ ...TELA, focoId: 'eu', fatorCarta: 1.3 }).faixas[0]!.escala;
+    expect(menor).toBeLessThan(base);
+    expect(maior).toBeGreaterThan(base);
+  });
+
+  it('o fator é obedecido exatamente enquanto a janela permite', () => {
+    // Numa janela alta há folga de sobra: 130% tem de sair 130%, e não "o que
+    // deu". Um teto conservador demais transformaria o controle em decoração.
+    const { pedida, efetiva } = escalasDaMesaFocada(1400, 1.3);
+    expect(efetiva).toBeCloseTo(pedida, 10);
+  });
+
+  it('o campo de batalha nunca desaparece, nem no fator máximo', () => {
+    for (const altura of [420, 500, 700, 900, 1400, 2160]) {
+      const mesa = montarMesaFocada({
+        largura: 1600,
+        altura,
+        focoId: 'eu',
+        fatorCarta: FATOR_CARTA_MAX,
+      });
+      const f = mesa.faixas[0]!;
+      // Uma carta inteira é o mínimo do mínimo: abaixo disso não existe
+      // permanente na mesa, só mão.
+      expect(f.campo.altura).toBeGreaterThan(CARD_H * f.escala);
+      // E a mão continua dentro da tela.
+      expect(mesa.mao.topo + mesa.mao.altura).toBeLessThanOrEqual(altura + 1);
+    }
+  });
+
+  it('reduzir não tem teto: o piso obedece o jogador', () => {
+    // Só o CRESCIMENTO quebra a geometria. Quem pede 50% quer 50%, inclusive
+    // numa janela baixa onde o teto já estaria ativo.
+    const { pedida, efetiva } = escalasDaMesaFocada(500, FATOR_CARTA_MIN);
+    expect(efetiva).toBeCloseTo(pedida, 10);
+  });
+
+  it('fator fora da faixa é limitado, não propagado', () => {
+    const absurdo = escalasDaMesaFocada(1400, 99).efetiva;
+    const maximo = escalasDaMesaFocada(1400, FATOR_CARTA_MAX).efetiva;
+    expect(absurdo).toBeCloseTo(maximo, 10);
+
+    const negativo = escalasDaMesaFocada(1400, -3).efetiva;
+    const minimo = escalasDaMesaFocada(1400, FATOR_CARTA_MIN).efetiva;
+    expect(negativo).toBeCloseTo(minimo, 10);
+  });
+
+  it('a permanente continua presa ao campo com o fator no extremo', () => {
+    for (const fatorCarta of [FATOR_CARTA_MIN, FATOR_CARTA_MAX]) {
+      const f = montarMesaFocada({ ...TELA, focoId: 'eu', fatorCarta }).faixas[0]!;
+      const meiaL = (CARD_W * f.escala) / 2;
+      const p = posicaoNoCampo(f, 99999, 99999);
+      expect(p.x + meiaL).toBeLessThanOrEqual(f.campo.x + f.campo.largura + 1);
+    }
+  });
+});
+
+describe('mesa focada — alinhar à grade', () => {
+  const faixa = () => montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!;
+
+  it('encaixa em múltiplos de meia carta', () => {
+    const f = faixa();
+    const passoX = CARD_W * f.escala * CELULA_DA_GRADE;
+    const passoY = CARD_H * f.escala * CELULA_DA_GRADE;
+    const p = encaixarNaGrade(f, { x: 203, y: 147 });
+    /**
+     * A distância é até a célula MAIS PRÓXIMA, e não o resto da divisão: um
+     * resto de 0,994 está a 0,006 célula da próxima, e reprová-lo seria erro
+     * do teste, não do encaixe. `encaixarNaGrade` arredonda o resultado para
+     * inteiro, então a folga tolerada é de meio pixel.
+     */
+    const distancia = (v: number, passo: number) => {
+      const resto = Math.abs(v / passo) % 1;
+      return Math.min(resto, 1 - resto) * passo;
+    };
+    expect(distancia(p.x, passoX)).toBeLessThanOrEqual(0.5 + 1e-9);
+    expect(distancia(p.y, passoY)).toBeLessThanOrEqual(0.5 + 1e-9);
+  });
+
+  it('escolhe a célula MAIS PRÓXIMA, e não a anterior', () => {
+    const f = faixa();
+    const passoX = CARD_W * f.escala * CELULA_DA_GRADE;
+    // Logo depois do meio da célula 3: o encaixe tem de subir para a 4.
+    const p = encaixarNaGrade(f, { x: passoX * 3.6, y: 0 });
+    expect(p.x).toBe(Math.round(passoX * 4));
+  });
+
+  it('um ponto já alinhado não se move', () => {
+    const f = faixa();
+    const passoX = CARD_W * f.escala * CELULA_DA_GRADE;
+    const passoY = CARD_H * f.escala * CELULA_DA_GRADE;
+    const alvo = { x: Math.round(passoX * 2), y: Math.round(passoY * 2) };
+    const p = encaixarNaGrade(f, alvo);
+    expect(Math.abs(p.x - alvo.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(p.y - alvo.y)).toBeLessThanOrEqual(1);
+  });
+
+  it('duas cartas soltas quase no mesmo lugar terminam na MESMA célula', () => {
+    // É o ponto do recurso: o desalinho de 3px que lê como descuido desaparece.
+    const f = faixa();
+    const a = encaixarNaGrade(f, { x: 200, y: 150 });
+    const b = encaixarNaGrade(f, { x: 203, y: 147 });
+    expect(a).toEqual(b);
+  });
+
+  it('o encaixe não empurra a carta para fora do campo', () => {
+    const f = faixa();
+    const meiaL = (CARD_W * f.escala) / 2;
+    const bruta = paraCoordenadaRelativa(f, 99999, 99999);
+    const rel = encaixarNaGrade(f, bruta);
+    const abs = posicaoNoCampo(f, rel.x, rel.y);
+    expect(abs.x + meiaL).toBeLessThanOrEqual(f.campo.x + f.campo.largura + 1);
   });
 });

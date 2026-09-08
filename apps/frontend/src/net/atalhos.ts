@@ -16,6 +16,7 @@
 import { useEffect } from 'react';
 import type { Room } from 'colyseus.js';
 import { useGameStore, useUIStore } from '../store/game.store';
+import { PASSO_DO_FATOR } from '../canvas/layout';
 import { intents } from './intents';
 import type { RoomState } from './schema/RoomState';
 
@@ -37,6 +38,8 @@ export const ATALHOS: Atalho[] = [
   { tecla: 'S', descricao: 'Embaralhar o grimório' },
   { tecla: 'P', descricao: 'Passar o turno' },
   { tecla: 'G', descricao: 'Mandar a seleção para o cemitério' },
+  { tecla: '=', descricao: 'Aumentar o tamanho da carta' },
+  { tecla: '-', descricao: 'Reduzir o tamanho da carta' },
   { tecla: 'Z', descricao: 'Desfazer a última ação', comModificador: true },
   { tecla: 'Esc', descricao: 'Limpar a seleção / fechar painel' },
   { tecla: 'Alt + clique', descricao: 'Inspecionar a carta / apontar um ping' },
@@ -124,6 +127,28 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
           if (!primeira) return;
           e.preventDefault();
           ui.setEditingCard(primeira.id);
+          break;
+
+        /**
+         * ─── TAMANHO DA CARTA PELO TECLADO ─────────────────────────────────
+         *
+         * As duas únicas teclas da mesa que não emitem intenção nenhuma: elas
+         * mexem numa preferência de quem olha, não no estado compartilhado.
+         *
+         * `+` e `_` entram junto porque em teclado ABNT2 e em numérico o mesmo
+         * gesto físico chega com a tecla deslocada — quem aperta Shift para
+         * "aumentar" não deveria descobrir que o atalho é a versão sem Shift.
+         */
+        case '=':
+        case '+':
+          e.preventDefault();
+          ui.ajustarFatorCarta(PASSO_DO_FATOR);
+          break;
+
+        case '-':
+        case '_':
+          e.preventDefault();
+          ui.ajustarFatorCarta(-PASSO_DO_FATOR);
           break;
 
         case 'escape':
