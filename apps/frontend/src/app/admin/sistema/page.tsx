@@ -10,13 +10,18 @@
  * Uma env var não serve — mudar env exige redeploy, e emergência de faturamento
  * não espera build. Eles vivem numa tabela, com histórico de quem mexeu.
  *
- * ─── E POR QUE O MONITOR DO COLYSEUS NÃO ESTÁ AQUI ─────────────────────────
+ * ─── E POR QUE O MONITOR DO COLYSEUS NÃO ESTÁ EMBUTIDO AQUI ────────────────
  *
- * §5 pede também um iframe com a UI de `@colyseus/monitor`. Ele não está nesta
- * tela e não é esquecimento: o monitor não está montado no game-server, e um
- * iframe apontando para uma rota inexistente é pior que a ausência — parece
- * uma ferramenta quebrada. O que dá para fazer honestamente hoje é o link
- * direto, com o aviso de que depende de o monitor estar habilitado lá.
+ * §5 pede também um iframe com a UI de `@colyseus/monitor`. Ele existe e está
+ * montado no game-server — este comentário afirmava o contrário, e afirmava
+ * errado: ele estava montado E sem autenticação nenhuma, expondo a mão e o
+ * grimório de todos os jogadores de todas as salas.
+ *
+ * Agora ele fica atrás de basic auth (`ADMIN_PANEL_PASSWORD`, e o game-server
+ * se recusa a subir em produção sem ela). O que continua não fazendo sentido é
+ * o IFRAME: o painel serve credencial própria, e um iframe faria o navegador
+ * abrir um prompt de senha dentro desta tela, sem contexto sobre o que está
+ * pedindo. O link direto é honesto sobre estar saindo daqui.
  */
 
 import { useState } from 'react';
@@ -201,20 +206,27 @@ export default function SistemaPage() {
           <div className="flex items-start gap-3">
             <Info className="text-text-muted mt-0.5 h-5 w-5 shrink-0" />
             <div className="min-w-0 flex-1 text-xs leading-relaxed">
+              {/* ─── ESTE TEXTO DIZIA O CONTRÁRIO DA REALIDADE ──────────────
+                  Ele afirmava que o monitor "não está montado no game-server".
+                  Ele estava montado — e, pior, montado SEM autenticação
+                  nenhuma. Uma tela de operação que descreve errado a
+                  superfície exposta é pior que uma tela vazia: ela faz quem
+                  audita concluir que não há nada ali para proteger. */}
               <p className="text-text mb-1 text-sm font-bold">
-                O monitor do Colyseus não está embutido aqui.
+                O monitor do Colyseus roda no game-server, atrás de senha.
               </p>
               <p className="text-text-muted">
-                DOC-061 §5 pede um iframe com a UI de{' '}
-                <code className="text-text">@colyseus/monitor</code> para ver e encerrar salas
-                fantasmas. Ele <strong>não está montado</strong> no game-server, e um iframe
-                apontando para uma rota inexistente pareceria uma ferramenta quebrada em vez de uma
-                ferramenta ausente.
+                Ele <strong>não é embutido em iframe</strong> aqui de propósito: o painel serve
+                credencial própria (basic auth,{' '}
+                <code className="text-text">ADMIN_PANEL_PASSWORD</code>
+                ), e um iframe faria o navegador pedir essa senha dentro desta tela, sem contexto
+                nenhum sobre o que está pedindo.
               </p>
               <p className="text-text-faint mt-1.5">
-                Para habilitar: monte o `monitor()` do Colyseus no game-server atrás de autenticação
-                e aponte para <code>/colyseus</code>. Enquanto isso, o link abaixo só funciona se
-                você já tiver feito isso.
+                O monitor lista todas as salas e permite inspecionar o estado —{' '}
+                <strong>inclusive a mão e o grimório dos jogadores</strong>. É o único caminho do
+                sistema que contorna as regras de visibilidade, e por isso o game-server se recusa a
+                subir em produção sem a senha configurada.
               </p>
               <a
                 href={`${process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? ''}/colyseus`}

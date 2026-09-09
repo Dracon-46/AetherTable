@@ -43,8 +43,14 @@ function montarServico(deck: Deck) {
 
   return new MatchesService(
     jwtService as unknown as ConstructorParameters<typeof MatchesService>[0],
-    decksService as unknown as ConstructorParameters<typeof MatchesService>[1],
-    sistema as unknown as ConstructorParameters<typeof MatchesService>[2],
+    // O Prisma entrou no construtor por causa de `registrarResumo`, que e a
+    // primeira coisa deste servico a escrever no banco. Nenhum teste deste
+    // arquivo o exercita — eles sao sobre validacao de deck e assinatura de
+    // config — entao o duplo e vazio de proposito: se algum caminho testado
+    // passar a tocar o banco, ele falha alto em vez de gravar em silencio.
+    {} as unknown as ConstructorParameters<typeof MatchesService>[1],
+    decksService as unknown as ConstructorParameters<typeof MatchesService>[2],
+    sistema as unknown as ConstructorParameters<typeof MatchesService>[3],
   );
 }
 
@@ -227,10 +233,11 @@ describe('configuração de sala', () => {
 
     const svc = new MatchesService(
       jwtService as unknown as ConstructorParameters<typeof MatchesService>[0],
-      { getDeckById: jest.fn() } as unknown as ConstructorParameters<typeof MatchesService>[1],
+      {} as unknown as ConstructorParameters<typeof MatchesService>[1],
+      { getDeckById: jest.fn() } as unknown as ConstructorParameters<typeof MatchesService>[2],
       {
         flagLigada: jest.fn().mockResolvedValue(true),
-      } as unknown as ConstructorParameters<typeof MatchesService>[2],
+      } as unknown as ConstructorParameters<typeof MatchesService>[3],
     );
 
     /** As claims do seat token da última chamada a `joinMatch`. */

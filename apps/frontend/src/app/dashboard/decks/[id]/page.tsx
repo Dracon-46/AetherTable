@@ -85,6 +85,7 @@ import {
   type AcoesDeCarta,
 } from '../../../../deckbuilder/VistasDoDeck';
 import { PainelDeLegalidade } from '../../../../deckbuilder/PainelDeLegalidade';
+import { acharFormato } from '@aethertable/shared-types';
 import { mensagemDaApi } from '@/lib/fetcher';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -372,8 +373,13 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
               <DollarSign className="h-3.5 w-3.5" />
               {preco} USD
             </span>
+            {/* O ID CRU EM MAIUSCULAS NAO E O NOME DO FORMATO.
+                Isto mostrava `HISTORIC_BRAWL` e `DUEL_COMMANDER` — o id
+                interno, gritado. O catalogo tem o nome legivel, e e o mesmo
+                catalogo que o seletor de formato da criacao de mesa usa. */}
             <span className={chip}>
-              Formato: <span className="text-text font-bold uppercase">{deck.formatId}</span>
+              Formato:{' '}
+              <span className="text-text font-bold">{acharFormato(deck.formatId).nome}</span>
             </span>
             <span className={`${chip} flex items-center gap-1.5 font-bold ${bracket.color}`}>
               <Activity className="h-3.5 w-3.5" /> {bracket.label}

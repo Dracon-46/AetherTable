@@ -42,6 +42,7 @@ import { Menu, X } from 'lucide-react';
 import { OAuthTokenCapture } from '../../components/OAuthTokenCapture';
 import { useSouAdmin } from '../../admin/useAdmin';
 import { useHidratarPreferencias } from '../../store/useHidratarPreferencias';
+import { api } from '@/lib/fetcher';
 
 interface ItemDeMenu {
   href: string;
@@ -102,7 +103,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener('keydown', aoTeclar);
   }, [gavetaAberta]);
 
-  const handleLogout = () => {
+  /**
+   * ─── SAIR PRECISA REVOGAR NO SERVIDOR ────────────────────────────────────
+   *
+   * Isto era só `logout()` — limpar o `localStorage` — e a rota
+   * `POST /auth/logout` existia com corpo VAZIO, sem nada a chamar. O access
+   * token vale 24 horas: quem tivesse copiado o token continuava dentro por
+   * até um dia depois de a pessoa clicar em "Sair da Mesa".
+   *
+   * A ordem importa. A revogação vai PRIMEIRO, porque `logout()` apaga o token
+   * do store — e sem token no store o `api()` não teria o que mandar no
+   * `Authorization`, e a revogação sairia sem autenticação.
+   *
+   * E o `catch` é deliberado: se a rede cair no meio, sair localmente ainda
+   * acontece. Um logout que falha porque o servidor não respondeu deixaria a
+   * pessoa presa numa sessão que ela pediu para encerrar — o pior dos dois
+   * resultados possíveis.
+   */
+  const handleLogout = async () => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } catch {
+      /* sem rede o token expira sozinho; sair localmente não pode falhar */
+    }
     logout();
     router.push('/');
   };
@@ -239,7 +262,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             <button
-              onClick={handleLogout}
+              onClick={() => void handleLogout()}
               className={`text-danger hover:bg-danger/10 flex w-full items-center gap-3 rounded-md px-4 py-3 font-medium transition-colors ${
                 recolhido ? 'md:justify-center md:px-0' : ''
               }`}

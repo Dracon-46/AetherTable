@@ -33,7 +33,11 @@
  */
 
 import { create } from 'zustand';
-import { COSMETICOS_PADRAO, type CosmeticosEquipados } from '@aethertable/shared-types';
+import {
+  COSMETICOS_PADRAO,
+  type CosmeticosEquipados,
+  type CosmeticTier,
+} from '@aethertable/shared-types';
 import { api } from '../lib/fetcher';
 
 const CHAVE = 'aether-cosmeticos-v1';
@@ -41,6 +45,21 @@ const CHAVE = 'aether-cosmeticos-v1';
 interface CosmeticState extends CosmeticosEquipados {
   /** false = todo oponente é desenhado com o visual padrão. */
   cosmeticosDeOponentes: boolean;
+  /**
+   * Direito a cosmético de apoiador, vindo do `GET /users/me`.
+   *
+   * NÃO É PERSISTIDO no `localStorage`, e a ausência é deliberada: os
+   * cosméticos equipados são cacheados localmente porque a mesa não pode
+   * esperar um round-trip para saber com que sleeve desenhar. Um DIREITO
+   * cacheado é outra coisa — ele viraria um valor que o usuário edita no
+   * devtools para destravar a interface. Ele nasce `FREE` a cada carga e o
+   * servidor diz o resto.
+   *
+   * De qualquer forma isto governa só a TELA: quem recusa é
+   * `exigirDireitoAosCosmeticos`, no backend.
+   */
+  tier: CosmeticTier;
+  definirTier: (tier: CosmeticTier) => void;
   equipar: (patch: Partial<CosmeticosEquipados>) => void;
   setCosmeticosDeOponentes: (v: boolean) => void;
   /** Aplica o que vem do servidor, sem reenviar. Ver `useHidratarPreferencias`. */
@@ -93,6 +112,11 @@ function gravar(estado: CosmeticState): void {
 
 export const useCosmeticos = create<CosmeticState>((set, get) => ({
   ...ler(),
+  // Nasce FREE: o servidor corrige em `useHidratarPreferencias`. Errar para o
+  // lado restritivo evita a interface prometer o que a API vai recusar.
+  tier: 'FREE',
+
+  definirTier: (tier) => set({ tier }),
 
   equipar: (patch) => {
     set(patch);

@@ -170,7 +170,11 @@ test.describe('mesa multijogador', () => {
     for (let i = 1; i < 4; i += 1) {
       const page = paginas[i]!;
       await page.goto('/dashboard');
-      await page.getByPlaceholder('EX: DRG-402').fill(codigoDaSala);
+      // O placeholder mudou de `EX: DRG-402` para um codigo do formato que o
+      // sistema de fato gera (seis hexadecimais). O antigo era um exemplo que
+      // nenhuma sala jamais teve, e quem o seguia recebia "Codigo de sala
+      // invalido" sem entender por que.
+      await page.getByPlaceholder('EX: 7C60D5').fill(codigoDaSala);
       await page.getByRole('button', { name: 'Conectar' }).click();
       await page.getByRole('button', { name: 'Entrar na Mesa' }).click();
       await page.waitForURL(/\/play\//, { timeout: 30_000 });

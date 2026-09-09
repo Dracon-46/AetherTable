@@ -14,6 +14,15 @@ export interface UsuarioJwt {
   /** Id persistente da conta. */
   sub: string;
   username: string;
+  /**
+   * Identificador do token. AUSENTE em tokens emitidos antes da denylist do
+   * logout existir — eles continuam válidos, e simplesmente não são
+   * revogáveis, até expirar.
+   */
+  jti?: string;
+  /** Expiração do token, em SEGUNDOS (padrão JWT). O logout a copia para a
+   *  denylist: a linha vale só enquanto o token valeria. */
+  exp: number;
 }
 
 /** Usuário recém-validado por uma estratégia OAuth (registro do banco). */

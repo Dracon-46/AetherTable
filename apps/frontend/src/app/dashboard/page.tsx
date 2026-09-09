@@ -348,10 +348,17 @@ export default function DashboardPage() {
           {/* Empilha no celular: `tracking-widest` numa fonte monoespaçada
               come largura, e lado a lado com o botão o campo ficava com espaço
               para uns cinco caracteres — menos do que um código de sala. */}
+          {/* O placeholder era `EX: DRG-402`, um formato que o sistema NUNCA
+              gera: o `roomCode` sai de `randomBytes(3).toString('hex')` — seis
+              hexadecimais, sem hífen e sem letra depois do F. Quem digitava
+              seguindo o exemplo recebia "Código de sala inválido" do zod, sem
+              nada que explicasse o que estava errado. O `maxLength` corta o
+              erro antes: o campo não aceita mais do que um código cabe. */}
           <div className="relative z-10 flex flex-col gap-2 sm:flex-row">
             <input
               type="text"
-              placeholder="EX: DRG-402"
+              placeholder="EX: 7C60D5"
+              maxLength={6}
               value={roomCodeInput}
               onChange={(e) => setRoomCodeInput(e.target.value)}
               onKeyDown={(e) => {

@@ -1,6 +1,7 @@
 import './polyfill';
 
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import { Server, matchMaker } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
@@ -29,32 +30,67 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'game-server', ws: config.PUBLIC_WS_URL });
 });
 
-// Rede interna. Em producao, bloquear na borda (Cloudflare / firewall).
+/**
+ * ─── BASIC AUTH DAS SUPERFICIES DE OPERACAO ─────────────────────────────────
+ *
+ * `/colyseus` e `/metrics` estavam ABERTOS. O comentario do `/metrics` dizia
+ * "rede interna, bloquear na borda" — o que no Render nao acontece — e o
+ * monitor nao tinha nem comentario.
+ *
+ * O monitor e o mais grave dos dois: ele lista todas as salas, os clientes de
+ * cada uma e permite inspecionar o estado, que inclui a mao e o grimorio de
+ * todo mundo. E o unico caminho do sistema que contorna `podeVer` inteiro — as
+ * sete clausulas de visibilidade governam o que o CLIENTE DE JOGO recebe, nao
+ * o que o painel de operacao mostra.
+ *
+ * ─── POR QUE BASIC AUTH, E NAO O JWT DA CONTA ──────────────────────────────
+ *
+ * O game-server nao conhece contas. Ele valida seat tokens — que sao passes de
+ * MESA, com `sub`, `roomId` e `jti` — e nao tem como saber se o `sub` de um
+ * token e administrador: essa informacao vive no Postgres, do outro lado, e
+ * consultar a API a cada request de painel acoplaria a operacao do game node a
+ * disponibilidade da API. Basic auth com um segredo proprio mantem o painel
+ * alcancavel exatamente quando ele mais importa: quando o resto esta fora do ar.
+ *
+ * `timingSafeEqual` em vez de `===`: comparacao de string sai no primeiro byte
+ * diferente, e a diferenca de tempo entre "errou o primeiro caractere" e
+ * "errou o ultimo" e mensuravel pela rede. Custa uma linha evitar isso.
+ */
+function autenticarOperacao(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  // Sem senha configurada: so em desenvolvimento, e o boot ja recusou subir
+  // assim em producao (ver a checagem cruzada em config.ts).
+  if (!config.ADMIN_PANEL_PASSWORD) return next();
+
+  const cabecalho = req.headers.authorization ?? '';
+  const [tipo, credencial] = cabecalho.split(' ');
+
+  if (tipo === 'Basic' && credencial) {
+    const [, senha = ''] = Buffer.from(credencial, 'base64').toString('utf8').split(':');
+    const recebida = Buffer.from(senha);
+    const esperada = Buffer.from(config.ADMIN_PANEL_PASSWORD);
+    // `timingSafeEqual` exige o mesmo comprimento; o teste de tamanho antes
+    // dele vaza so o comprimento da senha, que nao e segredo util.
+    if (recebida.length === esperada.length && timingSafeEqual(recebida, esperada)) {
+      return next();
+    }
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="AetherTable — operacao"');
+  res.status(401).send('Autenticacao necessaria.');
+}
+
+app.use('/colyseus', autenticarOperacao);
+app.use('/metrics', autenticarOperacao);
+
 app.get('/metrics', async (_req, res) => {
   res.set('Content-Type', registry.contentType);
   res.end(await registry.metrics());
 });
 
-/**
- * ─── LISTA DE SALAS PUBLICAS ─────────────────────────────────────────────────
- *
- * Le do matchMaker, nao do banco: nao existe modelo `Match` persistido e nao
- * vai existir (ADR-006, RN12 — o estado da sala vive na RAM do game node). O
- * que o `matchMaker.query` devolve sao os METADADOS que cada sala publicou em
- * `setMetadata`, e ele os consulta sem abrir sala nenhuma.
- *
- * ─── NUNCA DEVOLVER `metadata` CRU ──────────────────────────────────────────
- *
- * Esta rota e PUBLICA e o metadado e um objeto livre: no dia em que alguem
- * guardar ali um campo interno — um id de usuario, um contador de moderacao —
- * ele vaza para a internet sem que nada no codigo desta rota mude. Mapear campo
- * a campo faz o vazamento exigir uma edicao AQUI, que e onde a decisao de
- * publicar tem de ser tomada.
- *
- * A rota nao exige autenticacao de proposito: e uma vitrine, e o que ela mostra
- * de uma sala e o que o criador escolheu publicar ao marca-la como publica.
- * Entrar continua exigindo o `seatToken`, que so a API Core emite.
- */
 /**
  * Origens autorizadas a ler a vitrine do navegador.
  *
@@ -89,6 +125,26 @@ app.use('/salas', (req, res, next) => {
   next();
 });
 
+/**
+ * ─── LISTA DE SALAS PUBLICAS ─────────────────────────────────────────────────
+ *
+ * Le do matchMaker, nao do banco: nao existe modelo `Match` persistido e nao
+ * vai existir (ADR-006, RN12 — o estado da sala vive na RAM do game node). O
+ * que o `matchMaker.query` devolve sao os METADADOS que cada sala publicou em
+ * `setMetadata`, e ele os consulta sem abrir sala nenhuma.
+ *
+ * ─── NUNCA DEVOLVER `metadata` CRU ──────────────────────────────────────────
+ *
+ * Esta rota e PUBLICA e o metadado e um objeto livre: no dia em que alguem
+ * guardar ali um campo interno — um id de usuario, um contador de moderacao —
+ * ele vaza para a internet sem que nada no codigo desta rota mude. Mapear campo
+ * a campo faz o vazamento exigir uma edicao AQUI, que e onde a decisao de
+ * publicar tem de ser tomada.
+ *
+ * A rota nao exige autenticacao de proposito: e uma vitrine, e o que ela mostra
+ * de uma sala e o que o criador escolheu publicar ao marca-la como publica.
+ * Entrar continua exigindo o `seatToken`, que so a API Core emite.
+ */
 app.get('/salas', async (_req, res) => {
   try {
     const salas = await matchMaker.query({ name: AETHER_ROOM });
@@ -133,7 +189,8 @@ app.get('/salas', async (_req, res) => {
   }
 });
 
-// Painel de inspecao de salas. Em producao precisa de auth na frente.
+// Painel de inspecao de salas. A auth esta montada acima, em
+// `autenticarOperacao` — e o boot recusa subir em producao sem a senha.
 app.use('/colyseus', monitor());
 
 // Playground: dispara intencoes a mao e inspeciona o estado sem passar pelo

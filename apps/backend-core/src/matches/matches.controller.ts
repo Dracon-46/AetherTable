@@ -1,7 +1,14 @@
 import { Controller, Post, Body, Param, UseGuards, Request, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MatchesService } from './matches.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
-import { CriarPartidaDto, EntrarNaPartidaDto, RoomCodeParam } from './matches.dto.js';
+import {
+  CriarPartidaDto,
+  EntrarNaPartidaDto,
+  ResumoDePartidaDto,
+  RoomCodeParam,
+} from './matches.dto.js';
+import { InternalApiGuard } from '../common/internal-api.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
@@ -57,5 +64,30 @@ export class MatchesController {
     @Param('roomCode', new ZodValidationPipe(RoomCodeParam)) roomCode: string,
   ) {
     return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode);
+  }
+}
+
+/**
+ * ─── RESUMO POS-PARTIDA, GRAVADO PELO GAME-SERVER ────────────────────────────
+ *
+ * Rota maquina-a-maquina, no mesmo desenho de `internal/decks`: segredo
+ * compartilhado no `InternalApiGuard`, sem sessao de usuario. Ela nao PODE
+ * exigir JWT de conta — quem chama e o `onDispose` de uma sala que acabou de
+ * fechar, e nesse momento nao ha mais cliente nenhum conectado de quem pegar
+ * um token.
+ *
+ * Sem o guard, seria um endpoint publico capaz de inventar partidas jogadas
+ * para qualquer conta.
+ */
+@ApiTags('Internal')
+@Controller('internal/matches')
+@UseGuards(InternalApiGuard)
+export class InternalMatchesController {
+  constructor(private readonly matchesService: MatchesService) {}
+
+  @Post('summary')
+  @ApiOperation({ summary: 'Registra o resumo de uma partida encerrada (uso interno)' })
+  registrarResumo(@Body(new ZodValidationPipe(ResumoDePartidaDto)) dto: ResumoDePartidaDto) {
+    return this.matchesService.registrarResumo(dto);
   }
 }

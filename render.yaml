@@ -143,6 +143,13 @@ services:
       - key: INTERNAL_API_TOKEN
         sync: false
 
+      # Basic auth de /colyseus e /metrics. SEM ELA O PROCESSO NAO SOBE em
+      # producao, e a recusa e deliberada: o monitor lista todas as salas e
+      # permite inspecionar o estado — inclusive a mao e o grimorio dos
+      # jogadores. E o unico caminho do sistema que contorna `podeVer`.
+      - key: ADMIN_PANEL_PASSWORD
+        generateValue: true
+
       # MESMO valor do CORS_ORIGINS da API — a origem do frontend.
       #
       # O game-server passou a servir `GET /salas`, a vitrine de mesas públicas,
