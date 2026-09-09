@@ -252,6 +252,26 @@ export interface SetMaxHandSizePayload {
 export interface SetTurnOrderPayload {
   order: string[];
 }
+
+/**
+ * As regras que a mesa combina na sala de espera, num formulário só.
+ *
+ * Uma intenção para as cinco opções, e não cinco intenções: elas são
+ * preenchidas de uma vez pelo anfitrião, e cinco viagens ao servidor dariam à
+ * mesa cinco oportunidades de ver a configuração pela metade.
+ *
+ * Todos os campos são opcionais porque o formulário manda só o que mudou.
+ * Só o anfitrião, e só em `phase === 'WAITING'`.
+ */
+export interface SetRoomConfigPayload {
+  tipoDeMulligan?: 'COMMANDER' | 'LONDON' | 'LIVRE';
+  /** `''` = sortear no início. Senão, um sessionId que exista na mesa. */
+  jogadorInicial?: string;
+  ordemPelosAssentos?: boolean;
+  sideboardPermitido?: boolean;
+  /** Segundos. `0` = desligado. Valor de `CRONOMETROS_DE_TURNO`. */
+  cronometroDeTurno?: number;
+}
 /** Marca o jogador como eliminado. NAO o remove da sala (RN01). */
 export type ConcedePayload = Record<string, never>;
 
@@ -523,6 +543,7 @@ export interface IntentPayloadMap {
   INTENT_VENTURE: VenturePayload;
   INTENT_SET_MAX_HAND_SIZE: SetMaxHandSizePayload;
   INTENT_SET_TURN_ORDER: SetTurnOrderPayload;
+  INTENT_SET_ROOM_CONFIG: SetRoomConfigPayload;
   INTENT_CONCEDE: ConcedePayload;
   // objetos criados
   INTENT_CREATE_TOKEN: CreateTokenPayload;

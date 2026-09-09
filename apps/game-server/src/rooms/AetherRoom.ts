@@ -5,7 +5,9 @@ import jwt from 'jsonwebtoken';
 import {
   REALTIME_LIMITS,
   ZONES,
+  normalizarConfigDeSala,
   zoneOrderKey,
+  type ConfigDeSala,
   type JoinOptions,
   type LogEvent,
   type Zone,
@@ -13,13 +15,17 @@ import {
 
 import { config } from '../config';
 import { Card } from '../schema/Card';
+import { Espectador } from '../schema/Espectador';
 import { Player } from '../schema/Player';
 import { RoomState } from '../schema/RoomState';
 import { ZoneOrderList } from '../schema/ZoneOrderList';
-import type { z } from 'zod';
+// Valor, nao so tipo: `OpcoesDeCriacao` valida as opcoes cruas do navegador.
+import { z } from 'zod';
 import {
   RateLimiter,
   REGISTRY,
+  espectadorBarrado,
+  haAssentoLivre,
   verificarAutorizacao,
   type IntentContext,
   type IntentHandler,
@@ -74,7 +80,49 @@ interface SeatTokenClaims {
    * `INTENT_SET_DECK`, dentro da sala.
    */
   deckId?: string;
+  /**
+   * Configuracao da sala, ASSINADA pela API Core (ver `assinarConfig` em
+   * `matches.service.ts`).
+   *
+   * So o criador tem esta claim. Ela existe porque `onCreate` recebe as opcoes
+   * CRUAS do navegador — nada ali impedia uma mesa de Duel Commander com oito
+   * assentos — e o Colyseus nao entrega o resultado do `onAuth` ao `onCreate`,
+   * que roda antes. Aplicar aqui, com a sala ainda vazia, e o unico ponto em
+   * que a configuracao autorizada consegue substituir a forjada.
+   */
+  cfg?: ConfigDeSala;
+  /**
+   * `true` = passe de ESPECTADOR, emitido por `POST /matches/:code/spectate`.
+   *
+   * Vem no token assinado, e nao numa opcao do `joinOrCreate`, porque a
+   * diferenca entre assistir e jogar decide quem ocupa assento numa mesa cheia.
+   * Se fosse um parametro do cliente, bastaria remove-lo da querystring para um
+   * espectador virar jogador e tomar o ultimo lugar.
+   */
+  spectator?: boolean;
 }
+
+/**
+ * Opcoes cruas do `joinOrCreate`. Sao escritas pelo NAVEGADOR e nao sao
+ * assinadas: tudo aqui e uma sugestao ate `normalizarConfigDeSala` passar.
+ */
+const OpcoesDeCriacao = z
+  .object({
+    roomCode: z.string().max(64).optional(),
+    nome: z.string().max(200).optional(),
+    gameType: z.string().max(64).optional(),
+    visibilidade: z.string().max(16).optional(),
+    comunicacao: z.string().max(16).optional(),
+    idioma: z.string().max(16).optional(),
+    // `coerce`: a querystring entrega numero como string, e um `maxClients`
+    // que chega '4' cairia no padrao do formato em silencio.
+    maxClients: z.coerce.number().int().optional(),
+    nivelDePoder: z.coerce.number().int().optional(),
+  })
+  // `catchall` descartado de proposito: `passthrough` deixaria campo
+  // desconhecido do cliente chegar ate `normalizarConfigDeSala`, que o
+  // ignoraria — mas o proximo a ler o codigo nao teria como saber disso.
+  .strip();
 
 export class AetherRoom extends Room<RoomState> {
   override maxClients: number = REALTIME_LIMITS.MAX_PLAYERS;
@@ -107,31 +155,21 @@ export class AetherRoom extends Room<RoomState> {
   private readonly expulsos = new Set<string>();
   private proximoAssento = 0;
 
-  override onCreate(options: { roomCode?: string; maxClients?: number; gameType?: string }): void {
+  override onCreate(options: unknown): void {
+    // O zod aqui e a correcao MINIMA do buraco de configuracao: as opcoes vem
+    // do navegador e nao sao assinadas. `safeParse` e nao `parse` porque um
+    // campo malformado nao pode impedir a sala de abrir — o que ele nao
+    // reconhece cai no padrao, e e `normalizarConfigDeSala` quem decide o
+    // resto. A correcao FORTE (config assinada) chega no `onAuth`.
+    const brutas = OpcoesDeCriacao.safeParse(options);
+    const opcoes = brutas.success ? brutas.data : {};
+
     this.setState(new RoomState());
-    this.state.roomCode = options.roomCode ?? this.roomId.slice(0, 6).toUpperCase();
+    this.state.roomCode = opcoes.roomCode ?? this.roomId.slice(0, 6).toUpperCase();
     this.state.phase = 'WAITING';
     this.state.startedAt = Date.now();
 
-    if (options.maxClients) {
-      // O teto era `MAX_PLAYERS * 2`, quer dizer: a constante que diz "maximo de
-      // jogadores" nao era o maximo de jogadores. Uma sala aceitava o dobro do
-      // que qualquer outra parte do sistema assumia — inclusive a mesa, que
-      // desenha uma faixa por assento.
-      //
-      // O PISO DESCEU DE 2 PARA 1: a mesa de UM jogador existe.
-      //
-      // DOC-037 §7.1 chama o `solo` de caso de uso numero 1 do documento de
-      // visao ("O Testador — vale a pena comprar?") e observa que o custo dele
-      // e zero, bastando permitir `players.min = 1`. Este `Math.max(2, ...)`
-      // era o que faltava: o preset de solo pedia uma mesa de um e a sala
-      // abria com dois assentos, entao o painel mostrava um lugar vazio
-      // esperando alguem que nunca vinha — e o jogador ficava aguardando o
-      // lobby liberar.
-      this.maxClients = Math.max(1, Math.min(REALTIME_LIMITS.MAX_PLAYERS, options.maxClients));
-    }
-    this.state.maxSeats = this.maxClients;
-    this.state.gameType = options.gameType ?? 'COMMANDER';
+    this.aplicarConfig(normalizarConfigDeSala(opcoes));
 
     // 20 Hz: mutacoes na mesma janela viram um patch. Arrastar uma carta nao
     // gera 60 pacotes por segundo.
@@ -140,6 +178,90 @@ export class AetherRoom extends Room<RoomState> {
     this.registrarIntencoes();
     this.registrarIntencoesComIO();
     salasAtivas.inc();
+  }
+
+  /**
+   * Grava uma configuracao JA NORMALIZADA no estado.
+   *
+   * Um caminho so para os dois momentos em que a config chega — o `onCreate`,
+   * com o que o navegador mandou, e o `onAuth` do criador, com o que a API
+   * assinou. Duas escritas separadas divergiriam, e a divergencia apareceria
+   * como um campo que o passe assinado nao consegue corrigir.
+   */
+  private aplicarConfig(config: ConfigDeSala): void {
+    /**
+     * ─── `maxClients` DO COLYSEUS != ASSENTOS DA MESA ──────────────────────
+     *
+     * Eram a mesma coisa ate o modo espectador existir, e a diferenca e a razao
+     * de ele funcionar numa mesa cheia — que e justamente a mesa que alguem
+     * quer assistir.
+     *
+     * O Colyseus tranca a sala em `hasReachedMaxClients()`, e a checagem
+     * acontece no MATCHMAKING, antes do `onAuth`. Com `maxClients` igual aos
+     * assentos, o espectador seria recusado antes de o servidor sequer abrir o
+     * passe dele e descobrir que ele nao queria assento nenhum.
+     *
+     * Entao `maxClients` passa a ser assentos + plateia, e A LOTACAO DE
+     * JOGADORES VIRA RESPONSABILIDADE NOSSA — ela e checada no `onAuth`, que
+     * lanca `ROOM_FULL`. Isto e uma transferencia real de responsabilidade do
+     * framework para este arquivo: se a checagem do `onAuth` sumir numa
+     * refatoracao, a mesa passa a aceitar dezoito jogadores em silencio.
+     *
+     * `state.maxSeats` continua sendo o numero de ASSENTOS, e e ele que o lobby
+     * e a mesa desenham. O PISO DE 1 vem de `normalizarConfigDeSala` e importa:
+     * DOC-037 §7.1 chama o `solo` de caso de uso numero 1 do documento de visao
+     * ("O Testador — vale a pena comprar?"). Um `Math.max(2, ...)` ja quebrou
+     * isso uma vez — o preset de solo pedia uma mesa de um, a sala abria com
+     * dois assentos, e o painel mostrava um lugar vazio esperando alguem que
+     * nunca vinha.
+     */
+    this.maxClients = config.maxClients + REALTIME_LIMITS.MAX_ESPECTADORES;
+    this.state.maxSeats = config.maxClients;
+    this.state.gameType = config.gameType;
+
+    this.state.nome = config.nome;
+    this.state.visibilidade = config.visibilidade;
+    this.state.comunicacao = config.comunicacao;
+    this.state.idioma = config.idioma;
+    // 0 = nao declarado. Ver o campo em `RoomState`.
+    this.state.nivelDePoder = config.nivelDePoder ?? 0;
+
+    this.publicarMetadados();
+  }
+
+  /**
+   * Publica a sala no matchMaker — ou a esconde.
+   *
+   * METADADO, e nao estado: e o que `matchMaker.query` consulta SEM abrir a
+   * sala nem tocar no `RoomState`. Uma lista publica que precisasse instanciar
+   * cada sala para saber o nome dela nao escalaria alem de algumas dezenas.
+   *
+   * So sala PUBLICA e publicada. Privada significa nao listada (nao existe
+   * senha de sala — o `seatToken` ja governa a entrada), e a forma de honrar
+   * isso e nao ter nada para o `GET /salas` encontrar.
+   */
+  private publicarMetadados(): void {
+    if (this.state.visibilidade !== 'PUBLICA') {
+      void this.setMetadata({ visibilidade: 'PRIVADA' });
+      return;
+    }
+
+    void this.setMetadata({
+      visibilidade: 'PUBLICA',
+      roomCode: this.state.roomCode,
+      nome: this.state.nome,
+      gameType: this.state.gameType,
+      comunicacao: this.state.comunicacao,
+      idioma: this.state.idioma,
+      nivelDePoder: this.state.nivelDePoder,
+      // A ocupacao vive no metadado porque a lista precisa dela para decidir
+      // entre "Entrar" e "Assistir", e `clients.length` nao atravessa o
+      // matchMaker por conta propria.
+      ocupacao: this.state.players.size,
+      espectadores: this.state.espectadores.size,
+      maxSeats: this.state.maxSeats,
+      emPartida: this.state.phase === 'PLAYING',
+    });
   }
 
   /**
@@ -170,10 +292,60 @@ export class AetherRoom extends Room<RoomState> {
       this.jtisUsados.add(claims.jti);
     }
 
+    /**
+     * ─── A CONFIGURACAO ASSINADA SOBREPOE A QUE VEIO DO NAVEGADOR ──────────
+     *
+     * `onCreate` recebe as opcoes CRUAS do `joinOrCreate` — escritas pelo
+     * cliente, sem assinatura nenhuma. Ele ja as normaliza contra o catalogo de
+     * formatos, o que fecha o caso grosseiro (oito assentos em Duel Commander),
+     * mas nada ali distingue "o criador escolheu isto" de "alguem editou a
+     * querystring".
+     *
+     * A claim `cfg` vem dentro do seat token, que a API Core assinou. Aplicar
+     * aqui e o unico ponto possivel: o Colyseus nao entrega o resultado do
+     * `onAuth` ao `onCreate`, que roda antes.
+     *
+     * A GUARDA E `players.size === 0`, e nao "e o assento 0".
+     *
+     * O criador e sempre o primeiro a autenticar, entao a sala vazia identifica
+     * exatamente ele. Usar o assento seria pior: `removerJogador` reatribui
+     * assentos a cada saida, entao o assento 0 e um papel que muda de dono
+     * durante a partida — e quem herdasse o papel reescreveria a mesa inteira
+     * apresentando um passe emitido para outra configuracao.
+     */
+    if (claims.cfg && this.state.players.size === 0) {
+      this.aplicarConfig(normalizarConfigDeSala(claims.cfg));
+    }
+
+    /**
+     * ─── A LOTACAO DE JOGADORES E CHECADA AQUI, E SO AQUI ──────────────────
+     *
+     * Ate o modo espectador existir, quem recusava o jogador excedente era o
+     * proprio Colyseus, em `hasReachedMaxClients()`. Agora `this.maxClients`
+     * inclui a plateia (ver `aplicarConfig`), entao aquela checagem passou a
+     * deixar entrar muito mais gente do que ha assento — e sem esta linha a
+     * mesa aceitaria dezoito jogadores sem reclamar.
+     *
+     * `ROOM_FULL` ja e um dos `HANDSHAKE_ERRORS` do contrato, e o cliente ja
+     * tem a frase certa para ele.
+     *
+     * A contagem e de `state.players`, e nao de `clients`: o segundo inclui a
+     * plateia, e uma mesa com quatro assentos e tres espectadores recusaria o
+     * quarto jogador.
+     */
+    if (!claims.spectator && !haAssentoLivre(this.state)) {
+      throw new Error('ROOM_FULL');
+    }
+
     return claims;
   }
 
   override onJoin(client: Client, options: JoinOptions, auth: SeatTokenClaims): void {
+    if (auth.spectator) {
+      this.entrarComoEspectador(client, auth);
+      return;
+    }
+
     const player = new Player();
     player.id = client.sessionId;
     player.userId = auth.sub;
@@ -209,9 +381,61 @@ export class AetherRoom extends Room<RoomState> {
 
     this.broadcast('playerJoined', { playerId: client.sessionId, name: player.name });
     this.publicarLog(logSistema(client.sessionId, `${player.name} entrou na mesa`));
+
+    // A ocupacao mudou: sem isto a lista publica mostraria "1/4" numa mesa que
+    // ja encheu, e o botao "Entrar" levaria a um ROOM_FULL.
+    this.publicarMetadados();
+  }
+
+  /**
+   * Entrada de quem so vai olhar.
+   *
+   * Repare no que NAO acontece aqui: nenhuma lista de zona e criada, nenhum
+   * deck e provisionado, nenhum assento e reservado, e `proximoAssento` nao
+   * anda. Um espectador nao deixa rastro na mesa — e por isso a saida dele
+   * tambem nao precisa de `reconciliarTudo`.
+   */
+  private entrarComoEspectador(client: Client, auth: SeatTokenClaims): void {
+    const espectador = new Espectador();
+    espectador.id = client.sessionId;
+    espectador.userId = auth.sub;
+    espectador.name = auth.username;
+    this.state.espectadores.set(client.sessionId, espectador);
+
+    // A view precisa existir antes do primeiro patch, igual ao jogador. A dele
+    // e a mais barata que existe: `podeVer` nega toda zona oculta para quem nao
+    // e dono nem controller, e ele nao e nenhum dos dois em carta nenhuma.
+    reconciliarClient(client, this.state);
+
+    this.broadcast('spectatorJoined', {
+      spectatorId: client.sessionId,
+      name: espectador.name,
+    });
+    this.publicarLog(logSistema(client.sessionId, `${espectador.name} está assistindo`));
+    this.publicarMetadados();
   }
 
   override async onLeave(client: Client, consented: boolean): Promise<void> {
+    /**
+     * Espectador sai NA HORA, sem janela de reconexao.
+     *
+     * Os 90 s de `allowReconnection` existem para guardar o ASSENTO e as cartas
+     * de quem caiu. Espectador nao tem nem um nem outro: segurar a saida dele
+     * so faria a lista da mesa mostrar plateia que ja foi embora, e ainda
+     * ocuparia uma das dez vagas de `MAX_ESPECTADORES`.
+     */
+    if (this.state.espectadores.has(client.sessionId)) {
+      const espectador = this.state.espectadores.get(client.sessionId);
+      this.state.espectadores.delete(client.sessionId);
+      this.rateLimiter.esquecer(client.sessionId);
+      this.broadcast('spectatorLeft', {
+        spectatorId: client.sessionId,
+        name: espectador?.name ?? '',
+      });
+      this.publicarMetadados();
+      return;
+    }
+
     const player = this.state.players.get(client.sessionId);
     if (player) {
       player.connected = false;
@@ -285,6 +509,36 @@ export class AetherRoom extends Room<RoomState> {
           return;
         }
 
+        /**
+         * ─── ESPECTADOR NAO MEXE NA MESA ───────────────────────────────────
+         *
+         * `verificarAutorizacao` NAO cobre isto, e e importante entender por
+         * que: ela devolve `null` na hora para `QUALQUER_JOGADOR`, sem checar
+         * se o remetente e mesmo um jogador — o nome da regra sempre foi uma
+         * promessa que ninguem verificava, porque ate agora todo mundo na sala
+         * tinha assento.
+         *
+         * A barreira fica AQUI, e nao dentro de cada handler, pelo mesmo motivo
+         * de `exigirAnfitriao` existir: a proxima intencao nasce protegida em
+         * vez de nascer aberta. Espalhar a checagem por 90 handlers e como
+         * garantir que os 90 lembrem — e os que esquecessem falhariam em
+         * silencio, porque quase todos comecam com um
+         * `state.players.get(sid)` que devolve `undefined` e sai calado.
+         *
+         * O CHAT E A UNICA EXCECAO. Quem assiste comenta a partida; e o
+         * conteudo inteiro de assistir. Ele nao muta estado nenhum — so
+         * transmite texto que o servidor ja limpa de caracteres de controle.
+         */
+        if (espectadorBarrado(this.state, client.sessionId, tipo)) {
+          intentsRejeitadas.inc({ reason: 'spectator' });
+          client.send('error', {
+            code: 'SPECTATOR',
+            message: 'Você está assistindo a esta mesa. Só quem tem assento pode agir nela.',
+            intent: tipo,
+          });
+          return;
+        }
+
         const parsed = handler.schema.safeParse(payload);
         if (!parsed.success) {
           intentsRejeitadas.inc({ reason: 'invalid_payload' });
@@ -308,7 +562,14 @@ export class AetherRoom extends Room<RoomState> {
           // O snapshot e tirado ANTES da mutacao e so para intencoes
           // reversiveis — a propria lista de exclusoes vive em services/undo.ts.
           this.jornal.registrar(this.state, client.sessionId, tipo);
+
+          // A fase e lida ANTES para saber se o handler a mudou. START_MATCH e
+          // RESET_MATCH viram `emPartida` na lista publica, e o REGISTRY nao
+          // tem — nem deve ter — acesso a Room para publicar isso sozinho.
+          const faseAntes = this.state.phase;
           handler.executa(this.montarContexto(client), parsed.data);
+          if (this.state.phase !== faseAntes) this.publicarMetadados();
+
           intentsRecebidas.inc({ type: tipo });
         } catch (erro) {
           // Uma intencao malformada NUNCA deve derrubar a sala dos outros tres
@@ -370,6 +631,19 @@ export class AetherRoom extends Room<RoomState> {
   private registrarIntencoesComIO(): void {
     this.onMessage('INTENT_SET_DECK', (client, payload: unknown) => {
       if (!this.rateLimiter.permitir(client.sessionId)) return;
+
+      // Esta intencao NAO passa pelo dispatcher do REGISTRY (ela faz I/O), e
+      // por isso a barreira de espectador de la nao a alcanca. Sem esta linha,
+      // quem assiste escolheria um grimorio e o servidor tentaria provisiona-lo
+      // para um sessionId que nao tem zona nenhuma.
+      if (this.state.espectadores.has(client.sessionId)) {
+        client.send('error', {
+          code: 'SPECTATOR',
+          message: 'Você está assistindo a esta mesa. Só quem tem assento escolhe grimório.',
+          intent: 'INTENT_SET_DECK',
+        });
+        return;
+      }
 
       const deckId = (payload as { deckId?: unknown })?.deckId;
       if (typeof deckId !== 'string' || !UUID.test(deckId)) {
@@ -436,6 +710,10 @@ export class AetherRoom extends Room<RoomState> {
     this.proximoAssento = restantes.length;
 
     this.broadcast('playerLeft', { playerId: sessionId, name: player?.name ?? '' });
+
+    // Uma vaga abriu: a mesa volta para a lista publica com "Entrar" em vez de
+    // "Assistir".
+    this.publicarMetadados();
 
     // As cartas do jogador sairam: as views dos demais precisam ser recalculadas.
     reconciliarTudo(this.clients, this.state);

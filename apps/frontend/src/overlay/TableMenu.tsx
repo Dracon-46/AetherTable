@@ -99,6 +99,10 @@ export function TableMenu({ room }: TableMenuProps) {
   const roomCode = useGameStore((s) => s.roomId);
   const turn = useGameStore((s) => s.turn);
   const activePlayerId = useGameStore((s) => s.activePlayerId);
+  // O que a mesa combinou na sala de espera. O servidor recusa
+  // `INTENT_FETCH_FROM_SIDEBOARD` quando isto é falso — o botão só reflete
+  // aqui a mesma regra, para o jogador não descobrir clicando.
+  const sideboardPermitido = useGameStore((s) => s.config.sideboardPermitido);
   const [copiado, setCopiado] = useState(false);
   const dayNight = useGameStore((s) => s.dayNight);
   const turnPhase = useGameStore((s) => s.turnPhase);
@@ -327,11 +331,22 @@ export function TableMenu({ room }: TableMenuProps) {
               >
                 <Eraser className="h-3.5 w-3.5" /> Apagar minhas setas
               </button>
+              {/* Desabilitado COM O MOTIVO ESCRITO, e não escondido: a zona
+                  continua existindo e o deck do jogador continua tendo reserva.
+                  Sumir com o botão faria parecer que a reserva não existe nesta
+                  mesa; deixá-lo cinza sem explicação faria parecer defeito. */}
               <button
                 onClick={() => setInspectedZone('SIDEBOARD')}
-                className={`${chip} flex items-center gap-2`}
+                disabled={!sideboardPermitido}
+                title={
+                  sideboardPermitido
+                    ? undefined
+                    : 'Esta mesa combinou jogar sem reserva. O anfitrião pode liberar na sala de espera.'
+                }
+                className={`${chip} flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-40`}
               >
-                <Zap className="h-3.5 w-3.5" /> Abrir reserva (sideboard)
+                <Zap className="h-3.5 w-3.5" />
+                {sideboardPermitido ? 'Abrir reserva (sideboard)' : 'Reserva desativada pela mesa'}
               </button>
               <button
                 onClick={() => intents.returnZone(room, 'GRAVEYARD', 'LIBRARY', true)}

@@ -6,6 +6,7 @@
  */
 
 import type { Room } from 'colyseus.js';
+import type { SetRoomConfigPayload } from '@aethertable/shared-types';
 
 let moveCardLastSent = 0;
 const MOVE_THROTTLE_MS = 50; // 20/s
@@ -239,6 +240,13 @@ export const intents = {
 
   setTurnOrder: (room: Room, order: string[]) =>
     sendIntent(room, 'INTENT_SET_TURN_ORDER', { order }),
+
+  /**
+   * As regras da mesa, num envio só. O formulário manda só o que mudou — ver
+   * `SetRoomConfigPayload` para por que não são cinco intenções.
+   */
+  setRoomConfig: (room: Room, config: SetRoomConfigPayload) =>
+    sendIntent(room, 'INTENT_SET_ROOM_CONFIG', config),
 
   fetchFromSideboard: (room: Room, entityId: string, to = 'HAND') =>
     sendIntent(room, 'INTENT_FETCH_FROM_SIDEBOARD', { entityId, to }),

@@ -32,6 +32,7 @@ import { useCosmeticos } from '@/cosmetics/store';
 import { useHidratarPreferencias } from '@/store/useHidratarPreferencias';
 import { RoomLobby } from '@/overlay/RoomLobby';
 import { MulliganModal } from '@/overlay/MulliganModal';
+import { CronometroDeTurno } from '@/overlay/CronometroDeTurno';
 import { PlayersModal } from '@/overlay/PlayersModal';
 import { ViewRequestPrompt } from '@/overlay/ViewRequestPrompt';
 import { FimDeJogo } from '@/overlay/FimDeJogo';
@@ -64,6 +65,19 @@ export default function PlayRoomPage() {
 
   useRoomSync(room);
   const phase = useGameStore((s) => s.phase);
+  /**
+   * ─── QUEM SO ASSISTE NAO VE CONTROLE DE MESA ────────────────────────────
+   *
+   * Quem manda e o TOKEN: o servidor barra toda intencao de espectador menos o
+   * chat, e nao existe caminho de cliente que contorne isso. O que esta flag
+   * governa e a TELA — mostrar uma barra de acoes que so produz erro seria
+   * exatamente o "botao que promete o que nao existe".
+   *
+   * `?espectador=1` na URL nao entra nesta conta de proposito. Ele so serve
+   * para a pagina saber o que desenhar no instante entre a conexao e o primeiro
+   * patch; a verdade vem do estado, que vem do token.
+   */
+  const souEspectador = useGameStore((s) => s.souEspectador);
 
   /**
    * Gesto de dois toques compartilhado por SETA e ANEXAR: o menu de contexto
@@ -75,7 +89,7 @@ export default function PlayRoomPage() {
 
   // Teclado da mesa. Só depois de a partida começar: na sala de espera as
   // teclas pertencem ao lobby.
-  useAtalhosDaMesa(room, phase !== 'WAITING');
+  useAtalhosDaMesa(room, phase !== 'WAITING' && !souEspectador);
 
   // Anuncia os cosméticos equipados assim que a sala aceita a conexão. Eles
   // vivem no cliente (localStorage) porque a mesa não pode esperar um
@@ -99,9 +113,11 @@ export default function PlayRoomPage() {
   const petId = useCosmeticos((s) => s.petId);
 
   useEffect(() => {
-    if (!room) return;
+    // Espectador nao tem `Player` para vestir: a intencao seria recusada como
+    // SPECTATOR e viraria um erro na tela dele a cada troca de cosmetico.
+    if (!room || souEspectador) return;
     intents.setCosmetics(room, { sleeveId, playmatId, borderId, titleId, petId });
-  }, [room, sleeveId, playmatId, borderId, titleId, petId]);
+  }, [room, souEspectador, sleeveId, playmatId, borderId, titleId, petId]);
 
   useEffect(() => {
     if (!roomId || !accessToken) return;
@@ -224,14 +240,23 @@ export default function PlayRoomPage() {
               botões lado a lado com o rótulo escondido cabem, mas com o
               rótulo visível (>= sm) eles empurrariam o log para fora. */}
           <div className="pointer-events-none absolute right-2 top-2 z-30 flex max-w-[calc(100vw-1rem)] flex-wrap items-start justify-end gap-2 sm:right-3 sm:top-3">
+            {/* Ele se esconde sozinho quando a mesa não combinou cronômetro —
+                ver `CronometroDeTurno`. */}
+            <CronometroDeTurno />
             <ExibicaoControls />
             <CameraControls />
-            <TableMenu room={room} />
+            {!souEspectador && <TableMenu room={room} />}
           </div>
-          <LifePanel room={room} />
+          {/* O painel de vida CONTINUA visivel para a plateia: e a informacao
+              mais importante da partida, e assistir sem ela e assistir no
+              escuro. O `pointer-events-none` desliga os controles em vez de
+              esconder o painel — o espectador le tudo e nao clica em nada. */}
+          <div className={souEspectador ? 'pointer-events-none contents' : 'contents'}>
+            <LifePanel room={room} />
+          </div>
           <ChatLog room={room} />
-          <ActionBar room={room} />
-          <SelectionBar room={room} />
+          {!souEspectador && <ActionBar room={room} />}
+          {!souEspectador && <SelectionBar room={room} />}
           <CardHoverPreview />
           <CardInspector />
         </div>
@@ -240,19 +265,28 @@ export default function PlayRoomPage() {
       {/* Camadas bloqueantes e modais — fora do wrapper recortado. */}
       {emPartida && (
         <>
-          <TokenPicker room={room} />
-          <ZoneInspector room={room} />
-          <ContextMenu room={room} setModoAnexar={setModoAnexar} />
-          <ScryModal room={room} />
-          <CardEditor room={room} />
-          <PlayersModal room={room} />
+          {/* Todos estes AGEM sobre a mesa. Para a plateia eles nao ficam
+              desabilitados, ficam ausentes: nao ha acao nenhuma neles que um
+              espectador possa praticar, entao um menu cinza so ocuparia a tela
+              e convidaria ao clique. */}
+          {!souEspectador && (
+            <>
+              <TokenPicker room={room} />
+              <ZoneInspector room={room} />
+              <ContextMenu room={room} setModoAnexar={setModoAnexar} />
+              <ScryModal room={room} />
+              <CardEditor room={room} />
+              <PlayersModal room={room} />
+            </>
+          )}
           {/* Pedidos de "me deixa ver sua mão". Fora do wrapper recortado: eles
               chegam a qualquer momento e precisam ficar por cima do HUD. */}
-          <ViewRequestPrompt room={room} />
+          {!souEspectador && <ViewRequestPrompt room={room} />}
           {/* Derrota e vitória. Fora do wrapper recortado: o fim de partida
               ocupa a tela inteira. */}
           <FimDeJogo />
-          <MulliganModal room={room} />
+          {/* Espectador nao tem mao inicial para decidir. */}
+          {!souEspectador && <MulliganModal room={room} />}
           <SorteioOverlay />
         </>
       )}

@@ -22,6 +22,7 @@ import type { Room } from 'colyseus.js';
 import { useGameStore } from '../store/game.store';
 import { Check, Repeat, X } from 'lucide-react';
 import { intents } from '../net/intents';
+import { REGRA_DO_MULLIGAN, type TipoDeMulligan } from '@aethertable/shared-types';
 import { cardImageUrl } from '../canvas/textureCache';
 import type { RoomState } from '../net/schema/RoomState';
 
@@ -38,6 +39,10 @@ export function MulliganModal({ room }: MulliganModalProps) {
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
   const roomId = useGameStore((s) => s.roomId);
+  // A regra que a mesa combinou na sala de espera. Vem do estado, e nao de uma
+  // constante local: o modal nao pode anunciar London numa mesa que escolheu
+  // Commander.
+  const tipoDeMulligan = useGameStore((s) => s.config.tipoDeMulligan);
 
   const [decidiu, setDecidiu] = React.useState(true);
   const [isSelectingBottom, setIsSelectingBottom] = React.useState(false);
@@ -160,6 +165,15 @@ export function MulliganModal({ room }: MulliganModalProps) {
           {isSelectingBottom
             ? `Selecione ${mulliganCount} carta(s) para devolver ao fundo do grimório.`
             : 'Você pode manter estas cartas ou realizar um Mulligan.'}
+        </p>
+        {/* QUAL REGRA ESTÁ VALENDO, numa linha.
+            O modal implementava London na mão e dizia "London Mulligan" no
+            título em qualquer mesa — inclusive nas que combinaram outra coisa.
+            Agora a mesa escolhe (`INTENT_SET_ROOM_CONFIG`) e o modal diz o que
+            foi escolhido, em vez de anunciar uma regra que talvez não seja a
+            da partida. */}
+        <p className="text-text-faint mt-2 text-xs sm:text-sm">
+          {REGRA_DO_MULLIGAN[tipoDeMulligan as TipoDeMulligan] ?? REGRA_DO_MULLIGAN.COMMANDER}
         </p>
       </div>
 

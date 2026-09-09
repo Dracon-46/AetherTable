@@ -238,6 +238,37 @@ test.describe('mesa multijogador', () => {
     await expect(ana.getByText('3/', { exact: false }).first()).toBeVisible({ timeout: 15_000 });
   });
 
+  test('a mesa combina as regras antes de começar, e o convidado LÊ o combinado', async () => {
+    const ana = paginas[0]!;
+    const bruno = paginas[1]!;
+
+    /**
+     * ─── QUEM COMEÇA DEIXOU DE SER "QUEM CLICOU" ───────────────────────────
+     *
+     * O `INTENT_START_MATCH` fazia `activePlayerId = eu.id`, e como só o
+     * anfitrião pode clicar, o anfitrião começava sempre — uma vantagem
+     * silenciosa dele em todas as partidas. Agora o padrão é SORTEIO.
+     *
+     * Isto fixa a ordem pelos assentos, e faz duas coisas de uma vez: exercita
+     * a seção de configuração nova, e devolve o determinismo à suíte — os
+     * testes daqui para baixo precisam saber de quem é a vez, e um sorteio a
+     * cada execução transformaria todos eles em moeda.
+     */
+    await ana.getByLabel('Quem começa').selectOption('__assentos__');
+
+    /**
+     * O CONVIDADO PRECISA LER O COMBINADO ANTES DE MARCAR PRONTO.
+     *
+     * Esta é a razão de a seção viver no estado da sala e não na tela do
+     * anfitrião — o mesmo defeito que levou `maxSeats` e `gameType` para lá. E
+     * o convidado vê TEXTO, não controles cinzas: um `<select>` desabilitado
+     * convida ao clique e não explica nada.
+     */
+    await expect(bruno.getByText('Configurações de jogo')).toBeVisible();
+    await expect(bruno.getByText('O primeiro assento')).toBeVisible({ timeout: 15_000 });
+    await expect(bruno.getByRole('combobox', { name: 'Quem começa' })).toHaveCount(0);
+  });
+
   test('com todos prontos, o anfitrião inicia e todo mundo compra sete', async () => {
     const restantes = paginas.slice(0, 3);
 
@@ -389,22 +420,48 @@ test.describe('mesa multijogador', () => {
   // ═══════════════════════════════════════════════════════════════════════
 
   test('só quem está na vez passa o turno', async () => {
-    const ana = paginas[0]!; // assento 0 — começou a partida, é a vez dela
-    const bruno = paginas[1]!;
+    /**
+     * ─── POR QUE A ANA COMEÇA, E POR QUE ISSO NÃO É MAIS DE GRAÇA ──────────
+     *
+     * Ela começa porque a mesa COMBINOU "primeiro assento" na sala de espera —
+     * ver o teste das regras, acima. Até esta fatia isso era automático e
+     * silencioso: `INTENT_START_MATCH` fazia `activePlayerId = eu.id`, e como
+     * só o anfitrião clica em iniciar, o anfitrião começava sempre. O padrão
+     * agora é sorteio pelo CSPRNG do servidor (RN06).
+     *
+     * A afirmação abaixo é sobre a mesa inteira, e não só sobre dois jogadores,
+     * porque assim ela também pega um caso que a versão antiga não pegava:
+     * DOIS botões habilitados ao mesmo tempo.
+     *
+     * `slice(0, 3)`: a Dora foi removida da sala lá atrás e está no painel.
+     */
+    const naMesa = paginas.slice(0, 3);
 
-    for (const page of [ana, bruno]) {
-      const aba = page.getByRole('button', { name: 'Ações' });
+    for (const page of naMesa) {
       if (await page.getByTitle('Embaralhar grimório').count()) continue;
-      await aba.click();
+      await page.getByRole('button', { name: 'Ações' }).click();
     }
 
-    // O botão do Bruno diz de quem é a vez, e não deixa clicar.
-    const turnoBruno = bruno.getByRole('button', { name: /Turno/ });
-    await expect(turnoBruno).toBeDisabled();
-    await expect(turnoBruno).toHaveAttribute('title', /A vez é de aether_ana/i);
+    const estados = await Promise.all(
+      naMesa.map(async (page) => {
+        const botao = page.getByRole('button', { name: /Turno/ });
+        await expect(botao).toBeVisible();
+        return {
+          habilitado: await botao.isEnabled(),
+          titulo: (await botao.getAttribute('title')) ?? '',
+        };
+      }),
+    );
 
-    // O da Ana está ativo.
-    await expect(ana.getByRole('button', { name: /Turno/ })).toBeEnabled();
+    // Exatamente um, e é o assento 0.
+    expect(estados.filter((e) => e.habilitado)).toHaveLength(1);
+    expect(estados[0]!.habilitado).toBe(true);
+
+    const nomeNaVez = JOGADORES[0]!.username;
+    for (const estado of estados.slice(1)) {
+      expect(estado.habilitado).toBe(false);
+      expect(estado.titulo).toMatch(new RegExp(`A vez é de ${nomeNaVez}`, 'i'));
+    }
   });
 
   test('o mulligan some depois de manter a mão', async () => {

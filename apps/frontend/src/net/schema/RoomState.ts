@@ -10,6 +10,7 @@ import { Player } from './Player';
 import { Card } from './Card';
 import { ZoneOrderList } from './ZoneOrderList';
 import { Arrow } from './Arrow';
+import { Espectador } from './Espectador';
 
 export class RoomState extends Schema {
   @type('string') public roomCode!: string;
@@ -26,4 +27,17 @@ export class RoomState extends Schema {
   @type('string') public dayNight!: string;
   @type('string') public turnPhase!: string;
   @type({ map: Arrow }) public arrows: MapSchema<Arrow> = new MapSchema<Arrow>();
+  @type('string') public nome!: string;
+  @type('string') public visibilidade!: string;
+  @type('string') public comunicacao!: string;
+  @type('string') public idioma!: string;
+  @type('number') public nivelDePoder!: number;
+  @type('string') public tipoDeMulligan!: string;
+  @type('string') public jogadorInicial!: string;
+  @type('boolean') public ordemPelosAssentos!: boolean;
+  @type('boolean') public sideboardPermitido!: boolean;
+  @type('number') public cronometroDeTurno!: number;
+  @type('number') public turnoIniciadoEm!: number;
+  @type({ map: Espectador }) public espectadores: MapSchema<Espectador> =
+    new MapSchema<Espectador>();
 }

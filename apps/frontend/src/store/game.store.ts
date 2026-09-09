@@ -111,6 +111,57 @@ export interface ArrowData {
   combat: boolean;
 }
 
+/** Quem está na mesa sem jogar. Mapa próprio, igual no servidor. */
+export interface EspectadorData {
+  id: string;
+  name: string;
+  connected: boolean;
+}
+
+/**
+ * O que a mesa combinou — o que veio da criação e o que o anfitrião ajustou na
+ * sala de espera.
+ *
+ * Vive no store, e não lido direto de `room.state`, pelo mesmo motivo dos
+ * outros marcadores: mutar o schema do Colyseus não redesenha componente
+ * nenhum. Antes desta fatia, `turn` e `dayNight` viajavam no patch e ninguém
+ * os lia — o painel mostrava sempre turno 1.
+ */
+export interface ConfigDaMesa {
+  nome: string;
+  visibilidade: string;
+  comunicacao: string;
+  idioma: string;
+  /** 0 = o anfitrião não declarou. Nunca é calculado. */
+  nivelDePoder: number;
+  maxSeats: number;
+  gameType: string;
+  tipoDeMulligan: string;
+  jogadorInicial: string;
+  ordemPelosAssentos: boolean;
+  sideboardPermitido: boolean;
+  /** Segundos. 0 = desligado. */
+  cronometroDeTurno: number;
+  /** Epoch ms do início do turno atual. 0 = sem cronômetro rodando. */
+  turnoIniciadoEm: number;
+}
+
+const CONFIG_INICIAL: ConfigDaMesa = {
+  nome: '',
+  visibilidade: 'PRIVADA',
+  comunicacao: 'QUALQUER',
+  idioma: 'pt-BR',
+  nivelDePoder: 0,
+  maxSeats: 4,
+  gameType: 'commander',
+  tipoDeMulligan: 'COMMANDER',
+  jogadorInicial: '',
+  ordemPelosAssentos: false,
+  sideboardPermitido: false,
+  cronometroDeTurno: 0,
+  turnoIniciadoEm: 0,
+};
+
 interface GameState {
   roomId: string;
   phase: 'WAITING' | 'PLAYING' | 'PAUSED' | 'CLOSING';
@@ -123,6 +174,18 @@ interface GameState {
   mySessionId: string;
   players: Record<string, PlayerData>;
   cards: Record<string, CardData>;
+  /** A plateia. SEPARADA de `players`, igual no servidor. */
+  espectadores: Record<string, EspectadorData>;
+  /**
+   * `true` quando ESTA sessão está assistindo.
+   *
+   * Derivado de `espectadores[mySessionId]` em vez de guardado à parte: um
+   * booleano próprio poderia divergir do mapa depois de uma reconexão, e a
+   * divergência apareceria como controles de mesa aparecendo para quem só
+   * assiste.
+   */
+  souEspectador: boolean;
+  config: ConfigDaMesa;
   log: LogEntry[];
   connectionState: 'connecting' | 'connected' | 'reconnecting' | 'lost';
 
@@ -133,6 +196,8 @@ interface GameState {
     patch: Partial<Pick<GameState, 'turn' | 'turnPhase' | 'dayNight' | 'activePlayerId'>>,
   ) => void;
   setArrows: (arrows: Record<string, ArrowData>) => void;
+  setConfig: (patch: Partial<ConfigDaMesa>) => void;
+  setEspectadores: (espectadores: Record<string, EspectadorData>) => void;
   setConnectionState: (state: GameState['connectionState']) => void;
   upsertCard: (id: string, data: Partial<CardData>) => void;
   removeCard: (id: string) => void;
@@ -154,6 +219,9 @@ export const useGameStore = create<GameState>((set) => ({
   mySessionId: '',
   players: {},
   cards: {},
+  espectadores: {},
+  souEspectador: false,
+  config: CONFIG_INICIAL,
   log: [],
   connectionState: 'connecting',
 
@@ -161,6 +229,15 @@ export const useGameStore = create<GameState>((set) => ({
   setPhase: (phase) => set({ phase }),
   setMesa: (patch) => set(patch),
   setArrows: (arrows) => set({ arrows }),
+  setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
+
+  setEspectadores: (espectadores) =>
+    set((s) => ({
+      espectadores,
+      // Derivado aqui, e nao guardado a parte: um booleano proprio poderia
+      // divergir do mapa depois de uma reconexao.
+      souEspectador: Boolean(s.mySessionId && espectadores[s.mySessionId]),
+    })),
   setConnectionState: (connectionState) => set({ connectionState }),
 
   upsertCard: (id, data) =>
@@ -209,6 +286,9 @@ export const useGameStore = create<GameState>((set) => ({
       mySessionId: '',
       players: {},
       cards: {},
+      espectadores: {},
+      souEspectador: false,
+      config: CONFIG_INICIAL,
       log: [],
       connectionState: 'connecting',
     }),
