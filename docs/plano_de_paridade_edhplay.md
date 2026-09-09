@@ -1,5 +1,39 @@
 # AetherTable × EDHPlay — auditoria de paridade e plano de implementação
 
+| Campo        | Valor                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------- |
+| **ID**       | `DOC-094`                                                                              |
+| **Origem**   | levantamento do EDHPlay v0.4.17 (08/09/2026) + auditoria de código arquivo por arquivo |
+| **Natureza** | plano de execução com estado — atualize a tabela abaixo ao concluir uma fase           |
+
+## Estado de execução
+
+| Fase                                 | Situação         | Onde                                                |
+| ------------------------------------ | ---------------- | --------------------------------------------------- |
+| **A** — Furos e segurança            | ✅ **concluída** | `feature/fase-a-furos-e-seguranca`, 5 commits       |
+| **B** — Barreira de entrada          | pendente         | —                                                   |
+| **C** — Deckbuilder                  | pendente         | —                                                   |
+| **D** — Salas (18, 19, 21)           | ✅ **concluída** | fatia 3a, 3b e modo espectador (v0.2.0)             |
+| **D** — item 20 ("voltar à partida") | pendente         | —                                                   |
+| **E** — Mesa                         | pendente         | —                                                   |
+| **F** — Social e i18n                | pendente         | **decidido:** i18n completo, não remoção do seletor |
+
+### O que a Fase A entregou, e o que ela corrigiu na própria auditoria
+
+Cinco itens (I.4/I.8/II.4, I.2, I.1, I.3, I.5). Dois achados que **não estavam
+neste documento** apareceram no caminho:
+
+- `GET /users/me` devolvia o **`passwordHash`** — `findById` usava `include`,
+  que traz todos os campos escalares do modelo.
+- O `?token=` do OAuth **era lido**: `OAuthTokenCapture` existia e funcionava.
+  A auditoria dizia que não. Ele foi adaptado para o fragmento, não duplicado.
+
+E um item ficou **fora da Fase A por decisão**: o I.6 (idioma). A escolha foi
+i18n de verdade em vez de remover o seletor — o que o coloca na Fase F, item
+30, e não entre os furos.
+
+---
+
 Documento de execução, escrito para ser colado no Claude Code rodando na máquina
 do Gaspare. Cobre o produto inteiro, não só configurações.
 
