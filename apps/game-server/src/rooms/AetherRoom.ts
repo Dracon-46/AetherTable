@@ -155,6 +155,24 @@ export class AetherRoom extends Room<RoomState> {
   private readonly expulsos = new Set<string>();
   private proximoAssento = 0;
 
+  /**
+   * ─── O QUE O RESUMO POS-PARTIDA PRECISA, E O ESTADO NAO TEM MAIS ──────────
+   *
+   * `onDispose` roda DEPOIS de todo mundo sair: nesse momento `state.players`
+   * esta vazio e `clients` tambem. Perguntar ao estado quem jogou, ali, devolve
+   * "ninguem" — e era assim que qualquer tentativa de gravar o resumo a partir
+   * do estado registraria uma partida sem participantes.
+   *
+   * Por isso as duas coisas sao acumuladas ao longo da vida da sala.
+   */
+  /** Ids de CONTA (`sub` do seat token) que ocuparam assento. Nao inclui plateia. */
+  private readonly contasQueJogaram = new Set<string>();
+  /**
+   * Ocupacao no AUGE, e nao no fim. Uma mesa de quatro que termina com um
+   * jogador — porque tres sairam — foi uma partida de quatro.
+   */
+  private augeDeJogadores = 0;
+
   override onCreate(options: unknown): void {
     // O zod aqui e a correcao MINIMA do buraco de configuracao: as opcoes vem
     // do navegador e nao sao assinadas. `safeParse` e nao `parse` porque um
@@ -354,6 +372,9 @@ export class AetherRoom extends Room<RoomState> {
     this.proximoAssento += 1;
 
     this.state.players.set(client.sessionId, player);
+    // Para o resumo pos-partida — ver `contasQueJogaram`.
+    if (auth.sub) this.contasQueJogaram.add(auth.sub);
+    this.augeDeJogadores = Math.max(this.augeDeJogadores, this.state.players.size);
 
     // Toda zona do jogador nasce com sua lista de ordem.
     for (const zone of ZONES) {
@@ -475,6 +496,62 @@ export class AetherRoom extends Room<RoomState> {
 
   override onDispose(): void {
     salasAtivas.dec();
+    // Sem `await`: `onDispose` nao espera promessa, e segurar o encerramento da
+    // sala por uma chamada HTTP atrasaria a liberacao do processo.
+    void this.registrarResumoDaPartida();
+  }
+
+  /**
+   * ─── "PARTIDAS JOGADAS" ERA SEMPRE 0, EM TODO PERFIL ──────────────────────
+   *
+   * `prisma.matchSummary.create` nao existia em lugar nenhum do repositorio —
+   * so `.count()`. As tabelas `match_summaries` e `match_participants` nunca
+   * receberam uma linha, e o efeito aparecia em tres telas ao mesmo tempo: o
+   * perfil proprio, o perfil publico e a metrica do backoffice. Nenhuma
+   * estatistica de jogador era possivel.
+   *
+   * O gancho e este `onDispose` porque e o UNICO momento em que alguem sabe que
+   * a partida acabou e quanto ela durou. Nao ha evento de "fim de jogo" no
+   * motor: nao existe motor de regras (RN01), a mesa acaba quando as pessoas
+   * saem.
+   *
+   * ─── SALA QUE NUNCA COMECOU NAO E PARTIDA ─────────────────────────────────
+   *
+   * `startedAt` marca a criacao da SALA, nao o inicio do jogo. Uma sala aberta
+   * por engano e fechada em dez segundos registraria uma "partida jogada" para
+   * quem entrou — inflando a estatistica de todo mundo que so espiou um lobby.
+   * Por isso a guarda e `turnoIniciadoEm`, que so e escrito por
+   * `INTENT_START_MATCH`.
+   *
+   * Falhar aqui NAO pode derrubar nada: a sala ja acabou e nao ha ninguem para
+   * avisar. Vira log.
+   */
+  private async registrarResumoDaPartida(): Promise<void> {
+    if (!this.state.turnoIniciadoEm) return;
+    if (this.contasQueJogaram.size === 0) return;
+
+    const duracao = Math.max(0, Math.round((Date.now() - this.state.startedAt) / 1000));
+
+    try {
+      const res = await fetch(`${config.BACKEND_CORE_URL}/api/v1/internal/matches/summary`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.INTERNAL_API_TOKEN ? { 'X-Internal-Token': config.INTERNAL_API_TOKEN } : {}),
+        },
+        body: JSON.stringify({
+          roomCode: this.state.roomCode,
+          playerCount: this.augeDeJogadores,
+          durationSeconds: duracao,
+          participantes: Array.from(this.contasQueJogaram),
+        }),
+      });
+      if (!res.ok) {
+        console.error(`[${this.roomId}] resumo da partida recusado: ${res.status}`);
+      }
+    } catch (erro) {
+      console.error(`[${this.roomId}] falha ao registrar o resumo da partida:`, erro);
+    }
   }
 
   // ─── Intencoes ─────────────────────────────────────────────────────────────

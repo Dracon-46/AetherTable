@@ -40,8 +40,22 @@ import { api } from '../lib/fetcher';
 import { useAuthStore } from './auth.store';
 import { useAtalhos } from './atalhos.store';
 import { useCosmeticos } from '../cosmetics/store';
+import type { CosmeticTier } from '@aethertable/shared-types';
 
 interface PreferenciaDaConta {
+  /**
+   * Direito a cosmético de apoiador.
+   *
+   * Vem no MESMO `GET /users/me` das preferências, pela mesma razão de os
+   * atalhos virem: uma requisição a mais só para saber um enum seria uma
+   * requisição a mais no caminho de entrada da Taverna.
+   *
+   * O cliente usa isto só para DESABILITAR o que a conta não pode equipar e
+   * dizer por quê. Quem recusa de verdade é o servidor
+   * (`exigirDireitoAosCosmeticos`) — este campo é conveniência de interface,
+   * não trava de segurança.
+   */
+  supporterTier?: CosmeticTier | null;
   preference?: {
     sleeveId?: string | null;
     playmatId?: string | null;
@@ -57,6 +71,7 @@ export function useHidratarPreferencias(): void {
   const token = useAuthStore((s) => s.accessToken);
   const aplicarCosmeticos = useCosmeticos((s) => s.aplicarDoServidor);
   const aplicarAtalhos = useAtalhos((s) => s.aplicarDoServidor);
+  const definirTier = useCosmeticos((s) => s.definirTier);
   /**
    * Guarda de execução única.
    *
@@ -75,7 +90,11 @@ export function useHidratarPreferencias(): void {
     let ativo = true;
     void api<PreferenciaDaConta>('/users/me')
       .then((eu) => {
-        if (!ativo || !eu?.preference) return;
+        if (!ativo) return;
+        // O tier chega mesmo quando `preference` é nula: uma conta que nunca
+        // mexeu em cosmético nenhum ainda pode ser apoiadora.
+        definirTier(eu?.supporterTier ?? 'FREE');
+        if (!eu?.preference) return;
         const p = eu.preference;
         aplicarCosmeticos({
           ...(p.sleeveId ? { sleeveId: p.sleeveId } : {}),
@@ -105,5 +124,5 @@ export function useHidratarPreferencias(): void {
     return () => {
       ativo = false;
     };
-  }, [token, aplicarCosmeticos, aplicarAtalhos]);
+  }, [token, aplicarCosmeticos, aplicarAtalhos, definirTier]);
 }

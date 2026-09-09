@@ -323,3 +323,50 @@ export const ehPlaymatValido = (id: string) => MAPA_PLAYMATS.has(id);
 export const ehBorderValido = (id: string) => MAPA_BORDERS.has(id);
 export const ehTitleValido = (id: string) => MAPA_TITLES.has(id);
 export const ehPetValido = (id: string) => MAPA_PETS.has(id);
+
+// ─── DIREITO DE EQUIPAR ───────────────────────────────────────────────────────
+
+/** As cinco famílias, na forma em que o perfil as recebe. */
+export type FamiliaDeCosmetico = keyof CosmeticosEquipados;
+
+/**
+ * O tier de um item, por família. Um id desconhecido devolve `'FREE'` — pelo
+ * mesmo motivo dos resolvedores acima: um id fora do catálogo cai no padrão, e
+ * o padrão é sempre gratuito.
+ */
+export function tierDoCosmetico(familia: FamiliaDeCosmetico, id: string): CosmeticTier {
+  switch (familia) {
+    case 'sleeveId':
+      return MAPA_SLEEVES.get(id)?.tier ?? 'FREE';
+    case 'playmatId':
+      return MAPA_PLAYMATS.get(id)?.tier ?? 'FREE';
+    case 'borderId':
+      return MAPA_BORDERS.get(id)?.tier ?? 'FREE';
+    case 'titleId':
+      return MAPA_TITLES.get(id)?.tier ?? 'FREE';
+    case 'petId':
+      return MAPA_PETS.get(id)?.tier ?? 'FREE';
+  }
+}
+
+/**
+ * ─── O CADEADO PRECISA TRANCAR ────────────────────────────────────────────────
+ *
+ * `CosmeticPicker` desenhava um cadeado nos itens `APOIADOR` e o botão não
+ * recebia `disabled`; o DTO do backend validava só a EXISTÊNCIA do id no
+ * catálogo; e `updateUser` gravava direto. Qualquer conta equipava qualquer
+ * coisa, e o cadeado era decoração.
+ *
+ * Esta função é a regra, num lugar só, chamada pelas duas pontas: o cliente
+ * para desabilitar o botão e dizer por quê, o servidor para recusar. Duas
+ * implementações divergiriam no primeiro item novo do catálogo — e a
+ * divergência apareceria como um item que a tela deixa clicar e a API recusa.
+ */
+export function podeEquipar(
+  tierDoUsuario: CosmeticTier,
+  familia: FamiliaDeCosmetico,
+  id: string,
+): boolean {
+  if (tierDoUsuario === 'APOIADOR') return true;
+  return tierDoCosmetico(familia, id) === 'FREE';
+}

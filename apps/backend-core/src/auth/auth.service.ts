@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
+import { randomBytes } from 'node:crypto';
 import { UsersService } from '../users/users.service.js';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
@@ -139,7 +140,10 @@ export class AuthService {
 
     // Gerar JWT Tokens
     const payload = { username: user.username, sub: user.id };
-    const accessToken = this.jwtService.sign(payload);
+    // `jwtid` e o que torna o token REVOGAVEL: sem ele, o logout nao tem o que
+    // gravar na denylist e a sessao vive ate o TTL expirar. Ver
+    // `revogacao.service.ts`.
+    const accessToken = this.jwtService.sign(payload, { jwtid: randomBytes(16).toString('hex') });
 
     return {
       user: result,
@@ -209,7 +213,10 @@ export class AuthService {
 
     // Gera token para auto-login
     const payload = { username: user.username, sub: user.id };
-    const accessToken = this.jwtService.sign(payload);
+    // `jwtid` e o que torna o token REVOGAVEL: sem ele, o logout nao tem o que
+    // gravar na denylist e a sessao vive ate o TTL expirar. Ver
+    // `revogacao.service.ts`.
+    const accessToken = this.jwtService.sign(payload, { jwtid: randomBytes(16).toString('hex') });
 
     return {
       user: result,

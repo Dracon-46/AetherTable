@@ -31,6 +31,7 @@ import {
   MotivoDto,
   MudarFlagDto,
   MudarPapelDto,
+  MudarTierDto,
   ResolverDenunciaDto,
   SuspenderDto,
 } from './admin.dto.js';
@@ -170,6 +171,17 @@ export class AdminController {
     @Body(new ZodValidationPipe(MudarPapelDto)) dto: MudarPapelDto,
   ) {
     return this.usuarios.mudarPapel(req, id, dto);
+  }
+
+  @Patch('usuarios/:id/tier')
+  @Throttle(ESCRITA)
+  @ApiOperation({ summary: 'Concede ou retira o direito a cosmético de apoiador' })
+  mudarTier(
+    @Request() req: RequisicaoAdmin,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(MudarTierDto)) dto: MudarTierDto,
+  ) {
+    return this.usuarios.mudarTier(req, id, dto);
   }
 
   @Post('usuarios/:id/inventario')

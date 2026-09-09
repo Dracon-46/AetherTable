@@ -116,12 +116,13 @@ se dois documentos discordarem, vale o canônico.
 
 ### Trilha 8 — Processo de trabalho _(como se contribui)_
 
-| ID        | Documento                                                  | Conteúdo em uma linha                                                                      | Status  |
-| --------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------- |
-| `DOC-090` | [estado_de_implementacao.md](estado_de_implementacao.md)   | **Gerado.** Paridade entre contrato de intenções, servidor e cliente.                      | Gerado  |
-| `DOC-091` | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)       | Git Flow: branches, versionamento, tags, receitas de release e hotfix, mensagem de commit. | Estável |
-| `DOC-092` | [politica_de_testes.md](politica_de_testes.md)             | O que roda antes de subir, qual teste acompanha qual mudança, quando o E2E é obrigatório.  | Estável |
-| `DOC-093` | [politica_de_documentacao.md](politica_de_documentacao.md) | Qual documento é atualizado junto com o código, e por que no mesmo PR.                     | Estável |
+| ID        | Documento                                                    | Conteúdo em uma linha                                                                      | Status  |
+| --------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ------- |
+| `DOC-090` | [estado_de_implementacao.md](estado_de_implementacao.md)     | **Gerado.** Paridade entre contrato de intenções, servidor e cliente.                      | Gerado  |
+| `DOC-091` | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)         | Git Flow: branches, versionamento, tags, receitas de release e hotfix, mensagem de commit. | Estável |
+| `DOC-092` | [politica_de_testes.md](politica_de_testes.md)               | O que roda antes de subir, qual teste acompanha qual mudança, quando o E2E é obrigatório.  | Estável |
+| `DOC-093` | [politica_de_documentacao.md](politica_de_documentacao.md)   | Qual documento é atualizado junto com o código, e por que no mesmo PR.                     | Estável |
+| `DOC-094` | [plano_de_paridade_edhplay.md](plano_de_paridade_edhplay.md) | Auditoria de paridade com o EDHPlay e plano de execução por fases, **com estado**.         | Vivo    |
 
 ---
 

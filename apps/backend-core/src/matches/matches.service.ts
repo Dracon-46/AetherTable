@@ -1,17 +1,21 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../common/prisma/prisma.service.js';
 import { randomBytes } from 'crypto';
 import { DecksService } from '../decks/decks.service.js';
 import { validarDeckParaFormato, type DeckValidavel } from '../decks/formato.js';
 import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { normalizarConfigDeSala, type ConfigDeSala } from '@aethertable/shared-types';
-import type { CriarPartidaDto } from './matches.dto.js';
+import type { CriarPartidaDto, ResumoDePartidaDto } from './matches.dto.js';
 
 @Injectable()
 export class MatchesService {
   constructor(
     private jwtService: JwtService,
+    // O resumo pos-partida e a primeira coisa deste servico que escreve no
+    // banco: tudo o mais aqui e emissao de token.
+    private readonly prisma: PrismaService,
     private decksService: DecksService,
     private sistema: AdminSistemaService,
   ) {}
@@ -195,6 +199,65 @@ export class MatchesService {
     );
 
     return { seatToken, roomCode, config: cfg ?? null };
+  }
+
+  /**
+   * ─── O RESUMO QUE NUNCA ERA GRAVADO ──────────────────────────────────────
+   *
+   * `prisma.matchSummary.create` não existia em lugar nenhum do repositório —
+   * só `.count()`. As tabelas `match_summaries` e `match_participants` nunca
+   * receberam uma linha, e o efeito era "Partidas Jogadas: 0" em todo perfil,
+   * em todo perfil público e na métrica do backoffice. Nenhuma estatística de
+   * jogador era possível.
+   *
+   * Quem chama é o game-server, no `onDispose` da sala: é o único momento em
+   * que alguém sabe que a partida acabou e quanto ela durou.
+   *
+   * ─── IDEMPOTENTE POR `roomCode` + JANELA ─────────────────────────────────
+   *
+   * O `onDispose` pode rodar mais de uma vez para a mesma sala num deploy com
+   * mais de um nó, ou numa reconexão do matchmaker. Gravar duas linhas
+   * inflaria a contagem de partidas de todo mundo que estava na mesa — e uma
+   * estatística inflada é pior que uma zerada, porque parece certa.
+   *
+   * A janela existe porque `roomCode` NÃO é único: são seis hexadecimais
+   * sorteados, sem registro no banco, e o mesmo código pode voltar meses
+   * depois. Duas partidas com o mesmo código no mesmo minuto são a mesma
+   * partida gravada duas vezes; no mês seguinte, são duas partidas.
+   */
+  async registrarResumo(dto: ResumoDePartidaDto) {
+    const agora = new Date();
+    const umMinutoAtras = new Date(agora.getTime() - 60_000);
+
+    const jaExiste = await this.prisma.matchSummary.findFirst({
+      where: { roomCode: dto.roomCode, endedAt: { gte: umMinutoAtras } },
+      select: { id: true },
+    });
+    if (jaExiste) return { id: jaExiste.id, duplicado: true };
+
+    const resumo = await this.prisma.matchSummary.create({
+      data: {
+        roomCode: dto.roomCode,
+        playerCount: dto.playerCount,
+        durationSeconds: dto.durationSeconds,
+        endedAt: agora,
+        participants: {
+          /**
+           * `createMany` com `skipDuplicates` por causa do `@@unique([matchId,
+           * userId])`: a mesma conta pode aparecer duas vezes na lista se
+           * alguém caiu e reconectou com sessionId novo. Duas linhas iguais
+           * fariam a partida contar em dobro para essa pessoa.
+           */
+          createMany: {
+            data: dto.participantes.map((userId) => ({ userId })),
+            skipDuplicates: true,
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    return { id: resumo.id, duplicado: false };
   }
 
   /**
