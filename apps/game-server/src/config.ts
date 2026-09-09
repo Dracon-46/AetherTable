@@ -35,6 +35,21 @@ const schema = z.object({
    * chamada sem este cabecalho. Ver common/internal-api.guard.ts.
    */
   INTERNAL_API_TOKEN: z.string().default(''),
+  /**
+   * Origens que podem ler `GET /salas` do NAVEGADOR.
+   *
+   * Ate esta fatia o express deste processo so servia `/health`, `/metrics` e o
+   * monitor — tudo consumido por maquina ou aberto direto no navegador, nunca
+   * por `fetch` de outra origem. O WebSocket tambem nao precisa de CORS. Entao
+   * nao havia CORS nenhum aqui, e a vitrine de salas — que e a PRIMEIRA coisa
+   * neste processo chamada por `fetch` a partir do frontend, que roda noutra
+   * porta — batia num erro de origem que o painel so conseguia reportar como
+   * "a lista de mesas esta indisponivel".
+   *
+   * Mesma variavel e mesmo formato do backend-core (`CORS_ORIGINS`), para o
+   * deploy configurar as duas pontas com um valor so.
+   */
+  CORS_ORIGINS: z.string().default('http://localhost:3030'),
   PUBLIC_WS_URL: z.string().default('ws://localhost:2567'),
   /** Opcional em dev de um no; OBRIGATORIO em producao multi-no. */
   USE_REDIS: z

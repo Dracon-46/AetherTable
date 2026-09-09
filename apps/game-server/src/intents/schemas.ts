@@ -12,7 +12,9 @@
 import { z } from 'zod';
 import {
   COUNTER_NAME_PATTERN,
+  CRONOMETROS_DE_TURNO,
   DICE_SIDES,
+  TIPOS_DE_MULLIGAN,
   ZONES,
   ehBorderValido,
   ehPetValido,
@@ -342,6 +344,40 @@ export const SetMaxHandSizeIntent = z.object({
 export const SetTurnOrderIntent = z.object({
   order: z.array(sessionId).min(1).max(8),
 });
+
+/**
+ * ─── UMA INTENCAO, E NAO CINCO ──────────────────────────────────────────────
+ *
+ * As cinco opcoes da sala de espera sao UM FORMULARIO do anfitriao: ele abre a
+ * secao, mexe no que quiser e o resultado e uma mesa configurada. Cinco
+ * intencoes separadas significariam cinco viagens ao servidor para uma tela que
+ * se preenche de uma vez — e cinco oportunidades de a mesa ver a configuracao
+ * pela metade enquanto os patches chegam.
+ *
+ * Todos os campos sao opcionais porque o formulario manda so o que mudou.
+ *
+ * `cronometroDeTurno` vem de uma LISTA FECHADA, e nao de um inteiro com faixa:
+ * um numero livre convida ao `1`, e um cronometro de um segundo transforma o
+ * aviso — que e a unica coisa que ele faz — em ruido permanente para a mesa
+ * inteira.
+ */
+export const SetRoomConfigIntent = z
+  .object({
+    tipoDeMulligan: z.enum(TIPOS_DE_MULLIGAN).optional(),
+    // `''` e valor valido: significa "sortear no inicio". A checagem de que o
+    // sessionId existe em `state.players` e do handler — o schema nao ve o
+    // estado, e apontar para um assento que saiu e um erro de ESTADO, nao de
+    // formato.
+    jogadorInicial: z.union([z.literal(''), sessionId]).optional(),
+    ordemPelosAssentos: z.boolean().optional(),
+    sideboardPermitido: z.boolean().optional(),
+    cronometroDeTurno: z
+      .number()
+      .int()
+      .refine((v) => (CRONOMETROS_DE_TURNO as readonly number[]).includes(v))
+      .optional(),
+  })
+  .strict();
 
 export const DiscardRandomIntent = z.object({
   amount: z.number().int().min(1).max(20),

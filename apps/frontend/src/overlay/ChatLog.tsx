@@ -48,6 +48,7 @@ interface ChatLogProps {
 export function ChatLog({ room }: ChatLogProps) {
   const log = useGameStore((s) => s.log);
   const players = useGameStore((s) => s.players);
+  const espectadores = useGameStore((s) => s.espectadores);
   const myId = useGameStore((s) => s.mySessionId);
   /**
    * O ESTADO RECOLHIDO VIROU PREFERÊNCIA.
@@ -111,7 +112,14 @@ export function ChatLog({ room }: ChatLogProps) {
     setChatInput('');
   };
 
-  const getPlayerName = (actorId: string) => players[actorId]?.name ?? actorId.slice(0, 6);
+  /**
+   * A plateia entra na busca pelo mesmo motivo que ela entra no `nomeDe` do
+   * servidor: o chat é a única coisa que um espectador dispara, e sem esta
+   * linha o comentário dele aparecia assinado com seis caracteres do sessionId
+   * — que não identifica ninguém para quem está lendo.
+   */
+  const getPlayerName = (actorId: string) =>
+    players[actorId]?.name ?? espectadores[actorId]?.name ?? actorId.slice(0, 6);
   const formatTimestamp = (ts: number) =>
     new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

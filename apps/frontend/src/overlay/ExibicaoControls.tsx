@@ -10,12 +10,23 @@
  * botãozinho dentro de cada painel. Não havia um lugar onde "como eu quero a
  * tela" fosse uma pergunta única.
  *
- * ─── NÃO HÁ CONTROLE DE ZOOM, E ISSO É O PEDIDO ────────────────────────────
+ * ─── NÃO HÁ CONTROLE DE ZOOM — E "TAMANHO DA CARTA" NÃO É ZOOM ─────────────
  *
  * Havia presets de zoom e um "recentrar" aqui. A mesa passou a ser montada em
  * pixels reais e ocupa a tela inteira (`montarMesaFocada`), então zoom serviria
  * para uma coisa só: afastar a câmera e voltar a ter carta ilegível — que é
- * exatamente o que o jogador pediu para não existir.
+ * exatamente o que o jogador pediu para não existir. Zoom continua fora.
+ *
+ * "Tamanho da carta" é outra coisa, e a diferença é o motivo de ele existir:
+ * zoom afasta a câmera de uma mesa de tamanho fixo (some com o que estava na
+ * borda e encolhe tudo junto); o fator de carta muda a ÂNCORA da geometria —
+ * a carta tem o tamanho pedido e o campo de batalha fica com o que sobra. A
+ * mesa continua cabendo inteira na tela em qualquer valor, e é por isso que ele
+ * não reintroduz o problema que o zoom causava.
+ *
+ * O teto vem da janela, não do controle: ver `escalasDaMesaFocada`. Quando a
+ * altura limita o crescimento, o painel DIZ isso — arrastar o controle até o
+ * fim procurando um efeito que já acabou é pior do que ler que acabou.
  *
  * ─── E POR QUE ELE NÃO TEM MAIS ARRANJO NEM QUALIDADE ──────────────────────
  *
@@ -39,13 +50,23 @@ import type { Grid2x2 } from 'lucide-react';
 import {
   ChevronDown,
   Footprints,
+  Grid3x3,
   Heart,
+  Link2Off,
   MessageSquare,
   PanelBottom,
   PanelRight,
+  RotateCcw,
   SlidersHorizontal,
+  Sigma,
 } from 'lucide-react';
 import { useUIStore } from '../store/game.store';
+import {
+  FATOR_CARTA_MAX,
+  FATOR_CARTA_MIN,
+  FATOR_CARTA_PADRAO,
+  PASSO_DO_FATOR,
+} from '../canvas/layout';
 
 /** Um grupo de botões mutuamente exclusivos. */
 function Segmentado<T extends string>({
@@ -123,6 +144,100 @@ function Interruptor({
   );
 }
 
+/**
+ * Controle do tamanho da carta.
+ *
+ * Três formas de mexer no mesmo valor, e cada uma serve a um momento: os
+ * botões `−`/`+` para o ajuste fino de quem já está perto do que quer, a
+ * barra para a mudança grande, e as teclas `=`/`-` para não precisar abrir o
+ * painel no meio de uma jogada. A tecla está escrita aqui porque um atalho que
+ * ninguém descobre é um atalho que não existe.
+ */
+function TamanhoDaCarta() {
+  const fatorCarta = useUIStore((s) => s.fatorCarta);
+  const setFatorCarta = useUIStore((s) => s.setFatorCarta);
+  const ajustarFatorCarta = useUIStore((s) => s.ajustarFatorCarta);
+  const escalaDaMesa = useUIStore((s) => s.escalaDaMesa);
+  const escalaPedida = useUIStore((s) => s.escalaPedida);
+
+  const pedido = Math.round(fatorCarta * 100);
+  /**
+   * A janela cortou o crescimento? A comparação tem folga porque as duas
+   * escalas são números de ponto flutuante derivados da mesma divisão, e sem
+   * tolerância o aviso piscaria por diferenças de 1e-15.
+   */
+  const limitado = escalaPedida - escalaDaMesa > 0.005;
+  const efetivo = escalaPedida > 0 ? Math.round((escalaDaMesa / escalaPedida) * pedido) : pedido;
+
+  const botao =
+    'border-panel-border bg-table-deep text-text hover:border-primary hover:text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40';
+
+  return (
+    <div className="border-panel-border border-t px-3 py-2.5 first:border-t-0">
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <span className="text-text-muted text-[10px] font-bold uppercase tracking-wider">
+          Tamanho da carta
+        </span>
+        <span className="text-primary font-mono text-[11px] font-bold">{pedido}%</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => ajustarFatorCarta(-PASSO_DO_FATOR)}
+          disabled={fatorCarta <= FATOR_CARTA_MIN}
+          className={botao}
+          title="Reduzir (tecla -)"
+          aria-label="Reduzir o tamanho da carta"
+        >
+          −
+        </button>
+        <input
+          type="range"
+          min={FATOR_CARTA_MIN}
+          max={FATOR_CARTA_MAX}
+          step={PASSO_DO_FATOR}
+          value={fatorCarta}
+          onChange={(e) => setFatorCarta(Number(e.target.value))}
+          aria-label="Tamanho da carta"
+          className="accent-primary h-1.5 min-w-0 flex-1 cursor-pointer"
+        />
+        <button
+          onClick={() => ajustarFatorCarta(PASSO_DO_FATOR)}
+          disabled={fatorCarta >= FATOR_CARTA_MAX}
+          className={botao}
+          title="Aumentar (tecla =)"
+          aria-label="Aumentar o tamanho da carta"
+        >
+          +
+        </button>
+      </div>
+
+      <div className="mt-1 flex items-baseline justify-between gap-2">
+        <span className="text-text-faint text-[10px]">
+          Teclas{' '}
+          <kbd className="border-panel-border bg-table-deep rounded border px-1 font-mono">=</kbd> e{' '}
+          <kbd className="border-panel-border bg-table-deep rounded border px-1 font-mono">-</kbd>
+        </span>
+        {fatorCarta !== FATOR_CARTA_PADRAO && (
+          <button
+            onClick={() => setFatorCarta(FATOR_CARTA_PADRAO)}
+            className="text-text-muted hover:text-primary flex items-center gap-1 text-[10px] transition-colors"
+          >
+            <RotateCcw className="h-3 w-3" /> padrão
+          </button>
+        )}
+      </div>
+
+      {limitado && (
+        <p className="text-warning mt-1 text-[10px] leading-snug">
+          A janela só cabe {efetivo}%: acima disso o campo de batalha ficaria menor que o mínimo
+          jogável. Uma janela mais alta libera o resto.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ExibicaoControls() {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -137,6 +252,12 @@ export function ExibicaoControls() {
   const setTrilhoAberto = useUIStore((s) => s.setTrilhoAberto);
   const seguirTurno = useUIStore((s) => s.seguirTurno);
   const setSeguirTurno = useUIStore((s) => s.setSeguirTurno);
+  const alinharNaGrade = useUIStore((s) => s.alinharNaGrade);
+  const setAlinharNaGrade = useUIStore((s) => s.setAlinharNaGrade);
+  const custoDeManaNaMao = useUIStore((s) => s.custoDeManaNaMao);
+  const setCustoDeManaNaMao = useUIStore((s) => s.setCustoDeManaNaMao);
+  const anexosDesativados = useUIStore((s) => s.anexosDesativados);
+  const setAnexosDesativados = useUIStore((s) => s.setAnexosDesativados);
 
   useEffect(() => {
     if (!aberto) return;
@@ -176,6 +297,8 @@ export function ExibicaoControls() {
         // em qualquer tela de 720p e as últimas seções ficam inalcançáveis —
         // o mesmo problema que o menu da Mesa já tinha tido.
         <div className="painel-entra custom-scrollbar border-panel-border bg-panel absolute right-0 top-full mt-1 max-h-[calc(100dvh-5rem)] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border shadow-2xl">
+          <TamanhoDaCarta />
+
           <Segmentado
             rotulo="Painel de vida"
             valor={vidaModo}
@@ -218,6 +341,27 @@ export function ExibicaoControls() {
             ligado={logAberto}
             onAlternar={() => setLogAberto(!logAberto)}
             dica="Recolhido, sobra só o cabeçalho com a última linha"
+          />
+          <Interruptor
+            rotulo="Alinhar cartas à grade"
+            Icone={Grid3x3}
+            ligado={alinharNaGrade}
+            onAlternar={() => setAlinharNaGrade(!alinharNaGrade)}
+            dica="Ao soltar, a permanente encaixa numa grade de meia carta. O arraste continua livre — o encaixe é só no instante em que você solta."
+          />
+          <Interruptor
+            rotulo="Custo de mana na mão"
+            Icone={Sigma}
+            ligado={custoDeManaNaMao}
+            onAlternar={() => setCustoDeManaNaMao(!custoDeManaNaMao)}
+            dica="Escreve o custo impresso sobre as cartas da SUA mão. No leque, o canto da carta fica coberto pela vizinha."
+          />
+          <Interruptor
+            rotulo="Desativar anexos"
+            Icone={Link2Off}
+            ligado={anexosDesativados}
+            onAlternar={() => setAnexosDesativados(!anexosDesativados)}
+            dica="Esconde 'Anexar a…' do menu de contexto. Desanexar continua disponível em cartas já anexadas — senão a preferência prenderia a carta para sempre."
           />
         </div>
       )}

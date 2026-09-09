@@ -24,9 +24,9 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 ## 2. Cobertura
 
-- Contrato (`IntentPayloadMap`): **93** intenções
-- Implementadas no servidor: **87**
-- Emitidas pelo cliente: **87**
+- Contrato (`IntentPayloadMap`): **95** intenções
+- Implementadas no servidor: **89**
+- Emitidas pelo cliente: **89**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -34,6 +34,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | Intenção                      | Servidor | Cliente |
 | ----------------------------- | :------: | :-----: |
 | `INTENT_ADD_COUNTER`          |    ✅    |   ✅    |
+| `INTENT_ADD_DAMAGE`           |    ✅    |   ✅    |
 | `INTENT_ADD_PLAYER_COUNTER`   |    ✅    |   ✅    |
 | `INTENT_ARROW`                |    ✅    |   ✅    |
 | `INTENT_ATTACH`               |    ✅    |   ✅    |
@@ -109,6 +110,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_SET_PT`               |    ✅    |   ✅    |
 | `INTENT_SET_READY`            |    ✅    |   ✅    |
 | `INTENT_SET_RING`             |    ✅    |   ✅    |
+| `INTENT_SET_ROOM_CONFIG`      |    ✅    |   ✅    |
 | `INTENT_SET_SPEED`            |    ✅    |   ✅    |
 | `INTENT_SET_TURN`             |    ✅    |   ✅    |
 | `INTENT_SET_TURN_ORDER`       |    ✅    |   ✅    |

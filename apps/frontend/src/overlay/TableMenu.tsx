@@ -12,7 +12,8 @@
  * caminho das ações frequentes.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Room } from 'colyseus.js';
 import {
   ChevronDown,
@@ -30,10 +31,13 @@ import {
   Copy,
   Check,
   Flag,
+  Maximize2,
+  Minimize2,
+  LogOut,
 } from 'lucide-react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
-import { ATALHOS } from '../net/atalhos';
+import { AtalhosEditor } from './AtalhosEditor';
 import type { RoomState } from '../net/schema/RoomState';
 
 interface TableMenuProps {
@@ -42,18 +46,63 @@ interface TableMenuProps {
 
 const FASES = ['Início', 'Compra', 'Principal 1', 'Combate', 'Principal 2', 'Final'] as const;
 
+/**
+ * ─── TELA CHEIA ────────────────────────────────────────────────────────────
+ *
+ * A mesa é montada em PIXELS REAIS da área útil e a escala da carta vem da
+ * ALTURA (ver `montarMesaFocada`). Isso torna a barra de endereço do navegador
+ * — 80 a 120px em desktop, mais em celular — uma perda direta de tamanho de
+ * carta, e não só de "espaço".
+ *
+ * O estado NÃO é um `useState` que o botão alterna: o jogador sai da tela cheia
+ * com Esc e com o F11 do navegador, sem passar por aqui. Um booleano local
+ * ficaria dizendo "sair da tela cheia" numa janela normal. A fonte da verdade é
+ * `document.fullscreenElement`, e o evento `fullscreenchange` é quem avisa.
+ */
+function useTelaCheia(): { cheia: boolean; alternar: () => void; suportado: boolean } {
+  const [cheia, setCheia] = useState(false);
+  const [suportado, setSuportado] = useState(false);
+
+  useEffect(() => {
+    // iOS Safari em iPhone não implementa a API no documento: o botão precisa
+    // desaparecer, e não falhar em silêncio no clique.
+    setSuportado(typeof document !== 'undefined' && Boolean(document.fullscreenEnabled));
+    const aplicar = () => setCheia(Boolean(document.fullscreenElement));
+    aplicar();
+    document.addEventListener('fullscreenchange', aplicar);
+    return () => document.removeEventListener('fullscreenchange', aplicar);
+  }, []);
+
+  const alternar = useCallback(() => {
+    // `requestFullscreen` rejeita quando não há gesto do usuário ou quando a
+    // página está num iframe sem `allow="fullscreen"`. Engolir a rejeição
+    // mantém o painel utilizável; o estado real vem do evento, então nada
+    // dessincroniza.
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void document.documentElement.requestFullscreen().catch(() => {});
+  }, []);
+
+  return { cheia, alternar, suportado };
+}
+
 export function TableMenu({ room }: TableMenuProps) {
   const [aberto, setAberto] = useState(false);
   const [mostrarAtalhos, setMostrarAtalhos] = useState(false);
   /** Duas etapas para as ações destrutivas. `null` = nada pendente. */
-  const [confirmando, setConfirmando] = useState<'desistir' | 'reiniciar' | null>(null);
+  const [confirmando, setConfirmando] = useState<'desistir' | 'reiniciar' | 'sair' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const { cheia, alternar: alternarTelaCheia, suportado: telaCheiaSuportada } = useTelaCheia();
 
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
   const roomCode = useGameStore((s) => s.roomId);
   const turn = useGameStore((s) => s.turn);
   const activePlayerId = useGameStore((s) => s.activePlayerId);
+  // O que a mesa combinou na sala de espera. O servidor recusa
+  // `INTENT_FETCH_FROM_SIDEBOARD` quando isto é falso — o botão só reflete
+  // aqui a mesma regra, para o jogador não descobrir clicando.
+  const sideboardPermitido = useGameStore((s) => s.config.sideboardPermitido);
   const [copiado, setCopiado] = useState(false);
   const dayNight = useGameStore((s) => s.dayNight);
   const turnPhase = useGameStore((s) => s.turnPhase);
@@ -282,11 +331,22 @@ export function TableMenu({ room }: TableMenuProps) {
               >
                 <Eraser className="h-3.5 w-3.5" /> Apagar minhas setas
               </button>
+              {/* Desabilitado COM O MOTIVO ESCRITO, e não escondido: a zona
+                  continua existindo e o deck do jogador continua tendo reserva.
+                  Sumir com o botão faria parecer que a reserva não existe nesta
+                  mesa; deixá-lo cinza sem explicação faria parecer defeito. */}
               <button
                 onClick={() => setInspectedZone('SIDEBOARD')}
-                className={`${chip} flex items-center gap-2`}
+                disabled={!sideboardPermitido}
+                title={
+                  sideboardPermitido
+                    ? undefined
+                    : 'Esta mesa combinou jogar sem reserva. O anfitrião pode liberar na sala de espera.'
+                }
+                className={`${chip} flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-40`}
               >
-                <Zap className="h-3.5 w-3.5" /> Abrir reserva (sideboard)
+                <Zap className="h-3.5 w-3.5" />
+                {sideboardPermitido ? 'Abrir reserva (sideboard)' : 'Reserva desativada pela mesa'}
               </button>
               <button
                 onClick={() => intents.returnZone(room, 'GRAVEYARD', 'LIBRARY', true)}
@@ -297,9 +357,28 @@ export function TableMenu({ room }: TableMenuProps) {
             </div>
           </div>
 
-          {/* Atalhos de teclado — a tabela vem de net/atalhos.ts, a mesma que
-              o listener usa. Documentar num lugar e implementar em outro é
-              como um atalho vira mentira. */}
+          {/* Tela cheia — devolve a faixa da barra de endereço ao tabuleiro, e
+              como a escala da carta vem da ALTURA útil, ela vira carta maior. */}
+          {telaCheiaSuportada && (
+            <div className={secao}>
+              <button
+                onClick={alternarTelaCheia}
+                className={`${chip} flex w-full items-center gap-2`}
+                title="A barra do navegador come 80–120px de altura, e a altura é o que define o tamanho da carta."
+              >
+                {cheia ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+                {cheia ? 'Sair da tela cheia' : 'Tela cheia'}
+              </button>
+            </div>
+          )}
+
+          {/* Atalhos de teclado — o editor e o listener leem a MESMA fonte
+              (`ACOES_DE_ATALHO` + a preferência da conta). Documentar num lugar
+              e implementar em outro é como um atalho vira mentira. */}
           <div className={secao}>
             <button
               onClick={() => setMostrarAtalhos((v) => !v)}
@@ -308,22 +387,7 @@ export function TableMenu({ room }: TableMenuProps) {
               <Keyboard className="h-3.5 w-3.5" />
               {mostrarAtalhos ? 'Esconder atalhos' : 'Atalhos de teclado'}
             </button>
-            {mostrarAtalhos && (
-              <dl className="mt-2 flex flex-col gap-1">
-                {ATALHOS.map((a) => (
-                  <div key={a.tecla} className="flex items-baseline justify-between gap-2">
-                    <dt className="shrink-0">
-                      <kbd className="border-panel-border bg-table-deep text-text rounded border px-1.5 py-0.5 font-mono text-[10px]">
-                        {a.comModificador ? `Ctrl+${a.tecla}` : a.tecla}
-                      </kbd>
-                    </dt>
-                    <dd className="text-text-muted min-w-0 flex-1 text-right text-[10px] leading-snug">
-                      {a.descricao}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
+            {mostrarAtalhos && <AtalhosEditor />}
           </div>
 
           {/* ── FIM DE PARTIDA ──────────────────────────────────────────
@@ -397,6 +461,41 @@ export function TableMenu({ room }: TableMenuProps) {
                   <RotateCcw className="h-3.5 w-3.5" /> Reiniciar partida
                 </button>
               ))}
+
+            {/* ── SAIR DA SALA DURANTE A PARTIDA ────────────────────────────
+                "Sair da sala" existia SÓ na sala de espera. Depois de a partida
+                começar, a única saída era fechar a aba — o que deixa o assento
+                pendurado em `disconnectedAt` esperando reconexão, e a mesa fica
+                com um jogador que não vai voltar sem ninguém poder tirá-lo.
+
+                Fica separado de "Desistir": desistir marca você como fora do
+                JOGO e mantém você na sala vendo tudo; sair é sair. Confundir os
+                dois é o tipo de clique que não dá para desfazer. */}
+            {confirmando === 'sair' ? (
+              <div className="mt-1.5 flex gap-1">
+                <button
+                  onClick={() => {
+                    intents.leave(room);
+                    room.leave();
+                    router.push('/dashboard');
+                  }}
+                  className="bg-danger flex-1 rounded-md px-2 py-1.5 text-xs font-bold text-white"
+                >
+                  Sair agora
+                </button>
+                <button onClick={() => setConfirmando(null)} className={`${chip} flex-1`}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmando('sair')}
+                className={`${chip} mt-1.5 flex w-full items-center gap-2`}
+                title="Deixa a sala e volta para a taverna. Diferente de desistir: você não fica mais vendo a mesa."
+              >
+                <LogOut className="h-3.5 w-3.5" /> Sair da sala
+              </button>
+            )}
           </div>
 
           {/* Desfazer */}

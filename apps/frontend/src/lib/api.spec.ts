@@ -1,4 +1,4 @@
-import { API_URL, WS_URL, authHeaders } from './api';
+import { API_URL, GAME_HTTP_URL, WS_URL, authHeaders, httpDoWebSocket } from './api';
 
 describe('lib/api', () => {
   it('expõe uma base de API absoluta e com o prefixo /api/v1', () => {
@@ -28,5 +28,26 @@ describe('lib/api', () => {
     const headers = authHeaders(null);
     expect(headers).toEqual({ 'Content-Type': 'application/json' });
     expect('Authorization' in headers).toBe(false);
+  });
+
+  it('httpDoWebSocket troca ws: por http: e wss: por https:', () => {
+    expect(httpDoWebSocket('ws://localhost:2567')).toBe('http://localhost:2567');
+    expect(httpDoWebSocket('wss://jogo.aethertable.gg')).toBe('https://jogo.aethertable.gg');
+  });
+
+  it('a troca é ancorada no início — um host chamado `ws` não é reescrito', () => {
+    // Sem a âncora `^`, o `ws` do subdomínio seria a ocorrência substituída e a
+    // lista de salas iria bater num endereço que não existe.
+    expect(httpDoWebSocket('wss://ws.aethertable.gg/salas')).toBe(
+      'https://ws.aethertable.gg/salas',
+    );
+  });
+
+  it('GAME_HTTP_URL é o WS_URL em HTTP, mesmo host e mesma porta', () => {
+    // Não é uma variável de ambiente própria de propósito: o game server serve
+    // /health, /metrics e /salas no mesmo express em que o WebSocket vive.
+    expect(GAME_HTTP_URL).toBe(httpDoWebSocket(WS_URL));
+    expect(GAME_HTTP_URL).toMatch(/^https?:\/\//);
+    expect(new URL(GAME_HTTP_URL).host).toBe(new URL(WS_URL).host);
   });
 });

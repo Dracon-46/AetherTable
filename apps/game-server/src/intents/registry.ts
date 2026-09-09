@@ -88,6 +88,48 @@ export interface IntentContext {
 
 export type Autorizacao = 'QUALQUER_JOGADOR' | 'CONTROLLER' | 'OWNER' | 'OWNER_DA_ZONA';
 
+/**
+ * A UNICA intencao que um espectador pode enviar.
+ *
+ * Quem assiste comenta a partida — e o conteudo inteiro de assistir. O chat nao
+ * muta estado nenhum: ele transmite texto que o servidor ja limpa de caracteres
+ * de controle. Toda a outra familia de intencoes mexe na mesa, e a mesa e de
+ * quem tem assento.
+ */
+const INTENCOES_DE_ESPECTADOR = new Set<string>(['INTENT_CHAT']);
+
+/**
+ * `true` quando o remetente esta na plateia e a intencao nao e para ele.
+ *
+ * ─── POR QUE ISTO NAO ESTA EM `verificarAutorizacao` ────────────────────────
+ *
+ * Porque aquela funcao devolve `null` na hora para `QUALQUER_JOGADOR`, sem
+ * checar se o remetente e mesmo um jogador — o nome da regra sempre foi uma
+ * promessa que ninguem verificava, e ela nunca precisou ser verificada porque
+ * ate o modo espectador existir todo mundo na sala tinha assento.
+ *
+ * Mudar `verificarAutorizacao` para checar isso seria a opcao elegante, mas ela
+ * roda DEPOIS do parse do payload; a barreira de espectador tem de vir antes,
+ * junto do rate limit, porque nem faz sentido validar o corpo de uma acao que o
+ * remetente nao pode praticar.
+ */
+export function espectadorBarrado(state: RoomState, sid: string, intent: string): boolean {
+  if (!state.espectadores.has(sid)) return false;
+  return !INTENCOES_DE_ESPECTADOR.has(intent);
+}
+
+/**
+ * `true` quando ainda ha assento livre na mesa.
+ *
+ * Conta `state.players`, e NUNCA `clients`: desde o modo espectador,
+ * `this.maxClients` do Colyseus inclui a plateia (assentos + `MAX_ESPECTADORES`)
+ * — contar clientes faria uma mesa de quatro lugares com tres espectadores
+ * recusar o quarto jogador.
+ */
+export function haAssentoLivre(state: RoomState): boolean {
+  return state.players.size < state.maxSeats;
+}
+
 export interface IntentHandler<Schema extends z.ZodTypeAny> {
   schema: Schema;
   /**
@@ -109,7 +151,10 @@ function ordem(state: RoomState, playerId: string, zone: Zone) {
 }
 
 function nomeDe(state: RoomState, sid: string): string {
-  return state.players.get(sid)?.name ?? 'Alguem';
+  // A plateia entra na busca por causa do CHAT, que e a unica coisa que um
+  // espectador consegue disparar. Sem esta linha o comentario dele chegava
+  // assinado por "Alguem" — e a mesa nao tinha como saber quem falou.
+  return state.players.get(sid)?.name ?? state.espectadores.get(sid)?.name ?? 'Alguem';
 }
 
 /**
@@ -812,11 +857,30 @@ const INTENT_COPY_CARD: IntentHandler<typeof S.CopyCardIntent> = {
  * e ja teve terreno baixado: dali em diante a mao ja informou uma decisao.
  */
 function mulliganPermitido(ctx: IntentContext, sid: string): boolean {
+  // A FASE E EXIGIDA MESMO NO MODO LIVRE, e essa e a linha que o `LIVRE` nao
+  // pode furar: `INTENT_MULLIGAN` devolve a mao ao grimorio e embaralha. Fora
+  // de `PLAYING` isso rodaria na sala de espera, sobre uma mao que ainda nao
+  // foi comprada — e o "escape" viraria um jeito de embaralhar o deck de
+  // graca antes de a partida existir.
   if (ctx.state.phase !== 'PLAYING') return false;
   const p = ctx.state.players.get(sid);
-  if (!p || p.keptHand) return false;
+  if (!p) return false;
+
+  /**
+   * ─── LIVRE: SEM TETO E SEM JANELA ────────────────────────────────────────
+   *
+   * O formato-escape da mesa. Ele existe pela mesma razao do formato `Livre` de
+   * deck: UM escape explicito e nomeado, que a mesa inteira ve no lobby, em vez
+   * de meia duzia de interruptores de "ignorar regra" espalhados pela
+   * interface. Quem liga isto sabe o que ligou.
+   */
+  if (ctx.state.tipoDeMulligan === 'LIVRE') return true;
+
+  if (p.keptHand) return false;
   if (ctx.state.turn > 1) return false;
-  // Sete mulligans em Commander ja e a mao vazia: nao existe oitavo.
+  // Sete mulligans em Commander ja e a mao vazia: nao existe oitavo. Vale
+  // igual para LONDON — a diferenca de London e do CLIENTE, que compra sete e
+  // devolve N ao fundo; o servidor faz a mesma coisa nos dois.
   if (p.mulliganCount >= 7) return false;
 
   let tocou = false;
@@ -1209,6 +1273,11 @@ const INTENT_PASS_TURN: IntentHandler<typeof S.PassTurnIntent> = {
       ctx.state.turn = Math.min(9999, ctx.state.turn + 1);
     }
 
+    // O cronometro reinicia a cada turno. Ele CONTA E AVISA, nunca age (RN01):
+    // marcar o timestamp e tudo que o servidor faz — quem decide o que fazer
+    // com o tempo estourado e a mesa.
+    ctx.state.turnoIniciadoEm = Date.now();
+
     ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} passou o turno para ${proximo.name}`));
   },
 };
@@ -1308,7 +1377,45 @@ const INTENT_START_MATCH: IntentHandler<typeof S.StartMatchIntent> = {
 
     ctx.state.phase = 'PLAYING';
     ctx.state.turn = 1;
-    ctx.state.activePlayerId = eu.id;
+
+    /**
+     * ─── QUEM COMECA ───────────────────────────────────────────────────────
+     *
+     * Era `ctx.state.activePlayerId = eu.id`: QUEM CLICOU COMECAVA. Como so o
+     * anfitriao pode clicar, isso era uma vantagem silenciosa dele em todas as
+     * partidas — ninguem na mesa tinha combinado isso, e nada na tela dizia que
+     * era assim que funcionava.
+     *
+     * Agora a mesa decide antes, e o sorteio e o padrao:
+     *
+     *   1. `jogadorInicial` preenchido — o anfitriao escolheu na sala de espera.
+     *   2. `ordemPelosAssentos` ligado — o assento 0 comeca, sem sorteio.
+     *   3. nenhum dos dois — SORTEIO, e o resultado vai para o log.
+     *
+     * O sorteio passa por `services/rng.ts` (RN06: toda aleatoriedade vem do
+     * CSPRNG do servidor). Um `Math.random()` aqui seria previsivel, e prever
+     * quem comeca vale mais em Commander do que parece.
+     */
+    const assentos = Array.from(ctx.state.players.values()).sort((a, b) => a.seat - b.seat);
+    const escolhido = ctx.state.jogadorInicial;
+
+    if (escolhido && ctx.state.players.has(escolhido)) {
+      ctx.state.activePlayerId = escolhido;
+      ctx.log(logSistema(sid, `${nomeDe(ctx.state, escolhido)} começa, escolhido pelo anfitrião`));
+    } else if (ctx.state.ordemPelosAssentos) {
+      const primeiro = assentos[0];
+      ctx.state.activePlayerId = primeiro?.id ?? eu.id;
+      ctx.log(logSistema(sid, `${nomeDe(ctx.state, ctx.state.activePlayerId)} começa (assento 1)`));
+    } else {
+      const sorteado = sortear(assentos);
+      ctx.state.activePlayerId = sorteado?.id ?? eu.id;
+      ctx.log(logSistema(sid, `${nomeDe(ctx.state, ctx.state.activePlayerId)} começa — sorteado`));
+    }
+
+    // O cronometro do primeiro turno comeca a contar aqui. Sem isto ele so
+    // apareceria depois do primeiro PASS_TURN, e o turno inicial — que costuma
+    // ser o mais longo — ficaria de fora da unica coisa que ele mede.
+    ctx.state.turnoIniciadoEm = Date.now();
 
     // A mao inicial e comprada AQUI, nao no `onJoin`: com a sala de espera, o
     // jogador que entra primeiro nao pode ficar com a mao na mesa enquanto os
@@ -2043,6 +2150,73 @@ const INTENT_SET_TURN_ORDER: IntentHandler<typeof S.SetTurnOrderIntent> = {
   },
 };
 
+/**
+ * ─── A CONFIGURACAO DE JOGO, NUM FORMULARIO SO ──────────────────────────────
+ *
+ * Uma intencao para as cinco opcoes da sala de espera. Ver `SetRoomConfigIntent`
+ * em `schemas.ts` para por que nao sao cinco.
+ */
+const INTENT_SET_ROOM_CONFIG: IntentHandler<typeof S.SetRoomConfigIntent> = {
+  schema: S.SetRoomConfigIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx, payload) {
+    const sid = ctx.client.sessionId;
+    // Primeira linha, sempre: e a regra que faltava em RESET_MATCH e
+    // SET_TURN_ORDER, e ela nasce aqui em vez de ser lembrada depois.
+    if (exigirAnfitriao(ctx, 'INTENT_SET_ROOM_CONFIG')) return;
+
+    /**
+     * SO NA SALA DE ESPERA.
+     *
+     * Trocar o tipo de mulligan com a partida em andamento e mudar a regra no
+     * meio do jogo — e o cronometro e o sideboard nao sao diferentes: os tres
+     * governam decisoes que os jogadores JA tomaram com base no combinado
+     * anterior. Depois que a mesa comeca, mudar isso e desfazer escolha alheia.
+     */
+    if (ctx.state.phase !== 'WAITING') {
+      ctx.send('error', {
+        code: 'CONFIG_LOCKED',
+        message:
+          'A partida já começou — as regras da mesa foram combinadas antes e não mudam no meio. Reinicie a partida para ajustá-las.',
+        intent: 'INTENT_SET_ROOM_CONFIG',
+      });
+      return;
+    }
+
+    if (payload.tipoDeMulligan !== undefined) {
+      ctx.state.tipoDeMulligan = payload.tipoDeMulligan;
+    }
+
+    if (payload.jogadorInicial !== undefined) {
+      // '' = sortear. Qualquer outro valor precisa ser alguem que esta na mesa
+      // AGORA: sem esta checagem, a partida comecaria apontando para um assento
+      // que ja saiu, e `activePlayerId` ficaria preso num jogador inexistente —
+      // ninguem teria a vez e ninguem conseguiria passar o turno.
+      if (payload.jogadorInicial !== '' && !ctx.state.players.has(payload.jogadorInicial)) {
+        ctx.send('error', {
+          code: 'INVALID_PAYLOAD',
+          message: 'O jogador escolhido para começar não está mais na mesa.',
+          intent: 'INTENT_SET_ROOM_CONFIG',
+        });
+        return;
+      }
+      ctx.state.jogadorInicial = payload.jogadorInicial;
+    }
+
+    if (payload.ordemPelosAssentos !== undefined) {
+      ctx.state.ordemPelosAssentos = payload.ordemPelosAssentos;
+    }
+    if (payload.sideboardPermitido !== undefined) {
+      ctx.state.sideboardPermitido = payload.sideboardPermitido;
+    }
+    if (payload.cronometroDeTurno !== undefined) {
+      ctx.state.cronometroDeTurno = payload.cronometroDeTurno;
+    }
+
+    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} ajustou as regras da mesa`));
+  },
+};
+
 // ─── Aleatoriedade (RN06: sempre via services/rng.ts) ────────────────────────
 
 const INTENT_DISCARD_RANDOM: IntentHandler<typeof S.DiscardRandomIntent> = {
@@ -2205,6 +2379,26 @@ const INTENT_FETCH_FROM_SIDEBOARD: IntentHandler<typeof S.FetchFromSideboardInte
   autoriza: 'OWNER',
   executa(ctx, { entityId, to }) {
     const sid = ctx.client.sessionId;
+
+    /**
+     * A RESERVA CONTINUA EXISTINDO — o que a mesa combinou foi o ACESSO.
+     *
+     * `sideboardPermitido` governa a troca DURANTE a partida, nao a existencia
+     * da zona: o deck do jogador continua tendo reserva, ela continua visivel
+     * para ele, e volta a ser alcancavel se a mesa mudar de ideia. Apagar a
+     * zona seria uma decisao muito maior do que a que o anfitriao tomou ao
+     * desligar um interruptor no lobby.
+     */
+    if (!ctx.state.sideboardPermitido) {
+      ctx.send('error', {
+        code: 'SIDEBOARD_LOCKED',
+        message:
+          'Esta mesa combinou jogar sem reserva. O anfitrião pode liberar na sala de espera.',
+        intent: 'INTENT_FETCH_FROM_SIDEBOARD',
+      });
+      return;
+    }
+
     const c = carta(ctx.state, entityId);
     if (!c || c.zone !== 'SIDEBOARD') return;
 
@@ -2625,6 +2819,7 @@ export const REGISTRY = {
   INTENT_SET_SPEED,
   INTENT_SET_MAX_HAND_SIZE,
   INTENT_SET_TURN_ORDER,
+  INTENT_SET_ROOM_CONFIG,
   INTENT_DISCARD_RANDOM,
   INTENT_DISCARD_ALL,
   INTENT_RANDOM_PLAYER,

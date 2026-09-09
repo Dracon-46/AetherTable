@@ -12,6 +12,7 @@ import {
   useTableStore,
   type ArrowData,
   type CardData,
+  type EspectadorData,
   type PlayerData,
   type LogEntry,
 } from '../store/game.store';
@@ -190,7 +191,22 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     // ── Fase da sala ────────────────────────────────────────────────────────
 
-    $(room.state).onChange(() => {
+    /**
+     * ─── ISTO PRECISA RODAR UMA VEZ ANTES DE QUALQUER `onChange` ───────────
+     *
+     * `$(room.state).onChange` NÃO dispara retroativamente. Quando o cliente
+     * entra numa sala que já existe — que é o caso de todo mundo menos o
+     * criador, e do criador também, porque `onCreate` grava a configuração
+     * antes de a conexão terminar — o primeiro patch chega com os campos já
+     * preenchidos e nenhum callback é invocado. O estado do servidor estava
+     * certo e a tela mostrava os padrões.
+     *
+     * O sintoma foi exatamente este: uma mesa criada como `freeform`, pública e
+     * de um assento abria a sala de espera anunciando "Commander / EDH",
+     * "Privada". Os `players` não sofriam disso porque `onAdd` dispara para o
+     * que já está no mapa; campos primitivos do root não têm equivalente.
+     */
+    const sincronizarSala = () => {
       const st = useGameStore.getState();
       st.setPhase(room.state.phase as 'WAITING' | 'PLAYING' | 'PAUSED' | 'CLOSING');
       // Os marcadores globais (turno, fase, dia/noite) viajam no mesmo patch e
@@ -201,7 +217,46 @@ export function useRoomSync(room: Room<RoomState> | null) {
         dayNight: room.state.dayNight ?? 'NEITHER',
         activePlayerId: room.state.activePlayerId ?? '',
       });
-    });
+
+      // O que a mesa combinou. Vem no MESMO patch dos marcadores acima, e pela
+      // mesma razão: mutar o schema do Colyseus não redesenha componente
+      // nenhum — sem esta leitura, a seção de regras do lobby mostraria os
+      // padrões para sempre, inclusive para quem entrou depois do ajuste.
+      st.setConfig({
+        nome: room.state.nome ?? '',
+        visibilidade: room.state.visibilidade ?? 'PRIVADA',
+        comunicacao: room.state.comunicacao ?? 'QUALQUER',
+        idioma: room.state.idioma ?? 'pt-BR',
+        nivelDePoder: room.state.nivelDePoder ?? 0,
+        maxSeats: room.state.maxSeats ?? 4,
+        gameType: room.state.gameType ?? 'commander',
+        tipoDeMulligan: room.state.tipoDeMulligan ?? 'COMMANDER',
+        jogadorInicial: room.state.jogadorInicial ?? '',
+        ordemPelosAssentos: room.state.ordemPelosAssentos ?? false,
+        sideboardPermitido: room.state.sideboardPermitido ?? false,
+        cronometroDeTurno: room.state.cronometroDeTurno ?? 0,
+        turnoIniciadoEm: room.state.turnoIniciadoEm ?? 0,
+      });
+    };
+
+    sincronizarSala();
+    $(room.state).onChange(sincronizarSala);
+
+    // ── Plateia ─────────────────────────────────────────────────────────────
+    //
+    // Mapa próprio, igual no servidor: `players` significa "quem está jogando",
+    // e um monte de código depende disso sem dizer.
+    const sincronizarEspectadores = () => {
+      const mapa: Record<string, EspectadorData> = {};
+      room.state.espectadores?.forEach((e, id) => {
+        mapa[id] = { id: e.id || id, name: e.name, connected: e.connected };
+      });
+      useGameStore.getState().setEspectadores(mapa);
+    };
+
+    sincronizarEspectadores();
+    $(room.state).espectadores.onAdd(() => sincronizarEspectadores());
+    $(room.state).espectadores.onRemove(() => sincronizarEspectadores());
 
     // ── Setas de alvo ──────────────────────────────────────────────────────
     const sincronizarSetas = () => {

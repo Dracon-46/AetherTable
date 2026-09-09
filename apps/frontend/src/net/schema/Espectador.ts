@@ -1,0 +1,15 @@
+//
+// THIS FILE HAS BEEN GENERATED AUTOMATICALLY
+// DO NOT CHANGE IT MANUALLY UNLESS YOU KNOW WHAT YOU'RE DOING
+//
+// GENERATED USING @colyseus/schema 3.0.76
+//
+
+import { Schema, type } from '@colyseus/schema';
+
+export class Espectador extends Schema {
+  @type('string') public id!: string;
+  @type('string') public userId!: string;
+  @type('string') public name!: string;
+  @type('boolean') public connected!: boolean;
+}

@@ -89,6 +89,21 @@ export const REALTIME_LIMITS = {
   DEFAULT_SEATS: 4,
 
   /**
+   * Teto de ESPECTADORES de uma sala, alem dos assentos.
+   *
+   * Espectador nao ocupa assento e nao aparece em `state.players` — ele tem o
+   * proprio mapa. O custo dele e bem menor que o de um jogador: nao tem zonas,
+   * nao tem cartas, nao entra em nenhuma reconciliacao de visibilidade alem da
+   * propria (e a dele e a mais barata que existe, porque nega tudo).
+   *
+   * O que ele custa e uma copia do patch a cada 50 ms. Dez e o numero em que
+   * uma mesa de oito com plateia cheia continua dentro do orcamento de banda
+   * que DOC-031 §2.2 dimensiona, e ja e mais gente do que qualquer mesa caseira
+   * junta.
+   */
+  MAX_ESPECTADORES: 10,
+
+  /**
    * SORTEIOS EM RAJADA (dado, moeda, jogador/carta ao acaso).
    *
    * Sem teto, segurar o botao do dado emitia 30 rolagens por segundo — dentro

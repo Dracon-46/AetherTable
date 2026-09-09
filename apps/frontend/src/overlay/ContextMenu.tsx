@@ -67,6 +67,14 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   const setArrowSource = useUIStore((s) => s.setArrowSource);
   const setEditingCard = useUIStore((s) => s.setEditingCard);
   const setZoneOwner = useUIStore((s) => s.setZoneOwner);
+  /**
+   * Preferência do jogador: "Anexar a…" sai do menu.
+   *
+   * Só a ENTRADA do gesto desaparece. `Desanexar` continua listado em qualquer
+   * carta que já esteja anexada — desligar a preferência com um equipamento na
+   * mesa não pode transformá-lo em algo impossível de separar.
+   */
+  const anexosDesativados = useUIStore((s) => s.anexosDesativados);
   const catalogo = useCardCatalog((s) => s.cartas);
 
   const cards = useGameStore((s) => s.cards);
@@ -332,24 +340,28 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             icone: <FlipHorizontal className="h-4 w-4" />,
             onClick: executar(() => intents.transform(room, card.id)),
           },
-          {
-            rotulo: card.attachedTo ? 'Desanexar' : 'Anexar a…',
-            icone: card.attachedTo ? (
-              <Link2Off className="h-4 w-4" />
-            ) : (
-              <Link2 className="h-4 w-4" />
-            ),
-            onClick: executar(() => {
-              if (card.attachedTo) {
-                intents.detach(room, card.id);
-                return;
-              }
-              // Anexar é um gesto de dois passos, como a seta: escolher a carta
-              // de destino no tabuleiro. Reaproveita o mesmo modo.
-              setArrowSource(card.id);
-              setModoAnexar(true);
-            }),
-          },
+          ...(card.attachedTo || !anexosDesativados
+            ? [
+                {
+                  rotulo: card.attachedTo ? 'Desanexar' : 'Anexar a…',
+                  icone: card.attachedTo ? (
+                    <Link2Off className="h-4 w-4" />
+                  ) : (
+                    <Link2 className="h-4 w-4" />
+                  ),
+                  onClick: executar(() => {
+                    if (card.attachedTo) {
+                      intents.detach(room, card.id);
+                      return;
+                    }
+                    // Anexar é um gesto de dois passos, como a seta: escolher a
+                    // carta de destino no tabuleiro. Reaproveita o mesmo modo.
+                    setArrowSource(card.id);
+                    setModoAnexar(true);
+                  }),
+                },
+              ]
+            : []),
           {
             // Um único painel para marcadores, P/T, dano, anotação e destaque.
             // Antes eram quatro `window.prompt` — diálogo nativo que trava a

@@ -43,7 +43,7 @@ interface CosmeticState extends CosmeticosEquipados {
   cosmeticosDeOponentes: boolean;
   equipar: (patch: Partial<CosmeticosEquipados>) => void;
   setCosmeticosDeOponentes: (v: boolean) => void;
-  /** Aplica o que vem do servidor, sem reenviar. Ver `useHidratarCosmeticos`. */
+  /** Aplica o que vem do servidor, sem reenviar. Ver `useHidratarPreferencias`. */
   aplicarDoServidor: (p: Partial<CosmeticosEquipados & { cosmeticosDeOponentes: boolean }>) => void;
 }
 
