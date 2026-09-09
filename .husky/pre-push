@@ -1,0 +1,14 @@
+# ─── A BATERIA RODA ANTES DE SUBIR (DOC-092) ─────────────────────────────────
+#
+# O `pre-commit` roda ESLint e Prettier só nos arquivos staged — barato, para o
+# laço de edição não travar. Este aqui roda a verificação inteira, e o momento é
+# outro de propósito: commit é local e barato de corrigir; push é o ponto em que
+# o trabalho passa a ser de todo mundo.
+#
+# O CI faz a mesma checagem, mas descobre tarde: entre o push quebrado e o
+# resultado vermelho, quem puxou a branch já perdeu tempo. Isto é o mesmo
+# comando que você rodaria à mão — só que sem depender de você lembrar.
+#
+# Para pular conscientemente: `git push --no-verify`. Se virar hábito, o
+# problema é a bateria estar lenta ou instável, e é lá que se conserta.
+pnpm verificar

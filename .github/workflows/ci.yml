@@ -16,7 +16,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `develop` entra junto com `main` porque as duas sao eternas e as duas
+    # precisam estar sempre verdes: uma `develop` quebrada bloqueia todo mundo,
+    # nao so quem quebrou. `release/*` e `hotfix/*` entram porque e la que a
+    # estabilizacao acontece — descobrir no merge para a `main` e tarde.
+    branches: [main, develop, 'release/**', 'hotfix/**']
   pull_request:
 
 concurrency:
@@ -57,6 +61,18 @@ jobs:
         # mais caro: divergência de índice de campo corrompe o state inteiro
         # sem emitir um único erro em runtime.
         run: pnpm schema:check
+
+      - name: Formatacao
+        # Diff de formatacao some no meio de diff de conteudo, e revisor humano
+        # gasta atencao com ele. O `pre-commit` ja formata o que esta staged;
+        # este passo pega o que entrou por outro caminho.
+        run: pnpm format:check
+
+      - name: Paridade de intencoes
+        # Intencao que o cliente emite e o servidor nao conhece e descartada em
+        # SILENCIO pelo Colyseus — nao ha erro para o teste pegar. Esta
+        # ferramenta compara contrato, REGISTRY e emissores.
+        run: pnpm docs:estado
 
       - name: Lint
         run: pnpm lint

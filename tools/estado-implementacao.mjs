@@ -1,5 +1,6 @@
 // Gera docs/estado_de_implementacao.md a partir do código, não da memória.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { format, resolveConfig } from 'prettier';
 
 const registry = readFileSync('apps/game-server/src/intents/registry.ts', 'utf8');
 const tabela = registry.slice(registry.indexOf('export const REGISTRY = {'));
@@ -43,9 +44,8 @@ const semImplementacao = todas.filter(
 const linha = (i) =>
   `| \`${i}\` | ${implementadas.includes(i) ? '✅' : '—'} | ${emitidas.has(i) ? '✅' : '—'} |`;
 
-writeFileSync(
-  'docs/estado_de_implementacao.md',
-  `# Estado de Implementação das Intenções
+const DESTINO = 'docs/estado_de_implementacao.md';
+const conteudo = `# Estado de Implementação das Intenções
 
 | Campo | Valor |
 |---|---|
@@ -102,9 +102,50 @@ ${naoEmitidas.length === 0 ? '_Nenhuma._' : naoEmitidas.map((i) => `- \`${i}\``)
 ## 6. Fora do contrato, sem plano
 
 ${semImplementacao.length === 0 ? '_Nenhuma._' : semImplementacao.map((i) => `- \`${i}\``).join('\n')}
-`,
-);
+`;
+
+/**
+ * A SAIDA E FORMATADA ANTES DE IR PARA O DISCO.
+ *
+ * Sem isto, `pnpm docs:estado` gerava um markdown que o `format:check` recusava
+ * — entao rodar a ferramenta QUEBRAVA a bateria, e a saida era ou rodar o
+ * prettier a mao depois, ou nao rodar a ferramenta. As duas ruins: a segunda
+ * deixa o documento defasado, que e exatamente o que ele existe para nao ser.
+ *
+ * O `schema-sync.mjs` ja resolvia isso do mesmo jeito, pelo mesmo motivo.
+ */
+const opcoes = (await resolveConfig(DESTINO)) ?? {};
+writeFileSync(DESTINO, await format(conteudo, { ...opcoes, parser: 'markdown' }));
 
 console.log(
   `contrato=${todas.length} servidor=${implementadas.length} cliente=${emitidas.size} sem-handler=${semHandler.length}`,
 );
+
+/**
+ * ─── ELE PRECISA FALHAR, E NAO SO CONTAR ────────────────────────────────────
+ *
+ * Ate aqui esta ferramenta so IMPRIMIA o placar e saia com codigo 0. Rodada no
+ * CI, ela regenerava o documento e passava — inclusive com intencoes emitidas
+ * pelo cliente que o servidor nao conhece, que e exatamente o que ela existe
+ * para pegar.
+ *
+ * E o defeito mais silencioso do contrato: o Colyseus DESCARTA em silencio uma
+ * mensagem sem handler registrado. Nao ha excecao, nao ha log, nao ha teste que
+ * pegue — o botao simplesmente nao faz nada, e a leitura natural de quem esta
+ * na mesa e "o jogo travou".
+ */
+if (semHandler.length > 0) {
+  console.error(
+    [
+      '',
+      'INTENCAO EMITIDA SEM HANDLER NO SERVIDOR:',
+      ...semHandler.map((i) => `  - ${i}`),
+      '',
+      'O Colyseus descarta essas mensagens em SILENCIO. Registre o handler no',
+      'REGISTRY (ou na Room, se precisar de I/O), ou remova o emissor de',
+      'apps/frontend/src/net/intents.ts.',
+      '',
+    ].join('\n'),
+  );
+  process.exit(1);
+}

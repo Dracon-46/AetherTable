@@ -176,7 +176,13 @@ for (const username of JOGADORES) {
   if (!token) throw new Error(`sem accessToken para ${username}: ${JSON.stringify(sessao)}`);
 
   const deckId = await prepararDeck(token);
-  resultado.push({ username, email: `${username}@aethertable.test`, token, deckId, user: sessao.user });
+  resultado.push({
+    username,
+    email: `${username}@aethertable.test`,
+    token,
+    deckId,
+    user: sessao.user,
+  });
   console.log(`ok ${username} → deck ${deckId}`);
 }
 

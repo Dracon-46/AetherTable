@@ -15,6 +15,7 @@
     "dev:turbo": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
+    "verificar": "node tools/verificar.mjs",
     "test:watch": "turbo run test:watch",
     "test:e2e": "pnpm --filter frontend test:e2e",
     "lint": "turbo run lint",

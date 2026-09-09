@@ -28,6 +28,9 @@ se dois documentos discordarem, vale o canônico.
 | Escopo geral, épicos e roadmap comercial                                             | [documento_de_requisitos_do_produto_prd.md](documento_de_requisitos_do_produto_prd.md)                 | [documento_de_visao_do_projeto.md](documento_de_visao_do_projeto.md)                                   |
 | Lista completa de funcionalidades (F01…Fnn)                                          | [documento_de_funcionalidades.md](documento_de_funcionalidades.md)                                     | [documento_de_requisitos_do_produto_prd.md](documento_de_requisitos_do_produto_prd.md)                 |
 | Requisitos formais, mensuráveis, testáveis (FR/NFR)                                  | [especificacao_de_requisitos_de_software.md](especificacao_de_requisitos_de_software.md)               | [plano_de_testes_e_qualidade.md](plano_de_testes_e_qualidade.md)                                       |
+| Como abrir branch, versionar e cortar release                                        | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)                                                   | [../CONTRIBUTING.md](../CONTRIBUTING.md)                                                               |
+| O que rodar antes de subir, e qual teste escrever                                    | [politica_de_testes.md](politica_de_testes.md)                                                         | [plano_de_testes_e_qualidade.md](plano_de_testes_e_qualidade.md)                                       |
+| Qual documento atualizar quando o código muda                                        | [politica_de_documentacao.md](politica_de_documentacao.md)                                             | —                                                                                                      |
 | Regras invariáveis do negócio (RN01…)                                                | [regras_de_negocio_e_casos_de_uso.md](regras_de_negocio_e_casos_de_uso.md)                             | —                                                                                                      |
 | Narrativas de uso passo a passo (CDU)                                                | [documentos_de_casos_de_uso.md](documentos_de_casos_de_uso.md)                                         | [regras_de_negocio_e_casos_de_uso.md](regras_de_negocio_e_casos_de_uso.md)                             |
 | Topologia, contêineres, ADRs, decisões estruturais                                   | [documento_de_arquitetura_de_software_sad.md](documento_de_arquitetura_de_software_sad.md)             | [documento_de_arquitetura.md](documento_de_arquitetura.md)                                             |
@@ -110,6 +113,17 @@ se dois documentos discordarem, vale o canônico.
 | `DOC-052` | [plano_de_testes_e_qualidade.md](plano_de_testes_e_qualidade.md)                             | Pirâmide de testes, ferramentas, metas de cobertura, teste de carga WS, QA visual, gates de release. | Estável |
 | `DOC-053` | [devops_e_infraestrutura.md](devops_e_infraestrutura.md)                                     | Ambientes, topologia de nuvem, CI/CD, escalonamento do Colyseus, observabilidade, custos, DR.        | Estável |
 | `DOC-054` | [guia_de_configuracao_e_desenvolvimento.md](guia_de_configuracao_e_desenvolvimento.md)       | Setup local passo a passo, monorepo, variáveis de ambiente, scripts, troubleshooting.                | Estável |
+
+### Trilha 8 — Processo de trabalho _(como se contribui)_
+
+| ID        | Documento                                                  | Conteúdo em uma linha                                                                      | Status  |
+| --------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------- |
+| `DOC-090` | [estado_de_implementacao.md](estado_de_implementacao.md)   | **Gerado.** Paridade entre contrato de intenções, servidor e cliente.                      | Gerado  |
+| `DOC-091` | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)       | Git Flow: branches, versionamento, tags, receitas de release e hotfix, mensagem de commit. | Estável |
+| `DOC-092` | [politica_de_testes.md](politica_de_testes.md)             | O que roda antes de subir, qual teste acompanha qual mudança, quando o E2E é obrigatório.  | Estável |
+| `DOC-093` | [politica_de_documentacao.md](politica_de_documentacao.md) | Qual documento é atualizado junto com o código, e por que no mesmo PR.                     | Estável |
+
+---
 
 ### Trilha 7 — Administração e Monetização _(Backoffice)_
 
