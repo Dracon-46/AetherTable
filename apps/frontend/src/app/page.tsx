@@ -222,11 +222,20 @@ export default function LoginPage() {
             Discord
           </button>
 
-          <div className="bg-warning/10 border-warning/30 text-warning mt-2 flex flex-col items-center rounded border p-2 text-center text-[10px]">
-            <AlertCircle className="mb-1 h-4 w-4" />
-            <span>Usando DUMMY KEYS de OAuth (ambiente local).</span>
-            <span>O login retornará erro ao redirecionar para os provedores.</span>
-          </div>
+          {/* ─── AVISO DE DESENVOLVIMENTO, E SÓ EM DESENVOLVIMENTO ───────────
+              Este banner era renderizado SEMPRE — inclusive em produção, na
+              porta de entrada do produto. A primeira coisa que um visitante
+              lia era que o login não funciona.
+
+              `NODE_ENV` é substituído em tempo de build pelo Next, então em
+              produção o bloco inteiro sai do bundle. */}
+          {process.env.NODE_ENV !== 'production' && (
+            <div className="bg-warning/10 border-warning/30 text-warning mt-2 flex flex-col items-center rounded border p-2 text-center text-[10px]">
+              <AlertCircle className="mb-1 h-4 w-4" />
+              <span>Usando DUMMY KEYS de OAuth (ambiente local).</span>
+              <span>O login retornará erro ao redirecionar para os provedores.</span>
+            </div>
+          )}
         </div>
 
         <div className="border-panel-border mt-5 border-t pt-4 text-center">

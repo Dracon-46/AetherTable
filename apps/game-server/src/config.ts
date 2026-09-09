@@ -50,6 +50,25 @@ const schema = z.object({
    * deploy configurar as duas pontas com um valor so.
    */
   CORS_ORIGINS: z.string().default('http://localhost:3030'),
+  /**
+   * Senha do painel `/colyseus` e de `GET /metrics`, via basic auth.
+   *
+   * ─── O MONITOR ESTAVA ABERTO PARA A INTERNET ──────────────────────────────
+   *
+   * `app.use('/colyseus', monitor())` sem guard nenhum. O painel LISTA TODAS AS
+   * SALAS, os clientes de cada uma e permite inspecionar o estado — que inclui
+   * a mao e o grimorio de todo mundo. E o unico lugar do sistema que contorna
+   * `podeVer` inteiro: as sete clausulas de visibilidade valem para o cliente
+   * do jogo, nao para quem abre o monitor.
+   *
+   * `/metrics` estava aberto pelo mesmo motivo, com um comentario dizendo
+   * "rede interna, bloquear na borda" — o que no Render nao acontece.
+   *
+   * VAZIO EM DESENVOLVIMENTO, OBRIGATORIO EM PRODUCAO. A validacao cruzada
+   * abaixo recusa a subida sem esta variavel quando `NODE_ENV=production`:
+   * falhar no boot e barulhento e imediato; ficar aberto e silencioso.
+   */
+  ADMIN_PANEL_PASSWORD: z.string().default(''),
   PUBLIC_WS_URL: z.string().default('ws://localhost:2567'),
   /** Opcional em dev de um no; OBRIGATORIO em producao multi-no. */
   USE_REDIS: z
@@ -73,3 +92,25 @@ if (!parsed.success) {
 
 export const config = parsed.data;
 export const isProd = config.NODE_ENV === 'production';
+
+/**
+ * ─── FALHAR NO BOOT E MELHOR QUE SUBIR ABERTO ───────────────────────────────
+ *
+ * Esta checagem nao cabe no schema do zod porque ela depende de OUTRO campo
+ * (`NODE_ENV`): o `ADMIN_PANEL_PASSWORD` e opcional em desenvolvimento e
+ * obrigatorio em producao.
+ *
+ * A alternativa — deixar o painel aberto quando a senha falta — e o defeito
+ * que esta linha corrige. Ele nao aparece em teste nenhum, nao gera log, e o
+ * unico sintoma e alguem de fora conseguindo ler a mao dos jogadores. Um
+ * processo que se recusa a subir e barulhento e imediato.
+ */
+if (isProd && !config.ADMIN_PANEL_PASSWORD) {
+  throw new Error(
+    'Configuracao invalida do game-server:\n' +
+      '  - ADMIN_PANEL_PASSWORD: obrigatorio em producao\n\n' +
+      'O painel /colyseus lista todas as salas e permite inspecionar o estado,\n' +
+      'inclusive a mao e o grimorio dos jogadores. Sem senha ele fica aberto\n' +
+      'para a internet. Defina a variavel ou nao suba este processo.',
+  );
+}
