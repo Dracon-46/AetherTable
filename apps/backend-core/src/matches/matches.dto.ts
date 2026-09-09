@@ -107,3 +107,39 @@ export const CriarPartidaDto = z
   // chamava até agora) chega como `undefined` e o pipe recusa com 400.
   .default({});
 export type CriarPartidaDto = z.infer<typeof CriarPartidaDto>;
+
+/**
+ * ─── RESUMO PÓS-PARTIDA, VINDO DO GAME-SERVER ────────────────────────────────
+ *
+ * `prisma.matchSummary.create` não existia em lugar nenhum do repositório — só
+ * `.count()`. `MatchSummary` e `MatchParticipant` nunca receberam uma linha, e
+ * a consequência era visível em três telas: "Partidas Jogadas" era sempre 0 no
+ * perfil próprio, sempre 0 no perfil público, e sempre 0 na métrica do
+ * backoffice. `MatchParticipant.userId` existe nullable para um expurgo de 30
+ * dias de dados que nunca eram gravados.
+ *
+ * Quem grava é o game-server, no `onDispose` da sala — é o único momento em que
+ * alguém sabe que a partida acabou e quanto ela durou.
+ *
+ * `participantes` são ids de CONTA (`sub` do seat token), não sessionIds: o
+ * sessionId morre com a sala e não liga a partida a ninguém.
+ */
+export const ResumoDePartidaDto = z.object({
+  roomCode: RoomCodeParam,
+  /**
+   * Contagem no auge, e não no fim: uma mesa de quatro que termina com um
+   * jogador — porque três saíram — foi uma partida de quatro.
+   */
+  playerCount: z.number().int().min(1).max(REALTIME_LIMITS.MAX_PLAYERS),
+  durationSeconds: z.number().int().min(0).max(86_400),
+  /**
+   * Contas que sentaram. Pode vir vazio: uma sala aberta e abandonada sem
+   * ninguém pronto ainda é uma sala que existiu, e o registro dela não deve
+   * falhar por isso.
+   *
+   * O teto acompanha `MAX_PLAYERS` — assentos, não plateia. Espectador não
+   * jogou a partida e não entra na estatística de ninguém.
+   */
+  participantes: z.array(z.string().uuid()).max(REALTIME_LIMITS.MAX_PLAYERS).default([]),
+});
+export type ResumoDePartidaDto = z.infer<typeof ResumoDePartidaDto>;

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MatchesController } from './matches.controller.js';
+import { InternalMatchesController, MatchesController } from './matches.controller.js';
 import { MatchesService } from './matches.service.js';
 import { DecksModule } from '../decks/decks.module.js';
 // Criar mesa consulta o interruptor MATCHMAKING_ENABLED (DOC-061 §5).
@@ -19,7 +19,7 @@ import { AdminModule } from '../admin/admin.module.js';
       inject: [ConfigService],
     }),
   ],
-  controllers: [MatchesController],
+  controllers: [MatchesController, InternalMatchesController],
   providers: [MatchesService],
 })
 export class MatchesModule {}
