@@ -142,3 +142,14 @@ services:
       # deck recebe 401 e a partida começa com o grimório vazio.
       - key: INTERNAL_API_TOKEN
         sync: false
+
+      # MESMO valor do CORS_ORIGINS da API — a origem do frontend.
+      #
+      # O game-server passou a servir `GET /salas`, a vitrine de mesas públicas,
+      # e ela é a PRIMEIRA rota deste processo chamada por `fetch` de outra
+      # origem (o WebSocket não precisa de CORS, e /health e /metrics são
+      # consumidos por máquina). Sem esta variável em produção a vitrine fica
+      # permanentemente vazia, e o painel só consegue reportar "a lista de mesas
+      # está indisponível" — sem nada no log que aponte para CORS.
+      - key: CORS_ORIGINS
+        sync: false

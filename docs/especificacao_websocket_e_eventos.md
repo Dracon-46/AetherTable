@@ -216,6 +216,61 @@ delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
 | `INTENT_RESET_MATCH` | `{}`    | Devolve tudo à `LIBRARY`, embaralha, zera contadores. Requer confirmação de todos os presentes |
 | `INTENT_LEAVE`       | `{}`    | Saída deliberada — libera a vaga sem aguardar a janela de reconexão                            |
 
+#### `INTENT_SET_ROOM_CONFIG` — as regras que a mesa combina
+
+```ts
+{
+  tipoDeMulligan?: 'COMMANDER' | 'LONDON' | 'LIVRE';
+  jogadorInicial?: string;      // '' = sortear; senão um sessionId da mesa
+  ordemPelosAssentos?: boolean; // true = o assento 0 começa, sem sorteio
+  sideboardPermitido?: boolean;
+  cronometroDeTurno?: number;   // 0 | 60 | 120 | 180 | 300, em segundos
+}
+```
+
+**Uma intenção para os cinco controles, e não cinco.** As opções são um
+formulário do anfitrião, preenchido de uma vez: cinco intenções seriam cinco
+viagens ao servidor e cinco oportunidades de a mesa ver a configuração pela
+metade enquanto os patches chegam.
+
+| Regra                                              | Rejeição          |
+| -------------------------------------------------- | ----------------- |
+| Só o anfitrião (assento 0), via `exigirAnfitriao`  | `NOT_HOST`        |
+| Só em `phase === 'WAITING'`                        | `CONFIG_LOCKED`   |
+| `jogadorInicial` tem de existir em `state.players` | `INVALID_PAYLOAD` |
+| `cronometroDeTurno` só da lista fechada            | recusado pelo zod |
+
+`CONFIG_LOCKED` existe porque trocar o tipo de mulligan com a partida em
+andamento muda a regra no meio do jogo — sobre decisões que os outros já
+tomaram com base no combinado anterior.
+
+A lista de cronômetros é fechada em vez de um inteiro com faixa: um campo
+aberto convida ao `1`, e um cronômetro de um segundo transforma o aviso — a
+única coisa que ele faz — em ruído permanente para a mesa inteira.
+
+#### O que `INTENT_START_MATCH` passou a respeitar
+
+Ele fazia `activePlayerId = eu.id`: **quem clicava começava**. Como só o
+anfitrião pode clicar, o anfitrião começava sempre — uma vantagem silenciosa
+dele em todas as partidas. Agora, nesta ordem:
+
+1. `jogadorInicial` preenchido → ele começa;
+2. `ordemPelosAssentos` ligado → o assento 0 começa;
+3. nenhum dos dois → **sorteio** por `services/rng.ts` (RN06), registrado no log.
+
+Ele também grava `turnoIniciadoEm`, junto com `INTENT_PASS_TURN`.
+
+#### Espectador não emite intenção
+
+Quem entra com um passe de espectador (claim `spectator` no seat token) é
+barrado no despachante, **antes** do parse do payload, em toda intenção menos
+`INTENT_CHAT`. A rejeição é `SPECTATOR`.
+
+A barreira não está em `verificarAutorizacao` porque ela devolve `null` na hora
+para `QUALQUER_JOGADOR`, sem checar se o remetente é mesmo um jogador — o nome
+da regra sempre foi uma promessa que ninguém verificava, e não precisava ser
+verificada enquanto todo mundo na sala tinha assento.
+
 ### 3.7.1 Intenções restantes por família
 
 Completam o contrato para as 131 ações de `DOC-036`. Agrupadas por família para leitura; a

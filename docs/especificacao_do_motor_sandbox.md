@@ -239,8 +239,70 @@ export class RoomState extends Schema {
 
   // ordem por zona: zoneOrder["p1:LIBRARY"] = ArraySchema<cardId>
   @type({ map: ['string'] }) zoneOrder = new MapSchema<ArraySchema<string>>();
+
+  // ─── configuração da sala (escolhida na criação) ───────────────────────
+  @type('number') maxSeats = 4;
+  @type('string') gameType = 'commander';
+  @type('string') nome = '';
+  @type('string') visibilidade = 'PRIVADA'; // PRIVADA | PUBLICA
+  @type('string') comunicacao = 'QUALQUER'; // QUALQUER | VOZ | TEXTO
+  @type('string') idioma = 'pt-BR';
+  @type('number') nivelDePoder = 0; // 0 = não declarado
+
+  // ─── regras de jogo (ajustadas na sala de espera) ──────────────────────
+  @type('string') tipoDeMulligan = 'COMMANDER'; // COMMANDER | LONDON | LIVRE
+  @type('string') jogadorInicial = ''; // '' = sortear
+  @type('boolean') ordemPelosAssentos = false;
+  @type('boolean') sideboardPermitido = false;
+  @type('number') cronometroDeTurno = 0; // segundos; 0 = desligado
+  @type('number') turnoIniciadoEm = 0; // epoch ms
+
+  // ─── plateia ───────────────────────────────────────────────────────────
+  @type({ map: Espectador }) espectadores = new MapSchema<Espectador>();
+
+  // marcadores visuais: dayNight, turnPhase, arrows
 }
 ```
+
+### 3.0.2 Campo novo vai NO FIM. Sem exceção.
+
+`@colyseus/schema` serializa **por índice de campo**. Um campo inserido no meio
+desloca todos os seguintes, e o cliente decodifica lixo — sem erro, sem aviso,
+sem nada no console. Foi assim que `Player.mulliganCount` fez a mesa parar de
+receber cartas.
+
+Depois de tocar qualquer schema, rode `pnpm schema:sync`. O `mirror.spec.ts`
+falha se você esquecer, e o `schema:check` do CI também.
+
+### 3.0.3 Por que a configuração vive no estado, e não na querystring
+
+`maxClients` e `gameType` viajavam em `/play/CODE?maxClients=4&gameType=...` e
+de lá para o `joinOrCreate`. **Quem entra pelo código nunca recebeu essas
+opções**: a sala de espera do convidado mostrava números inventados enquanto a
+do criador mostrava os certos.
+
+O contrato da configuração é `ConfigDeSala`, em `@aethertable/shared-types`, e
+quem a grava é `normalizarConfigDeSala` — a mesma função que o formulário do
+navegador chama antes de enviar e que a API chama ao validar. As opções chegam
+ao `onCreate` **escritas pelo navegador e sem assinatura**; a configuração
+autorizada vem depois, na claim `cfg` do seat token, aplicada no `onAuth` do
+primeiro cliente (que é sempre o criador).
+
+### 3.0.4 A plateia tem mapa próprio
+
+`espectadores` é separado de `players` porque **`state.players` significa
+exatamente "quem está jogando"**, e muito código depende disso sem dizer. Um
+`Player` com `seat = -1` quebraria quatro coisas em silêncio:
+
+1. `removerJogador` reordena assentos e daria o assento 0 ao espectador — quer
+   dizer, o papel de anfitrião;
+2. `INTENT_START_MATCH` esperaria um "pronto" que ele não tem como dar;
+3. a checagem de grimório o barraria por deck ausente;
+4. `INTENT_PASS_TURN` passaria a vez para quem só está olhando.
+
+Visibilidade não precisou de cláusula nova: `podeVer` (§3.0.1) já nega toda
+zona oculta a quem não é dono nem controller, e o espectador não é nenhum dos
+dois em carta nenhuma.
 
 ### 3.1 Por que `zoneOrder` separado das cartas
 

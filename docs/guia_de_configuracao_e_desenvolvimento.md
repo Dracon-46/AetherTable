@@ -196,6 +196,12 @@ REDIS_URL="redis://localhost:6379"
 JWT_SECRET="a-MESMA-string-do-backend-core"
 BACKEND_CORE_URL="http://localhost:3333"
 PUBLIC_WS_URL="ws://localhost:2567"
+# Origens que podem ler `GET /salas` (a vitrine de mesas públicas) do
+# navegador. Mesma variável e mesmo formato do backend-core, para o deploy
+# configurar as duas pontas com um valor só. O WebSocket não precisa de CORS;
+# a vitrine é a primeira rota deste processo chamada por `fetch` de outra
+# origem, e sem isto ela fica permanentemente vazia.
+CORS_ORIGINS="http://localhost:3030"
 ```
 
 `apps/frontend/.env`
@@ -412,6 +418,7 @@ Nunca chame `api.scryfall.com` direto de um service: passaria por cima da fila d
 | Tipos não resolvem                         | `shared-types` não compilado                                     | `pnpm build --filter shared-types`                                                                             |
 | FPS baixo em dev                           | _Source maps_ e HMR pesam                                        | Medir performance sempre com `pnpm build && pnpm start`                                                        |
 | Erro de CORS                               | Origem não permitida                                             | Incluir `http://localhost:3030` em `CORS_ORIGINS`                                                              |
+| Vitrine de mesas sempre vazia              | `CORS_ORIGINS` ausente **no game-server**                        | A rota `/salas` é do game-server, não da API. Confira a variável nos dois `.env`                               |
 | Mudança no `Schema` não reflete            | Cliente com versão antiga do serializador                        | Reiniciar frontend e game server juntos                                                                        |
 | `pnpm install` reclamando de peer deps     | Divergência de versão no workspace                               | `pnpm install --force` e conferir o `pnpm-lock.yaml`                                                           |
 

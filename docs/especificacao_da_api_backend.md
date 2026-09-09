@@ -380,75 +380,167 @@ Fichas oficiais para o gerador de tokens (`F10`).
 
 ## 5. Salas (matchmaking / lobbies)
 
-### 5.1 `POST /rooms`
+> **Esta seção descrevia um contrato que nunca existiu** (`POST /rooms`, com
+> senha de sala, `allowSpectators` e `wsUrl` por nó). O que está implementado é
+> o que segue. A divergência importa porque um documento desatualizado é pior
+> que um ausente: o ausente manda ler o código; o desatualizado faz confiar
+> numa rota que responde 404.
+
+O prefixo real é **`/matches`**, e ele reflete a fronteira do §1: esta API
+**nunca** altera estado de partida. Ela só emite os passes que autorizam a
+entrada. Quem conhece o estado é o game-server.
+
+### 5.1 `POST /matches/create`
+
+Corpo **opcional** — sem ele, a sala nasce em `CONFIG_DE_SALA_PADRAO`.
 
 ```json
 {
-  "name": "Mesa Casual de Sexta",
-  "isPrivate": true,
-  "password": "1234",
-  "deckId": "...",
-  "allowSpectators": false
+  "nome": "Mesa do Gaspare",
+  "gameType": "commander",
+  "visibilidade": "PUBLICA",
+  "comunicacao": "QUALQUER",
+  "idioma": "pt-BR",
+  "maxClients": 4,
+  "nivelDePoder": 3
 }
 ```
 
 ```json
 // 201
 {
-  "roomId": "K7M2QX",
-  "wsUrl": "wss://game-node-02.aethertable.app",
-  "seatToken": "eyJ...",
-  "voiceToken": "eyJ...",
-  "inviteUrl": "https://aethertable.app/room/K7M2QX",
-  "expiresIn": 60
+  "roomCode": "7C60D5",
+  "config": { "nome": "Mesa do Gaspare", "maxClients": 4, "...": "..." },
+  "configToken": "eyJ..."
 }
 ```
 
-**Detalhes importantes:**
+**`configToken` é o que impede o navegador de reescrever a configuração.**
 
-- `roomId` tem 6 caracteres do alfabeto `A-Z2-9` — sem `0`, `O`, `1`, `I`, para ser ditável por voz (`FR-05`).
-- `seatToken` e `voiceToken` são de **uso único** e expiram em **60 s** (`FR-20`).
-- `wsUrl` aponta ao **nó específico** que hospeda a sala — o cliente não escolhe.
-- `password`, quando informada, é armazenada com hash e nunca retornada.
+As opções da sala chegavam ao `onCreate` do Colyseus escritas pelo cliente e
+sem assinatura: dava para abrir uma mesa de Duel Commander com oito assentos
+editando um número na querystring. Este passe é a configuração já normalizada e
+**assinada**, vinculada ao `roomCode`, com TTL de 15 minutos. O cliente o
+devolve no `join`, que o embute no seat token — e o game-server passa a confiar
+só no que a API autorizou.
 
-**Erros:** `NO_CAPACITY`, `DECK_NOT_FOUND`, `RATE_LIMITED`, `VALIDATION_FAILED`.
+Ele é um passe próprio, e não a config direto no seat token, porque o seat
+token nasce no `join` e não aqui. Para ele já sair com a configuração dentro
+seria preciso consultar uma tabela `Match` que não existe e não vai existir
+(ADR-006, RN12: o estado da sala vive na RAM do game node).
 
-### 5.2 `POST /rooms/:roomId/join`
+`config` volta **normalizada** por `normalizarConfigDeSala`, de
+`@aethertable/shared-types` — a mesma função que o formulário chamou antes de
+enviar. `maxClients` sai limitado pela faixa do formato, não por uma lista
+fixa; `nivelDePoder` vira `null` em formato sem zona de comando.
+
+**Não existe senha de sala.** `visibilidade: "PRIVADA"` significa **não
+listada** — o `seatToken` já governa a entrada (assinado, uso único via `jti`,
+vinculado ao `roomCode`). Uma senha seria um segundo caminho de autenticação
+para o mesmo recurso, mais fraco que o primeiro.
+
+**Erros:** `FORBIDDEN` (o interruptor de mesas está desligado — DOC-061 §5),
+`VALIDATION_FAILED`.
+
+### 5.2 `POST /matches/:roomCode/join`
 
 ```json
-{ "deckId": "...", "password": "1234" }
+{ "deckId": "...", "configToken": "eyJ..." }
 ```
 
-Retorna `wsUrl`, `seatToken`, `voiceToken`. Valida: sala existe, tem vaga (`RN03`), senha correta,
-solicitante não está bloqueado por nenhum jogador presente (`F36`).
+```json
+// 201
+{ "seatToken": "eyJ...", "roomCode": "7C60D5", "config": { "...": "..." } }
+```
 
-**Erros:** `ROOM_NOT_FOUND`, `ROOM_FULL`, `FORBIDDEN` (senha errada ou bloqueio), `DECK_NOT_FOUND`.
+Os dois campos são opcionais:
 
-Após 3 senhas erradas, espera de 30 s por IP.
+- **`deckId`** — o grimório passou a ser escolhido **dentro** da sala de espera
+  (`INTENT_SET_DECK`), onde dá para ver quem sentou antes de decidir. Quando
+  vem, a validação de formato roda aqui, que é onde a mensagem de erro ainda é
+  útil — antes de qualquer conexão.
+- **`configToken`** — só o criador tem um. Quem entra pelo código não manda
+  nada: a configuração daquela sala já está no `RoomState`. Um passe inválido,
+  expirado ou de outra sala é **ignorado em silêncio** — o pior caso é perder o
+  reforço, nunca perder o assento.
 
-### 5.3 `GET /rooms/:roomId`
+O `seatToken` vale **1 dia**, e não 60 s. O motivo está no código: ele viaja na
+URL da mesa, e é essa URL que as pessoas mandam no grupo e reabrem depois do
+jantar. Isso **não** o torna reutilizável — o `jti` continua sendo consumido na
+primeira entrada (`FR-20`); o que muda é até quando a primeira entrada é aceita.
 
-Metadados públicos, **sem** estado de jogo:
+**Erros:** `DECK_NOT_FOUND`, `VALIDATION_FAILED` (deck irregular para o formato,
+com o motivo no corpo).
+
+### 5.3 `POST /matches/:roomCode/spectate`
+
+Sem corpo. Emite um seat token com a claim `spectator: true`, sem `deckId` e
+sem `cfg`.
+
+```json
+// 201
+{ "seatToken": "eyJ...", "roomCode": "7C60D5", "spectator": true }
+```
+
+**Rota própria, e não uma flag no `join`.** A diferença entre assistir e jogar
+decide quem ocupa o último assento de uma mesa cheia, e isso não pode ser um
+booleano que o navegador manda: bastaria enviá-lo como `false`. Com rotas
+separadas, o que autoriza cada caso é a claim assinada — e o game-server só
+olha o token.
+
+Ela também **não valida deck**, e isso é o ponto: `join` gasta uma ida à
+Scryfall para hidratar o decklist e conferir banimentos. Quem vai assistir não
+tem deck para validar.
+
+### 5.4 `GET /matches/:roomCode/voice-token`
+
+Passe do LiveKit. Devolve `{ token: null, motivo }` — e não um 403 — quando a
+voz está desligada na plataforma: o cliente já trata token ausente como "esta
+mesa não tem voz" e monta a partida sem o LiveKit. Um 403 faria a tela mostrar
+falha de conexão numa mesa perfeitamente jogável.
+
+### 5.5 `GET /salas` — **no game-server, não nesta API**
+
+A vitrine de mesas públicas é servida pelo **game-server** (mesmo host e porta
+do WebSocket, em HTTP), porque é lá que o `matchMaker` sabe quais salas existem
+— e não há tabela de salas para esta API consultar.
 
 ```json
 {
-  "roomId": "K7M2QX",
-  "name": "Mesa Casual de Sexta",
-  "isPrivate": true,
-  "playerCount": 2,
-  "maxPlayers": 4,
-  "allowSpectators": false,
-  "createdAt": "..."
+  "salas": [
+    {
+      "roomCode": "7C60D5",
+      "nome": "Mesa do Gaspare",
+      "gameType": "commander",
+      "comunicacao": "QUALQUER",
+      "idioma": "pt-BR",
+      "nivelDePoder": 3,
+      "ocupacao": 2,
+      "maxSeats": 4,
+      "emPartida": false,
+      "cheia": false
+    }
+  ]
 }
 ```
 
-### 5.4 `GET /rooms/public` _(V2)_
+Rota **pública**, sem autenticação: é uma vitrine, e o que ela mostra de cada
+sala é o que o criador escolheu publicar ao marcá-la como pública. Entrar
+continua exigindo o `seatToken`.
 
-Lista salas abertas com vaga. Query: `page`, `limit`, `hasSlots`.
+Ela **nunca** devolve o `metadata` cru do Colyseus, e o mapeamento campo a
+campo é deliberado: metadado é objeto livre, e no dia em que alguém guardar ali
+um campo interno ele vazaria para a internet sem que nada no código da rota
+mudasse.
 
-### 5.5 `POST /rooms/:roomId/spectate` _(V2)_
+`cheia` é `true` para sala lotada ou trancada — e ela **continua na lista**,
+como conteúdo assistível. Uma vitrine com poucas mesas e nenhuma cheia parece
+uma plataforma vazia.
 
-Emite token de espectador — escopo somente leitura, sem assento de jogador.
+> **CORS:** o game-server só libera as origens de `CORS_ORIGINS`. Sem essa
+> variável em produção a vitrine fica permanentemente vazia e o painel só
+> consegue reportar "a lista de mesas está indisponível", sem nada no log que
+> aponte para a causa.
 
 ---
 
