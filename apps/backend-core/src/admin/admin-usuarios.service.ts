@@ -13,8 +13,10 @@ import type {
   InventarioDto,
   MotivoDto,
   MudarPapelDto,
+  MudarTierDto,
   SuspenderDto,
 } from './admin.dto.js';
+import { tierDoCosmetico, type FamiliaDeCosmetico } from '@aethertable/shared-types';
 
 /**
  * admin-usuarios.service.ts — gestão de contas (DOC-061 §2).
@@ -42,6 +44,7 @@ const CAMPOS_DE_LISTA = {
   displayName: true,
   avatarUrl: true,
   role: true,
+  supporterTier: true,
   emailVerifiedAt: true,
   lastSeenAt: true,
   deletedAt: true,
@@ -295,6 +298,86 @@ export class AdminUsuariosService {
     return { sucesso: true };
   }
 
+  /**
+   * ─── CONCEDE OU RETIRA O DIREITO A COSMÉTICO DE APOIADOR ──────────────────
+   *
+   * O catálogo marca itens como `APOIADOR` desde sempre, e a marca não valia
+   * nada: o cadeado da interface era decorativo, o DTO validava só a existência
+   * do id, e `updateUser` gravava o que chegasse.
+   *
+   * Enquanto não houver integração de pagamento — não há nenhuma no
+   * repositório — o direito é concedido aqui, com motivo e auditoria como
+   * qualquer outra ação do backoffice. No dia em que houver, ela escreve na
+   * mesma coluna e nada mais muda.
+   *
+   * ─── REBAIXAR DESEQUIPA ────────────────────────────────────────────────────
+   *
+   * Tirar o tier sem limpar o que já está equipado deixaria a pessoa usando um
+   * cosmético a que não tem mais direito por tempo indeterminado: o servidor só
+   * checa no momento de EQUIPAR, e ela não precisa equipar de novo. O efeito
+   * seria "revogar não revoga", que é exatamente o defeito que este trabalho
+   * corrige.
+   *
+   * A limpeza é feita item a item contra o catálogo, e não por um `UPDATE` que
+   * zera tudo: um jogador de tier `APOIADOR` rebaixado costuma ter cosméticos
+   * gratuitos equipados também, e apagá-los seria punir além do combinado.
+   */
+  async mudarTier(req: RequisicaoAdmin, id: string, dto: MudarTierDto) {
+    const alvo = await this.exigirAlvo(req, id, { permitirApagado: true });
+    if (alvo.supporterTier === dto.tier) {
+      throw new BadRequestException(`A conta já é ${dto.tier}.`);
+    }
+
+    await this.prisma.user.update({ where: { id }, data: { supporterTier: dto.tier } });
+
+    let desequipados: string[] = [];
+    if (dto.tier === 'FREE') {
+      desequipados = await this.desequiparCosmeticosDeApoiador(id);
+    }
+
+    await this.auditoria.registrar(req, {
+      action: AdminAction.USER_ROLE_CHANGE,
+      targetType: 'user',
+      targetId: id,
+      targetLabel: alvo.username,
+      reason: dto.motivo,
+      metadata: { tierDe: alvo.supporterTier, tierPara: dto.tier, desequipados },
+    });
+
+    return { tier: dto.tier, desequipados };
+  }
+
+  /** Devolve ao padrão só o que é de apoiador. Retorna o que foi tirado. */
+  private async desequiparCosmeticosDeApoiador(userId: string): Promise<string[]> {
+    const pref = await this.prisma.userPreference.findUnique({
+      where: { userId },
+      select: { sleeveId: true, playmatId: true, borderId: true, titleId: true, petId: true },
+    });
+    if (!pref) return [];
+
+    const limpar: Partial<Record<FamiliaDeCosmetico, null>> = {};
+    const tirados: string[] = [];
+
+    for (const familia of [
+      'sleeveId',
+      'playmatId',
+      'borderId',
+      'titleId',
+      'petId',
+    ] as FamiliaDeCosmetico[]) {
+      const id = pref[familia];
+      if (id && tierDoCosmetico(familia, id) === 'APOIADOR') {
+        limpar[familia] = null;
+        tirados.push(id);
+      }
+    }
+
+    if (tirados.length > 0) {
+      await this.prisma.userPreference.update({ where: { userId }, data: limpar });
+    }
+    return tirados;
+  }
+
   async revogarCosmetico(req: RequisicaoAdmin, id: string, dto: InventarioDto) {
     const alvo = await this.exigirAlvo(req, id);
     const item = await this.prisma.cosmeticItem.findUnique({ where: { id: dto.cosmeticoId } });
@@ -307,6 +390,20 @@ export class AdminUsuariosService {
      * O item revogado pode ser o EQUIPADO. Sem limpar a preferência, o jogador
      * continuaria com um cosmético que não possui mais — e a mesa desenharia
      * um sleeve que o inventário diz que não é dele.
+     *
+     * ─── ATENÇÃO: ISTO LIMPA O INVENTÁRIO CONCEDIDO, NÃO O QUE A MESA DESENHA
+     *
+     * São duas trilhas de dados, e elas não se encontram. `CosmeticItem` /
+     * `UserCosmetic` usam UUID; o que o jogo desenha vem do catálogo em código
+     * (`shared-types/cosmetics.ts`) e tem id de texto — `aether-classic`. As
+     * colunas `active*Id` limpas abaixo são as de UUID, e `sleeveId` /
+     * `playmatId` / `borderId` / `titleId` / `petId` — as reais — não têm como
+     * ser alcançadas a partir de um UUID, porque nada no `CosmeticItem` casa
+     * com um id de catálogo.
+     *
+     * Por isso o que governa o direito de equipar é o TIER, e não o inventário:
+     * ver `mudarTier` abaixo, que é a ação que de fato tira um cosmético de
+     * apoiador da mesa de alguém.
      */
     await this.prisma.userPreference.updateMany({
       where: { userId: id, activePlaymatId: dto.cosmeticoId },
@@ -358,7 +455,14 @@ export class AdminUsuariosService {
 
     const alvo = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, username: true, email: true, role: true, deletedAt: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        deletedAt: true,
+        supporterTier: true,
+      },
     });
     if (!alvo) throw new NotFoundException('Usuário não encontrado.');
     if (alvo.deletedAt && !opcoes.permitirApagado) {

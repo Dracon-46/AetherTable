@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { AdminAction, CosmeticType, ReportReason, ReportStatus, Role } from '@prisma/client';
+import {
+  AdminAction,
+  CosmeticType,
+  ReportReason,
+  ReportStatus,
+  Role,
+  SupporterTier,
+} from '@prisma/client';
 
 /**
  * admin.dto.ts — a fronteira de entrada do backoffice.
@@ -51,6 +58,23 @@ export const MudarPapelDto = z.object({
   motivo: Motivo,
 });
 export type MudarPapelDto = z.infer<typeof MudarPapelDto>;
+
+/**
+ * ─── O TIER E O QUE DE FATO GOVERNA O EQUIPAMENTO ────────────────────────────
+ *
+ * O catalogo de cosmeticos marca itens como FREE ou APOIADOR, e ate agora essa
+ * marca nao valia nada: o cadeado da interface era decorativo e o backend
+ * gravava o que chegasse.
+ *
+ * Enquanto nao houver integracao de pagamento — nao ha nenhuma no repositorio —
+ * o direito e concedido aqui, com motivo e trilha de auditoria como qualquer
+ * outra acao do backoffice.
+ */
+export const MudarTierDto = z.object({
+  tier: z.nativeEnum(SupporterTier),
+  motivo: Motivo,
+});
+export type MudarTierDto = z.infer<typeof MudarTierDto>;
 
 export const InventarioDto = z.object({
   /** Id do item no catálogo de código (`shared-types/cosmetics.ts`). */

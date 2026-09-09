@@ -18,7 +18,8 @@ import {
   PROFILE_BORDERS,
   SLEEVES,
   acharPet,
-  type CosmeticTier,
+  podeEquipar,
+  type FamiliaDeCosmetico,
 } from '@aethertable/shared-types';
 import { caminhoDoPet, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
 import { useCosmeticos } from '../cosmetics/store';
@@ -54,8 +55,21 @@ function Previa({
   return <div ref={ref} className={`overflow-hidden ${proporcao} ${className ?? ''}`} />;
 }
 
-function Cadeado({ tier }: { tier: CosmeticTier }) {
-  if (tier === 'FREE') return null;
+/**
+ * ─── O CADEADO ERA DECORATIVO ─────────────────────────────────────────────────
+ *
+ * Ele desenhava um ícone e nada mais: o `<button>` não recebia `disabled`, o
+ * DTO do backend validava só a existência do id no catálogo, e `updateUser`
+ * gravava o que chegasse. Qualquer conta equipava qualquer item de apoiador.
+ *
+ * Agora ele reflete uma regra que existe dos dois lados —
+ * `podeEquipar(tier, familia, id)` em `shared-types`, chamada aqui e no
+ * servidor. Uma segunda implementação divergiria no primeiro item novo do
+ * catálogo, e a divergência apareceria como um item que a tela deixa clicar e
+ * a API recusa.
+ */
+function Cadeado({ travado }: { travado: boolean }) {
+  if (!travado) return null;
   return (
     <span
       className="text-warning absolute right-1 top-1 rounded bg-black/70 p-1"
@@ -94,9 +108,25 @@ const cardBase =
 export function CosmeticPicker() {
   const equipado = useCosmeticos();
   const equipar = useCosmeticos((s) => s.equipar);
+  const tier = useCosmeticos((s) => s.tier);
 
-  const sel = (ativo: boolean) =>
-    `${cardBase} ${ativo ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20' : 'border-panel-border bg-table-deep hover:border-panel-hover'}`;
+  /** A mesma regra que o servidor aplica — ver `podeEquipar`. */
+  const travado = (familia: FamiliaDeCosmetico, id: string) => !podeEquipar(tier, familia, id);
+
+  const sel = (ativo: boolean, bloqueado: boolean) =>
+    `${cardBase} ${
+      bloqueado
+        ? 'border-panel-border bg-table-deep cursor-not-allowed opacity-45 hover:translate-y-0'
+        : ativo
+          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
+          : 'border-panel-border bg-table-deep hover:border-panel-hover'
+    }`;
+
+  /** O motivo fica no `title`: um botão cinza sem explicação parece defeito. */
+  const motivo = (bloqueado: boolean) =>
+    bloqueado
+      ? 'Exclusivo de apoiadores. A plataforma é gratuita; isto retribui quem apoia.'
+      : undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -109,9 +139,11 @@ export function CosmeticPicker() {
             <button
               key={s.id}
               onClick={() => equipar({ sleeveId: s.id })}
-              className={sel(equipado.sleeveId === s.id)}
+              disabled={travado('sleeveId', s.id)}
+              title={motivo(travado('sleeveId', s.id))}
+              className={sel(equipado.sleeveId === s.id, travado('sleeveId', s.id))}
             >
-              <Cadeado tier={s.tier} />
+              <Cadeado travado={travado('sleeveId', s.id)} />
               <Previa fonte={sleeveCanvas(s.id)} proporcao="aspect-[63/88] rounded" />
               <span className="text-text mt-1.5 truncate px-0.5 text-[11px]">{s.nome}</span>
             </button>
@@ -128,9 +160,11 @@ export function CosmeticPicker() {
             <button
               key={p.id}
               onClick={() => equipar({ playmatId: p.id })}
-              className={sel(equipado.playmatId === p.id)}
+              disabled={travado('playmatId', p.id)}
+              title={motivo(travado('playmatId', p.id))}
+              className={sel(equipado.playmatId === p.id, travado('playmatId', p.id))}
             >
-              <Cadeado tier={p.tier} />
+              <Cadeado travado={travado('playmatId', p.id)} />
               <Previa fonte={playmatCanvas(p.id)} proporcao="aspect-[3/1] rounded" />
               <span className="text-text mt-1.5 truncate px-0.5 text-[11px]">{p.nome}</span>
             </button>
@@ -147,9 +181,11 @@ export function CosmeticPicker() {
             <button
               key={b.id}
               onClick={() => equipar({ borderId: b.id })}
-              className={sel(equipado.borderId === b.id)}
+              disabled={travado('borderId', b.id)}
+              title={motivo(travado('borderId', b.id))}
+              className={sel(equipado.borderId === b.id, travado('borderId', b.id))}
             >
-              <Cadeado tier={b.tier} />
+              <Cadeado travado={travado('borderId', b.id)} />
               <div className="flex items-center justify-center py-3">
                 <Avatar nome="AT" borderId={b.id} tamanho="md" />
               </div>
@@ -168,9 +204,11 @@ export function CosmeticPicker() {
             <button
               key={t.id}
               onClick={() => equipar({ titleId: t.id })}
-              className={sel(equipado.titleId === t.id)}
+              disabled={travado('titleId', t.id)}
+              title={motivo(travado('titleId', t.id))}
+              className={sel(equipado.titleId === t.id, travado('titleId', t.id))}
             >
-              <Cadeado tier={t.tier} />
+              <Cadeado travado={travado('titleId', t.id)} />
               <div className="flex items-center justify-center py-4">
                 {t.badge ? (
                   <span
@@ -198,9 +236,11 @@ export function CosmeticPicker() {
             <button
               key={p.id}
               onClick={() => equipar({ petId: p.id })}
-              className={sel(equipado.petId === p.id)}
+              disabled={travado('petId', p.id)}
+              title={motivo(travado('petId', p.id))}
+              className={sel(equipado.petId === p.id, travado('petId', p.id))}
             >
-              <Cadeado tier={p.tier} />
+              <Cadeado travado={travado('petId', p.id)} />
               <div className="flex h-16 items-center justify-center">
                 <PreviaPet petId={p.id} />
               </div>

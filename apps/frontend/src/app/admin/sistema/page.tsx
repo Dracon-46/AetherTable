@@ -10,13 +10,18 @@
  * Uma env var não serve — mudar env exige redeploy, e emergência de faturamento
  * não espera build. Eles vivem numa tabela, com histórico de quem mexeu.
  *
- * ─── E POR QUE O MONITOR DO COLYSEUS NÃO ESTÁ AQUI ─────────────────────────
+ * ─── E POR QUE O MONITOR DO COLYSEUS NÃO ESTÁ EMBUTIDO AQUI ────────────────
  *
- * §5 pede também um iframe com a UI de `@colyseus/monitor`. Ele não está nesta
- * tela e não é esquecimento: o monitor não está montado no game-server, e um
- * iframe apontando para uma rota inexistente é pior que a ausência — parece
- * uma ferramenta quebrada. O que dá para fazer honestamente hoje é o link
- * direto, com o aviso de que depende de o monitor estar habilitado lá.
+ * §5 pede também um iframe com a UI de `@colyseus/monitor`. Ele existe e está
+ * montado no game-server — este comentário afirmava o contrário, e afirmava
+ * errado: ele estava montado E sem autenticação nenhuma, expondo a mão e o
+ * grimório de todos os jogadores de todas as salas.
+ *
+ * Agora ele fica atrás de basic auth (`ADMIN_PANEL_PASSWORD`, e o game-server
+ * se recusa a subir em produção sem ela). O que continua não fazendo sentido é
+ * o IFRAME: o painel serve credencial própria, e um iframe faria o navegador
+ * abrir um prompt de senha dentro desta tela, sem contexto sobre o que está
+ * pedindo. O link direto é honesto sobre estar saindo daqui.
  */
 
 import { useState } from 'react';

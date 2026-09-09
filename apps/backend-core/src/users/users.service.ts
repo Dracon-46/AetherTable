@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { podeEquipar, type CosmeticTier, type FamiliaDeCosmetico } from '@aethertable/shared-types';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 
 /**
@@ -20,7 +26,36 @@ export class UsersService {
         id,
         deletedAt: null, // Regra fundamental de Soft Delete (DOC-023)
       },
-      include: {
+      /**
+       * ─── `select` EXPLÍCITO, E NÃO `include` ────────────────────────────
+       *
+       * Isto era um `include`, e `include` traz TODOS os campos escalares do
+       * modelo além das relações pedidas. Quer dizer: `GET /users/me` estava
+       * devolvendo o `passwordHash` — a hash Argon2id da senha — para o
+       * navegador, junto de `suspensionReason` e `deletedAt`.
+       *
+       * É a hash da própria pessoa, então não é vazamento entre contas; mas
+       * ela ia parar no `localStorage`, no cache do navegador e em qualquer
+       * log de proxy que registre corpo de resposta. Uma hash de senha não
+       * tem motivo nenhum para sair do banco.
+       *
+       * Com `select`, um campo novo no modelo é invisível até alguém decidir
+       * expô-lo aqui — que é onde a decisão de expor pertence.
+       */
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        role: true,
+        /** O direito a cosmético de apoiador. O cliente usa para desabilitar
+         *  o que a conta não pode equipar, e o servidor recusa de qualquer
+         *  forma em `exigirDireitoAosCosmeticos`. */
+        supporterTier: true,
+        emailVerifiedAt: true,
+        lastSeenAt: true,
+        createdAt: true,
         _count: {
           select: { participions: true },
         },
@@ -116,6 +151,55 @@ export class UsersService {
   }
 
   /**
+   * ─── O CADEADO PASSA A TRANCAR ───────────────────────────────────────────
+   *
+   * `AtualizarPerfilDto` validava só que o id EXISTE no catálogo
+   * (`ehSleeveValido` e companhia), nunca o tier. O cadeado do
+   * `CosmeticPicker` era decorativo — o `<button>` não recebia `disabled` — e
+   * `updateUser` gravava o que chegasse. Qualquer conta equipava qualquer item
+   * de apoiador, e bastava um PATCH para contornar até a interface.
+   *
+   * A checagem NÃO cabe no DTO, e isso não é preguiça: um DTO valida o corpo
+   * isoladamente e não conhece o usuário. "Este id é válido" é pergunta de
+   * schema; "esta conta tem direito a este id" é pergunta de estado, e estado
+   * mora no service.
+   *
+   * Uma consulta só, e apenas quando o corpo traz cosmético: um PATCH de
+   * username não paga por isto.
+   */
+  private async exigirDireitoAosCosmeticos(
+    userId: string,
+    data: Partial<Record<FamiliaDeCosmetico, string | null>>,
+  ): Promise<void> {
+    const familias: FamiliaDeCosmetico[] = [
+      'sleeveId',
+      'playmatId',
+      'borderId',
+      'titleId',
+      'petId',
+    ];
+    // `null` é "voltar ao padrão", e o padrão é sempre gratuito.
+    const pedidos = familias
+      .map((familia) => ({ familia, id: data[familia] }))
+      .filter((p): p is { familia: FamiliaDeCosmetico; id: string } => Boolean(p.id));
+
+    if (pedidos.length === 0) return;
+
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { supporterTier: true },
+    });
+    const tier = (usuario?.supporterTier ?? 'FREE') as CosmeticTier;
+
+    const negados = pedidos.filter((p) => !podeEquipar(tier, p.familia, p.id));
+    if (negados.length > 0) {
+      throw new ForbiddenException(
+        `Estes cosméticos são exclusivos de apoiadores: ${negados.map((n) => n.id).join(', ')}.`,
+      );
+    }
+  }
+
+  /**
    * Atualiza os dados do usuário (perfil e preferências)
    */
   async updateUser(
@@ -141,6 +225,8 @@ export class UsersService {
       const existing = await this.prisma.user.findFirst({ where: { username, id: { not: id } } });
       if (existing) throw new BadRequestException('Username já em uso');
     }
+
+    await this.exigirDireitoAosCosmeticos(id, data);
 
     const updatedUser = await this.prisma.user.update({
       where: { id },

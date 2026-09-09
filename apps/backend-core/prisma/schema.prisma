@@ -25,6 +25,27 @@ enum Role {
   ADMIN
 }
 
+/// ─── DIREITO A COSMETICO DE APOIADOR ──────────────────────────────────────────
+///
+/// O catalogo (`shared-types/cosmetics.ts`, DOC-060) marca itens como `FREE` ou
+/// `APOIADOR`, e a interface desenhava um CADEADO nos de apoiador. O cadeado era
+/// decorativo: o botao nao tinha `disabled`, o DTO validava so a existencia do id
+/// no catalogo, e `updateUser` gravava direto. Qualquer conta equipava qualquer
+/// coisa.
+///
+/// Nao existe pagamento neste repositorio — zero ocorrencias de Patreon, Stripe
+/// ou checkout. Entao o tier e ADMINISTRADO PELO BACKOFFICE, que ja tem tela de
+/// usuarios e trilha de auditoria. Quando houver integracao de pagamento, ela
+/// escreve nesta mesma coluna e nada mais muda.
+///
+/// A alternativa era tornar o catalogo inteiro gratuito e remover o cadeado. Foi
+/// descartada porque joga fora a estrutura de monetizacao ja modelada em DOC-060
+/// — e reintroduzi-la depois seria refazer o catalogo.
+enum SupporterTier {
+  FREE
+  APOIADOR
+}
+
 enum Provider {
   GOOGLE
   DISCORD
@@ -116,6 +137,9 @@ model User {
   passwordHash    String?   @map("password_hash") @db.VarChar(255)
   avatarUrl       String?   @map("avatar_url")
   role            Role      @default(USER)
+  /// Direito a cosmetico de apoiador. Ver o enum: administrado pelo backoffice
+  /// enquanto nao houver integracao de pagamento.
+  supporterTier   SupporterTier @default(FREE) @map("supporter_tier")
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
   lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz
   /// Soft delete para LGPD: expurgo fisico em 30 dias (§7.1).
