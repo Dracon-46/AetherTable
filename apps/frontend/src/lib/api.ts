@@ -15,6 +15,27 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3333
 /** URL do WebSocket do game server. */
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:2567';
 
+/**
+ * O mesmo game server, pelo lado HTTP.
+ *
+ * O processo serve `/health`, `/metrics` e agora `/salas` no mesmo express em
+ * que o WebSocket está pendurado — é literalmente o mesmo host e a mesma porta,
+ * com outro esquema. Derivar em vez de criar `NEXT_PUBLIC_GAME_HTTP_URL` é
+ * deliberado: uma segunda variável para o mesmo endereço é uma segunda variável
+ * para esquecer de atualizar no deploy, e o sintoma seria a lista de salas
+ * apontando para o game server de outro ambiente.
+ *
+ * A troca precisa ser ancorada no INÍCIO da string (`^`). Sem a âncora, um
+ * host que contenha `ws` no nome — `wss://ws.aethertable.gg` é o caso que
+ * aparece primeiro — teria a ocorrência errada substituída.
+ */
+export function httpDoWebSocket(url: string): string {
+  return url.replace(/^ws(s?):\/\//, 'http$1://');
+}
+
+/** Base HTTP do game server, para `GET /salas`. */
+export const GAME_HTTP_URL = httpDoWebSocket(WS_URL);
+
 /** Monta os headers de uma chamada autenticada. */
 export function authHeaders(token: string | null): Record<string, string> {
   return {

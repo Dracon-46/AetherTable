@@ -190,3 +190,137 @@ describe('joinMatch — travas que já existiam', () => {
     await expect(entrar(svc)).rejects.toThrow(/exatamente 100/i);
   });
 });
+
+/**
+ * ─── A CONFIGURAÇÃO DA SALA NÃO PODE VIR DO NAVEGADOR SEM ASSINATURA ───────
+ *
+ * As opções da sala eram escritas pelo cliente e o `onCreate` só as limitava
+ * contra `REALTIME_LIMITS.MAX_PLAYERS`: dava para abrir uma mesa de Duel
+ * Commander com oito assentos editando um número na querystring.
+ *
+ * A correção é um passe de configuração assinado por `createMatch` e devolvido
+ * em `joinMatch`, que o embute no seat token. O que estes casos fixam é o que
+ * torna esse passe útil: ele tem de estar VINCULADO À SALA, tem de ser
+ * ignorado em silêncio quando não presta, e a configuração tem de sair dele já
+ * dentro dos limites do formato.
+ */
+describe('configuração de sala', () => {
+  /** Duplo de JWT que assina de verdade o suficiente para o teste ir e voltar. */
+  function servicoComJwt() {
+    const emitidos = new Map<string, object>();
+    let contador = 0;
+
+    const jwtService = {
+      sign: jest.fn((payload: object) => {
+        const token = `assinado-${(contador += 1)}`;
+        emitidos.set(token, payload);
+        return token;
+      }),
+      verify: jest.fn((token: string) => {
+        const payload = emitidos.get(token);
+        // Um passe que este serviço não emitiu é indistinguível de um forjado:
+        // `jsonwebtoken` lança, e é isso que o duplo precisa reproduzir.
+        if (!payload) throw new Error('invalid signature');
+        return payload;
+      }),
+    };
+
+    const svc = new MatchesService(
+      jwtService as unknown as ConstructorParameters<typeof MatchesService>[0],
+      { getDeckById: jest.fn() } as unknown as ConstructorParameters<typeof MatchesService>[1],
+      {
+        flagLigada: jest.fn().mockResolvedValue(true),
+      } as unknown as ConstructorParameters<typeof MatchesService>[2],
+    );
+
+    /** As claims do seat token da última chamada a `joinMatch`. */
+    const claimsDoPasse = (token: string) => emitidos.get(token) as Record<string, unknown>;
+
+    return { svc, jwtService, claimsDoPasse };
+  }
+
+  it('createMatch sem corpo devolve a config padrão, e ela é PRIVADA', async () => {
+    const { svc } = servicoComJwt();
+    const { config } = await svc.createMatch('u1', 'gaspare');
+
+    expect(config.visibilidade).toBe('PRIVADA');
+    expect(config.gameType).toBe('commander');
+  });
+
+  it('createMatch aplica a faixa do FORMATO, não a do navegador', async () => {
+    // Oito assentos numa mesa de Duel Commander era exatamente o buraco.
+    const { svc } = servicoComJwt();
+    const { config } = await svc.createMatch('u1', 'gaspare', {
+      gameType: 'duel_commander',
+      maxClients: 8,
+    });
+
+    expect(config.maxClients).toBe(2);
+  });
+
+  it('a config assinada volta para dentro do seat token', async () => {
+    const { svc, claimsDoPasse } = servicoComJwt();
+    const criada = await svc.createMatch('u1', 'gaspare', {
+      nome: 'Mesa do Gaspare',
+      visibilidade: 'PUBLICA',
+      maxClients: 3,
+    });
+
+    const { seatToken } = await svc.joinMatch(
+      'u1',
+      'gaspare',
+      criada.roomCode,
+      undefined,
+      criada.configToken,
+    );
+
+    expect(claimsDoPasse(seatToken).cfg).toMatchObject({
+      nome: 'Mesa do Gaspare',
+      visibilidade: 'PUBLICA',
+      maxClients: 3,
+    });
+  });
+
+  it('um passe de OUTRA sala é ignorado — senão ele ampliaria qualquer mesa', async () => {
+    const { svc, claimsDoPasse } = servicoComJwt();
+    const outra = await svc.createMatch('u1', 'gaspare', { maxClients: 8 });
+
+    // Passe legítimo, sala errada.
+    const { seatToken } = await svc.joinMatch(
+      'u2',
+      'convidado',
+      'ABCDEF',
+      undefined,
+      outra.configToken,
+    );
+
+    expect(claimsDoPasse(seatToken).cfg).toBeUndefined();
+  });
+
+  it('passe forjado ou ausente não derruba a entrada — perde-se o reforço, nunca o assento', async () => {
+    const { svc, claimsDoPasse } = servicoComJwt();
+
+    const forjado = await svc.joinMatch('u2', 'convidado', 'ABCDEF', undefined, 'nao-sou-um-jwt');
+    expect(claimsDoPasse(forjado.seatToken).cfg).toBeUndefined();
+    expect(forjado.seatToken).toBeTruthy();
+
+    // Quem entra pelo código nunca teve passe de configuração: é o caso comum.
+    const semPasse = await svc.joinMatch('u3', 'outro', 'ABCDEF');
+    expect(claimsDoPasse(semPasse.seatToken).cfg).toBeUndefined();
+    expect(semPasse.seatToken).toBeTruthy();
+  });
+
+  it('renormaliza o que veio assinado: o catálogo pode ter mudado desde a emissão', async () => {
+    const { svc, jwtService, claimsDoPasse } = servicoComJwt();
+
+    // Simula um passe emitido por uma versão anterior, com uma configuração que
+    // o catálogo de hoje não aceita mais.
+    jwtService.verify.mockReturnValueOnce({
+      roomId: 'ABCDEF',
+      cfg: { gameType: 'duel_commander', maxClients: 8, nivelDePoder: 4 },
+    });
+
+    const { seatToken } = await svc.joinMatch('u1', 'gaspare', 'ABCDEF', undefined, 'passe-antigo');
+    expect(claimsDoPasse(seatToken).cfg).toMatchObject({ maxClients: 2 });
+  });
+});

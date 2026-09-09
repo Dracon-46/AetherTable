@@ -5,6 +5,8 @@ import { DecksService } from '../decks/decks.service.js';
 import { validarDeckParaFormato, type DeckValidavel } from '../decks/formato.js';
 import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
+import { normalizarConfigDeSala, type ConfigDeSala } from '@aethertable/shared-types';
+import type { CriarPartidaDto } from './matches.dto.js';
 
 @Injectable()
 export class MatchesService {
@@ -37,7 +39,18 @@ export class MatchesService {
    */
   private static readonly SEAT_TOKEN_TTL = '1d';
 
-  async createMatch(_userId: string, _username: string) {
+  /**
+   * Validade do passe de CONFIGURAÇÃO.
+   *
+   * Curta de propósito, e por um motivo diferente do seat token: este passe
+   * nunca viaja numa URL nem é compartilhado no grupo. Ele existe só para
+   * atravessar o intervalo entre `POST /create` e `POST /join`, que acontece
+   * dentro do mesmo clique. Quinze minutos já são folga generosa para uma
+   * requisição que segue imediatamente a outra.
+   */
+  private static readonly CONFIG_TOKEN_TTL = '15m';
+
+  async createMatch(_userId: string, _username: string, dto: CriarPartidaDto = {}) {
     /**
      * O INTERRUPTOR DE MESAS (DOC-061 §5).
      *
@@ -58,7 +71,76 @@ export class MatchesService {
 
     // Gera um roomCode de 6 caracteres
     const roomCode = randomBytes(3).toString('hex').toUpperCase();
-    return { roomCode };
+
+    // A MESMA função que o formulário do navegador chamou antes de enviar e que
+    // o `onCreate` chamará ao gravar no estado. Ela é idempotente por contrato,
+    // então renormalizar o que já veio normalizado não muda nada — e é isso que
+    // permite chamá-la nas três pontas sem que elas divirjam.
+    const config = normalizarConfigDeSala(dto);
+
+    return { roomCode, config, configToken: this.assinarConfig(roomCode, config) };
+  }
+
+  /**
+   * ─── A CONFIGURAÇÃO DA SALA VINHA DO NAVEGADOR, E ISSO ERA UM BURACO ──────
+   *
+   * `client.joinOrCreate(AETHER_ROOM, { roomCode, seatToken, maxClients,
+   * gameType })`: as opções da sala eram escritas pelo cliente e NÃO eram
+   * assinadas. O `onCreate` só as limitava contra `REALTIME_LIMITS.MAX_PLAYERS`,
+   * então nada impedia um navegador de abrir uma mesa de Duel Commander com
+   * oito assentos — bastava editar um número na querystring.
+   *
+   * ─── POR QUE UM PASSE PRÓPRIO, E NÃO A CONFIG DIRETO NO SEAT TOKEN ────────
+   *
+   * O seat token nasce em `joinMatch`, não aqui. Para ele já sair com a
+   * configuração dentro, `joinMatch` precisaria conhecê-la — e não há onde
+   * consultar: não existe modelo `Match` persistido, e não vai existir
+   * (ADR-006, RN12 — o estado da sala vive na RAM do game node; o que o
+   * Postgres guarda é o `MatchSummary`, que é registro pós-partida).
+   *
+   * As duas saídas eram criar uma tabela para dados que morrem em minutos, ou
+   * devolver a configuração ao cliente ASSINADA e pedi-la de volta no join. A
+   * segunda mantém o serviço sem estado e resolve o mesmo problema: o navegador
+   * continua carregando a configuração de uma requisição para a outra, mas não
+   * consegue mais REESCREVÊ-LA no caminho — a assinatura quebra, e o
+   * game-server volta a confiar só no que ele mesmo normalizou.
+   *
+   * O vínculo com o `roomCode` é o que fecha o outro abuso: sem ele, um passe
+   * legítimo de uma mesa de oito assentos serviria para entrar em QUALQUER
+   * outra sala e ampliá-la.
+   */
+  private assinarConfig(roomCode: string, cfg: ConfigDeSala): string {
+    return this.jwtService.sign(
+      { roomId: roomCode, cfg },
+      { expiresIn: MatchesService.CONFIG_TOKEN_TTL },
+    );
+  }
+
+  /**
+   * Devolve a configuração assinada, ou `undefined`.
+   *
+   * `undefined` NÃO é erro. Quem entra pelo código nunca teve passe de
+   * configuração — é o caso mais comum desta rota — e recusar a entrada por
+   * causa disso trancaria fora da mesa exatamente quem foi convidado.
+   *
+   * Um passe inválido, expirado ou de outra sala também não derruba a entrada:
+   * ele é ignorado, e a sala nasce com o que o `onCreate` normalizou por conta
+   * própria. O pior caso é perder o reforço, nunca perder o assento.
+   */
+  private lerConfigAssinada(roomCode: string, configToken?: string): ConfigDeSala | undefined {
+    if (!configToken) return undefined;
+    try {
+      const claims = this.jwtService.verify<{ roomId?: string; cfg?: Partial<ConfigDeSala> }>(
+        configToken,
+      );
+      if (claims.roomId !== roomCode || !claims.cfg) return undefined;
+      // Renormaliza mesmo vindo assinado: o catálogo de formatos pode ter mudado
+      // entre a emissão e o uso, e um passe de quinze minutos atrás não é motivo
+      // para gravar no estado uma faixa de jogadores que não existe mais.
+      return normalizarConfigDeSala(claims.cfg);
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -71,13 +153,30 @@ export class MatchesService {
    * lobby, onde a mesma validação roda pela rota interna (ver
    * `decks/formato.ts`).
    */
-  async joinMatch(userId: string, username: string, roomCode: string, deckId?: string) {
+  async joinMatch(
+    userId: string,
+    username: string,
+    roomCode: string,
+    deckId?: string,
+    configToken?: string,
+  ) {
     if (deckId) {
       // `getDeckById` hidrata cada carta com dados da Scryfall — daí `name` e
       // `isBanned`, que não existem no registro cru do Prisma.
       const deck = await this.decksService.getDeckById(userId, deckId);
       validarDeckParaFormato(deck as DeckValidavel);
     }
+
+    /**
+     * A configuração autorizada viaja DENTRO do passe de assento.
+     *
+     * O `onCreate` do Colyseus não recebe o resultado do `onAuth` — ele roda
+     * antes, com as `options` cruas do cliente, e não há como mudar essa ordem.
+     * Quem aplica esta claim é o `onAuth` do PRIMEIRO cliente, que é sempre o
+     * criador: com a sala ainda vazia, a configuração assinada sobrescreve a
+     * que o navegador mandou.
+     */
+    const cfg = this.lerConfigAssinada(roomCode, configToken);
 
     // Gerar o SeatToken JWT para a entrada no Game Server (Colyseus)
     const jti = randomBytes(8).toString('hex');
@@ -88,11 +187,55 @@ export class MatchesService {
         roomId: roomCode, // Colyseus vincula o JWT a esta sala
         // Ausente quando o grimório será escolhido na sala de espera.
         ...(deckId ? { deckId } : {}),
+        // Ausente para quem entra pelo código: a config dessa sala já está no
+        // `RoomState`, e é de lá que o lobby dele a lê.
+        ...(cfg ? { cfg } : {}),
       },
       { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
     );
 
-    return { seatToken, roomCode };
+    return { seatToken, roomCode, config: cfg ?? null };
+  }
+
+  /**
+   * Passe de ESPECTADOR.
+   *
+   * ─── POR QUE UMA ROTA PROPRIA, E NAO UMA FLAG NO `joinMatch` ─────────────
+   *
+   * Porque a diferença entre assistir e jogar decide quem ocupa o último
+   * assento de uma mesa cheia, e essa decisão não pode ser um booleano que o
+   * cliente manda no corpo. Com uma flag, bastaria enviá-la como `false` para
+   * um espectador virar jogador; com rotas separadas, o que autoriza cada caso
+   * é a claim assinada — e o game-server só olha o token.
+   *
+   * ─── ELE NÃO VALIDA DECK, E ISSO É O PONTO ──────────────────────────────
+   *
+   * `joinMatch` gasta uma ida à Scryfall para hidratar o decklist e conferir
+   * banimentos. Quem vai assistir não tem deck para validar, e cobrar essa
+   * viagem dele seria pagar o custo mais caro da rota para não usar o
+   * resultado. É por isso que assistir é mais barato que entrar, e não só mais
+   * permissivo.
+   *
+   * O que ele NÃO faz é conferir se a sala existe: essa resposta mora no
+   * game-server, e o passe já é inútil sem ela — `onAuth` recusa um token cujo
+   * `roomId` não bate com a sala. Consultar aqui seria uma chamada entre
+   * serviços para antecipar um "não" que chega de qualquer forma.
+   */
+  async spectateMatch(userId: string, username: string, roomCode: string) {
+    const jti = randomBytes(8).toString('hex');
+    const seatToken = this.jwtService.sign(
+      {
+        sub: userId,
+        username,
+        roomId: roomCode,
+        // Sem `deckId` e sem `cfg`: quem assiste não traz baralho nem
+        // configura mesa nenhuma.
+        spectator: true,
+      },
+      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
+    );
+
+    return { seatToken, roomCode, spectator: true as const };
   }
 
   /**

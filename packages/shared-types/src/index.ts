@@ -14,6 +14,7 @@ export * from './legalidade';
 export * from './card';
 export * from './player';
 export * from './room';
+export * from './sala';
 export * from './intents';
 export * from './events';
 export * from './cards-catalog';
