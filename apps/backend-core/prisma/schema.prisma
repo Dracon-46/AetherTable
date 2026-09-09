@@ -522,6 +522,33 @@ model PlatformFlag {
 
 // ─── Cosmeticos e monetizacao (DOC-060) ──────────────────────────────────────
 
+/// ─── TOKENS REVOGADOS (o logout que desloga) ─────────────────────────────────
+///
+/// `POST /auth/logout` era `return;` — corpo vazio. Nao revogava nada, e o
+/// frontend nem o chamava: `handleLogout` so limpava o localStorage. Com o
+/// access token valendo 24h e sem denylist, SAIR DA CONTA DEIXAVA UM TOKEN
+/// VALIDO POR ATE UM DIA. Quem tivesse copiado o token — de um log de proxy, do
+/// historico do navegador, de uma maquina compartilhada — continuava dentro.
+///
+/// Uma linha por logout, apagada quando o token expira: a tabela nunca cresce
+/// alem dos tokens vivos.
+///
+/// POR QUE TABELA E NAO REDIS: o Redis e OPCIONAL neste projeto (`USE_REDIS`,
+/// e so no game-server). Uma trava de seguranca que so funciona quando um
+/// servico opcional esta de pe nao e uma trava. Se a consulta virar gargalo,
+/// o Redis entra como cache na frente desta tabela — nao no lugar dela.
+model RevokedToken {
+  /// O `jti` do access token. Nao ha FK: o token pode sobreviver a conta.
+  jti       String   @id @db.VarChar(64)
+  userId    String   @map("user_id") @db.Uuid
+  /// Quando o proprio token expiraria. Depois disto a linha e lixo.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  revokedAt DateTime @default(now()) @map("revoked_at") @db.Timestamptz
+
+  @@index([expiresAt])
+  @@map("revoked_tokens")
+}
+
 model CosmeticItem {
   id          String       @id @default(uuid()) @db.Uuid
   type        CosmeticType

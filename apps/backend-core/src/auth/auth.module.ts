@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ttlEmSegundos } from './ttl.js';
 import { AuthService } from './auth.service.js';
+import { RevogacaoService } from './revogacao.service.js';
 import { AuthController } from './auth.controller.js';
 import { JwtStrategy } from './jwt.strategy.js';
 import { GoogleStrategy } from './google.strategy.js';
@@ -50,7 +51,9 @@ import { AdminModule } from '../admin/admin.module.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, DiscordStrategy],
-  exports: [AuthService], // Exporta o serviço caso outros módulos precisem emitir tokens
+  providers: [AuthService, JwtStrategy, GoogleStrategy, DiscordStrategy, RevogacaoService],
+  // `RevogacaoService` sai do modulo porque a `JwtStrategy` de QUALQUER modulo
+  // protegido depende dele para a denylist valer em toda rota, e nao so aqui.
+  exports: [AuthService, RevogacaoService], // Exporta o serviço caso outros módulos precisem emitir tokens
 })
 export class AuthModule {}

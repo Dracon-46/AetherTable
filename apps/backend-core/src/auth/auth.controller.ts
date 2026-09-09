@@ -18,7 +18,14 @@ import { AuthService } from './auth.service.js';
 import { LoginDto, RegisterDto } from './auth.dto.js';
 import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
-import type { RequisicaoOAuth, RespostaRedirecionavel } from './http.types.js';
+import type {
+  RequisicaoAutenticada,
+  RequisicaoOAuth,
+  RespostaRedirecionavel,
+} from './http.types.js';
+import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { RevogacaoService } from './revogacao.service.js';
+import { randomBytes } from 'node:crypto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -31,6 +38,7 @@ export class AuthController {
     // Qualquer renomeação do campo quebraria o OAuth em runtime, em silêncio.
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly revogacao: RevogacaoService,
   ) {}
 
   /**
@@ -60,12 +68,33 @@ export class AuthController {
   }
 
   private redirecionarComToken(req: RequisicaoOAuth, res: RespostaRedirecionavel): void {
-    const accessToken = this.jwtService.sign({
-      username: req.user.username,
-      sub: req.user.id,
-    });
+    const accessToken = this.jwtService.sign(
+      {
+        username: req.user.username,
+        sub: req.user.id,
+      },
+      // Torna o token revogavel pelo logout. Ver `revogacao.service.ts`.
+      { jwtid: randomBytes(16).toString('hex') },
+    );
+
+    /**
+     * ─── O TOKEN VAI NO FRAGMENTO, NAO NA QUERYSTRING ───────────────────────
+     *
+     * Era `?token=<jwt>`. A querystring de um redirect entra no HISTORICO do
+     * navegador, no cabecalho `Referer` de toda requisicao subsequente daquela
+     * pagina, e em qualquer log de proxy ou CDN no caminho — que costumam
+     * registrar a URL inteira.
+     *
+     * O FRAGMENTO nao e enviado ao servidor em nenhuma dessas situacoes: ele
+     * existe so no navegador. E a diferenca entre um token que vaza para
+     * infraestrutura de terceiros e um que nao vaza.
+     *
+     * Quem le e `CapturarTokenOAuth`, no layout do painel, que grava a sessao e
+     * LIMPA o fragmento com `replaceState` — para o token nao sobreviver nem no
+     * historico local.
+     */
     return res.redirect(
-      `${this.urlDoFrontend()}/dashboard?token=${encodeURIComponent(accessToken)}`,
+      `${this.urlDoFrontend()}/dashboard#token=${encodeURIComponent(accessToken)}`,
     );
   }
 
@@ -106,13 +135,34 @@ export class AuthController {
     return this.authService.register(dto.email, dto.username, dto.password);
   }
 
+  /**
+   * ─── ISTO ERA `return;` ──────────────────────────────────────────────────
+   *
+   * Corpo vazio, comentario dizendo que a denylist "entra junto com o refresh
+   * token". Nao revogava nada — e o frontend nem chamava esta rota:
+   * `handleLogout` so limpava o `localStorage`. Com o access token valendo 24
+   * horas, SAIR DA CONTA DEIXAVA UM TOKEN VALIDO POR ATE UM DIA.
+   *
+   * O refresh token continua sendo trabalho futuro, e o TTL continua em 24h
+   * ate ele existir: encurtar sem refresh trocaria um problema de seguranca
+   * por deslogar o jogador no meio de uma partida. O que muda aqui e que
+   * `logout` agora DESLOGA.
+   */
   @Post('logout')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Revoga tokens de acesso (invalidar sessão)' })
-  logout() {
-    // O access token é stateless e curto; a sessão vive no cliente. Uma
-    // denylist de tokens revogados entra junto com o refresh token (DOC-050).
-    return;
+  @ApiOperation({ summary: 'Revoga o token de acesso desta sessao' })
+  async logoutDeVerdade(@Req() req: RequisicaoAutenticada): Promise<void> {
+    const { jti, sub, exp } = req.user;
+    // Token sem `jti` foi emitido antes desta mudanca e nao e revogavel; ele
+    // expira sozinho em ate 24h. Nao ha o que fazer, e nao e erro.
+    if (!jti) return;
+
+    // `exp` vem em segundos (padrao JWT); a coluna e timestamp.
+    await this.revogacao.revogar(jti, sub, new Date(exp * 1000));
+    // Limpeza oportunista: nao ha scheduler no projeto, e o logout e
+    // justamente quando uma linha nova entra.
+    await this.revogacao.expurgarVencidos();
   }
 
   // ── OAuth Google ───────────────────────────────────────────────────────────
