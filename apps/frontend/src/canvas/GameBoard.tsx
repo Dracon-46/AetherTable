@@ -905,6 +905,20 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     ? { esquerda: 6, direita: 6, topo: 118, base: 10 }
     : { esquerda: 168, direita: 10, topo: 44, base: 10 };
 
+  /**
+   * Tenho carta na reserva?
+   *
+   * Memo PRÓPRIO, e não uma leitura dentro do memo da mesa, porque `cards`
+   * muda a cada movimento de carta e a geometria da mesa não pode ser
+   * remontada nessa frequência. Aqui a varredura devolve um BOOLEANO: a mesa
+   * só é remontada quando ele vira, o que acontece no pré-jogo e quase nunca
+   * durante a partida.
+   */
+  const temReserva = useMemo(
+    () => Object.values(cards).some((c) => c.zone === 'SIDEBOARD' && c.ownerId === myId),
+    [cards, myId],
+  );
+
   const utilW = Math.max(320, dims.w - margens.esquerda - margens.direita);
   const utilH = Math.max(300, dims.h - margens.topo - margens.base);
 
@@ -954,8 +968,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
        */
       trilhoAberto: trilhoAberto && !estreito,
       fatorCarta,
+      temReserva,
     });
-  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH, fatorCarta]);
+  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH, fatorCarta, temReserva]);
 
   /**
    * ─── ESCALA 1, SEM CENTRALIZAR ─────────────────────────────────────────────
@@ -1039,6 +1054,39 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     });
 
     const contar = (zona: string, dono: string) => daZona(zona, dono).length;
+
+    /**
+     * ─── A CARTA REVELADA DO GRIMÓRIO ─────────────────────────────────────
+     *
+     * `INTENT_REVEAL_TOP` funcionava no servidor — punha `revealedTo = 'ALL'`
+     * na carta do topo e reconciliava — e NADA aparecia na tela: a pilha do
+     * grimório era desenhada com `verso` fixo, então ela mostrava o sleeve
+     * qualquer que fosse a identidade que o servidor tivesse liberado. Do lado
+     * do jogador, "revelar o topo" simplesmente não fazia nada.
+     *
+     * ─── E POR QUE NÃO É `z[z.length - 1]` ────────────────────────────────
+     *
+     * Porque o cliente NÃO SABE a ordem das zonas: `zoneOrder` existe no
+     * schema e não é espelhado para o store, e `daZona` filtra
+     * `Object.values(cards)`, cuja ordem é a de inserção no mapa — não a da
+     * pilha. Pegar o último do array daria uma carta arbitrária.
+     *
+     * O que o cliente SABE é identidade: no grimório, a única carta com
+     * `scryfallId` preenchido é a que o servidor revelou (`@view()` esconde o
+     * resto). Então "a revelada" é exatamente o que se pode afirmar sem
+     * inventar ordem. Com mais de uma revelada (`revealTop(3)`) a escolha é
+     * arbitrária — e é por isso que o menu revela UMA por padrão.
+     *
+     * NOTA: `topoCemiterio` e `topoExilio` acima têm o mesmo problema de ordem
+     * e mostram uma carta qualquer da pilha, não a do topo. Corrigir aquilo
+     * exige espelhar `zoneOrder`, que é mudança maior — ver DOC-094.
+     */
+    const reveladaNoGrimorio = (dono: string) => {
+      const revelada = daZona('LIBRARY', dono).find(temIdentidade);
+      return revelada
+        ? getTexture(revelada.scryfallId, 'normal', revelada.isFlipped ? 'back' : 'front')
+        : null;
+    };
     const topoDe = (zona: string, dono: string) => {
       const z = daZona(zona, dono);
       const ultima = z[z.length - 1];
@@ -1064,6 +1112,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
         sideboard: contar('SIDEBOARD', faixa.playerId),
         topoCemiterio: topoDe('GRAVEYARD', faixa.playerId),
         topoExilio: topoDe('EXILE', faixa.playerId),
+        topoGrimorio: reveladaNoGrimorio(faixa.playerId),
       };
     });
 
@@ -1367,7 +1416,11 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     centro={r.faixa.grimorio}
                     quantidade={r.library}
                     cor="#2f3446"
-                    verso
+                    /* Revelada vence o sleeve. `Pilha` só desenha `topo` quando
+                       `verso` é falso, então os dois andam juntos: sem carta
+                       revelada, volta a ser o verso do protetor. */
+                    verso={!r.topoGrimorio}
+                    topo={r.topoGrimorio}
                     versoImagem={r.verso}
                     escala={esc}
                     onClick={meu ? () => intents.draw(room, 1) : undefined}

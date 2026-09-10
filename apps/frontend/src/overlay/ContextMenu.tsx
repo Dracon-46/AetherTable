@@ -16,7 +16,11 @@ import {
   ArrowDownToLine,
   ArrowUpDown,
   Ban,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
+  Dices,
   Crosshair,
   Eye,
   FlipHorizontal,
@@ -50,11 +54,42 @@ interface ContextMenuProps {
   setModoAnexar: (anexar: boolean) => void;
 }
 
+/**
+ * ─── UM NÍVEL DE SUBMENU, EM PROFUNDIDADE E NÃO EM FLYOUT ──────────────────
+ *
+ * O menu do grimório tinha treze itens numa lista plana e ainda faltavam as
+ * ações com quantidade ("ver X do topo", "mover X para o cemitério") — com
+ * elas a lista passaria de vinte entradas num painel de `w-56` com
+ * `max-h-[60dvh]`, ou seja: rolagem para achar "embaralhar".
+ *
+ * O submenu abre NO LUGAR da lista, com um "voltar" no cabeçalho, em vez de
+ * voar para o lado. Três motivos concretos:
+ *
+ *   1. o painel é `fixed` e já precisa de correção de borda (`ajuste`) para não
+ *      sair da tela; um flyout precisaria da mesma correção outra vez, agora
+ *      podendo abrir para a esquerda ou para a direita;
+ *   2. flyout depende de hover para manter aberto, e hover não existe em toque
+ *      — no celular metade das ações da mesa ficaria inalcançável;
+ *   3. a profundidade cabe no mesmo retângulo, então o `ajuste` calculado
+ *      continua valendo.
+ */
 interface Acao {
   rotulo: string;
   icone: React.ReactNode;
   perigo?: boolean;
-  onClick: () => void;
+  /** Ação folha. Exclusivo com `itens` e `quantidade`. */
+  onClick?: () => void;
+  /** Abre um submenu no lugar da lista. */
+  itens?: Acao[];
+  /** Pede um número antes de executar. */
+  quantidade?: {
+    /** Texto acima do campo. Diz o que o número significa. */
+    rotulo: string;
+    padrao: number;
+    min: number;
+    max: number;
+    executar: (n: number) => void;
+  };
 }
 
 export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
@@ -83,6 +118,23 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
 
   const ref = useRef<HTMLDivElement>(null);
   const [ajuste, setAjuste] = useState({ x: 0, y: 0 });
+  /** Submenu aberto. `null` = a lista raiz. */
+  const [submenu, setSubmenu] = useState<Acao | null>(null);
+  /** Ação esperando um número. `null` = ninguém. */
+  const [pedindo, setPedindo] = useState<Acao | null>(null);
+  const [qtd, setQtd] = useState(1);
+
+  /**
+   * Fechar o menu ou trocar de alvo volta para a raiz.
+   *
+   * Sem isto, reabrir o menu num alvo diferente reaproveitava o submenu do
+   * alvo anterior — botão direito numa carta mostrando "Mover do topo" do
+   * grimório.
+   */
+  useEffect(() => {
+    setSubmenu(null);
+    setPedindo(null);
+  }, [aberto, alvo]);
 
   useEffect(() => {
     if (!aberto) return;
@@ -108,7 +160,11 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
     const dx = Math.min(0, window.innerWidth - (pos.x + r.width) - 8);
     const dy = Math.min(0, window.innerHeight - (pos.y + r.height) - 8);
     setAjuste({ x: dx, y: dy });
-  }, [aberto, pos.x, pos.y]);
+    // `submenu` e `pedindo` entram nas dependências porque mudam a ALTURA do
+    // painel: um submenu aberto perto do rodapé estourava a janela e os
+    // últimos itens ficavam inalcançáveis — o mesmo defeito que este efeito
+    // existe para corrigir na abertura.
+  }, [aberto, pos.x, pos.y, submenu, pedindo]);
 
   if (!aberto || !alvo) return null;
 
@@ -122,6 +178,19 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
 
   if (alvo === 'library') {
     titulo = 'Grimório';
+    /**
+     * ─── AS AÇÕES COM QUANTIDADE ───────────────────────────────────────────
+     *
+     * O menu só oferecia números fixos: "Moer 1", "Exilar 1 do topo", "Topo
+     * para o fundo" — sempre uma carta. Quem precisa moer sete, olhar as três
+     * do topo ou mandar quatro para o fundo tinha de repetir o clique, e cada
+     * repetição é uma intenção a mais no limite de 30/s.
+     *
+     * As intenções SEMPRE aceitaram quantidade (`MillIntent.amount` vai até
+     * 100, `PeekIntent` até 100, `RevealTopIntent` até 20): o que faltava era
+     * onde digitar. Os tetos abaixo são os do schema — pedir mais seria erro
+     * de validação depois do clique.
+     */
     acoes = [
       {
         rotulo: 'Comprar 1',
@@ -129,62 +198,231 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
         onClick: executar(() => intents.draw(room, 1)),
       },
       {
-        rotulo: 'Comprar 7',
+        rotulo: 'Comprar…',
         icone: <Layers className="h-4 w-4" />,
-        onClick: executar(() => intents.draw(room, 7)),
+        itens: [
+          {
+            rotulo: 'Comprar 7',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.draw(room, 7)),
+          },
+          {
+            rotulo: 'Comprar X…',
+            icone: <Layers className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas comprar',
+              padrao: 2,
+              min: 1,
+              max: 20,
+              executar: (n) => intents.draw(room, n),
+            },
+          },
+          {
+            rotulo: 'Comprar até 7 na mão',
+            icone: <Hand className="h-4 w-4" />,
+            onClick: executar(() => intents.drawUpTo(room, 7)),
+          },
+        ],
       },
       {
-        rotulo: 'Olhar o topo (scry)',
+        rotulo: 'Ver…',
         icone: <Eye className="h-4 w-4" />,
-        onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'TOP')),
+        itens: [
+          {
+            rotulo: 'A carta do topo',
+            icone: <Eye className="h-4 w-4" />,
+            onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'TOP')),
+          },
+          {
+            rotulo: 'X cartas do topo…',
+            icone: <Eye className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas do topo',
+              padrao: 3,
+              min: 1,
+              max: 20,
+              executar: (n) => intents.peek(room, 'LIBRARY', n, 'TOP'),
+            },
+          },
+          {
+            rotulo: 'A carta do fundo',
+            icone: <ArrowDownToLine className="h-4 w-4" />,
+            onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'BOTTOM')),
+          },
+          {
+            rotulo: 'X cartas do fundo…',
+            icone: <ArrowDownToLine className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas do fundo',
+              padrao: 3,
+              min: 1,
+              max: 20,
+              executar: (n) => intents.peek(room, 'LIBRARY', n, 'BOTTOM'),
+            },
+          },
+          {
+            rotulo: 'O grimório inteiro (tutor)',
+            icone: <Search className="h-4 w-4" />,
+            onClick: executar(() => {
+              setZoneOwner(myId);
+              setInspectedZone('LIBRARY');
+            }),
+          },
+        ],
       },
       {
-        rotulo: 'Buscar (tutor)',
-        icone: <Search className="h-4 w-4" />,
-        onClick: executar(() => {
-          setZoneOwner(myId);
-          setInspectedZone('LIBRARY');
-        }),
-      },
-      {
-        rotulo: 'Scry 1',
+        rotulo: 'Scry e surveil…',
         icone: <ArrowUpDown className="h-4 w-4" />,
-        onClick: executar(() => intents.scry(room, 1)),
+        itens: [
+          {
+            rotulo: 'Scry 1',
+            icone: <ArrowUpDown className="h-4 w-4" />,
+            onClick: executar(() => intents.scry(room, 1)),
+          },
+          {
+            rotulo: 'Scry 2',
+            icone: <ArrowUpDown className="h-4 w-4" />,
+            onClick: executar(() => intents.scry(room, 2)),
+          },
+          {
+            rotulo: 'Scry X…',
+            icone: <ArrowUpDown className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas olhar',
+              padrao: 3,
+              min: 1,
+              max: 10,
+              executar: (n) => intents.scry(room, n),
+            },
+          },
+          {
+            rotulo: 'Surveil 1',
+            icone: <Skull className="h-4 w-4" />,
+            onClick: executar(() => intents.surveil(room, 1)),
+          },
+          {
+            rotulo: 'Surveil X…',
+            icone: <Skull className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas olhar',
+              padrao: 2,
+              min: 1,
+              max: 10,
+              executar: (n) => intents.surveil(room, n),
+            },
+          },
+        ],
       },
       {
-        rotulo: 'Scry 2',
-        icone: <ArrowUpDown className="h-4 w-4" />,
-        onClick: executar(() => intents.scry(room, 2)),
-      },
-      {
-        rotulo: 'Surveil 1',
-        icone: <Skull className="h-4 w-4" />,
-        onClick: executar(() => intents.surveil(room, 1)),
-      },
-      {
-        rotulo: 'Revelar o topo',
+        rotulo: 'Revelar…',
         icone: <Eye className="h-4 w-4" />,
-        onClick: executar(() => intents.revealTop(room, 1)),
+        itens: [
+          {
+            rotulo: 'A carta do topo',
+            icone: <Eye className="h-4 w-4" />,
+            onClick: executar(() => intents.revealTop(room, 1)),
+          },
+          {
+            rotulo: 'X cartas do topo…',
+            icone: <Eye className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas revelar',
+              padrao: 2,
+              min: 1,
+              max: 20,
+              executar: (n) => intents.revealTop(room, n),
+            },
+          },
+          {
+            // Vermelho de propósito: revela o grimório INTEIRO para a mesa e
+            // não há como desfazer isso sem reembaralhar. `INTENT_UNDO` não
+            // reverte revelação — está em `NAO_REVERSIVEIS`.
+            rotulo: 'O grimório inteiro',
+            icone: <Eye className="h-4 w-4" />,
+            perigo: true,
+            onClick: executar(() => intents.revealZone(room, 'LIBRARY', 'ALL')),
+          },
+        ],
       },
       {
-        rotulo: 'Topo para o fundo',
+        rotulo: 'Mover do topo…',
         icone: <ArrowDownToLine className="h-4 w-4" />,
-        onClick: executar(() => intents.moveTopToBottom(room, 1)),
+        itens: [
+          {
+            rotulo: '1 para o cemitério',
+            icone: <Skull className="h-4 w-4" />,
+            onClick: executar(() => intents.mill(room, 1, 'GRAVEYARD')),
+          },
+          {
+            rotulo: 'X para o cemitério…',
+            icone: <Skull className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas moer',
+              padrao: 3,
+              min: 1,
+              max: 100,
+              executar: (n) => intents.mill(room, n, 'GRAVEYARD'),
+            },
+          },
+          {
+            rotulo: '1 para o exílio',
+            icone: <Ban className="h-4 w-4" />,
+            onClick: executar(() => intents.mill(room, 1, 'EXILE')),
+          },
+          {
+            rotulo: 'X para o exílio…',
+            icone: <Ban className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas exilar',
+              padrao: 3,
+              min: 1,
+              max: 100,
+              executar: (n) => intents.mill(room, n, 'EXILE'),
+            },
+          },
+          {
+            rotulo: '1 para o fundo',
+            icone: <ArrowDownToLine className="h-4 w-4" />,
+            onClick: executar(() => intents.moveTopToBottom(room, 1)),
+          },
+          {
+            rotulo: 'X para o fundo…',
+            icone: <ArrowDownToLine className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas para o fundo',
+              padrao: 2,
+              min: 1,
+              max: 100,
+              executar: (n) => intents.moveTopToBottom(room, n),
+            },
+          },
+        ],
       },
       {
-        rotulo: 'Moer 1 para o cemitério',
+        rotulo: 'Mover tudo…',
         icone: <ArrowDownToLine className="h-4 w-4" />,
-        onClick: executar(() => intents.mill(room, 1, 'GRAVEYARD')),
+        itens: [
+          {
+            // 100 é o teto de `MillIntent`, e o handler já corta pelo tamanho
+            // real do grimório (`Math.min(amount, grimorio.length)`). Um deck
+            // de Commander tem 99 mais o comandante, então o teto cobre.
+            rotulo: 'O grimório para o cemitério',
+            icone: <Skull className="h-4 w-4" />,
+            perigo: true,
+            onClick: executar(() => intents.mill(room, 100, 'GRAVEYARD')),
+          },
+          {
+            rotulo: 'O grimório para o exílio',
+            icone: <Ban className="h-4 w-4" />,
+            perigo: true,
+            onClick: executar(() => intents.mill(room, 100, 'EXILE')),
+          },
+        ],
       },
       {
-        rotulo: 'Exilar 1 do topo',
-        icone: <Ban className="h-4 w-4" />,
-        onClick: executar(() => intents.mill(room, 1, 'EXILE')),
-      },
-      {
-        rotulo: 'Comprar até 7 na mão',
-        icone: <Hand className="h-4 w-4" />,
-        onClick: executar(() => intents.drawUpTo(room, 7)),
+        rotulo: 'Carta aleatória',
+        icone: <Dices className="h-4 w-4" />,
+        onClick: executar(() => intents.randomCard(room, 'LIBRARY')),
       },
       {
         rotulo: 'Embaralhar',
@@ -472,6 +710,30 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
     }
   }
 
+  const lista = submenu?.itens ?? acoes;
+  const cabecalho = pedindo?.rotulo ?? submenu?.rotulo ?? titulo;
+  const podeVoltar = Boolean(submenu || pedindo);
+
+  const voltar = () => {
+    // Do prompt de quantidade volta-se para o submenu que o continha, e não
+    // para a raiz: quem errou o número quer o item vizinho, não recomeçar.
+    if (pedindo) setPedindo(null);
+    else setSubmenu(null);
+  };
+
+  const abrir = (a: Acao) => {
+    if (a.quantidade) {
+      setQtd(a.quantidade.padrao);
+      setPedindo(a);
+      return;
+    }
+    if (a.itens) {
+      setSubmenu(a);
+      return;
+    }
+    a.onClick?.();
+  };
+
   return (
     <div
       ref={ref}
@@ -479,24 +741,77 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
       style={{ left: pos.x + ajuste.x, top: pos.y + ajuste.y }}
       role="menu"
     >
-      <div className="border-panel-border bg-panel-hover text-text-muted border-b px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider">
-        {titulo}
-      </div>
-      <div className="custom-scrollbar max-h-[60dvh] overflow-y-auto py-1">
-        {acoes.map((a) => (
-          <button
-            key={a.rotulo}
-            onClick={a.onClick}
-            role="menuitem"
-            className={`hover:bg-panel-hover flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
-              a.perigo ? 'text-danger hover:bg-danger/10' : 'text-text'
-            }`}
-          >
-            {a.icone}
-            {a.rotulo}
-          </button>
-        ))}
-      </div>
+      {podeVoltar ? (
+        <button
+          onClick={voltar}
+          className="border-panel-border bg-panel-hover text-text-muted hover:text-primary flex w-full items-center gap-1.5 border-b px-3 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider transition-colors"
+        >
+          <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+          {cabecalho}
+        </button>
+      ) : (
+        <div className="border-panel-border bg-panel-hover text-text-muted border-b px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider">
+          {cabecalho}
+        </div>
+      )}
+
+      {pedindo?.quantidade ? (
+        <form
+          className="flex flex-col gap-2 p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const q = pedindo.quantidade!;
+            q.executar(Math.min(q.max, Math.max(q.min, qtd)));
+            fechar();
+          }}
+        >
+          <label className="text-text-faint text-[10px] leading-snug">
+            {pedindo.quantidade.rotulo} ({pedindo.quantidade.min}–{pedindo.quantidade.max})
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              autoFocus
+              min={pedindo.quantidade.min}
+              max={pedindo.quantidade.max}
+              value={qtd}
+              onChange={(e) => setQtd(Number(e.target.value))}
+              /* `select()` no foco: o valor padrão fica marcado e digitar um
+                 número o substitui, em vez de virar "31" a partir de "3". */
+              onFocus={(e) => e.target.select()}
+              className="border-panel-border bg-table-deep text-text focus:border-primary w-full rounded-md border px-2 py-1.5 text-sm focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="bg-primary hover:bg-primary-hover flex shrink-0 items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold text-white transition-colors"
+            >
+              <Check className="h-3.5 w-3.5" />
+              OK
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="custom-scrollbar max-h-[60dvh] overflow-y-auto py-1">
+          {lista.map((a) => (
+            <button
+              key={a.rotulo}
+              onClick={() => abrir(a)}
+              role="menuitem"
+              className={`hover:bg-panel-hover flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                a.perigo ? 'text-danger hover:bg-danger/10' : 'text-text'
+              }`}
+            >
+              {a.icone}
+              <span className="min-w-0 flex-1 truncate">{a.rotulo}</span>
+              {/* A seta diz que o item ABRE algo em vez de agir. Sem ela, o
+                  jogador clica esperando a ação e recebe outra lista. */}
+              {(a.itens || a.quantidade) && (
+                <ChevronRight className="text-text-faint h-3.5 w-3.5 shrink-0" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
