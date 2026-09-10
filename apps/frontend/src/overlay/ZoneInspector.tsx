@@ -8,6 +8,7 @@ import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
 import { cardImageUrl } from '../canvas/textureCache';
 import { useCardCatalog, useHidratarCartas } from '../cards/catalog';
+import { chaveDaZona, ordenarDoTopo } from '../store/ordem-de-zona';
 
 interface ZoneInspectorProps {
   room: Room<RoomState>;
@@ -28,6 +29,7 @@ export function ZoneInspector({ room }: ZoneInspectorProps) {
   const cardsMap = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
+  const zoneOrder = useGameStore((s) => s.zoneOrder);
   const catalogo = useCardCatalog((s) => s.cartas);
 
   // De quem é a zona aberta. Cemitério e exílio são públicos: clicar na pilha
@@ -77,8 +79,18 @@ export function ZoneInspector({ room }: ZoneInspectorProps) {
 
   if (!inspectedZone) return null;
 
-  const zoneCards = Object.values(cardsMap).filter(
-    (c) => c.zone === inspectedZone && c.ownerId === dono,
+  /**
+   * A lista sai NA ORDEM DA PILHA, do topo para o fundo.
+   *
+   * Antes era a ordem de inserção do mapa `cards`: abrir o cemitério mostrava
+   * as cartas embaralhadas em relação à pilha real, e "a de cima" ficava no
+   * meio da grade. Para o grimório isso era pior ainda — buscar (tutor) exibia
+   * uma ordem que não correspondia a nada, e depois de um scry a conferência
+   * ficava impossível.
+   */
+  const zoneCards = ordenarDoTopo(
+    Object.values(cardsMap).filter((c) => c.zone === inspectedZone && c.ownerId === dono),
+    zoneOrder[chaveDaZona(dono, inspectedZone)],
   );
 
   const handleShuffleAndClose = () => {

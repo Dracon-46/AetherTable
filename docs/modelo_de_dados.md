@@ -208,22 +208,35 @@ transações críticas.
 
 ### 3.6 `UserPreference`
 
-| Coluna              | Tipo          | Restrições                                    | Descrição                  |
-| ------------------- | ------------- | --------------------------------------------- | -------------------------- |
-| `user_id`           | `UUID`        | PK e FK → `User`, `ON DELETE CASCADE`         | 1:1 com usuário            |
-| `keybindings`       | `JSONB`       | default `{}`                                  | Mapa ação → tecla (`F39`)  |
-| `theme`             | `ENUM`        | `DARK` \| `LIGHT` \| `SYSTEM`, default `DARK` | Tema                       |
-| `active_playmat_id` | `UUID`        | nullable, FK → `CosmeticItem`                 | Playmat equipado (`F40`)   |
-| `active_sleeve_id`  | `UUID`        | nullable, FK → `CosmeticItem`                 | Protetor de carta equipado |
-| `active_border_id`  | `UUID`        | nullable, FK → `CosmeticItem`                 | Borda de perfil equipada   |
-| `active_title_id`   | `UUID`        | nullable, FK → `CosmeticItem`                 | Título de chat equipado    |
-| `voice_mode`        | `ENUM`        | `VAD` \| `PTT`, default `VAD`                 | Modo de voz                |
-| `ptt_key`           | `VARCHAR(24)` | nullable                                      | Tecla de Push-to-Talk      |
-| `master_volume`     | `SMALLINT`    | default 100, `CHECK (0..100)`                 | Volume geral               |
-| `language`          | `VARCHAR(8)`  | default `pt-BR`                               | i18n (V2)                  |
+| Coluna                 | Tipo          | Restrições                                    | Descrição                  |
+| ---------------------- | ------------- | --------------------------------------------- | -------------------------- |
+| `user_id`              | `UUID`        | PK e FK → `User`, `ON DELETE CASCADE`         | 1:1 com usuário            |
+| `keybindings`          | `JSONB`       | default `{}`                                  | Mapa ação → tecla (`F39`)  |
+| `preferencias_de_mesa` | `JSONB`       | default `{}`                                  | Preferências da mesa       |
+| `theme`                | `ENUM`        | `DARK` \| `LIGHT` \| `SYSTEM`, default `DARK` | Tema                       |
+| `active_playmat_id`    | `UUID`        | nullable, FK → `CosmeticItem`                 | Playmat equipado (`F40`)   |
+| `active_sleeve_id`     | `UUID`        | nullable, FK → `CosmeticItem`                 | Protetor de carta equipado |
+| `active_border_id`     | `UUID`        | nullable, FK → `CosmeticItem`                 | Borda de perfil equipada   |
+| `active_title_id`      | `UUID`        | nullable, FK → `CosmeticItem`                 | Título de chat equipado    |
+| `voice_mode`           | `ENUM`        | `VAD` \| `PTT`, default `VAD`                 | Modo de voz                |
+| `ptt_key`              | `VARCHAR(24)` | nullable                                      | Tecla de Push-to-Talk      |
+| `master_volume`        | `SMALLINT`    | default 100, `CHECK (0..100)`                 | Volume geral               |
+| `language`             | `VARCHAR(8)`  | default `pt-BR`                               | i18n (V2)                  |
 
 **JSONB para `keybindings`:** o conjunto de ações mapeáveis muda a cada versão. Normalizar isso em
 tabela geraria migração a cada atalho novo, sem nenhum ganho de consulta — nunca filtramos por atalho.
+
+**JSONB para `preferencias_de_mesa`:** mesma razão, mesma forma. Tamanho da carta, alinhar à grade,
+custo de mana na mão, seguir o turno, modo do painel de vida — o conjunto cresce a cada tela de
+configuração nova e nunca é filtrado em consulta. Uma coluna por caixinha significaria uma migração
+por caixinha. O contrato (chaves, limites e sanitização) está em
+`packages/shared-types/src/preferencias.ts`: o servidor valida na entrada, o cliente normaliza na
+saída, e um valor fora da faixa cai no padrão em vez de derrubar o objeto inteiro — preferência é
+conforto, não autorização.
+
+**`{}` significa "nunca configurou", nas duas colunas.** O cliente NÃO sobrescreve o que tem em
+`localStorage` quando recebe o objeto vazio; do contrário, ajustar numa aba e recarregar outra
+devolveria tudo ao padrão.
 
 ### 3.7 `Block` e `Report` — moderação (`RF03`, `F36`)
 

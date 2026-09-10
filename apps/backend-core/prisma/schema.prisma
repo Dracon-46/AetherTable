@@ -201,6 +201,19 @@ model UserPreference {
   /// filtramos por atalho — normalizar geraria migracao a cada atalho novo.
   keybindings Json @default("{}")
 
+  /// ─── AS PREFERENCIAS DA MESA, PELO MESMO MOTIVO DOS ATALHOS ──────────────
+  ///
+  /// Tamanho da carta, alinhar a grade, custo de mana na mao, seguir o turno,
+  /// modo do painel de vida. Foram entregues vivendo so em `localStorage`:
+  /// trocar de maquina ou limpar dados do site devolvia a mesa ao padrao — o
+  /// mesmo relato que ja tinha trazido cosmeticos e atalhos para ca.
+  ///
+  /// JSONB e nao uma coluna por caixinha: este conjunto muda a cada tela de
+  /// configuracao nova e NUNCA e filtrado em consulta. O formato, os limites e
+  /// a sanitizacao estao em `shared-types/preferencias.ts`, que as duas pontas
+  /// usam — o servidor valida na entrada, o cliente normaliza na saida.
+  preferenciasDeMesa Json @default("{}") @map("preferencias_de_mesa")
+
   theme            Theme     @default(DARK)
   /// ─── FK PARA `CosmeticItem`. NAO E ONDE O EQUIPAMENTO VIVE. ──────────────
   ///

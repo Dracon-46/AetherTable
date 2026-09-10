@@ -443,3 +443,124 @@ describe('mesa focada — alinhar à grade', () => {
     expect(abs.x + meiaL).toBeLessThanOrEqual(f.campo.x + f.campo.largura + 1);
   });
 });
+
+/**
+ * ─── O BLOCO DE ZONAS DESCE ────────────────────────────────────────────────
+ *
+ * `rowY` começava em `rotulo`: o bloco colava no TOPO do campo e toda a sobra
+ * vertical ficava abaixo dele. Numa tela alta o resultado era comando e as três
+ * pilhas amontoados no alto com um vazio de várias cartas embaixo — foi o
+ * relato "as 3 partes ficaram muito para cima".
+ *
+ * Estes testes travam as duas metades: o bloco DESCE quando há sobra, e NUNCA
+ * passa da faixa de mão.
+ */
+describe('mesa focada — o bloco de zonas não fica colado no topo', () => {
+  const topoDoBloco = (f: { comando: { y: number }; escalaZonas: number }) =>
+    f.comando.y - (CARD_H * f.escalaZonas) / 2;
+
+  it('sem reserva, o bloco desce mais de uma altura de carta', () => {
+    // É o caso comum em partida: a reserva só tem cartas no pré-jogo, e a
+    // fileira dela era altura reservada para nada.
+    const mesa = montarMesaFocada({
+      largura: 1600,
+      altura: 1400,
+      focoId: 'eu',
+      temReserva: false,
+    });
+    const f = mesa.faixas[0]!;
+    expect(topoDoBloco(f) - (f.topo + f.campo.y)).toBeGreaterThan(CARD_H * f.escalaZonas);
+  });
+
+  it('com reserva o bloco também desce, só menos — a fileira extra ocupa espaço', () => {
+    const f = montarMesaFocada({
+      largura: 1600,
+      altura: 1400,
+      focoId: 'eu',
+      temReserva: true,
+    }).faixas[0]!;
+    expect(topoDoBloco(f) - (f.topo + f.campo.y)).toBeGreaterThan(1);
+  });
+
+  it('esvaziar a reserva empurra as pilhas para baixo, nunca para cima', () => {
+    const com = montarMesaFocada({
+      largura: 1600,
+      altura: 1400,
+      focoId: 'eu',
+      temReserva: true,
+    }).faixas[0]!;
+    const sem = montarMesaFocada({
+      largura: 1600,
+      altura: 1400,
+      focoId: 'eu',
+      temReserva: false,
+    }).faixas[0]!;
+    expect(sem.grimorio.y).toBeGreaterThan(com.grimorio.y);
+    // E a escala não muda: sair a fileira não pode redimensionar as cartas.
+    expect(sem.escalaZonas).toBeCloseTo(com.escalaZonas, 10);
+  });
+
+  it('omitir `temReserva` reproduz a geometria com reserva', () => {
+    const omitido = montarMesaFocada({ largura: 1600, altura: 1400, focoId: 'eu' }).faixas[0]!;
+    const explicito = montarMesaFocada({
+      largura: 1600,
+      altura: 1400,
+      focoId: 'eu',
+      temReserva: true,
+    }).faixas[0]!;
+    expect(omitido.grimorio.y).toBeCloseTo(explicito.grimorio.y, 10);
+  });
+
+  it('a ordem das fileiras não muda ao descer', () => {
+    for (const altura of [420, 700, 950, 1400, 2160]) {
+      const f = montarMesaFocada({ largura: 1600, altura, focoId: 'eu' }).faixas[0]!;
+      expect(f.comando.y).toBeLessThan(f.grimorio.y);
+      expect(f.grimorio.y).toBeCloseTo(f.cemiterio.y, 5);
+      expect(f.cemiterio.y).toBeCloseTo(f.exilio.y, 5);
+      expect(f.grimorio.y).toBeLessThan(f.reserva.y);
+    }
+  });
+
+  it('a reserva NUNCA passa da faixa de mão, em nenhuma altura', () => {
+    // É o teto que a conta garante: a sobra distribuída é `campoAltura` menos a
+    // altura do bloco, então nem com a âncora no máximo a base transborda.
+    for (const altura of [420, 500, 700, 860, 950, 1200, 1400, 2160]) {
+      // Com `temReserva`, que é quando ela é DESENHADA. Sem cartas a fileira
+      // não é reservada e a posição dela não é usada por ninguém.
+      const mesa = montarMesaFocada({ largura: 1600, altura, focoId: 'eu', temReserva: true });
+      const f = mesa.faixas[0]!;
+      expect(f.reserva.y + (CARD_H * f.escalaZonas) / 2).toBeLessThanOrEqual(mesa.mao.topo + 1);
+    }
+  });
+
+  it('o bloco continua dentro do campo pela esquerda e pela direita', () => {
+    const mesa = montarMesaFocada({ largura: 1600, altura: 1400, focoId: 'eu' });
+    const f = mesa.faixas[0]!;
+    const meia = (CARD_W * f.escalaZonas) / 2;
+    expect(f.grimorio.x - meia).toBeGreaterThanOrEqual(f.campo.largura - 1);
+    expect(f.exilio.x + meia).toBeLessThanOrEqual(mesa.largura + 1);
+  });
+
+  it('numa janela sem sobra o bloco não desce (a conta não inventa espaço)', () => {
+    // Na tela mais baixa jogável o bloco ocupa o campo inteiro: descer aqui
+    // seria empurrar a reserva por baixo da mão.
+    const mesa = montarMesaFocada({ largura: 1600, altura: 420, focoId: 'eu' });
+    const f = mesa.faixas[0]!;
+    expect(topoDoBloco(f) - (f.topo + f.campo.y)).toBeLessThan(CARD_H * f.escalaZonas);
+  });
+
+  it('o fator de tamanho de carta não faz o bloco transbordar', () => {
+    for (const fatorCarta of [FATOR_CARTA_MIN, 1, FATOR_CARTA_MAX]) {
+      const mesa = montarMesaFocada({
+        largura: 1600,
+        altura: 950,
+        focoId: 'eu',
+        fatorCarta,
+        temReserva: true,
+      });
+      const f = mesa.faixas[0]!;
+      expect(f.reserva.y + (CARD_H * f.escalaZonas) / 2).toBeLessThanOrEqual(mesa.mao.topo + 1);
+      expect(f.comando.y).toBeLessThan(f.grimorio.y);
+    }
+  });
+});

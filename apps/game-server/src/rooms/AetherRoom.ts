@@ -24,6 +24,7 @@ import { z } from 'zod';
 import {
   RateLimiter,
   REGISTRY,
+  aplicarTopoRevelado,
   espectadorBarrado,
   haAssentoLivre,
   verificarAutorizacao,
@@ -644,8 +645,29 @@ export class AetherRoom extends Room<RoomState> {
           // RESET_MATCH viram `emPartida` na lista publica, e o REGISTRY nao
           // tem — nem deve ter — acesso a Room para publicar isso sozinho.
           const faseAntes = this.state.phase;
-          handler.executa(this.montarContexto(client), parsed.data);
+          const contexto = this.montarContexto(client);
+          handler.executa(contexto, parsed.data);
           if (this.state.phase !== faseAntes) this.publicarMetadados();
+
+          /**
+           * ─── O TOPO REVELADO SE REAPLICA AQUI, E SO AQUI ────────────────
+           *
+           * Dez intencoes mudam o topo do grimorio (comprar, moer, embaralhar,
+           * mulligan, topo-para-o-fundo, reordenar, confirmar scry, confirmar
+           * surveil, devolver zona, mover carta para o grimorio). Chamar a
+           * reaplicacao dentro de cada uma seria dez chances de esquecer — e o
+           * modo de falhar do esquecimento nao e a carta sumir da tela, e uma
+           * carta que DEIXOU de ser o topo continuar revelada para a mesa.
+           *
+           * Aqui e um ponto so, e ele e correto por construcao: nao existe
+           * caminho que mude o estado sem passar por um handler.
+           *
+           * So o remetente: ninguem move carta para o grimorio de outro
+           * jogador. `INTENT_GIVE_CARD` troca o controlador de uma permanente,
+           * nao a zona. A funcao e idempotente, entao nas intencoes que nao
+           * tocam o grimorio ela nao escreve nada e nao gera patch.
+           */
+          aplicarTopoRevelado(contexto, client.sessionId);
 
           intentsRecebidas.inc({ type: tipo });
         } catch (erro) {

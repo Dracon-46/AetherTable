@@ -45,4 +45,6 @@ export class Player extends Schema {
   @type('boolean') public eliminated!: boolean;
   @type('string') public eliminationReason!: string;
   @type('boolean') public decked!: boolean;
+  @type('boolean') public topoRevelado!: boolean;
+  @type('string') public topoReveladoId!: string;
 }

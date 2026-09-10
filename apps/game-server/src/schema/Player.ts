@@ -159,4 +159,35 @@ export class Player extends Schema {
    * pode ser recalculado a partir do tamanho da lista.
    */
   @type('boolean') decked = false;
+
+  /**
+   * ─── JOGAR COM O TOPO DO GRIMORIO REVELADO ────────────────────────────────
+   *
+   * Modo persistente (Future Sight, Vizier of the Menagerie, Bolas's Citadel):
+   * a carta do topo fica visivel para a mesa e CONTINUA visivel conforme o topo
+   * muda. Nao da para fazer no cliente repetindo `INTENT_REVEAL_TOP`, porque
+   * `MOVE_TOP_TO_BOTTOM`, `REORDER`, `SCRY_COMMIT` e `SURVEIL_COMMIT` mudam a
+   * ordem sem mudar de zona — e o cliente nao ve ordem de zona.
+   *
+   * A reaplicacao acontece num ponto so, no fim do despacho de intencao
+   * (`AetherRoom.registrarIntencoes`), e nao em cada handler que mexe no
+   * grimorio. Onze pontos de chamada seriam onze chances de esquecer um, e o
+   * modo de falhar do esquecimento e VAZAMENTO: uma carta que deixou de ser o
+   * topo continuaria revelada.
+   */
+  @type('boolean') topoRevelado = false;
+
+  /**
+   * Qual carta esta revelada POR CAUSA do modo.
+   *
+   * Guardar o id e o que permite limpar a revelacao anterior sem tocar numa
+   * revelacao manual de outra carta. Sem ele, "desligar o modo" teria de
+   * adivinhar qual carta do grimorio revelar de volta — e apagaria um
+   * `INTENT_REVEAL_TOP` que o jogador tivesse feito de proposito.
+   *
+   * Sincronizar um `Card.id` e seguro: `zoneOrder` ja expoe os ids do grimorio
+   * inteiro para todos, e eles sao UUIDs gerados por partida, sem relacao com a
+   * identidade da carta (DOC-032 §3.1).
+   */
+  @type('string') topoReveladoId = '';
 }

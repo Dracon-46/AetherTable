@@ -2,6 +2,7 @@ import { test, expect, type Browser, type BrowserContext, type Page } from '@pla
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { montarMesaFocada, posicaoNaMao, CARD_W, CARD_H } from '../src/canvas/layout';
+import { zerarPreferenciasDeMesa } from './fixtures/estado-limpo';
 
 /**
  * mesa-multijogador.spec.ts — quatro jogadores de verdade, numa sala de verdade.
@@ -66,6 +67,22 @@ function mesaDaTela(ordem: string[], largura: number, altura: number) {
     altura: utilH,
     focoId: eu,
     oponentes: ordem.slice(0, -1),
+    /**
+     * ─── O MESMO QUE O GameBoard DECIDE, E POR ISSO EXPLICITO ─────────────
+     *
+     * `montarMesaFocada` ganhou `temReserva` com padrao `true` para nao mudar
+     * a geometria de quem ja a chamava — e este helper era exatamente um
+     * desses chamadores. O padrao escondeu a divergencia: o `GameBoard` passa
+     * `false` quando o jogador nao tem carta em SIDEBOARD, o bloco de zonas
+     * desce, e o teste continuava calculando com tres fileiras.
+     *
+     * O sintoma foi o clique direito no grimorio abrindo o menu da MESA: as
+     * coordenadas apontavam para o vazio entre as faixas.
+     *
+     * `false` e o estado real destas fixtures — o decklist do E2E e 100 cartas
+     * de main, sem reserva (ver `preparar-jogadores.mjs`).
+     */
+    temReserva: false,
   });
 }
 
@@ -127,6 +144,10 @@ test.describe('mesa multijogador', () => {
   }
 
   test.beforeAll(async ({ browser }) => {
+    // Estado inicial conhecido — ver `estado-limpo.ts`. Sem isto, "a mesa abre
+    // limpa" testa uma tela que so existe na primeira execucao.
+    await zerarPreferenciasDeMesa(JOGADORES.slice(0, 4).map((j) => j.token));
+
     for (const jogador of JOGADORES.slice(0, 4)) {
       const { ctx, page } = await abrirJogador(browser, jogador);
       contextos.push(ctx);

@@ -1,6 +1,7 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { zerarPreferenciasDeMesa } from './fixtures/estado-limpo';
 
 /**
  * sala-publica-e-espectador.spec.ts — a vitrine de mesas e quem só assiste.
@@ -90,6 +91,10 @@ test.describe('sala pública e espectador', () => {
   }
 
   test.beforeAll(async ({ browser }) => {
+    // As duas suites usam as MESMAS contas, entao rodar esta depois da outra
+    // herdava o estado dela — a ordem de execucao virava parte do resultado.
+    await zerarPreferenciasDeMesa([JOGADORES[0]!.token, JOGADORES[1]!.token]);
+
     ana = await abrirJogador(browser, JOGADORES[0]!);
     bruno = await abrirJogador(browser, JOGADORES[1]!);
   });
