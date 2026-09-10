@@ -89,6 +89,8 @@ export interface PlayerData {
   eliminationReason: string;
   /** Tentou comprar de grimório vazio. Pegajoso: não se desfaz sozinho. */
   decked: boolean;
+  /** Modo "jogar com o topo do grimório revelado". Ver `Player` no servidor. */
+  topoRevelado: boolean;
 }
 
 export interface LogEntry {
@@ -174,6 +176,22 @@ interface GameState {
   mySessionId: string;
   players: Record<string, PlayerData>;
   cards: Record<string, CardData>;
+  /**
+   * ─── A ORDEM DE CADA ZONA, ESPELHADA DO SERVIDOR ────────────────────────
+   *
+   * Chave `"<playerId>:<ZONE>"`, valor = ids na ordem da pilha, TOPO NO FIM
+   * (DOC-032 §2). Só ids de mesa, nunca `scryfallId`.
+   *
+   * Não era espelhado, e a consequência era visível: `topoDe` no `GameBoard`
+   * filtrava `Object.values(cards)` — ordem de inserção no mapa — e desenhava
+   * uma carta QUALQUER da pilha como se fosse a do topo. O cemitério e o exílio
+   * mostravam a carta errada a partida inteira, e ninguém tinha como saber,
+   * porque a carta mostrada era de fato uma carta que estava lá.
+   *
+   * Também é o que permite ao inspetor de zona listar na ordem real, e ao
+   * grimório mostrar exatamente a carta revelada do topo.
+   */
+  zoneOrder: Record<string, string[]>;
   /** A plateia. SEPARADA de `players`, igual no servidor. */
   espectadores: Record<string, EspectadorData>;
   /**
@@ -202,6 +220,7 @@ interface GameState {
   upsertCard: (id: string, data: Partial<CardData>) => void;
   removeCard: (id: string) => void;
   upsertPlayer: (id: string, data: Partial<PlayerData>) => void;
+  setZoneOrder: (chave: string, ids: string[]) => void;
   removePlayer: (id: string) => void;
   addLog: (entry: LogEntry) => void;
   addChat: (entry: LogEntry) => void;
@@ -219,6 +238,7 @@ export const useGameStore = create<GameState>((set) => ({
   mySessionId: '',
   players: {},
   cards: {},
+  zoneOrder: {},
   espectadores: {},
   souEspectador: false,
   config: CONFIG_INICIAL,
@@ -257,6 +277,21 @@ export const useGameStore = create<GameState>((set) => ({
       players: { ...s.players, [id]: { ...(s.players[id] ?? {}), ...data } as PlayerData },
     })),
 
+  setZoneOrder: (chave, ids) =>
+    set((s) => {
+      /**
+       * Sai cedo quando a lista não mudou.
+       *
+       * O `onChange` de um `ArraySchema` dispara por item mexido, então
+       * embaralhar um grimório de 99 cartas chegaria aqui 99 vezes com o mesmo
+       * resultado final — e cada `set` reescreve o objeto e re-renderiza a mesa
+       * inteira. A comparação é O(n) contra um render de tabuleiro: barata.
+       */
+      const atual = s.zoneOrder[chave];
+      if (atual && atual.length === ids.length && atual.every((id, i) => id === ids[i])) return s;
+      return { zoneOrder: { ...s.zoneOrder, [chave]: ids } };
+    }),
+
   removePlayer: (id) =>
     set((s) => {
       const players = { ...s.players };
@@ -286,6 +321,7 @@ export const useGameStore = create<GameState>((set) => ({
       mySessionId: '',
       players: {},
       cards: {},
+      zoneOrder: {},
       espectadores: {},
       souEspectador: false,
       config: CONFIG_INICIAL,

@@ -169,11 +169,41 @@ async function prepararDeck(token) {
   return deckId;
 }
 
+/**
+ * ─── AS PREFERENCIAS DA CONTA VAZAM DE UMA EXECUCAO PARA A SEGUINTE ─────────
+ *
+ * Desde que tamanho de carta, barra de acoes, log e painel de vida passaram a
+ * ser gravados na CONTA (e nao so no `localStorage`, que cada contexto do
+ * Playwright cria do zero), o estado deixado por uma execucao chega hidratado
+ * na proxima.
+ *
+ * O efeito e concreto: a suite abre a mesa clicando em "Acoes" para expandir a
+ * barra, e isso grava `barraAberta: true`. Na execucao seguinte a barra ja
+ * nasce aberta — e o teste "a mesa abre limpa", que afirma justamente o
+ * contrario, passa a testar uma tela que so existe na primeira vez.
+ *
+ * Zerar aqui e nao no `beforeAll` da suite porque isto e preparacao de
+ * ambiente, nao asserção: uma suite que arruma o mundo antes de olhar para ele
+ * esconde de quem le que o mundo precisava ser arrumado.
+ *
+ * `{}` e o valor que a coluna tem por padrao (ver a migracao), e o cliente o
+ * le como "nunca configurou" — entao o padrao de fabrica volta a valer.
+ */
+async function zerarPreferenciasDeMesa(token) {
+  await chamar('/users/me', {
+    method: 'PATCH',
+    token,
+    body: { preferenciasDeMesa: {} },
+  });
+}
+
 const resultado = [];
 for (const username of JOGADORES) {
   const sessao = await entrar(username);
   const token = sessao.accessToken ?? sessao.access_token;
   if (!token) throw new Error(`sem accessToken para ${username}: ${JSON.stringify(sessao)}`);
+
+  await zerarPreferenciasDeMesa(token);
 
   const deckId = await prepararDeck(token);
   resultado.push({

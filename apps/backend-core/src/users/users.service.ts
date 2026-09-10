@@ -84,6 +84,12 @@ export class UsersService {
              * faz trocar de máquina perder tudo.
              */
             keybindings: true,
+            /**
+             * As preferências da mesa vêm pelo mesmo motivo: é o CLIENTE que
+             * desenha a mesa. Sem elas na resposta, o tamanho da carta e o
+             * resto continuariam presos ao `localStorage` daquele navegador.
+             */
+            preferenciasDeMesa: true,
           },
         },
       },
@@ -217,6 +223,8 @@ export class UsersService {
       cosmeticosDeOponentes?: boolean;
       /** Mapa completo ação → tecla. Validado em `AtualizarPerfilDto`. */
       keybindings?: Record<string, string>;
+      /** Preferências da mesa. Validado em `AtualizarPerfilDto`. */
+      preferenciasDeMesa?: Record<string, unknown>;
     },
   ) {
     const { username, displayName, language } = data;
@@ -273,6 +281,15 @@ export class UsersService {
       // `Record<string, string>` não é aceito sem a asserção.
       ...(data.keybindings !== undefined
         ? { keybindings: data.keybindings as Prisma.InputJsonValue }
+        : {}),
+      /**
+       * Também substitui o objeto inteiro, e pela mesma razão do mapa de
+       * atalhos: o cliente sempre envia o conjunto completo
+       * (`lerPreferenciasDaMesa`), então um merge parcial só criaria a dúvida
+       * de como voltar uma preferência ao padrão.
+       */
+      ...(data.preferenciasDeMesa !== undefined
+        ? { preferenciasDeMesa: data.preferenciasDeMesa as Prisma.InputJsonValue }
         : {}),
     };
 

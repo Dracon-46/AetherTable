@@ -26,7 +26,7 @@
  *
  * Gravar apenas o diff contra o padrão economizaria bytes e criaria uma
  * ambiguidade: uma chave ausente significaria "quero o padrão" ou "esta ação é
- * nova e eu nunca vi"? São treze entradas. Mandar tudo faz o PATCH ser
+ * nova e eu nunca vi"? São algumas dezenas de entradas. Mandar tudo faz o PATCH ser
  * idempotente e a leitura não precisar de heurística — `resolverAtalhos`
  * completa com o padrão o que faltar, e é assim que uma ação NOVA numa versão
  * futura chega com tecla de fábrica em vez de chegar desligada.
@@ -50,7 +50,7 @@ interface AtalhosState {
   atalhos: Mapa;
   /** Grava a tecla nova. Passar `TECLA_NAO_ATRIBUIDA` desliga a ação. */
   remapear: (acao: AcaoDeAtalho, tecla: string) => void;
-  /** Devolve as treze ações às teclas de fábrica. */
+  /** Devolve todas as ações às teclas de fábrica. */
   restaurarPadrao: () => void;
   /** Aplica o que veio da conta, sem reenviar. Ver `useHidratarPreferencias`. */
   aplicarDoServidor: (salvos: Record<string, string> | null | undefined) => void;

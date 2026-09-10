@@ -40,6 +40,7 @@ import { api } from '../lib/fetcher';
 import { useAuthStore } from './auth.store';
 import { useAtalhos } from './atalhos.store';
 import { useCosmeticos } from '../cosmetics/store';
+import { aplicarPreferenciasDaMesa, observarPreferenciasDaMesa } from './preferencias-da-conta';
 import type { CosmeticTier } from '@aethertable/shared-types';
 
 interface PreferenciaDaConta {
@@ -64,6 +65,14 @@ interface PreferenciaDaConta {
     petId?: string | null;
     cosmeticosDeOponentes?: boolean | null;
     keybindings?: Record<string, string> | null;
+    /**
+     * As preferências da MESA (tamanho da carta, grade, painel de vida…).
+     *
+     * Chega como JSON solto de propósito: a coluna é JSONB e uma versão
+     * anterior do cliente pode ter gravado um conjunto diferente de chaves.
+     * `normalizarPreferenciasDeMesa` é quem dá forma a isso.
+     */
+    preferenciasDeMesa?: unknown;
   } | null;
 }
 
@@ -82,6 +91,8 @@ export function useHidratarPreferencias(): void {
    * token faria uma requisição a mais. O ref fecha isso.
    */
   const jaBuscou = useRef(false);
+  /** Cancela a assinatura das preferências de mesa. Ver o efeito abaixo. */
+  const pararDeObservar = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!token || jaBuscou.current) return;
@@ -107,6 +118,15 @@ export function useHidratarPreferencias(): void {
             : {}),
         });
         aplicarAtalhos(p.keybindings);
+        aplicarPreferenciasDaMesa(p.preferenciasDeMesa);
+        /**
+         * Observar só DEPOIS de aplicar.
+         *
+         * Ligar a assinatura antes faria o próprio `aplicar` agendar um PATCH
+         * de volta — e, se a resposta demorasse, o estado local (ainda o
+         * padrão) seria gravado por cima do que a conta guardava.
+         */
+        pararDeObservar.current = observarPreferenciasDaMesa();
       })
       .catch((erro) => {
         /**
@@ -119,10 +139,19 @@ export function useHidratarPreferencias(): void {
          */
         console.warn('[preferencias] não foi possível hidratar da conta:', erro);
         jaBuscou.current = false;
+        /**
+         * Sem resposta do servidor NÃO se observa.
+         *
+         * O que este navegador tem pode ser o padrão de fábrica só porque a
+         * hidratação falhou; começar a enviar daqui apagaria na conta a
+         * configuração real da pessoa por causa de uma queda de rede.
+         */
       });
 
     return () => {
       ativo = false;
+      pararDeObservar.current?.();
+      pararDeObservar.current = null;
     };
   }, [token, aplicarCosmeticos, aplicarAtalhos, definirTier]);
 }

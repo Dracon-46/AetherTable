@@ -46,28 +46,66 @@
 
 /** Toda ação da mesa que pode ter tecla. A ordem é a de exibição no editor. */
 export type AcaoDeAtalho =
+  // MESA
   | 'COMPRAR'
   | 'DESVIRAR_TUDO'
-  | 'EMBARALHAR'
+  | 'VIRAR_TUDO'
   | 'PASSAR_TURNO'
   | 'DESFAZER'
+  | 'MULLIGAN'
+  | 'LIMPAR_DANO'
+  | 'CRIAR_FICHA'
+  | 'ROLAR_DADO'
+  | 'VIRAR_MOEDA'
+  | 'GANHAR_VIDA'
+  | 'PERDER_VIDA'
+  // GRIMORIO
+  | 'EMBARALHAR'
+  | 'OLHAR_TOPO'
+  | 'SCRY_1'
+  | 'SURVEIL_1'
+  | 'REVELAR_TOPO'
+  | 'ALTERNAR_TOPO_REVELADO'
+  | 'MOER_1'
+  | 'EXILAR_TOPO'
+  | 'TOPO_PARA_FUNDO'
+  | 'BUSCAR_GRIMORIO'
+  // SELECAO
   | 'VIRAR_SELECAO'
   | 'VIRAR_PARA_BAIXO'
   | 'TRANSFORMAR'
   | 'PARA_CEMITERIO'
+  | 'PARA_EXILIO'
+  | 'PARA_MAO'
+  | 'PARA_TOPO_DO_GRIMORIO'
+  | 'PARA_FUNDO_DO_GRIMORIO'
+  | 'COPIAR_CARTA'
+  | 'MARCADOR_MAIS'
+  | 'MARCADOR_MENOS'
+  | 'TRAZER_PARA_FRENTE'
+  | 'APONTAR_SETA'
+  | 'INSPECIONAR_CARTA'
   | 'EDITAR_CARTA'
   | 'LIMPAR_SELECAO'
+  // EXIBICAO
   | 'AUMENTAR_CARTA'
-  | 'REDUZIR_CARTA';
+  | 'REDUZIR_CARTA'
+  | 'ALTERNAR_GRADE'
+  | 'ABRIR_CEMITERIO'
+  | 'ABRIR_EXILIO'
+  | 'ALTERNAR_LOG'
+  | 'ABRIR_ATALHOS';
 
 /**
  * Agrupamento do editor.
  *
  *   MESA     — vale sempre, não olha a seleção.
+ *   GRIMORIO — as ações da própria biblioteca, que são muitas e viviam
+ *              afogadas no meio de MESA no editor.
  *   SELECAO  — só faz algo com carta selecionada.
  *   EXIBICAO — mexe em preferência de quem olha, não no estado da mesa.
  */
-export type GrupoDeAtalho = 'MESA' | 'SELECAO' | 'EXIBICAO';
+export type GrupoDeAtalho = 'MESA' | 'GRIMORIO' | 'SELECAO' | 'EXIBICAO';
 
 export interface AcaoDeAtalhoMeta {
   id: AcaoDeAtalho;
@@ -79,9 +117,32 @@ export interface AcaoDeAtalhoMeta {
 export const ACOES_DE_ATALHO: readonly AcaoDeAtalhoMeta[] = [
   { id: 'COMPRAR', descricao: 'Comprar uma carta', grupo: 'MESA' },
   { id: 'DESVIRAR_TUDO', descricao: 'Desvirar todas as suas permanentes', grupo: 'MESA' },
-  { id: 'EMBARALHAR', descricao: 'Embaralhar o grimório', grupo: 'MESA' },
+  { id: 'VIRAR_TUDO', descricao: 'Virar todas as suas permanentes', grupo: 'MESA' },
   { id: 'PASSAR_TURNO', descricao: 'Passar o turno', grupo: 'MESA' },
   { id: 'DESFAZER', descricao: 'Desfazer a última ação', grupo: 'MESA' },
+  { id: 'MULLIGAN', descricao: 'Mulligan (nova mão de 7)', grupo: 'MESA' },
+  { id: 'LIMPAR_DANO', descricao: 'Limpar o dano das suas permanentes', grupo: 'MESA' },
+  { id: 'CRIAR_FICHA', descricao: 'Abrir o criador de fichas', grupo: 'MESA' },
+  { id: 'ROLAR_DADO', descricao: 'Rolar um d20', grupo: 'MESA' },
+  { id: 'VIRAR_MOEDA', descricao: 'Virar uma moeda', grupo: 'MESA' },
+  { id: 'GANHAR_VIDA', descricao: 'Ganhar 1 ponto de vida', grupo: 'MESA' },
+  { id: 'PERDER_VIDA', descricao: 'Perder 1 ponto de vida', grupo: 'MESA' },
+
+  { id: 'EMBARALHAR', descricao: 'Embaralhar o grimório', grupo: 'GRIMORIO' },
+  { id: 'OLHAR_TOPO', descricao: 'Olhar a carta do topo (só você)', grupo: 'GRIMORIO' },
+  { id: 'SCRY_1', descricao: 'Scry 1', grupo: 'GRIMORIO' },
+  { id: 'SURVEIL_1', descricao: 'Surveil 1', grupo: 'GRIMORIO' },
+  { id: 'REVELAR_TOPO', descricao: 'Revelar a carta do topo para a mesa', grupo: 'GRIMORIO' },
+  {
+    id: 'ALTERNAR_TOPO_REVELADO',
+    descricao: 'Jogar com o topo revelado (liga/desliga)',
+    grupo: 'GRIMORIO',
+  },
+  { id: 'MOER_1', descricao: 'Moer 1 para o cemitério', grupo: 'GRIMORIO' },
+  { id: 'EXILAR_TOPO', descricao: 'Exilar 1 do topo', grupo: 'GRIMORIO' },
+  { id: 'TOPO_PARA_FUNDO', descricao: 'Mover a do topo para o fundo', grupo: 'GRIMORIO' },
+  { id: 'BUSCAR_GRIMORIO', descricao: 'Buscar no grimório (tutor)', grupo: 'GRIMORIO' },
+
   { id: 'VIRAR_SELECAO', descricao: 'Virar / desvirar a seleção', grupo: 'SELECAO' },
   {
     id: 'VIRAR_PARA_BAIXO',
@@ -90,37 +151,108 @@ export const ACOES_DE_ATALHO: readonly AcaoDeAtalhoMeta[] = [
   },
   { id: 'TRANSFORMAR', descricao: 'Transformar (dupla face)', grupo: 'SELECAO' },
   { id: 'PARA_CEMITERIO', descricao: 'Mandar a seleção para o cemitério', grupo: 'SELECAO' },
+  { id: 'PARA_EXILIO', descricao: 'Mandar a seleção para o exílio', grupo: 'SELECAO' },
+  { id: 'PARA_MAO', descricao: 'Devolver a seleção para a mão', grupo: 'SELECAO' },
+  {
+    id: 'PARA_TOPO_DO_GRIMORIO',
+    descricao: 'Mandar a seleção para o topo do grimório',
+    grupo: 'SELECAO',
+  },
+  {
+    id: 'PARA_FUNDO_DO_GRIMORIO',
+    descricao: 'Mandar a seleção para o fundo do grimório',
+    grupo: 'SELECAO',
+  },
+  { id: 'COPIAR_CARTA', descricao: 'Criar uma cópia da carta', grupo: 'SELECAO' },
+  { id: 'MARCADOR_MAIS', descricao: 'Adicionar um marcador +1/+1', grupo: 'SELECAO' },
+  { id: 'MARCADOR_MENOS', descricao: 'Remover um marcador +1/+1', grupo: 'SELECAO' },
+  { id: 'TRAZER_PARA_FRENTE', descricao: 'Trazer a carta para a frente', grupo: 'SELECAO' },
+  { id: 'APONTAR_SETA', descricao: 'Apontar uma seta a partir da carta', grupo: 'SELECAO' },
+  { id: 'INSPECIONAR_CARTA', descricao: 'Ver a carta em tamanho grande', grupo: 'SELECAO' },
   {
     id: 'EDITAR_CARTA',
     descricao: 'Marcadores, P/T e dano da carta selecionada',
     grupo: 'SELECAO',
   },
   { id: 'LIMPAR_SELECAO', descricao: 'Limpar a seleção / fechar painel', grupo: 'SELECAO' },
+
   { id: 'AUMENTAR_CARTA', descricao: 'Aumentar o tamanho da carta', grupo: 'EXIBICAO' },
   { id: 'REDUZIR_CARTA', descricao: 'Reduzir o tamanho da carta', grupo: 'EXIBICAO' },
+  { id: 'ALTERNAR_GRADE', descricao: 'Alinhar à grade (liga/desliga)', grupo: 'EXIBICAO' },
+  { id: 'ABRIR_CEMITERIO', descricao: 'Abrir o seu cemitério', grupo: 'EXIBICAO' },
+  { id: 'ABRIR_EXILIO', descricao: 'Abrir o seu exílio', grupo: 'EXIBICAO' },
+  { id: 'ALTERNAR_LOG', descricao: 'Abrir / fechar o log da partida', grupo: 'EXIBICAO' },
+  { id: 'ABRIR_ATALHOS', descricao: 'Abrir a lista de atalhos', grupo: 'EXIBICAO' },
 ];
 
 /** Uma ação sem tecla. Existe como valor gravável: "eu quero isto desligado". */
 export const TECLA_NAO_ATRIBUIDA = '';
 
 /**
- * As teclas de fábrica. Continuam sendo as que a mesa já usava — remapear é
- * recurso novo, mudar a mão de quem já jogava não.
+ * As teclas de fábrica.
+ *
+ * Duas regras, e as duas são sobre não atrapalhar quem já joga:
+ *
+ * 1. **as treze teclas originais não mudaram.** Remapear é recurso novo;
+ *    mexer na mão de quem já jogava, não.
+ *
+ * 2. **ação nova nasce SEM tecla, salvo quando a letra é óbvia e está livre.**
+ *    O catálogo cresceu de treze para quarenta ações e distribuir tecla para
+ *    todas significaria ou empilhar modificadores (`ctrl+alt+...`, que ninguém
+ *    decora) ou tomar letras que o jogador talvez já use no navegador. Sem
+ *    tecla a ação continua existindo no menu e no editor — só não dispara
+ *    sozinha. Quem quiser, atribui em dois cliques; quem não quiser, não teve
+ *    o teclado remexido.
  */
 export const ATALHOS_PADRAO: Readonly<Record<AcaoDeAtalho, string>> = {
   COMPRAR: 'd',
   DESVIRAR_TUDO: 'u',
-  EMBARALHAR: 's',
+  VIRAR_TUDO: TECLA_NAO_ATRIBUIDA,
   PASSAR_TURNO: 'p',
   DESFAZER: 'ctrl+z',
+  MULLIGAN: TECLA_NAO_ATRIBUIDA,
+  LIMPAR_DANO: TECLA_NAO_ATRIBUIDA,
+  CRIAR_FICHA: 'n',
+  ROLAR_DADO: TECLA_NAO_ATRIBUIDA,
+  VIRAR_MOEDA: TECLA_NAO_ATRIBUIDA,
+  GANHAR_VIDA: TECLA_NAO_ATRIBUIDA,
+  PERDER_VIDA: TECLA_NAO_ATRIBUIDA,
+
+  EMBARALHAR: 's',
+  OLHAR_TOPO: TECLA_NAO_ATRIBUIDA,
+  SCRY_1: TECLA_NAO_ATRIBUIDA,
+  SURVEIL_1: TECLA_NAO_ATRIBUIDA,
+  REVELAR_TOPO: 'r',
+  ALTERNAR_TOPO_REVELADO: TECLA_NAO_ATRIBUIDA,
+  MOER_1: TECLA_NAO_ATRIBUIDA,
+  EXILAR_TOPO: TECLA_NAO_ATRIBUIDA,
+  TOPO_PARA_FUNDO: TECLA_NAO_ATRIBUIDA,
+  BUSCAR_GRIMORIO: 'b',
+
   VIRAR_SELECAO: 't',
   VIRAR_PARA_BAIXO: 'f',
   TRANSFORMAR: 'x',
   PARA_CEMITERIO: 'g',
+  PARA_EXILIO: 'i',
+  PARA_MAO: 'h',
+  PARA_TOPO_DO_GRIMORIO: TECLA_NAO_ATRIBUIDA,
+  PARA_FUNDO_DO_GRIMORIO: TECLA_NAO_ATRIBUIDA,
+  COPIAR_CARTA: 'ctrl+d',
+  MARCADOR_MAIS: 'a',
+  MARCADOR_MENOS: 'A',
+  TRAZER_PARA_FRENTE: TECLA_NAO_ATRIBUIDA,
+  APONTAR_SETA: TECLA_NAO_ATRIBUIDA,
+  INSPECIONAR_CARTA: 'z',
   EDITAR_CARTA: 'e',
   LIMPAR_SELECAO: 'escape',
+
   AUMENTAR_CARTA: '=',
   REDUZIR_CARTA: '-',
+  ALTERNAR_GRADE: TECLA_NAO_ATRIBUIDA,
+  ABRIR_CEMITERIO: 'c',
+  ABRIR_EXILIO: TECLA_NAO_ATRIBUIDA,
+  ALTERNAR_LOG: 'l',
+  ABRIR_ATALHOS: '?',
 };
 
 /** Só o formato mínimo de um evento de teclado. Este pacote não vê o DOM. */

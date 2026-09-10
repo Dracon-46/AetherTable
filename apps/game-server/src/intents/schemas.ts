@@ -59,6 +59,8 @@ export const DrawIntent = z.object({ amount: z.number().int().min(1).max(100) })
 export const MillIntent = z.object({
   amount: z.number().int().min(1).max(100),
   target: z.enum(['GRAVEYARD', 'EXILE']),
+  /** Exilar virado para baixo. Ignorado quando o destino e o cemiterio. */
+  faceDown: z.boolean().default(false),
 });
 
 export const ShuffleIntent = z.object({
@@ -276,6 +278,9 @@ export const RevealZoneIntent = z.object({
 });
 
 export const RevealTopIntent = z.object({ amount: z.number().int().min(1).max(20) });
+
+/** Liga/desliga o modo "topo do grimorio sempre revelado". Ver `Player`. */
+export const SetTopRevealedIntent = z.object({ ligado: z.boolean() });
 
 export const SetZoneVisibilityIntent = z.object({
   zone: zonaPropria,

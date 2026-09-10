@@ -143,6 +143,7 @@ A zona mais rica em ações e a mais sensível em visibilidade.
 | 26  | Contar cartas                                              | — (`libraryCount` já é público)                                 | Público                                 | **M** | MVP  |
 | 27  | **Mulligan (London)** — nova mão de 7, devolver N ao fundo | `INTENT_MULLIGAN`                                               | Privado                                 | **S** | V1   |
 | 28  | Devolver uma zona inteira ao grimório e embaralhar         | `INTENT_RETURN_ZONE {from:GRAVEYARD, to:LIBRARY, shuffle:true}` | Público                                 | S     | V1   |
+| 29  | **Jogar com o topo revelado** (modo contínuo)              | `INTENT_SET_TOP_REVEALED {ligado:true}`                         | **Público** (só a do topo)              | **S** | V1   |
 
 ### 2.1 O fluxo de "olhar X cartas" em detalhe
 

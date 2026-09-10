@@ -766,6 +766,17 @@ export interface OpcoesMesaFocada {
   /** `false` = o trilho está recolhido e nenhuma faixa de oponente é montada. */
   trilhoAberto?: boolean;
   /**
+   * A fileira da RESERVA precisa de espaço reservado?
+   *
+   * `false` = o bloco tem duas fileiras (comando + pilhas) e recebe a sobra da
+   * terceira. É o caso comum: a reserva só é desenhada quando tem cartas
+   * (pré-jogo e wishboard), e reservar altura para uma fileira que não aparece
+   * era metade do vazio que empurrava o bloco para o alto.
+   *
+   * Ausente = `true`, que preserva a geometria de antes deste campo.
+   */
+  temReserva?: boolean;
+  /**
    * Multiplicador de tamanho de carta escolhido pelo jogador.
    *
    * Ausente = `FATOR_CARTA_PADRAO`, que reproduz exatamente a geometria de
@@ -816,8 +827,34 @@ const VAO_DO_BLOCO = 10;
  */
 const ROTULO_DA_PILHA = 22;
 
+/**
+ * ─── ONDE O BLOCO DE ZONAS SE ANCORA NA VERTICAL ───────────────────────────
+ *
+ * `rowY` começava em `rotulo`, ou seja: o bloco era colado no TOPO do campo e
+ * toda a sobra vertical ficava embaixo dele. Numa tela alta isso produzia
+ * exatamente o que o jogador relatou — comando e as três pilhas amontoados no
+ * alto, com um vazio de várias alturas de carta abaixo, e a reserva flutuando
+ * no meio do nada.
+ *
+ * O bloco agora recebe a sobra e desce. `0` reproduz o comportamento antigo
+ * (topo), `1` cola na base, e o valor abaixo pende para baixo de propósito:
+ *
+ *   - a MÃO fica na base da tela, e o grimório é o alvo mais clicado da
+ *     partida. Aproximar os dois encurta o trajeto do mouse no gesto que mais
+ *     se repete — comprar, olhar a mão, comprar de novo;
+ *   - a fileira 2 é a RESERVA, que só é desenhada quando tem cartas. Centrar em
+ *     três fileiras deixaria o par visível (comando + pilhas) ACIMA do centro,
+ *     que é o problema que estamos corrigindo. Pender para baixo compensa a
+ *     fileira reservada e quase sempre vazia.
+ *
+ * O teto é garantido pela conta e não pela constante: a sobra distribuída é
+ * `campoAltura - alturaDoBloco`, então mesmo com âncora `1` a base da última
+ * fileira para exatamente em `mao.topo`. Um teste trava isso.
+ */
+const ANCORA_VERTICAL_DO_BLOCO = 0.62;
+
 export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
-  const { focoId, oponentes = [], trilhoAberto = true } = opcoes;
+  const { focoId, oponentes = [], trilhoAberto = true, temReserva = true } = opcoes;
 
   const largura = Math.max(480, Math.round(opcoes.largura));
   const altura = Math.max(420, Math.round(opcoes.altura));
@@ -879,11 +916,30 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
    * passo entre CENTROS com o espaço que a fileira ocupa.
    */
   const passo = zonaH + vao + ROTULO_DA_PILHA * escalaZonas;
+
+  /**
+   * Altura ocupada pelas fileiras que de fato aparecem.
+   *
+   * `zonaH + (n - 1) * passo`, e não `n * passo`: o passo é entre CENTROS,
+   * então a última fileira só contribui com a própria altura. É o mesmo erro
+   * que já tinha estourado a reserva para baixo da mão quando a conta usava
+   * `/3`.
+   *
+   * `n` é 2 sem reserva e 3 com ela — e essa diferença é a maior parte da
+   * correção: uma fileira inteira de altura de carta deixava de ser usada
+   * porque a reserva quase nunca tem cartas.
+   */
+  const linhasDoBloco = temReserva ? 3 : 2;
+  const alturaDoBloco = zonaH + (linhasDoBloco - 1) * passo;
+  /** O que sobra de campo depois do bloco — o que faz ele poder descer. */
+  const folgaVertical = Math.max(0, campoAltura - alturaDoBloco);
+  const descida = folgaVertical * ANCORA_VERTICAL_DO_BLOCO;
+
   const blocoX = campoLargura + FOLGA_COLUNA * escalaZonas;
   /** Centro horizontal da coluna `c` do bloco (0, 1, 2). */
   const colX = (c: number) => blocoX + zonaW / 2 + c * (zonaW + vao);
   /** Centro vertical da fileira `r` do bloco. */
-  const rowY = (r: number) => rotulo + zonaH / 2 + r * passo;
+  const rowY = (r: number) => rotulo + descida + zonaH / 2 + r * passo;
   /** Centro horizontal do bloco inteiro — para o que é centralizado. */
   const centroDoBloco = colX(0) + ((COLUNAS_DO_BLOCO - 1) * (zonaW + vao)) / 2;
 

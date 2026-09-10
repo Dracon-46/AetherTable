@@ -50,6 +50,15 @@ export interface DrawPayload {
 export interface MillPayload {
   amount: number;
   target: 'GRAVEYARD' | 'EXILE';
+  /**
+   * Exilar com a face para baixo.
+   *
+   * So faz sentido com `target: 'EXILE'` — no cemiterio a carta e publica por
+   * definicao. E o gesto de "exilio virado para baixo" que efeitos de foretell
+   * e plot pedem, e que so existia movendo a carta e virando depois, em dois
+   * passos, com a identidade visivel no meio do caminho.
+   */
+  faceDown?: boolean;
 }
 export interface MoveTopToBottomPayload {
   amount: number;
@@ -114,6 +123,18 @@ export interface RevealZonePayload {
 }
 export interface RevealTopPayload {
   amount: number;
+}
+/**
+ * Liga ou desliga o modo "jogar com o topo revelado".
+ *
+ * E MODO, e nao acao: a carta do topo continua revelada a cada compra,
+ * embaralhamento e reordenacao, ate ser desligado. Por isso nao da para fazer
+ * com `INTENT_REVEAL_TOP` repetido pelo cliente — `INTENT_MOVE_TOP_TO_BOTTOM`,
+ * `INTENT_REORDER`, `INTENT_SCRY_COMMIT` e `INTENT_SURVEIL_COMMIT` mudam a
+ * ordem SEM mudar de zona, e o cliente nao ve ordem.
+ */
+export interface SetTopRevealedPayload {
+  ligado: boolean;
 }
 export interface UnrevealPayload {
   ids: string[];
@@ -506,6 +527,7 @@ export interface IntentPayloadMap {
   INTENT_REVEAL_TOP: RevealTopPayload;
   INTENT_UNREVEAL: UnrevealPayload;
   INTENT_SET_ZONE_VISIBILITY: SetZoneVisibilityPayload;
+  INTENT_SET_TOP_REVEALED: SetTopRevealedPayload;
   // propriedades de carta
   INTENT_TAP: TapPayload;
   INTENT_TAP_ALL: TapAllPayload;

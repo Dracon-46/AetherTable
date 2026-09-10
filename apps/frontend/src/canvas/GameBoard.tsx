@@ -31,6 +31,7 @@ import type { Room } from 'colyseus.js';
 import Konva from 'konva';
 import { useGameStore, useTableStore, useUIStore, type CardData } from '../store/game.store';
 import { getTexture } from './textureCache';
+import { chaveDaZona, idDoTopo } from '../store/ordem-de-zona';
 import { useCardCatalog, type CardMeta } from '../cards/catalog';
 import { caminhoDoPet, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
 import { cosmeticosVisiveis, useCosmeticos } from '../cosmetics/store';
@@ -850,6 +851,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const pings = useTableStore((s) => s.pings);
   const expirarPings = useTableStore((s) => s.expirarPings);
 
+  const zoneOrder = useGameStore((s) => s.zoneOrder);
   const catalogo = useCardCatalog((s) => s.cartas);
   const hidratar = useCardCatalog((s) => s.hidratar);
   const cosmeticosDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
@@ -905,6 +907,20 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     ? { esquerda: 6, direita: 6, topo: 118, base: 10 }
     : { esquerda: 168, direita: 10, topo: 44, base: 10 };
 
+  /**
+   * Tenho carta na reserva?
+   *
+   * Memo PRÓPRIO, e não uma leitura dentro do memo da mesa, porque `cards`
+   * muda a cada movimento de carta e a geometria da mesa não pode ser
+   * remontada nessa frequência. Aqui a varredura devolve um BOOLEANO: a mesa
+   * só é remontada quando ele vira, o que acontece no pré-jogo e quase nunca
+   * durante a partida.
+   */
+  const temReserva = useMemo(
+    () => Object.values(cards).some((c) => c.zone === 'SIDEBOARD' && c.ownerId === myId),
+    [cards, myId],
+  );
+
   const utilW = Math.max(320, dims.w - margens.esquerda - margens.direita);
   const utilH = Math.max(300, dims.h - margens.topo - margens.base);
 
@@ -954,8 +970,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
        */
       trilhoAberto: trilhoAberto && !estreito,
       fatorCarta,
+      temReserva,
     });
-  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH, fatorCarta]);
+  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH, fatorCarta, temReserva]);
 
   /**
    * ─── ESCALA 1, SEM CENTRALIZAR ─────────────────────────────────────────────
@@ -1039,9 +1056,20 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     });
 
     const contar = (zona: string, dono: string) => daZona(zona, dono).length;
+
+    /**
+     * O id do TOPO de uma zona, pela ordem real do servidor.
+     *
+     * `zoneOrder` guarda o topo no FIM da lista (DOC-032 §2). Antes de ele ser
+     * espelhado, isto era `Object.values(cards).filter(...)` e o "topo" era a
+     * ordem de inserção no mapa — ou seja, uma carta qualquer da pilha.
+     */
+    const idDaZonaNoTopo = (zona: string, dono: string): string | undefined =>
+      idDoTopo(zoneOrder[chaveDaZona(dono, zona)]);
+
     const topoDe = (zona: string, dono: string) => {
-      const z = daZona(zona, dono);
-      const ultima = z[z.length - 1];
+      const id = idDaZonaNoTopo(zona, dono);
+      const ultima = id ? cards[id] : undefined;
       return ultima && temIdentidade(ultima)
         ? getTexture(ultima.scryfallId, 'normal', ultima.isFlipped ? 'back' : 'front')
         : null;
@@ -1064,11 +1092,18 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
         sideboard: contar('SIDEBOARD', faixa.playerId),
         topoCemiterio: topoDe('GRAVEYARD', faixa.playerId),
         topoExilio: topoDe('EXILE', faixa.playerId),
+        /**
+         * O grimório mostra a carta do topo QUANDO a identidade dela está
+         * liberada — é o que faz "revelar o topo" e o modo "topo revelado"
+         * aparecerem na mesa. Sem revelação, `temIdentidade` é falso e a pilha
+         * volta ao verso do protetor.
+         */
+        topoGrimorio: topoDe('LIBRARY', faixa.playerId),
       };
     });
 
     return { itens: out, resumoFaixas: resumo };
-  }, [cards, players, myId, mesa, cosmeticosDeOponentes]);
+  }, [cards, zoneOrder, players, myId, mesa, cosmeticosDeOponentes]);
 
   const ancoras = useMemo(() => {
     const mapa = new Map<string, Ponto>();
@@ -1367,7 +1402,11 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     centro={r.faixa.grimorio}
                     quantidade={r.library}
                     cor="#2f3446"
-                    verso
+                    /* Revelada vence o sleeve. `Pilha` só desenha `topo` quando
+                       `verso` é falso, então os dois andam juntos: sem carta
+                       revelada, volta a ser o verso do protetor. */
+                    verso={!r.topoGrimorio}
+                    topo={r.topoGrimorio}
                     versoImagem={r.verso}
                     escala={esc}
                     onClick={meu ? () => intents.draw(room, 1) : undefined}

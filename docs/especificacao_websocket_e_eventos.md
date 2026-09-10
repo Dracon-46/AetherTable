@@ -87,7 +87,7 @@ Todas as intenções são validadas com Zod antes de qualquer efeito (`FR-11`). 
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----------------- |
 | Movimento e posição   | `INTENT_GRAB`, `_MOVE_CARD`, `_RELEASE`, `_BRING_TO_FRONT`                                                                                                                                                                      | 4         | §3.1              |
 | Zona e grimório       | `INTENT_CHANGE_ZONE`, `_DRAW`, `_MILL`, `_SHUFFLE`, `_REORDER`, `_MULLIGAN`, `_RETURN_ZONE`, `_MOVE_TOP_TO_BOTTOM`, `_DRAW_UP_TO`                                                                                               | 9         | §3.2              |
-| **Visibilidade**      | `INTENT_PEEK`, `_SCRY`, `_SCRY_COMMIT`, `_SURVEIL`, `_SURVEIL_COMMIT`, `_REVEAL`, `_REVEAL_ZONE`, `_REVEAL_TOP`, `_UNREVEAL`, `_SEARCH_ZONE`, `_CLOSE_PEEK`, `_SET_ZONE_VISIBILITY`                                             | **12**    | **§3.2.1 — novo** |
+| **Visibilidade**      | `INTENT_PEEK`, `_SCRY`, `_SCRY_COMMIT`, `_SURVEIL`, `_SURVEIL_COMMIT`, `_REVEAL`, `_REVEAL_ZONE`, `_REVEAL_TOP`, `_UNREVEAL`, `_SEARCH_ZONE`, `_CLOSE_PEEK`, `_SET_ZONE_VISIBILITY`, `_SET_TOP_REVEALED`                        | **13**    | **§3.2.1 — novo** |
 | Propriedades de carta | `INTENT_TAP`, `_UNTAP_ALL`, `_TAP_ALL`, `_UPDATE_PROPERTY`, `_TRANSFORM`, `_MELD`, `_ATTACH`, `_DETACH`, `_GROUP`, `_SET_PT`, `_SET_DAMAGE`, `_CLEAR_DAMAGE`, `_SET_NOTE`, `_SET_HIGHLIGHT`, `_SET_CONTROLLER`, `_BATCH_UPDATE` | 16        | §3.3              |
 | Contadores            | `INTENT_ADD_COUNTER`, `_SET_COUNTER`, `_CLEAR_COUNTERS`, `_ADD_PLAYER_COUNTER`, `_BATCH_COUNTER`                                                                                                                                | 5         | §3.3.1            |
 | Jogador e designações | `INTENT_SET_LIFE`, `_SET_COMMANDER_DAMAGE`, `_TOGGLE_DESIGNATION`, `_SET_COMMANDER_TAX`, `_SET_RING`, `_SET_DAY_NIGHT`, `_SET_SPEED`, `_VENTURE`, `_CONCEDE`, `_SET_TURN_ORDER`, `_SET_MAX_HAND_SIZE`                           | 11        | §3.4              |
@@ -122,37 +122,38 @@ O cliente aplica _throttle_ de **20 mensagens/s** durante o arraste e usa predi�
 
 ### 3.2 Mudança de zona
 
-| Intenção                    | Payload                                      | Efeito                                                                |
-| --------------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
-| `INTENT_CHANGE_ZONE`        | `{ entityId, targetZone, index?, x?, y? }`   | Remove da zona atual, injeta na nova, **recalcula visibilidade**      |
-| `INTENT_DRAW`               | `{ amount }` (1–100)                         | Move `amount` cartas do topo da `LIBRARY` para a `HAND` do remetente  |
-| `INTENT_MILL`               | `{ amount, target: "GRAVEYARD" \| "EXILE" }` | Move do topo da `LIBRARY` para a zona pública indicada                |
-| `INTENT_MOVE_TOP_TO_BOTTOM` | `{ amount }`                                 | Move as N do topo para o fundo da `LIBRARY`                           |
-| `INTENT_SHUFFLE_ZONE`       | `{ targetZone: "LIBRARY", keepTop? }`        | Fisher-Yates com CSPRNG (`RN06`)                                      |
-| `INTENT_MULLIGAN`           | `{}`                                         | Devolve a mão, embaralha, serve 7; incrementa o contador de mulligans |
-| `INTENT_DRAW_UP_TO`         | `{ target }`                                 | Compra até ter `target` cartas na mão                                 |
-| `INTENT_RETURN_ZONE`        | `{ from, to, shuffle }`                      | Devolve uma zona inteira (ex.: cemitério → grimório)                  |
-| `INTENT_REORDER`            | `{ zone, ids[] }`                            | Reordena uma zona ordenada                                            |
+| Intenção                    | Payload                                                 | Efeito                                                                                                                      |
+| --------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `INTENT_CHANGE_ZONE`        | `{ entityId, targetZone, index?, x?, y? }`              | Remove da zona atual, injeta na nova, **recalcula visibilidade**                                                            |
+| `INTENT_DRAW`               | `{ amount }` (1–100)                                    | Move `amount` cartas do topo da `LIBRARY` para a `HAND` do remetente                                                        |
+| `INTENT_MILL`               | `{ amount, target: "GRAVEYARD" \| "EXILE", faceDown? }` | Move do topo da `LIBRARY` para a zona indicada; `faceDown` só vale no exílio (no cemitério a carta é pública por definição) |
+| `INTENT_MOVE_TOP_TO_BOTTOM` | `{ amount }`                                            | Move as N do topo para o fundo da `LIBRARY`                                                                                 |
+| `INTENT_SHUFFLE_ZONE`       | `{ targetZone: "LIBRARY", keepTop? }`                   | Fisher-Yates com CSPRNG (`RN06`)                                                                                            |
+| `INTENT_MULLIGAN`           | `{}`                                                    | Devolve a mão, embaralha, serve 7; incrementa o contador de mulligans                                                       |
+| `INTENT_DRAW_UP_TO`         | `{ target }`                                            | Compra até ter `target` cartas na mão                                                                                       |
+| `INTENT_RETURN_ZONE`        | `{ from, to, shuffle }`                                 | Devolve uma zona inteira (ex.: cemitério → grimório)                                                                        |
+| `INTENT_REORDER`            | `{ zone, ids[] }`                                       | Reordena uma zona ordenada                                                                                                  |
 
 ### 3.2.1 Intenções de visibilidade — a família mais sensível
 
 Todas implementam `RN13`: **a visibilidade só é concedida por ação explícita e registrada.** Nenhuma
 delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
 
-| Intenção                     | Payload                                    | Concede                            | Log                                               | Expira                                |
-| ---------------------------- | ------------------------------------------ | ---------------------------------- | ------------------------------------------------- | ------------------------------------- |
-| `INTENT_PEEK`                | `{ zone, amount, from?: "TOP"\|"BOTTOM" }` | `peekedBy += sid` nas N cartas     | "olhou as N do topo"                              | `_CLOSE_PEEK` · 120 s · troca de zona |
-| `INTENT_CLOSE_PEEK`          | `{}`                                       | **Revoga** `peekedBy` do remetente | —                                                 | —                                     |
-| `INTENT_SCRY`                | `{ amount }`                               | `peekedBy` + cria `peekBuffer`     | "fez scry N"                                      | `_SCRY_COMMIT` · 120 s                |
-| `INTENT_SCRY_COMMIT`         | `{ toBottom: id[], topOrder: id[] }`       | Aplica e **revoga**                | "colocou N no fundo" _(contagem, não identidade)_ | —                                     |
-| `INTENT_SURVEIL`             | `{ amount }`                               | `peekedBy` + `peekBuffer`          | "fez surveil N"                                   | `_SURVEIL_COMMIT` · 120 s             |
-| `INTENT_SURVEIL_COMMIT`      | `{ toGraveyard: id[], topOrder: id[] }`    | Aplica e **revoga**                | "moveu N ao cemitério"                            | —                                     |
-| `INTENT_SEARCH_ZONE`         | `{ zone, filter? }`                        | `peekedBy` na zona **inteira**     | "está procurando no grimório"                     | `_CLOSE_PEEK` · 120 s                 |
-| `INTENT_REVEAL`              | `{ ids[], to: "ALL" \| sid[] }`            | `revealedTo`                       | "revelou N carta(s)" + nomes se `ALL`             | `_UNREVEAL` · troca de zona           |
-| `INTENT_REVEAL_ZONE`         | `{ zone, to }`                             | `revealedTo` na zona inteira       | "revelou a mão"                                   | idem                                  |
-| `INTENT_REVEAL_TOP`          | `{ amount }`                               | `revealedTo = "ALL"` nas N do topo | "revelou o topo: {nomes}"                         | troca de zona                         |
-| `INTENT_UNREVEAL`            | `{ ids[] }`                                | **Revoga** `revealedTo`            | "ocultou N carta(s)"                              | —                                     |
-| `INTENT_SET_ZONE_VISIBILITY` | `{ zone, to }`                             | Jogar com a zona aberta            | "está jogando com o grimório revelado"            | manual                                |
+| Intenção                     | Payload                                    | Concede                                                                                                          | Log                                                                       | Expira                                |
+| ---------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------- |
+| `INTENT_PEEK`                | `{ zone, amount, from?: "TOP"\|"BOTTOM" }` | `peekedBy += sid` nas N cartas                                                                                   | "olhou as N do topo"                                                      | `_CLOSE_PEEK` · 120 s · troca de zona |
+| `INTENT_CLOSE_PEEK`          | `{}`                                       | **Revoga** `peekedBy` do remetente                                                                               | —                                                                         | —                                     |
+| `INTENT_SCRY`                | `{ amount }`                               | `peekedBy` + cria `peekBuffer`                                                                                   | "fez scry N"                                                              | `_SCRY_COMMIT` · 120 s                |
+| `INTENT_SCRY_COMMIT`         | `{ toBottom: id[], topOrder: id[] }`       | Aplica e **revoga**                                                                                              | "colocou N no fundo" _(contagem, não identidade)_                         | —                                     |
+| `INTENT_SURVEIL`             | `{ amount }`                               | `peekedBy` + `peekBuffer`                                                                                        | "fez surveil N"                                                           | `_SURVEIL_COMMIT` · 120 s             |
+| `INTENT_SURVEIL_COMMIT`      | `{ toGraveyard: id[], topOrder: id[] }`    | Aplica e **revoga**                                                                                              | "moveu N ao cemitério"                                                    | —                                     |
+| `INTENT_SEARCH_ZONE`         | `{ zone, filter? }`                        | `peekedBy` na zona **inteira**                                                                                   | "está procurando no grimório"                                             | `_CLOSE_PEEK` · 120 s                 |
+| `INTENT_REVEAL`              | `{ ids[], to: "ALL" \| sid[] }`            | `revealedTo`                                                                                                     | "revelou N carta(s)" + nomes se `ALL`                                     | `_UNREVEAL` · troca de zona           |
+| `INTENT_REVEAL_ZONE`         | `{ zone, to }`                             | `revealedTo` na zona inteira                                                                                     | "revelou a mão"                                                           | idem                                  |
+| `INTENT_REVEAL_TOP`          | `{ amount }`                               | `revealedTo = "ALL"` nas N do topo                                                                               | "revelou o topo: {nomes}"                                                 | troca de zona                         |
+| `INTENT_UNREVEAL`            | `{ ids[] }`                                | **Revoga** `revealedTo`                                                                                          | "ocultou N carta(s)"                                                      | —                                     |
+| `INTENT_SET_ZONE_VISIBILITY` | `{ zone, to }`                             | Jogar com a zona aberta                                                                                          | "está jogando com o grimório revelado"                                    | manual                                |
+| `INTENT_SET_TOP_REVEALED`    | `{ ligado }`                               | Modo contínuo: a carta do topo do grimório fica `revealedTo = "ALL"` e o servidor **reconcilia a cada intenção** | "está jogando com o topo revelado" / "parou de jogar com o topo revelado" | `{ ligado:false }`                    |
 
 **Invariantes obrigatórias desta família:**
 
@@ -164,6 +165,19 @@ delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
 4. Log de `_SCRY_COMMIT` e `_SURVEIL_COMMIT` publica **contagem**, nunca identidade.
 5. `revealedTo` e `peekedBy` são **zerados** em qualquer `INTENT_CHANGE_ZONE` (`DOC-032` §4.1.2).
 6. O resultado da olhada chega ao autor por **patch filtrado**, não por `broadcast`.
+7. **`_SET_TOP_REVEALED` não revela nada por si.** A intenção só liga um interruptor no `Player`
+   (`topoRevelado`). Quem revela é um **reconciliador** chamado depois de TODA intenção, no mesmo
+   ponto único de despacho da sala: ele revoga a concessão da carta que deixou de ser o topo e
+   concede à que passou a ser. Sem isso o modo duraria uma compra — e um handler por intenção que
+   mexe no grimório (`_DRAW`, `_MILL`, `_SHUFFLE`, `_MOVE_TOP_TO_BOTTOM`, `_CHANGE_ZONE`,
+   `_SCRY_COMMIT`, `_SURVEIL_COMMIT`, `_MULLIGAN`, `_RETURN_ZONE`…) seria uma lista que só cresce e
+   sempre esquece um caso.
+8. **A condição de saída do reconciliador olha a CARTA, não o id guardado.** `INTENT_SHUFFLE` chama
+   `limparConcessoes` em todas as cartas: se o embaralhamento devolvesse a mesma carta ao topo, um
+   `topoReveladoId === topo` bastaria para o reconciliador sair sem fazer nada, deixando o modo
+   ligado e nada revelado. Ele só sai cedo se a carta do topo **ainda estiver** com
+   `revealedTo = "ALL"` — o que o torna auto-corretivo depois de qualquer handler que limpe
+   concessões.
 
 ### 3.3 Propriedades de carta
 
