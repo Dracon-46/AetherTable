@@ -34,6 +34,16 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3210',
     trace: 'on-first-retry',
+    /**
+     * Uma imagem da tela no momento exato da falha.
+     *
+     * Sem isto, um `toHaveCount` que falha conta QUANTOS elementos achou e
+     * nada sobre por que — e num teste de mesa a resposta costuma ser
+     * geometrica: um painel cobrindo outro, um bloco que desceu, uma barra que
+     * ficou aberta. Diagnosticar isso lendo o DOM e a espera do locator custa
+     * varias execucoes de tres minutos cada.
+     */
+    screenshot: 'only-on-failure',
     // Escape hatch para ambientes que já trazem um Chromium instalado (imagens
     // de CI, sandboxes sem rede para `playwright install`). Sem isso o
     // Playwright exige a revisão exata que ele mesmo baixaria e a suíte inteira
