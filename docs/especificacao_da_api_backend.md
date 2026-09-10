@@ -180,19 +180,56 @@ Perfil público: `username`, `displayName`, `avatarUrl`, `stats`, `createdAt`. *
 
 Campos aceitos: `displayName`, `avatarUrl`.
 
-### 2.10 `GET` e `PUT /users/me/preferences`
+### 2.10 As preferências viajam no `GET /users/me` e no `PATCH /users/me`
+
+Não há rota `/users/me/preferences` separada, e não é omissão: as preferências são lidas no mesmo
+instante que o perfil (a casca autenticada precisa das duas coisas para desenhar a primeira tela) e
+uma segunda rota seria uma segunda requisição no caminho de entrada da Taverna.
+
+`GET /users/me` devolve `preference` junto do perfil:
 
 ```json
 {
-  "keybindings": { "tap": "t", "draw": "d", "shuffle": "s", "untapAll": "u" },
-  "theme": "DARK",
-  "playmatUrl": null,
-  "voiceMode": "VAD",
-  "pttKey": null,
-  "masterVolume": 80,
-  "language": "pt-BR"
+  "id": "…",
+  "username": "planeswalker42",
+  "supporterTier": "FREE",
+  "preference": {
+    "theme": "DARK",
+    "language": "pt-BR",
+    "sleeveId": "aether-classic",
+    "playmatId": "mesa-padrao",
+    "borderId": null,
+    "titleId": null,
+    "petId": null,
+    "cosmeticosDeOponentes": true,
+    "keybindings": { "COMPRAR": "d", "EMBARALHAR": "s", "REVELAR_TOPO": "r" },
+    "preferenciasDeMesa": {
+      "fatorCarta": 1.2,
+      "alinharNaGrade": true,
+      "anexosDesativados": false,
+      "custoDeManaNaMao": true,
+      "seguirTurno": false,
+      "contornoDasZonas": true,
+      "trilhoAberto": true,
+      "barraAberta": false,
+      "logAberto": false,
+      "vidaModo": "minha",
+      "boardView": "ALL"
+    }
+  }
 }
 ```
+
+`PATCH /users/me` aceita qualquer subconjunto desses campos. Duas regras que valem para as duas
+colunas JSONB (`keybindings` e `preferenciasDeMesa`):
+
+1. **o objeto é substituído inteiro, não mesclado.** O cliente sempre envia o conjunto completo, e
+   um merge parcial criaria a dúvida de como voltar uma entrada ao padrão — chave ausente
+   significaria "não mexa" e a ação nunca poderia ficar sem tecla.
+2. **a validação é contra o CATÁLOGO em `@aethertable/shared-types`**, não contra uma lista escrita
+   à mão aqui: chave que não existe é `400`. O valor é validado por abuso (tamanho, caractere de
+   controle) e não por gramática — quem decide o que é um valor aceitável é a função de normalização
+   que as duas pontas usam.
 
 ### 2.11 `DELETE /users/me`
 

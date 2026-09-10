@@ -316,30 +316,64 @@ Todos remapeáveis (`uiStore` + `UserPreference`), o que também é um requisito
 
 ### 6.1 Padrão
 
-| Tecla              | Ação                                        |
-| ------------------ | ------------------------------------------- |
-| `T`                | Virar / desvirar a carta selecionada        |
-| `Ctrl+T`           | Rotacionar 180°                             |
-| `F`                | Face para baixo                             |
-| `D`                | Comprar 1 carta                             |
-| `Shift+D`          | Comprar X (abre diálogo)                    |
-| `S`                | Embaralhar grimório                         |
-| `U`                | Desvirar tudo                               |
-| `B`                | Enviar carta da mão ao Battlefield          |
-| `G`                | Enviar ao cemitério                         |
-| `E`                | Enviar ao exílio                            |
-| `+` / `-`          | Marcador +1/+1                              |
-| `R`                | Painel de dados                             |
-| `K`                | Painel de fichas                            |
-| `M`                | Mutar / desmutar microfone                  |
-| `Espaço` (segurar) | _Pan_ da câmera                             |
-| `Alt+clique`       | Inspecionar carta                           |
-| `Shift+clique`     | Adicionar à seleção                         |
-| `Ctrl+A`           | Selecionar todas as próprias no Battlefield |
-| `Esc`              | Limpar seleção / fechar modal               |
-| `Setas`            | Mover a seleção em passos de 10 px          |
-| `Enter`            | Foco no campo de chat                       |
-| `?`                | Lista de atalhos                            |
+> **A fonte é o código, não esta tabela.** O catálogo de ações mapeáveis e as teclas de fábrica
+> vivem em `packages/shared-types/src/atalhos.ts` (`ACOES_DE_ATALHO` e `ATALHOS_PADRAO`), que o
+> editor, a ajuda e o listener do teclado leem juntos. A tabela abaixo é o retrato do que está
+> lá — quando divergir, quem está errado é a tabela.
+>
+> A versão anterior desta seção listava atalhos que nunca existiram no código (`Shift+D`, `K`,
+> `M`, `Ctrl+A`, `Enter`) e omitia os que existiam. Uma tabela de atalhos que mente é pior que
+> nenhuma: a pessoa aperta a tecla, nada acontece, e ela conclui que o teclado não funciona.
+
+**Mesa**
+
+| Tecla    | Ação                       |
+| -------- | -------------------------- |
+| `D`      | Comprar 1                  |
+| `U`      | Desvirar todas as próprias |
+| `P`      | Passar o turno             |
+| `Ctrl+Z` | Desfazer                   |
+| `N`      | Abrir o criador de fichas  |
+
+**Grimório**
+
+| Tecla | Ação                       |
+| ----- | -------------------------- |
+| `S`   | Embaralhar                 |
+| `R`   | Revelar o topo para a mesa |
+| `B`   | Buscar (tutor)             |
+
+**Carta selecionada**
+
+| Tecla     | Ação                        |
+| --------- | --------------------------- |
+| `T`       | Virar / desvirar            |
+| `F`       | Face para baixo / para cima |
+| `X`       | Transformar (dupla face)    |
+| `G`       | Para o cemitério            |
+| `I`       | Para o exílio               |
+| `H`       | Para a mão                  |
+| `A`       | Marcador +1/+1              |
+| `Shift+A` | Remover marcador +1/+1      |
+| `Ctrl+D`  | Copiar a carta              |
+| `Z`       | Ver em tamanho grande       |
+| `E`       | Marcadores, P/T e dano      |
+| `Esc`     | Limpar seleção              |
+
+**Exibição**
+
+| Tecla     | Ação                       |
+| --------- | -------------------------- |
+| `=` / `-` | Aumentar / reduzir a carta |
+| `C`       | Abrir o cemitério          |
+| `L`       | Abrir / fechar o log       |
+| `?`       | Lista de atalhos           |
+
+As demais ações do catálogo (mulligan, scry, surveil, moer, exilar do topo, jogar com o topo
+revelado, rolar dado, virar moeda, ganhar/perder vida, mandar para o topo ou o fundo do grimório,
+apontar seta, trazer para a frente, alinhar à grade, abrir o exílio) nascem **sem tecla**, e é
+deliberado: distribuir tecla para as quarenta significaria empilhar modificadores que ninguém
+decora ou tomar atalhos do navegador. Elas continuam no menu e no editor — quem quiser, atribui.
 
 ### 6.2 Regras de atalho
 

@@ -129,16 +129,50 @@ describe('resolverAtalhos', () => {
     expect(r.AUMENTAR_CARTA).toBe(ATALHOS_PADRAO.AUMENTAR_CARTA);
   });
 
-  it('toda ação do catálogo tem tecla padrão, e nenhuma se repete', () => {
+  it('toda ação do catálogo tem entrada no padrão, e nenhuma TECLA se repete', () => {
     const usadas = new Map<string, string>();
     for (const { id } of ACOES_DE_ATALHO) {
       const t = ATALHOS_PADRAO[id];
       expect(ehAcaoDeAtalho(id)).toBe(true);
-      expect(t).toBeTruthy();
+      // Toda ação precisa de ENTRADA — mas a entrada pode ser "sem tecla".
+      // Desde que o catálogo passou de treze para quarenta ações, distribuir
+      // tecla para todas significaria empilhar modificadores que ninguém
+      // decora ou tomar atalhos do navegador; ação nova nasce desligada.
+      expect(t).toBeDefined();
+      if (t === TECLA_NAO_ATRIBUIDA) continue;
       // Duas ações na mesma tecla de fábrica seria um atalho cuja função
       // depende da ordem de uma constante.
       expect(usadas.has(t)).toBe(false);
       usadas.set(t, id);
+    }
+  });
+
+  it('as treze teclas originais continuam nas mesmas ações', () => {
+    // A mão de quem já jogava não pode mudar porque o catálogo cresceu.
+    expect(ATALHOS_PADRAO.COMPRAR).toBe('d');
+    expect(ATALHOS_PADRAO.DESVIRAR_TUDO).toBe('u');
+    expect(ATALHOS_PADRAO.EMBARALHAR).toBe('s');
+    expect(ATALHOS_PADRAO.PASSAR_TURNO).toBe('p');
+    expect(ATALHOS_PADRAO.DESFAZER).toBe('ctrl+z');
+    expect(ATALHOS_PADRAO.VIRAR_SELECAO).toBe('t');
+    expect(ATALHOS_PADRAO.VIRAR_PARA_BAIXO).toBe('f');
+    expect(ATALHOS_PADRAO.TRANSFORMAR).toBe('x');
+    expect(ATALHOS_PADRAO.PARA_CEMITERIO).toBe('g');
+    expect(ATALHOS_PADRAO.EDITAR_CARTA).toBe('e');
+    expect(ATALHOS_PADRAO.LIMPAR_SELECAO).toBe('escape');
+    expect(ATALHOS_PADRAO.AUMENTAR_CARTA).toBe('=');
+    expect(ATALHOS_PADRAO.REDUZIR_CARTA).toBe('-');
+  });
+
+  it('toda ação do catálogo pertence a um dos quatro grupos do editor', () => {
+    // O editor desenha por grupo: uma ação num grupo que ele não percorre
+    // existiria no contrato e seria invisível para quem quer remapear.
+    const grupos = new Set(['MESA', 'GRIMORIO', 'SELECAO', 'EXIBICAO']);
+    for (const { id, grupo, descricao } of ACOES_DE_ATALHO) {
+      expect(grupos.has(grupo)).toBe(true);
+      // Descrição vazia deixaria uma linha em branco no editor.
+      expect(descricao.length).toBeGreaterThan(3);
+      expect(id.length).toBeGreaterThan(0);
     }
   });
 });

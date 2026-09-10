@@ -161,9 +161,117 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
           intents.untapAll(room);
           break;
 
+        case 'VIRAR_TUDO':
+          e.preventDefault();
+          intents.tapAll(room);
+          break;
+
+        case 'MULLIGAN':
+          e.preventDefault();
+          intents.mulligan(room);
+          break;
+
+        case 'LIMPAR_DANO':
+          e.preventDefault();
+          intents.clearDamage(room);
+          break;
+
+        case 'CRIAR_FICHA':
+          e.preventDefault();
+          ui.toggleModal('tokens');
+          break;
+
+        case 'ROLAR_DADO':
+          e.preventDefault();
+          intents.rollDice(room, 20);
+          break;
+
+        case 'VIRAR_MOEDA':
+          e.preventDefault();
+          intents.flipCoin(room);
+          break;
+
+        /**
+         * Vida por tecla anda de UM em um, e de propósito.
+         *
+         * O painel de vida já tem os botões de 5 e de valor absoluto. O que o
+         * teclado resolve é a sequência de dano pequeno no meio do combate,
+         * onde tirar a mão do teclado para clicar é o incômodo.
+         */
+        case 'GANHAR_VIDA':
+          e.preventDefault();
+          intents.setLife(room, 1);
+          break;
+
+        case 'PERDER_VIDA':
+          e.preventDefault();
+          intents.setLife(room, -1);
+          break;
+
         case 'EMBARALHAR':
           e.preventDefault();
           intents.shuffle(room, 'LIBRARY');
+          break;
+
+        case 'OLHAR_TOPO':
+          e.preventDefault();
+          intents.peek(room, 'LIBRARY', 1, 'TOP');
+          break;
+
+        case 'SCRY_1':
+          e.preventDefault();
+          intents.scry(room, 1);
+          break;
+
+        case 'SURVEIL_1':
+          e.preventDefault();
+          intents.surveil(room, 1);
+          break;
+
+        case 'REVELAR_TOPO':
+          e.preventDefault();
+          intents.revealTop(room, 1);
+          break;
+
+        /**
+         * O estado vem do SERVIDOR, não de um booleano local.
+         *
+         * Guardar "está ligado?" aqui faria a tecla dessincronizar na primeira
+         * reconexão: o jogador apertaria para desligar e ligaria de novo.
+         */
+        case 'ALTERNAR_TOPO_REVELADO': {
+          e.preventDefault();
+          const eu = jogo.players[jogo.mySessionId];
+          intents.setTopRevealed(room, !eu?.topoRevelado);
+          break;
+        }
+
+        case 'MOER_1':
+          e.preventDefault();
+          intents.mill(room, 1, 'GRAVEYARD');
+          break;
+
+        case 'EXILAR_TOPO':
+          e.preventDefault();
+          intents.mill(room, 1, 'EXILE');
+          break;
+
+        case 'TOPO_PARA_FUNDO':
+          e.preventDefault();
+          intents.moveTopToBottom(room, 1);
+          break;
+
+        /**
+         * Buscar ABRE O INSPETOR, e é ele quem emite `INTENT_SEARCH_ZONE`.
+         *
+         * Emitir a intenção aqui e abrir o painel depois deixaria a concessão
+         * de visibilidade aberta se o painel não montasse — e é o `useEffect`
+         * do inspetor que também a REVOGA ao fechar.
+         */
+        case 'BUSCAR_GRIMORIO':
+          e.preventDefault();
+          ui.setZoneOwner(jogo.mySessionId);
+          ui.setInspectedZone('LIBRARY');
           break;
 
         case 'PASSAR_TURNO':
@@ -200,6 +308,75 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
           ui.clearSelection();
           break;
 
+        /**
+         * Trocar de zona é UMA INTENÇÃO POR CARTA — não há `batchChangeZone`.
+         *
+         * Com o limite de 30 intenções/s isso significa que mandar uma
+         * seleção enorme para o exílio pode ser cortado pelo servidor. É o
+         * comportamento certo mesmo assim: a alternativa seria inventar uma
+         * intenção de lote cuja reversão (`INTENT_UNDO`) teria de desfazer N
+         * movimentos como um só, o que o histórico atual não modela.
+         */
+        case 'PARA_EXILIO':
+          e.preventDefault();
+          selecao.forEach((id) => intents.changeZone(room, id, 'EXILE'));
+          ui.clearSelection();
+          break;
+
+        case 'PARA_MAO':
+          e.preventDefault();
+          selecao.forEach((id) => intents.changeZone(room, id, 'HAND'));
+          ui.clearSelection();
+          break;
+
+        case 'PARA_TOPO_DO_GRIMORIO':
+          e.preventDefault();
+          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', 0));
+          ui.clearSelection();
+          break;
+
+        case 'PARA_FUNDO_DO_GRIMORIO':
+          e.preventDefault();
+          // `index` negativo é o fundo no contrato de `INTENT_CHANGE_ZONE`.
+          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', -1));
+          ui.clearSelection();
+          break;
+
+        case 'COPIAR_CARTA':
+          if (!primeira) return;
+          e.preventDefault();
+          intents.copyCard(room, primeira.id);
+          break;
+
+        // Uma mensagem para a seleção inteira, como em VIRAR_SELECAO.
+        case 'MARCADOR_MAIS':
+          e.preventDefault();
+          intents.batchCounter(room, selecao, '+1/+1', 1);
+          break;
+
+        case 'MARCADOR_MENOS':
+          e.preventDefault();
+          intents.batchCounter(room, selecao, '+1/+1', -1);
+          break;
+
+        case 'TRAZER_PARA_FRENTE':
+          if (!primeira) return;
+          e.preventDefault();
+          intents.bringToFront(room, primeira.id);
+          break;
+
+        case 'APONTAR_SETA':
+          if (!primeira) return;
+          e.preventDefault();
+          ui.setArrowSource(primeira.id);
+          break;
+
+        case 'INSPECIONAR_CARTA':
+          if (!primeira) return;
+          e.preventDefault();
+          ui.setInspectedCard(primeira.id);
+          break;
+
         case 'EDITAR_CARTA':
           if (!primeira) return;
           e.preventDefault();
@@ -225,6 +402,33 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
         case 'REDUZIR_CARTA':
           e.preventDefault();
           ui.ajustarFatorCarta(-PASSO_DO_FATOR);
+          break;
+
+        case 'ALTERNAR_GRADE':
+          e.preventDefault();
+          ui.setAlinharNaGrade(!ui.alinharNaGrade);
+          break;
+
+        case 'ABRIR_CEMITERIO':
+          e.preventDefault();
+          ui.setZoneOwner(jogo.mySessionId);
+          ui.setInspectedZone('GRAVEYARD');
+          break;
+
+        case 'ABRIR_EXILIO':
+          e.preventDefault();
+          ui.setZoneOwner(jogo.mySessionId);
+          ui.setInspectedZone('EXILE');
+          break;
+
+        case 'ALTERNAR_LOG':
+          e.preventDefault();
+          ui.setLogAberto(!ui.logAberto);
+          break;
+
+        case 'ABRIR_ATALHOS':
+          e.preventDefault();
+          ui.toggleModal('settings');
           break;
 
         default:

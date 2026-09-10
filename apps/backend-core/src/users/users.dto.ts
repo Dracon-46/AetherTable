@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ACOES_DE_ATALHO,
   ehAcaoDeAtalho,
+  ehPreferenciaDeMesa,
   ehBorderValido,
   ehPetValido,
   ehPlaymatValido,
@@ -87,6 +88,24 @@ const keybindings = z
     message: 'Há uma tecla com formato inválido.',
   });
 
+/**
+ * ─── AS PREFERÊNCIAS DE MESA SEGUEM A MESMA REGRA DOS ATALHOS ──────────────
+ *
+ * A coluna é JSONB, então o Postgres aceitaria um array de mil posições. O que
+ * se valida aqui é ABUSO: chave que não existe no contrato e objeto maior que
+ * o contrato. Os VALORES não são validados campo a campo de propósito — quem
+ * decide o que é um `fatorCarta` aceitável é
+ * `normalizarPreferenciasDeMesa`, e reimplementar essa faixa aqui criaria duas
+ * fontes da verdade que envelhecem separado.
+ *
+ * E o modo de falhar é seguro: um valor estranho que passasse por aqui é
+ * corrigido pelo normalizador na leitura, do lado do cliente. Diferente de um
+ * id de cosmético, preferência errada não concede nada a ninguém.
+ */
+const preferenciasDeMesa = z.record(z.string(), z.unknown()).refine(ehPreferenciaDeMesa, {
+  message: 'Há uma preferência de mesa que não existe no contrato.',
+});
+
 export const AtualizarPerfilDto = z
   .object({
     username: username.optional(),
@@ -98,6 +117,8 @@ export const AtualizarPerfilDto = z
     cosmeticosDeOponentes: z.boolean().optional(),
     /** Mapa completo ação → tecla. Ver o comentário de `keybindings`. */
     keybindings: keybindings.optional(),
+    /** Objeto completo de preferências da mesa. Ver o comentário acima. */
+    preferenciasDeMesa: preferenciasDeMesa.optional(),
     /** Nome de exibição é livre, mas limitado — cabe acento e espaço. */
     displayName: z.string().trim().min(1).max(48).optional(),
     /** Código de idioma curto (`pt-BR`, `en`), não texto livre. */

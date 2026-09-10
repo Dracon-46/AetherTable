@@ -5,7 +5,7 @@
  *
  * ─── ERA UMA TABELA DE LEITURA, E ISSO NÃO BASTAVA ─────────────────────────
  *
- * O menu da Mesa mostrava as treze teclas e nada mais. Quem joga com teclado
+ * O menu da Mesa mostrava um punhado de teclas fixas e nada mais. Quem joga com teclado
  * ABNT2, quem usa uma mão só, quem tem a mão esquerda no mouse — todos ficavam
  * com o mapa que eu escolhi. E `user_preferences.keybindings` estava no banco
  * desde a primeira migração esperando exatamente isto.
@@ -46,6 +46,7 @@ import { GESTOS_DE_MOUSE, formatarTecla } from '../net/atalhos';
 
 const NOME_DO_GRUPO: Record<GrupoDeAtalho, string> = {
   MESA: 'Mesa',
+  GRIMORIO: 'Grimório',
   SELECAO: 'Carta selecionada',
   EXIBICAO: 'Exibição',
 };
@@ -133,13 +134,13 @@ export function AtalhosEditor() {
             restaurarPadrao();
           }}
           className="text-text-muted hover:text-primary flex shrink-0 items-center gap-1 text-[10px] transition-colors"
-          title="Devolve as treze ações às teclas de fábrica"
+          title="Devolve todas as ações às teclas de fábrica"
         >
           <RotateCcw className="h-3 w-3" /> padrão
         </button>
       </div>
 
-      {(['MESA', 'SELECAO', 'EXIBICAO'] as GrupoDeAtalho[]).map((grupo) => (
+      {(['MESA', 'GRIMORIO', 'SELECAO', 'EXIBICAO'] as GrupoDeAtalho[]).map((grupo) => (
         <div key={grupo} className="mb-2">
           <span className="text-text-muted mb-1 block text-[10px] font-bold uppercase tracking-wider">
             {NOME_DO_GRUPO[grupo]}
