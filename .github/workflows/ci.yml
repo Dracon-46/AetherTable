@@ -34,6 +34,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # O historico e preciso para varrer as mensagens dos commits que
+          # chegaram. Com o clone raso padrao (depth 1) so existe um commit, e
+          # a checagem de atribuicao passaria sem olhar nada.
+          fetch-depth: 0
+
+      - name: Nenhuma atribuicao a ferramenta nas mensagens
+        # Ultima rede. O `commit-msg` barra ao escrever e o `pre-push` ao
+        # subir, mas os dois sao locais e puláveis com `--no-verify`; aqui nao
+        # ha como pular. Ver DOC-091 §5 para por que a regra existe.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          echo "Verificando $RANGE"
+          node tools/sem-atribuicao-de-ia.mjs --range "$RANGE"
 
       - uses: pnpm/action-setup@v4
         with:
