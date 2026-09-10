@@ -22,6 +22,7 @@ import { mensagemDeErro } from './erros';
 import type { RoomState } from './schema/RoomState';
 import type { Card } from './schema/Card';
 import type { Player } from './schema/Player';
+import type { ZoneOrderList } from './schema/ZoneOrderList';
 
 /** Por que o jogador saiu, em português de mesa. */
 const MOTIVO_DE_DERROTA: Record<string, string> = {
@@ -114,6 +115,7 @@ function snapPlayer(p: Player): PlayerData {
     eliminated: p.eliminated ?? false,
     eliminationReason: p.eliminationReason ?? '',
     decked: p.decked ?? false,
+    topoRevelado: p.topoRevelado ?? false,
   };
 }
 
@@ -165,6 +167,30 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     $(room.state).cards.onRemove((_card: Card, id: string) => {
       useGameStore.getState().removeCard(id);
+    });
+
+    // ── Ordem das zonas ────────────────────────────────────────────────────
+    //
+    // `zoneOrder` existia no schema desde sempre e NUNCA foi espelhado. Sem
+    // ele, o `GameBoard` desenhava "a carta do topo" do cemitério e do exílio
+    // filtrando `Object.values(cards)` — ordem de inserção no mapa, não da
+    // pilha. A carta mostrada era uma carta qualquer daquela zona.
+    //
+    // `items` é um `ArraySchema`: mutá-lo NÃO dispara o `onChange` do
+    // `ZoneOrderList` que o contém. É o mesmo buraco de `Card.counters` e
+    // `Player.commanderDamage`, documentado acima — a assinatura precisa ser no
+    // próprio array.
+    const assinarOrdem = (lista: ZoneOrderList, chave: string) => {
+      const reSnap = () =>
+        useGameStore.getState().setZoneOrder(chave, Array.from(lista.items ?? []));
+      $(lista).items.onAdd(reSnap);
+      $(lista).items.onChange(reSnap);
+      $(lista).items.onRemove(reSnap);
+      reSnap();
+    };
+
+    $(room.state).zoneOrder.onAdd((lista: ZoneOrderList, chave: string) => {
+      assinarOrdem(lista, chave);
     });
 
     // ── Jogadores ──────────────────────────────────────────────────────────

@@ -59,8 +59,13 @@ export const intents = {
 
   closePeek: (room: Room) => sendIntent(room, 'INTENT_CLOSE_PEEK'),
 
-  mill: (room: Room, amount: number, target: 'GRAVEYARD' | 'EXILE' = 'GRAVEYARD') =>
-    sendIntent(room, 'INTENT_MILL', { amount, target }),
+  mill: (
+    room: Room,
+    amount: number,
+    target: 'GRAVEYARD' | 'EXILE' = 'GRAVEYARD',
+    /** Só vale no exílio: no cemitério a carta é pública por definição. */
+    faceDown = false,
+  ) => sendIntent(room, 'INTENT_MILL', { amount, target, faceDown }),
 
   mulligan: (room: Room) => sendIntent(room, 'INTENT_MULLIGAN'),
 
@@ -105,6 +110,16 @@ export const intents = {
     sendIntent(room, 'INTENT_REVEAL_ZONE', { zone, to }),
 
   revealTop: (room: Room, amount = 1) => sendIntent(room, 'INTENT_REVEAL_TOP', { amount }),
+
+  /**
+   * Liga/desliga o modo "jogar com o topo do grimório revelado".
+   *
+   * É modo, e não ação: quem reaplica a revelação a cada mudança de topo é o
+   * servidor, num ponto só. O cliente não teria como — `moveTopToBottom`,
+   * `reorder` e os commits de scry/surveil mudam a ordem sem mudar de zona.
+   */
+  setTopRevealed: (room: Room, ligado: boolean) =>
+    sendIntent(room, 'INTENT_SET_TOP_REVEALED', { ligado }),
 
   unreveal: (room: Room, ids: string[]) => sendIntent(room, 'INTENT_UNREVEAL', { ids }),
 

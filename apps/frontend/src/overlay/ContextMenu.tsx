@@ -115,6 +115,14 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   const cards = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
   const myId = useGameStore((s) => s.mySessionId);
+  /**
+   * O modo "jogar com o topo revelado" é ESTADO DO SERVIDOR, não do menu.
+   *
+   * Guardar isto num `useState` local deixaria o rótulo mentir na primeira
+   * reconexão (ou em duas abas do mesmo jogador). Lendo de `players[myId]`
+   * o menu reflete o que o servidor de fato está reconciliando.
+   */
+  const topoReveladoLigado = useGameStore((s) => s.players[s.mySessionId]?.topoRevelado ?? false);
 
   const ref = useRef<HTMLDivElement>(null);
   const [ajuste, setAjuste] = useState({ x: 0, y: 0 });
@@ -179,17 +187,24 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   if (alvo === 'library') {
     titulo = 'Grimório';
     /**
-     * ─── AS AÇÕES COM QUANTIDADE ───────────────────────────────────────────
+     * ─── A RAIZ É PLANA; O SUBMENU É SÓ PARA O QUE PEDE NÚMERO ─────────────
      *
-     * O menu só oferecia números fixos: "Moer 1", "Exilar 1 do topo", "Topo
-     * para o fundo" — sempre uma carta. Quem precisa moer sete, olhar as três
-     * do topo ou mandar quatro para o fundo tinha de repetir o clique, e cada
-     * repetição é uma intenção a mais no limite de 30/s.
+     * A versão anterior deste menu agrupou TUDO em submenus ("Comprar…",
+     * "Ver…", "Revelar…", "Mover do topo…") e a raiz caiu de treze itens para
+     * nove. Do lado de quem joga isso não parece organização, parece que as
+     * ações sumiram: "revelar o topo", "moer 1", "topo para o fundo" e
+     * "buscar" deixaram de estar onde a mão já sabia clicar.
      *
-     * As intenções SEMPRE aceitaram quantidade (`MillIntent.amount` vai até
-     * 100, `PeekIntent` até 100, `RevealTopIntent` até 20): o que faltava era
-     * onde digitar. Os tetos abaixo são os do schema — pedir mais seria erro
-     * de validação depois do clique.
+     * Aqui a regra é outra e é explícita: TODA ação de um clique fica na
+     * raiz, na ordem em que sempre esteve. O submenu guarda apenas o que
+     * exige digitar um número antes de executar ("X do topo", "moer X") e o
+     * que é irreversível (revelar o grimório inteiro, mandar tudo para o
+     * cemitério/exílio) — coisas que ninguém clica por reflexo e que ganham
+     * em ficar um passo mais longe do dedo.
+     *
+     * Os tetos dos campos numéricos são os do schema (`MillIntent.amount` até
+     * 100, `PeekIntent` até 100, `RevealTopIntent` até 20): pedir mais seria
+     * erro de validação depois do clique.
      */
     acoes = [
       {
@@ -198,14 +213,103 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
         onClick: executar(() => intents.draw(room, 1)),
       },
       {
-        rotulo: 'Comprar…',
+        rotulo: 'Comprar 7',
+        icone: <Layers className="h-4 w-4" />,
+        onClick: executar(() => intents.draw(room, 7)),
+      },
+      {
+        rotulo: 'Comprar até 7 na mão',
+        icone: <Hand className="h-4 w-4" />,
+        onClick: executar(() => intents.drawUpTo(room, 7)),
+      },
+      {
+        rotulo: 'Olhar o topo',
+        icone: <Eye className="h-4 w-4" />,
+        onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'TOP')),
+      },
+      {
+        rotulo: 'Olhar o fundo',
+        icone: <ArrowDownToLine className="h-4 w-4" />,
+        onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'BOTTOM')),
+      },
+      {
+        rotulo: 'Buscar no grimório (tutor)',
+        icone: <Search className="h-4 w-4" />,
+        onClick: executar(() => {
+          setZoneOwner(myId);
+          setInspectedZone('LIBRARY');
+        }),
+      },
+      {
+        rotulo: 'Scry 1',
+        icone: <ArrowUpDown className="h-4 w-4" />,
+        onClick: executar(() => intents.scry(room, 1)),
+      },
+      {
+        rotulo: 'Scry 2',
+        icone: <ArrowUpDown className="h-4 w-4" />,
+        onClick: executar(() => intents.scry(room, 2)),
+      },
+      {
+        rotulo: 'Surveil 1',
+        icone: <Skull className="h-4 w-4" />,
+        onClick: executar(() => intents.surveil(room, 1)),
+      },
+      {
+        rotulo: 'Revelar o topo',
+        icone: <Eye className="h-4 w-4" />,
+        onClick: executar(() => intents.revealTop(room, 1)),
+      },
+      {
+        /**
+         * O MODO PERMANENTE, DIFERENTE DE "REVELAR O TOPO".
+         *
+         * `Revelar o topo` é um evento: revela a carta que está lá AGORA e
+         * acabou — comprar essa carta deixa a próxima escondida. Isto aqui é
+         * um estado do jogador (`Player.topoRevelado`): enquanto ligado, o
+         * servidor reconcilia a cada intenção e a carta do topo fica visível
+         * para a mesa mesmo depois de comprar, moer, embaralhar ou mandar o
+         * topo para o fundo. É como se joga com Vizão do Futuro, Melek e
+         * companhia, e é o que o EDHPlay chama de "play with top revealed".
+         *
+         * O rótulo diz o que ACONTECE ao clicar, não o estado atual; o
+         * `Check` à esquerda é quem mostra que está ligado.
+         */
+        rotulo: topoReveladoLigado
+          ? 'Parar de jogar com o topo revelado'
+          : 'Jogar com o topo revelado',
+        icone: topoReveladoLigado ? <Check className="h-4 w-4" /> : <Eye className="h-4 w-4" />,
+        onClick: executar(() => intents.setTopRevealed(room, !topoReveladoLigado)),
+      },
+      {
+        rotulo: 'Topo para o fundo',
+        icone: <ArrowDownToLine className="h-4 w-4" />,
+        onClick: executar(() => intents.moveTopToBottom(room, 1)),
+      },
+      {
+        rotulo: 'Moer 1 para o cemitério',
+        icone: <Skull className="h-4 w-4" />,
+        onClick: executar(() => intents.mill(room, 1, 'GRAVEYARD')),
+      },
+      {
+        rotulo: 'Exilar 1 do topo',
+        icone: <Ban className="h-4 w-4" />,
+        onClick: executar(() => intents.mill(room, 1, 'EXILE')),
+      },
+      {
+        rotulo: 'Carta aleatória',
+        icone: <Dices className="h-4 w-4" />,
+        onClick: executar(() => intents.randomCard(room, 'LIBRARY')),
+      },
+      {
+        rotulo: 'Embaralhar',
+        icone: <Shuffle className="h-4 w-4" />,
+        onClick: executar(() => intents.shuffle(room, 'LIBRARY')),
+      },
+      {
+        rotulo: 'Mais…',
         icone: <Layers className="h-4 w-4" />,
         itens: [
-          {
-            rotulo: 'Comprar 7',
-            icone: <Layers className="h-4 w-4" />,
-            onClick: executar(() => intents.draw(room, 7)),
-          },
           {
             rotulo: 'Comprar X…',
             icone: <Layers className="h-4 w-4" />,
@@ -218,23 +322,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             },
           },
           {
-            rotulo: 'Comprar até 7 na mão',
-            icone: <Hand className="h-4 w-4" />,
-            onClick: executar(() => intents.drawUpTo(room, 7)),
-          },
-        ],
-      },
-      {
-        rotulo: 'Ver…',
-        icone: <Eye className="h-4 w-4" />,
-        itens: [
-          {
-            rotulo: 'A carta do topo',
-            icone: <Eye className="h-4 w-4" />,
-            onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'TOP')),
-          },
-          {
-            rotulo: 'X cartas do topo…',
+            rotulo: 'Olhar X do topo…',
             icone: <Eye className="h-4 w-4" />,
             quantidade: {
               rotulo: 'Quantas cartas do topo',
@@ -245,12 +333,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             },
           },
           {
-            rotulo: 'A carta do fundo',
-            icone: <ArrowDownToLine className="h-4 w-4" />,
-            onClick: executar(() => intents.peek(room, 'LIBRARY', 1, 'BOTTOM')),
-          },
-          {
-            rotulo: 'X cartas do fundo…',
+            rotulo: 'Olhar X do fundo…',
             icone: <ArrowDownToLine className="h-4 w-4" />,
             quantidade: {
               rotulo: 'Quantas cartas do fundo',
@@ -259,30 +342,6 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               max: 20,
               executar: (n) => intents.peek(room, 'LIBRARY', n, 'BOTTOM'),
             },
-          },
-          {
-            rotulo: 'O grimório inteiro (tutor)',
-            icone: <Search className="h-4 w-4" />,
-            onClick: executar(() => {
-              setZoneOwner(myId);
-              setInspectedZone('LIBRARY');
-            }),
-          },
-        ],
-      },
-      {
-        rotulo: 'Scry e surveil…',
-        icone: <ArrowUpDown className="h-4 w-4" />,
-        itens: [
-          {
-            rotulo: 'Scry 1',
-            icone: <ArrowUpDown className="h-4 w-4" />,
-            onClick: executar(() => intents.scry(room, 1)),
-          },
-          {
-            rotulo: 'Scry 2',
-            icone: <ArrowUpDown className="h-4 w-4" />,
-            onClick: executar(() => intents.scry(room, 2)),
           },
           {
             rotulo: 'Scry X…',
@@ -296,11 +355,6 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             },
           },
           {
-            rotulo: 'Surveil 1',
-            icone: <Skull className="h-4 w-4" />,
-            onClick: executar(() => intents.surveil(room, 1)),
-          },
-          {
             rotulo: 'Surveil X…',
             icone: <Skull className="h-4 w-4" />,
             quantidade: {
@@ -311,19 +365,8 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               executar: (n) => intents.surveil(room, n),
             },
           },
-        ],
-      },
-      {
-        rotulo: 'Revelar…',
-        icone: <Eye className="h-4 w-4" />,
-        itens: [
           {
-            rotulo: 'A carta do topo',
-            icone: <Eye className="h-4 w-4" />,
-            onClick: executar(() => intents.revealTop(room, 1)),
-          },
-          {
-            rotulo: 'X cartas do topo…',
+            rotulo: 'Revelar X do topo…',
             icone: <Eye className="h-4 w-4" />,
             quantidade: {
               rotulo: 'Quantas cartas revelar',
@@ -332,58 +375,6 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               max: 20,
               executar: (n) => intents.revealTop(room, n),
             },
-          },
-          {
-            // Vermelho de propósito: revela o grimório INTEIRO para a mesa e
-            // não há como desfazer isso sem reembaralhar. `INTENT_UNDO` não
-            // reverte revelação — está em `NAO_REVERSIVEIS`.
-            rotulo: 'O grimório inteiro',
-            icone: <Eye className="h-4 w-4" />,
-            perigo: true,
-            onClick: executar(() => intents.revealZone(room, 'LIBRARY', 'ALL')),
-          },
-        ],
-      },
-      {
-        rotulo: 'Mover do topo…',
-        icone: <ArrowDownToLine className="h-4 w-4" />,
-        itens: [
-          {
-            rotulo: '1 para o cemitério',
-            icone: <Skull className="h-4 w-4" />,
-            onClick: executar(() => intents.mill(room, 1, 'GRAVEYARD')),
-          },
-          {
-            rotulo: 'X para o cemitério…',
-            icone: <Skull className="h-4 w-4" />,
-            quantidade: {
-              rotulo: 'Quantas cartas moer',
-              padrao: 3,
-              min: 1,
-              max: 100,
-              executar: (n) => intents.mill(room, n, 'GRAVEYARD'),
-            },
-          },
-          {
-            rotulo: '1 para o exílio',
-            icone: <Ban className="h-4 w-4" />,
-            onClick: executar(() => intents.mill(room, 1, 'EXILE')),
-          },
-          {
-            rotulo: 'X para o exílio…',
-            icone: <Ban className="h-4 w-4" />,
-            quantidade: {
-              rotulo: 'Quantas cartas exilar',
-              padrao: 3,
-              min: 1,
-              max: 100,
-              executar: (n) => intents.mill(room, n, 'EXILE'),
-            },
-          },
-          {
-            rotulo: '1 para o fundo',
-            icone: <ArrowDownToLine className="h-4 w-4" />,
-            onClick: executar(() => intents.moveTopToBottom(room, 1)),
           },
           {
             rotulo: 'X para o fundo…',
@@ -396,38 +387,72 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               executar: (n) => intents.moveTopToBottom(room, n),
             },
           },
-        ],
-      },
-      {
-        rotulo: 'Mover tudo…',
-        icone: <ArrowDownToLine className="h-4 w-4" />,
-        itens: [
+          {
+            rotulo: 'Moer X para o cemitério…',
+            icone: <Skull className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas moer',
+              padrao: 3,
+              min: 1,
+              max: 100,
+              executar: (n) => intents.mill(room, n, 'GRAVEYARD'),
+            },
+          },
+          {
+            rotulo: 'Exilar X do topo…',
+            icone: <Ban className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas exilar',
+              padrao: 3,
+              min: 1,
+              max: 100,
+              executar: (n) => intents.mill(room, n, 'EXILE'),
+            },
+          },
+          {
+            /**
+             * VIRADO PARA BAIXO SÓ EXISTE NO EXÍLIO.
+             *
+             * No cemitério a carta é pública por definição — não há "exilar
+             * virado para baixo" equivalente lá. Aqui o servidor marca
+             * `faceDown` DEPOIS de aplicar os efeitos de zona, senão a
+             * própria mudança de zona limparia a marca.
+             */
+            rotulo: 'Exilar X do topo virado para baixo…',
+            icone: <Ban className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantas cartas exilar viradas',
+              padrao: 1,
+              min: 1,
+              max: 100,
+              executar: (n) => intents.mill(room, n, 'EXILE', true),
+            },
+          },
+          {
+            // Vermelho de propósito: revela o grimório INTEIRO para a mesa e
+            // não há como desfazer isso sem reembaralhar. `INTENT_UNDO` não
+            // reverte revelação — está em `NAO_REVERSIVEIS`.
+            rotulo: 'Revelar o grimório inteiro',
+            icone: <Eye className="h-4 w-4" />,
+            perigo: true,
+            onClick: executar(() => intents.revealZone(room, 'LIBRARY', 'ALL')),
+          },
           {
             // 100 é o teto de `MillIntent`, e o handler já corta pelo tamanho
             // real do grimório (`Math.min(amount, grimorio.length)`). Um deck
             // de Commander tem 99 mais o comandante, então o teto cobre.
-            rotulo: 'O grimório para o cemitério',
+            rotulo: 'Mover o grimório para o cemitério',
             icone: <Skull className="h-4 w-4" />,
             perigo: true,
             onClick: executar(() => intents.mill(room, 100, 'GRAVEYARD')),
           },
           {
-            rotulo: 'O grimório para o exílio',
+            rotulo: 'Mover o grimório para o exílio',
             icone: <Ban className="h-4 w-4" />,
             perigo: true,
             onClick: executar(() => intents.mill(room, 100, 'EXILE')),
           },
         ],
-      },
-      {
-        rotulo: 'Carta aleatória',
-        icone: <Dices className="h-4 w-4" />,
-        onClick: executar(() => intents.randomCard(room, 'LIBRARY')),
-      },
-      {
-        rotulo: 'Embaralhar',
-        icone: <Shuffle className="h-4 w-4" />,
-        onClick: executar(() => intents.shuffle(room, 'LIBRARY')),
       },
     ];
   } else if (alvo === 'zone') {

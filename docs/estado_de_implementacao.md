@@ -24,9 +24,9 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 ## 2. Cobertura
 
-- Contrato (`IntentPayloadMap`): **95** intenções
-- Implementadas no servidor: **89**
-- Emitidas pelo cliente: **89**
+- Contrato (`IntentPayloadMap`): **96** intenções
+- Implementadas no servidor: **90**
+- Emitidas pelo cliente: **90**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -112,6 +112,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_SET_RING`             |    ✅    |   ✅    |
 | `INTENT_SET_ROOM_CONFIG`      |    ✅    |   ✅    |
 | `INTENT_SET_SPEED`            |    ✅    |   ✅    |
+| `INTENT_SET_TOP_REVEALED`     |    ✅    |   ✅    |
 | `INTENT_SET_TURN`             |    ✅    |   ✅    |
 | `INTENT_SET_TURN_ORDER`       |    ✅    |   ✅    |
 | `INTENT_SET_ZONE_VISIBILITY`  |    ✅    |   ✅    |

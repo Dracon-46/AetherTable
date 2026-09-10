@@ -987,7 +987,7 @@ const INTENT_BRING_TO_FRONT: IntentHandler<typeof S.BringToFrontIntent> = {
 const INTENT_MILL: IntentHandler<typeof S.MillIntent> = {
   schema: S.MillIntent,
   autoriza: 'QUALQUER_JOGADOR',
-  executa(ctx, { amount, target }) {
+  executa(ctx, { amount, target, faceDown }) {
     const sid = ctx.client.sessionId;
     const grimorio = ordem(ctx.state, sid, 'LIBRARY');
     const destino = ordem(ctx.state, sid, target);
@@ -1001,6 +1001,21 @@ const INTENT_MILL: IntentHandler<typeof S.MillIntent> = {
       if (!c) continue;
       destino.push(id);
       aplicarEfeitosDeZona(ctx, c, target);
+      /**
+       * DEPOIS de `aplicarEfeitosDeZona`, e nao antes.
+       *
+       * Ela normaliza a carta para a zona de destino e, no caminho do EXILE,
+       * nao mexe em `faceDown` — mas a ordem inversa dependeria desse detalhe
+       * continuar verdadeiro para sempre. Escrever por ultimo torna a intencao
+       * explicita: o pedido do jogador vence a normalizacao.
+       *
+       * Só no exilio: no cemiterio a carta e publica por definicao, e uma carta
+       * virada para baixo la seria uma zona publica escondendo conteudo.
+       */
+      if (faceDown && target === 'EXILE') {
+        c.faceDown = true;
+        reconciliarCartaParaTodos(ctx.clients, c);
+      }
     }
 
     atualizarContagens(ctx.state, sid);
@@ -1825,6 +1840,91 @@ const INTENT_REVEAL_TOP: IntentHandler<typeof S.RevealTopIntent> = {
     }
 
     ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} revelou ${ids.length} carta(s) do topo`));
+  },
+};
+
+/**
+ * ─── REAPLICA O MODO "TOPO REVELADO" ───────────────────────────────────────
+ *
+ * Chamada UMA vez, no fim do despacho de intencao (`AetherRoom`), e nunca de
+ * dentro de um handler. O motivo e a lista de coisas que mudam o topo do
+ * grimorio: comprar, moer, embaralhar, mulligan, topo-para-o-fundo, reordenar,
+ * confirmar scry, confirmar surveil, devolver zona, mover carta para o
+ * grimorio. Dez pontos de chamada seriam dez chances de esquecer um, e o modo
+ * de falhar do esquecimento nao e a carta deixar de aparecer — e uma carta que
+ * NAO e mais o topo continuar revelada para a mesa.
+ *
+ * Idempotente de proposito: roda depois de toda intencao, inclusive das que nao
+ * tocam o grimorio, e nesse caso nao escreve nada. Sem isso, ela mesma viraria
+ * uma fonte de patches por segundo.
+ */
+export function aplicarTopoRevelado(ctx: IntentContext, sid: string): void {
+  const jogador = ctx.state.players.get(sid);
+  if (!jogador) return;
+
+  const lista = ordem(ctx.state, sid, 'LIBRARY');
+  const topo = lista && lista.length > 0 ? lista[lista.length - 1] : '';
+
+  // 1. A carta revelada pelo MODO deixou de ser o topo (ou o modo caiu):
+  //    desrevela. A checagem de zona evita apagar a revelacao de uma carta que
+  //    ja saiu do grimorio — ao sair, `aplicarEfeitosDeZona` ja limpou.
+  const anterior = jogador.topoReveladoId;
+  if (anterior && (anterior !== topo || !jogador.topoRevelado)) {
+    const c = ctx.state.cards.get(anterior);
+    if (c && c.zone === 'LIBRARY') {
+      c.revealedTo = '';
+      reconciliarCartaParaTodos(ctx.clients, c);
+    }
+    jogador.topoReveladoId = '';
+  }
+
+  if (!jogador.topoRevelado || !topo) return;
+
+  // 2. Revela o topo atual e anota qual e, para saber o que limpar depois.
+  const nova = ctx.state.cards.get(topo);
+  if (!nova) return;
+
+  /**
+   * A CONDICAO DE SAIDA OLHA A CARTA, E NAO SO O ID GUARDADO.
+   *
+   * Um teste pegou isto: `INTENT_SHUFFLE` chama `limparConcessoes` em cada
+   * carta, entao depois de embaralhar a revelacao SUMIU — e se o acaso
+   * devolvesse a mesma carta ao topo, `topoReveladoId === topo` continuava
+   * verdadeiro e a reaplicacao saia achando que ja estava tudo certo. O
+   * grimorio ficava com o modo ligado e nenhuma carta revelada.
+   *
+   * Conferir `revealedTo` faz a reaplicacao se curar sozinha depois de
+   * QUALQUER handler que limpe concessoes, sem precisar conhecer a lista deles.
+   * E continua idempotente: com a carta certa ja revelada, nao escreve nada.
+   */
+  if (jogador.topoReveladoId === topo && nova.revealedTo === 'ALL') return;
+
+  nova.revealedTo = 'ALL';
+  reconciliarCartaParaTodos(ctx.clients, nova);
+  jogador.topoReveladoId = topo;
+}
+
+const INTENT_SET_TOP_REVEALED: IntentHandler<typeof S.SetTopRevealedIntent> = {
+  schema: S.SetTopRevealedIntent,
+  // E o proprio grimorio: nao existe alvo para autorizar contra.
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx, { ligado }) {
+    const sid = ctx.client.sessionId;
+    const jogador = ctx.state.players.get(sid);
+    if (!jogador || jogador.topoRevelado === ligado) return;
+
+    jogador.topoRevelado = ligado;
+    // Quem aplica (ou limpa) a revelacao e o reconciliador do fim do despacho —
+    // aqui so vira a chave. Duplicar a logica seria a segunda fonte da verdade
+    // que este desenho existe para evitar.
+    ctx.log(
+      logSistema(
+        sid,
+        ligado
+          ? `${nomeDe(ctx.state, sid)} passou a jogar com o topo do grimório revelado`
+          : `${nomeDe(ctx.state, sid)} voltou a esconder o topo do grimório`,
+      ),
+    );
   },
 };
 
@@ -2802,6 +2902,7 @@ export const REGISTRY = {
   INTENT_REVEAL_TOP,
   INTENT_UNREVEAL,
   INTENT_SET_ZONE_VISIBILITY,
+  INTENT_SET_TOP_REVEALED,
   INTENT_TAP_ALL,
   INTENT_ATTACH,
   INTENT_DETACH,
