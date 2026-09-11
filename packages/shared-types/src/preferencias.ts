@@ -156,3 +156,68 @@ export function ehPreferenciaDeMesa(entrada: unknown): boolean {
   if (chaves.length > CHAVES_DE_PREFERENCIA_DE_MESA.length) return false;
   return chaves.every((c) => (CHAVES_DE_PREFERENCIA_DE_MESA as string[]).includes(c));
 }
+
+// ─── TEMA DA INTERFACE ────────────────────────────────────────────────────────
+
+/**
+ * `UserPreference.theme` existe no Prisma desde a primeira migração, com um
+ * enum de três valores, e nunca foi lido por ninguém — uma das quatro colunas
+ * mortas do esquema. Estes são os mesmos três valores, agora com significado.
+ *
+ * `SISTEMA` acompanha o `prefers-color-scheme` do sistema operacional, e é
+ * escolha legítima: quem configura o computador inteiro para claro à tarde e
+ * escuro à noite não quer configurar cada site de novo.
+ */
+export const TEMAS = ['ESCURO', 'CLARO', 'SISTEMA'] as const;
+export type Tema = (typeof TEMAS)[number];
+
+export const TEMA_PADRAO: Tema = 'ESCURO';
+
+/** Rótulo e explicação, para o seletor não ser três palavras soltas. */
+export const DESCRICAO_DO_TEMA: Readonly<Record<Tema, { nome: string; resumo: string }>> = {
+  ESCURO: {
+    nome: 'Escuro',
+    resumo: 'O padrão. Menos brilho em sessão longa e à noite.',
+  },
+  CLARO: {
+    nome: 'Claro',
+    resumo: 'Melhor sob luz forte e em tela de brilho baixo.',
+  },
+  SISTEMA: {
+    nome: 'Do sistema',
+    resumo: 'Acompanha a configuração do seu computador, e muda junto com ela.',
+  },
+};
+
+/**
+ * O enum do Prisma usa inglês (`DARK`/`LIGHT`/`SYSTEM`) porque nasceu assim na
+ * primeira migração, e migrar um enum do Postgres para renomear três valores
+ * custa mais do que estas duas funções valem.
+ *
+ * O resto do domínio é em português (ver `VISIBILIDADES`, `TIPOS_DE_MULLIGAN`),
+ * e a fronteira de tradução fica aqui — num lugar só, e não espalhada por cada
+ * chamador.
+ */
+const DO_PRISMA: Readonly<Record<string, Tema>> = {
+  DARK: 'ESCURO',
+  LIGHT: 'CLARO',
+  SYSTEM: 'SISTEMA',
+};
+const PARA_PRISMA: Readonly<Record<Tema, string>> = {
+  ESCURO: 'DARK',
+  CLARO: 'LIGHT',
+  SISTEMA: 'SYSTEM',
+};
+
+/** Um valor desconhecido cai no padrão, nunca lança. */
+export function temaDoPrisma(valor: unknown): Tema {
+  return DO_PRISMA[String(valor)] ?? TEMA_PADRAO;
+}
+
+export function temaParaPrisma(tema: Tema): string {
+  return PARA_PRISMA[tema] ?? 'DARK';
+}
+
+export function ehTema(valor: unknown): valor is Tema {
+  return TEMAS.includes(valor as Tema);
+}

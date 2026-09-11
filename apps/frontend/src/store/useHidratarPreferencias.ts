@@ -41,7 +41,8 @@ import { useAuthStore } from './auth.store';
 import { useAtalhos } from './atalhos.store';
 import { useCosmeticos } from '../cosmetics/store';
 import { aplicarPreferenciasDaMesa, observarPreferenciasDaMesa } from './preferencias-da-conta';
-import type { CosmeticTier } from '@aethertable/shared-types';
+import { temaDoPrisma, type CosmeticTier } from '@aethertable/shared-types';
+import { useTema } from './tema.store';
 
 interface PreferenciaDaConta {
   /**
@@ -58,6 +59,8 @@ interface PreferenciaDaConta {
    */
   supporterTier?: CosmeticTier | null;
   preference?: {
+    /** Enum do Prisma: DARK | LIGHT | SYSTEM. Traduzido por `temaDoPrisma`. */
+    theme?: string | null;
     sleeveId?: string | null;
     playmatId?: string | null;
     borderId?: string | null;
@@ -81,6 +84,7 @@ export function useHidratarPreferencias(): void {
   const aplicarCosmeticos = useCosmeticos((s) => s.aplicarDoServidor);
   const aplicarAtalhos = useAtalhos((s) => s.aplicarDoServidor);
   const definirTier = useCosmeticos((s) => s.definirTier);
+  const aplicarTema = useTema((s) => s.aplicarDoServidor);
   /**
    * Guarda de execução única.
    *
@@ -107,6 +111,10 @@ export function useHidratarPreferencias(): void {
         definirTier(eu?.supporterTier ?? 'FREE');
         if (!eu?.preference) return;
         const p = eu.preference;
+        // O tema da CONTA vence o do `localStorage` — que ja foi aplicado na
+        // carga para nao piscar. Quem escolheu claro noutra maquina abre claro
+        // aqui tambem.
+        if (p.theme) aplicarTema(temaDoPrisma(p.theme));
         aplicarCosmeticos({
           ...(p.sleeveId ? { sleeveId: p.sleeveId } : {}),
           ...(p.playmatId ? { playmatId: p.playmatId } : {}),
@@ -153,5 +161,5 @@ export function useHidratarPreferencias(): void {
       pararDeObservar.current?.();
       pararDeObservar.current = null;
     };
-  }, [token, aplicarCosmeticos, aplicarAtalhos, definirTier]);
+  }, [token, aplicarCosmeticos, aplicarAtalhos, definirTier, aplicarTema]);
 }

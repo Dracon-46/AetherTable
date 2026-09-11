@@ -3,10 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
 import { API_URL } from '@/lib/api';
-import { Settings, Save, Check, Palette, User as UserIcon } from 'lucide-react';
+import { Settings, Save, Check, Palette, User as UserIcon, Sun, Moon, Monitor } from 'lucide-react';
+import { DESCRICAO_DO_TEMA, TEMAS } from '@aethertable/shared-types';
+import { useTema } from '../../../store/tema.store';
 import { CosmeticPicker } from '../../../components/CosmeticPicker';
 
 export default function SettingsPage() {
+  const tema = useTema((t) => t.tema);
+  const escolherTema = useTema((t) => t.escolher);
+
   const { user, accessToken } = useAuthStore();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -118,6 +123,54 @@ export default function SettingsPage() {
                   placeholder="Ex: Arthur (O Terrível)"
                   className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-4 py-3 transition-colors focus:outline-none"
                 />
+              </div>
+
+              {/* ─── ESTILO DE TELA ─────────────────────────────────────
+                  `UserPreference.theme` existia no banco desde a primeira
+                  migracao, com enum de tres valores, e NENHUMA tela o
+                  oferecia — nem rota o aceitava. A coluna prometia troca de
+                  tema e o produto nunca teve.
+
+                  Botao e nao `<select>`: sao tres opcoes, cada uma com uma
+                  consequencia que merece uma frase, e o efeito e IMEDIATO —
+                  um select esconderia duas das tres atras de um clique e nao
+                  teria onde explicar o que cada uma faz. */}
+              <div>
+                <label className="text-text-muted mb-2 block text-sm font-bold uppercase">
+                  Estilo de tela
+                </label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {TEMAS.map((t) => {
+                    const d = DESCRICAO_DO_TEMA[t];
+                    const Icone = t === 'CLARO' ? Sun : t === 'ESCURO' ? Moon : Monitor;
+                    const ativo = tema === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => escolherTema(t)}
+                        aria-pressed={ativo}
+                        className={`flex flex-col items-start gap-1 rounded-md border p-3 text-left transition-colors ${
+                          ativo
+                            ? 'border-primary bg-primary/10'
+                            : 'border-panel-border bg-table-deep hover:border-panel-hover'
+                        }`}
+                      >
+                        <span className="text-text flex items-center gap-2 text-sm font-bold">
+                          <Icone className="h-4 w-4" />
+                          {d.nome}
+                        </span>
+                        <span className="text-text-faint text-xs">{d.resumo}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* A mesa nao muda, e dizer isso evita a leitura de que o
+                    tema claro "nao funcionou" ao entrar numa partida. */}
+                <p className="text-text-faint mt-1.5 text-xs">
+                  A mesa de jogo continua escura nos tres: fundo escuro e o que faz a arte da carta
+                  aparecer.
+                </p>
               </div>
 
               <div>
