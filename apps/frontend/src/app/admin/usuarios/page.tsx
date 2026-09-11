@@ -20,11 +20,15 @@
 import { useState } from 'react';
 import {
   AlertCircle,
+  Check,
+  Copy,
   Gift,
+  KeyRound,
   Loader2,
   RotateCcw,
   Search,
   ShieldCheck,
+  Trash2,
   UserMinus,
   UserX,
   X,
@@ -47,7 +51,16 @@ import {
 import { mensagemDaApi } from '@/lib/fetcher';
 import { useSouAdmin } from '../../../admin/useAdmin';
 
-type Acao = 'suspender' | 'reativar' | 'banir' | 'restaurar' | 'papel' | 'conceder' | 'revogar';
+type Acao =
+  | 'suspender'
+  | 'reativar'
+  | 'banir'
+  | 'restaurar'
+  | 'papel'
+  | 'conceder'
+  | 'revogar'
+  | 'senha'
+  | 'excluir';
 
 const TITULOS: Record<Acao, { titulo: string; descricao: string; botao: string; perigo: boolean }> =
   {
@@ -90,6 +103,20 @@ const TITULOS: Record<Acao, { titulo: string; descricao: string; botao: string; 
       botao: 'Conceder',
       perigo: false,
     },
+    senha: {
+      titulo: 'Redefinir a senha',
+      descricao:
+        'O servidor GERA uma senha nova e mostra uma única vez — você a repassa à pessoa. Todas as sessões abertas dela caem na hora: se a conta foi invadida, o invasor é expulso junto. Você não vê nem escolhe a senha.',
+      botao: 'Redefinir',
+      perigo: true,
+    },
+    excluir: {
+      titulo: 'Excluir definitivamente',
+      descricao:
+        'APAGA A CONTA E OS DECKS, e não tem volta — diferente de banir, que é reversível por "Restaurar". A trilha de auditoria e as estatísticas de partida sobrevivem, anonimizadas. Digite o nome de usuário exato para confirmar.',
+      botao: 'Excluir para sempre',
+      perigo: true,
+    },
     revogar: {
       titulo: 'Retirar cosmético',
       descricao:
@@ -109,6 +136,8 @@ export default function UsuariosPage() {
   const [apenasSuspensos, setApenasSuspensos] = useState(false);
   const [incluirApagados, setIncluirApagados] = useState(false);
   const [selecionado, setSelecionado] = useState<string | null>(null);
+  /** Senha recém-gerada, visível uma única vez. Ver o caso 'senha' em `confirmar`. */
+  const [senhaGerada, setSenhaGerada] = useState<{ username: string; senha: string } | null>(null);
   const [acao, setAcao] = useState<Acao | null>(null);
 
   const { data, isPending, isError, error } = useUsuarios({
@@ -126,6 +155,14 @@ export default function UsuariosPage() {
   const reativar = useAcaoDeUsuario<{ motivo: string }>((id) => `/admin/usuarios/${id}/reativar`);
   const banir = useAcaoDeUsuario<{ motivo: string }>((id) => `/admin/usuarios/${id}/banir`);
   const restaurar = useAcaoDeUsuario<{ motivo: string }>((id) => `/admin/usuarios/${id}/restaurar`);
+  const redefinirSenha = useAcaoDeUsuario<
+    { motivo: string },
+    { senhaTemporaria: string; username: string }
+  >((id) => `/admin/usuarios/${id}/redefinir-senha`);
+  const excluir = useAcaoDeUsuario<{ motivo: string; confirmacao: string }, { username: string }>(
+    (id) => `/admin/usuarios/${id}`,
+    'DELETE',
+  );
   const mudarPapel = useAcaoDeUsuario<{ papel: string; motivo: string }>(
     (id) => `/admin/usuarios/${id}/papel`,
     'PATCH',
@@ -146,6 +183,8 @@ export default function UsuariosPage() {
     papel: mudarPapel,
     conceder,
     revogar,
+    senha: redefinirSenha,
+    excluir,
   }[acao ?? 'reativar'];
 
   const alvo = (ficha.data as unknown as UsuarioAdmin | undefined) ?? null;
@@ -177,6 +216,19 @@ export default function UsuariosPage() {
             { valor: 'MOD', rotulo: 'MOD — resolve denúncias e pune' },
             { valor: 'ADMIN', rotulo: 'ADMIN — acesso irrestrito' },
           ],
+        },
+      ];
+    }
+    if (acao === 'excluir') {
+      return [
+        {
+          nome: 'confirmacao',
+          rotulo: 'Digite o nome de usuário para confirmar',
+          tipo: 'texto',
+          valorInicial: '',
+          dica: alvo
+            ? `Exatamente: ${alvo.username}. O servidor recusa qualquer outra coisa — é a trava contra apagar a conta errada depois de clicar na linha errada da lista.`
+            : undefined,
         },
       ];
     }
@@ -239,6 +291,36 @@ export default function UsuariosPage() {
         revogar.mutate(
           { id: selecionado, corpo: { cosmeticoId: valores.cosmeticoId ?? '', motivo } },
           { onSuccess: feito },
+        );
+        break;
+      /**
+       * A senha gerada volta UMA VEZ e some: o servidor guarda só o hash
+       * argon2id, então nem ele consegue reemitir a mesma. Por isso o sucesso
+       * aqui não fecha a tela e pronto — ele abre o cartão de entrega, e quem
+       * fechar sem copiar precisa redefinir de novo.
+       */
+      case 'senha':
+        redefinirSenha.mutate(
+          { id: selecionado, corpo: { motivo } },
+          {
+            onSuccess: (r) => {
+              setSenhaGerada({ username: r.username, senha: r.senhaTemporaria });
+              setAcao(null);
+            },
+          },
+        );
+        break;
+      case 'excluir':
+        excluir.mutate(
+          { id: selecionado, corpo: { motivo, confirmacao: valores.confirmacao ?? '' } },
+          {
+            onSuccess: () => {
+              // A conta deixou de existir: manter o painel aberto mostraria uma
+              // ficha que o próximo refetch devolve como 404.
+              setAcao(null);
+              setSelecionado(null);
+            },
+          },
         );
         break;
     }
@@ -484,6 +566,15 @@ export default function UsuariosPage() {
                       <button onClick={() => setAcao('conceder')} className={botao}>
                         <Gift className="h-3.5 w-3.5" /> Conceder item
                       </button>
+                      <button onClick={() => setAcao('senha')} className={botao}>
+                        <KeyRound className="h-3.5 w-3.5" /> Redefinir senha
+                      </button>
+                      <button
+                        onClick={() => setAcao('excluir')}
+                        className={`${botao} hover:border-danger hover:text-danger`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Excluir
+                      </button>
                     </>
                   )}
                 </div>
@@ -509,6 +600,96 @@ export default function UsuariosPage() {
           onCancelar={() => setAcao(null)}
         />
       )}
+
+      {senhaGerada && <SenhaTemporaria dados={senhaGerada} onFechar={() => setSenhaGerada(null)} />}
+    </div>
+  );
+}
+
+/**
+ * A senha gerada, mostrada uma vez.
+ *
+ * ─── POR QUE NÃO HÁ "VER DE NOVO" ──────────────────────────────────────────
+ *
+ * O servidor gera, hasheia com argon2id e devolve o texto na mesma resposta —
+ * depois disso só existe o hash. Nem o banco, nem o log de auditoria, nem esta
+ * tela guardam a senha em lugar nenhum, o que é a razão de o admin nunca ficar
+ * sabendo a senha ANTIGA de ninguém: ele não recupera, ele substitui.
+ *
+ * O preço é este cartão ser a única chance. Fechar sem copiar significa
+ * redefinir de novo — barato, e muito mais barato do que uma senha temporária
+ * guardada em algum lugar "para o caso de".
+ *
+ * ─── O AVISO DE SESSÕES ────────────────────────────────────────────────────
+ *
+ * Redefinir derruba TODA sessão aberta da conta (o corte por `tokensValidosApos`
+ * em `jwt.strategy.ts`). Isso é o efeito desejado quando a conta foi invadida, e
+ * é uma surpresa quando o admin só queria ajudar alguém que esqueceu a senha —
+ * por isso está escrito aqui, e não só no diálogo de antes.
+ */
+function SenhaTemporaria({
+  dados,
+  onFechar,
+}: {
+  dados: { username: string; senha: string };
+  onFechar: () => void;
+}) {
+  const [copiado, setCopiado] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="border-panel-border bg-panel w-full max-w-md rounded-xl border p-5 shadow-2xl">
+        <div className="mb-3 flex items-start gap-2">
+          <KeyRound className="text-primary mt-0.5 h-5 w-5 shrink-0" />
+          <h2 className="text-text flex-1 text-base font-bold">
+            Senha temporária de {dados.username}
+          </h2>
+        </div>
+
+        <p className="text-text-muted mb-4 text-sm">
+          Copie agora e entregue pelo canal combinado. Ela não pode ser vista de novo — se fechar
+          sem copiar, refaça a redefinição.
+        </p>
+
+        <div className="bg-table-deep border-panel-border mb-3 flex items-center gap-2 rounded-md border p-3">
+          <code className="text-text min-w-0 flex-1 select-all break-all font-mono text-sm">
+            {dados.senha}
+          </code>
+          <button
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(dados.senha)
+                .then(() => setCopiado(true))
+                // Sem permissão de área de transferência o texto continua
+                // selecionável: o `select-all` acima é o caminho manual.
+                .catch(() => undefined);
+            }}
+            className="border-panel-border text-text-muted hover:border-primary hover:text-primary shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+          >
+            {copiado ? (
+              <span className="text-success flex items-center gap-1">
+                <Check className="h-3.5 w-3.5" /> Copiado
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Copy className="h-3.5 w-3.5" /> Copiar
+              </span>
+            )}
+          </button>
+        </div>
+
+        <p className="border-warning/30 bg-warning/10 text-warning mb-4 rounded-md border p-3 text-xs">
+          Todas as sessões abertas desta conta caíram agora. A pessoa precisa entrar de novo com
+          esta senha — e trocá-la nos Ajustes em seguida.
+        </p>
+
+        <button
+          onClick={onFechar}
+          className="bg-primary text-table-deep w-full rounded-md px-4 py-2 text-sm font-bold transition-opacity hover:opacity-90"
+        >
+          Já copiei, pode fechar
+        </button>
+      </div>
     </div>
   );
 }

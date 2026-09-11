@@ -41,7 +41,9 @@ import { useAuthStore } from './auth.store';
 import { useAtalhos } from './atalhos.store';
 import { useCosmeticos } from '../cosmetics/store';
 import { aplicarPreferenciasDaMesa, observarPreferenciasDaMesa } from './preferencias-da-conta';
-import type { CosmeticTier } from '@aethertable/shared-types';
+import { temaDoPrisma, type CosmeticTier } from '@aethertable/shared-types';
+import { useTema } from './tema.store';
+import { useCatalogoDeCosmeticos } from '../cosmetics/useCatalogo';
 
 interface PreferenciaDaConta {
   /**
@@ -58,6 +60,8 @@ interface PreferenciaDaConta {
    */
   supporterTier?: CosmeticTier | null;
   preference?: {
+    /** Enum do Prisma: DARK | LIGHT | SYSTEM. Traduzido por `temaDoPrisma`. */
+    theme?: string | null;
     sleeveId?: string | null;
     playmatId?: string | null;
     borderId?: string | null;
@@ -77,10 +81,25 @@ interface PreferenciaDaConta {
 }
 
 export function useHidratarPreferencias(): void {
+  /**
+   * O catálogo autoral, antes de tudo.
+   *
+   * Não é preferência da conta — é o CONJUNTO de itens que existem. Mora aqui
+   * porque os dois lugares que hidratam preferências são exatamente os dois
+   * que desenham cosméticos (a Taverna e a mesa), e porque a ordem natural é
+   * saber o que existe antes de resolver o que está equipado.
+   *
+   * O valor devolvido é ignorado de propósito: o efeito colateral (registrar no
+   * catálogo global) é o ponto, e a chamada ainda assina este componente à
+   * versão, que é o que faz a tela redesenhar quando o catálogo muda.
+   */
+  useCatalogoDeCosmeticos();
+
   const token = useAuthStore((s) => s.accessToken);
   const aplicarCosmeticos = useCosmeticos((s) => s.aplicarDoServidor);
   const aplicarAtalhos = useAtalhos((s) => s.aplicarDoServidor);
   const definirTier = useCosmeticos((s) => s.definirTier);
+  const aplicarTema = useTema((s) => s.aplicarDoServidor);
   /**
    * Guarda de execução única.
    *
@@ -107,6 +126,10 @@ export function useHidratarPreferencias(): void {
         definirTier(eu?.supporterTier ?? 'FREE');
         if (!eu?.preference) return;
         const p = eu.preference;
+        // O tema da CONTA vence o do `localStorage` — que ja foi aplicado na
+        // carga para nao piscar. Quem escolheu claro noutra maquina abre claro
+        // aqui tambem.
+        if (p.theme) aplicarTema(temaDoPrisma(p.theme));
         aplicarCosmeticos({
           ...(p.sleeveId ? { sleeveId: p.sleeveId } : {}),
           ...(p.playmatId ? { playmatId: p.playmatId } : {}),
@@ -153,5 +176,5 @@ export function useHidratarPreferencias(): void {
       pararDeObservar.current?.();
       pararDeObservar.current = null;
     };
-  }, [token, aplicarCosmeticos, aplicarAtalhos, definirTier]);
+  }, [token, aplicarCosmeticos, aplicarAtalhos, definirTier, aplicarTema]);
 }

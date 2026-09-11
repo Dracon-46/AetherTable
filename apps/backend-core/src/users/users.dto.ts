@@ -9,6 +9,7 @@ import {
   ehSleeveValido,
   ehTeclaDeAtalho,
   ehTitleValido,
+  TEMAS,
 } from '@aethertable/shared-types';
 
 /**
@@ -119,6 +120,17 @@ export const AtualizarPerfilDto = z
     keybindings: keybindings.optional(),
     /** Objeto completo de preferências da mesa. Ver o comentário acima. */
     preferenciasDeMesa: preferenciasDeMesa.optional(),
+    /**
+     * Tema da interface. `UserPreference.theme` existia no banco desde a
+     * primeira migracao e NENHUMA rota o aceitava — a coluna nao tinha como
+     * ser escrita nem por quem quisesse.
+     *
+     * Em portugues aqui e em ingles na coluna: o enum do Prisma nasceu
+     * `DARK/LIGHT/SYSTEM` e migrar um enum do Postgres para renomear tres
+     * valores custa mais do que a traducao vale. A fronteira fica em
+     * `temaParaPrisma`, num lugar so.
+     */
+    tema: z.enum(TEMAS).optional(),
     /** Nome de exibição é livre, mas limitado — cabe acento e espaço. */
     displayName: z.string().trim().min(1).max(48).optional(),
     /** Código de idioma curto (`pt-BR`, `en`), não texto livre. */

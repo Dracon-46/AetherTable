@@ -189,8 +189,32 @@ function desenharMonograma(ctx: CanvasRenderingContext2D, s: Sleeve): void {
 
 /** Canvas do sleeve, pronto para virar imagem do Konva. Cacheado por id. */
 export function sleeveCanvas(sleeveId?: string): HTMLCanvasElement | null {
-  const s = acharSleeve(sleeveId);
-  const emCache = cacheSleeve.get(s.id);
+  return desenharSleeve(acharSleeve(sleeveId), true);
+}
+
+/**
+ * Desenha um sleeve que talvez ainda não exista no catálogo.
+ *
+ * ─── PARA QUE ISTO EXISTE ────────────────────────────────────────────────
+ *
+ * O painel de administração compõe um cosmético novo campo a campo, e precisa
+ * MOSTRAR o resultado antes de gravar. Um item em edição não tem id no
+ * catálogo, então `sleeveCanvas(id)` não teria o que resolver.
+ *
+ * Compartilhar o mesmo desenho (e não escrever uma prévia aproximada no
+ * painel) é o ponto: uma prévia que desenha por conta própria é uma segunda
+ * implementação livre para divergir, e o administrador descobriria a
+ * divergência só depois de publicar o item para todo mundo.
+ *
+ * `cachear: false` porque um item em edição muda a cada tecla — guardar cada
+ * estado intermediário encheria o cache de lixo com id repetido.
+ */
+export function sleeveCanvasDe(s: Sleeve): HTMLCanvasElement | null {
+  return desenharSleeve(s, false);
+}
+
+function desenharSleeve(s: Sleeve, cachear: boolean): HTMLCanvasElement | null {
+  const emCache = cachear ? cacheSleeve.get(s.id) : undefined;
   if (emCache) return emCache;
 
   const c = novoCanvas(SLEEVE_W, SLEEVE_H);
@@ -213,7 +237,7 @@ export function sleeveCanvas(sleeveId?: string): HTMLCanvasElement | null {
   caminhoArredondado(ctx, 8, 8, SLEEVE_W - 16, SLEEVE_H - 16, 14);
   ctx.stroke();
 
-  cacheSleeve.set(s.id, c);
+  if (cachear) cacheSleeve.set(s.id, c);
   return c;
 }
 
@@ -304,8 +328,16 @@ function desenharPadraoPlaymat(ctx: CanvasRenderingContext2D, p: Playmat): void 
 }
 
 export function playmatCanvas(playmatId?: string): HTMLCanvasElement | null {
-  const p = acharPlaymat(playmatId);
-  const emCache = cachePlaymat.get(p.id);
+  return desenharPlaymat(acharPlaymat(playmatId), true);
+}
+
+/** Playmat em edição, ainda sem id no catálogo. Ver `sleeveCanvasDe`. */
+export function playmatCanvasDe(p: Playmat): HTMLCanvasElement | null {
+  return desenharPlaymat(p, false);
+}
+
+function desenharPlaymat(p: Playmat, cachear: boolean): HTMLCanvasElement | null {
+  const emCache = cachear ? cachePlaymat.get(p.id) : undefined;
   if (emCache) return emCache;
 
   const c = novoCanvas(PLAYMAT_W, PLAYMAT_H);
@@ -326,7 +358,7 @@ export function playmatCanvas(playmatId?: string): HTMLCanvasElement | null {
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.fillRect(0, 0, PLAYMAT_W, PLAYMAT_H);
 
-  cachePlaymat.set(p.id, c);
+  if (cachear) cachePlaymat.set(p.id, c);
   return c;
 }
 

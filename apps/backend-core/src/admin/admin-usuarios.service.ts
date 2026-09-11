@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AdminAction, Prisma, Role } from '@prisma/client';
+import * as argon2 from 'argon2';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { AuditoriaService } from './auditoria.service.js';
 import type { RequisicaoAdmin } from './papeis.js';
@@ -14,6 +16,8 @@ import type {
   MotivoDto,
   MudarPapelDto,
   MudarTierDto,
+  RedefinirSenhaDto,
+  ExcluirDefinitivoDto,
   SuspenderDto,
 } from './admin.dto.js';
 import { tierDoCosmetico, type FamiliaDeCosmetico } from '@aethertable/shared-types';
@@ -432,6 +436,113 @@ export class AdminUsuariosService {
     });
 
     return { sucesso: true };
+  }
+
+  // ─── Senha e expurgo ───────────────────────────────────────────────────────
+
+  /**
+   * ─── O ADMIN REDEFINE A SENHA SEM NUNCA SABER A ANTIGA ───────────────────
+   *
+   * Nem a nova, por muito tempo: a senha e GERADA aqui, devolvida uma unica
+   * vez na resposta e nunca mais recuperavel — o banco guarda so a hash
+   * Argon2id, como toda senha.
+   *
+   * Deixar o admin ESCOLHER seria pior de tres formas ao mesmo tempo: ele
+   * escolheria algo fraco e ditavel por telefone; a senha passaria pelo corpo
+   * da requisicao e por qualquer log de proxy no caminho; e ele ficaria
+   * sabendo a senha de outra pessoa por tempo indeterminado — que e
+   * exatamente o que um reset existe para evitar.
+   *
+   * ─── E DERRUBA TODAS AS SESSOES ──────────────────────────────────────────
+   *
+   * Sem `derrubarTodasAsSessoes`, redefinir a senha de uma conta invadida NAO
+   * expulsa o invasor: ele segue dentro com o token que ja tinha, por ate 24
+   * horas. O motivo numero um para um reset e justamente suspeitar que alguem
+   * entrou, e e nesse caso que ele precisa funcionar.
+   */
+  async redefinirSenha(req: RequisicaoAdmin, id: string, dto: RedefinirSenhaDto) {
+    const alvo = await this.exigirAlvo(req, id);
+
+    /**
+     * 18 bytes em base64url: ~24 caracteres de alfabeto seguro, sem os
+     * ambiguos de base64 padrao (`+`, `/`, `=`) que quebram ao ser ditados ou
+     * colados. `randomBytes` e CSPRNG — uma senha de `Math.random()` seria
+     * previsivel a partir de outras geradas na mesma sessao do processo.
+     */
+    const senhaTemporaria = randomBytes(18).toString('base64url');
+    const hash = await argon2.hash(senhaTemporaria, { type: argon2.argon2id });
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash: hash, tokensValidosApos: new Date() },
+    });
+
+    await this.auditoria.registrar(req, {
+      action: AdminAction.USER_PASSWORD_RESET,
+      targetType: 'user',
+      targetId: id,
+      targetLabel: alvo.username,
+      reason: dto.motivo,
+      // A SENHA NAO ENTRA AQUI. A auditoria responde quem fez, em quem e por
+      // que; guardar a senha faria o log virar um deposito de credencial.
+      metadata: { sessoesDerrubadas: true },
+    });
+
+    return { senhaTemporaria, username: alvo.username };
+  }
+
+  /**
+   * ─── EXPURGO DEFINITIVO ──────────────────────────────────────────────────
+   *
+   * `banir` e soft delete e tem volta por `restaurar`. Isto NAO tem: apaga a
+   * linha, e em cascata os decks, as preferencias e o inventario.
+   *
+   * O que SOBREVIVE, de proposito:
+   *
+   *   - `MatchParticipant.userId` vira NULL em vez de sumir (`onDelete:
+   *     SetNull`), preservando a estatistica agregada da partida sem ligar a
+   *     pessoa a ela. E o desenho do expurgo de 30 dias da LGPD (§7.1).
+   *   - A trilha de AUDITORIA nao aponta para `users` por chave estrangeira,
+   *     entao o registro de quem apagou quem continua de pe. Uma exclusao que
+   *     apaga o proprio registro de si mesma nao e auditavel.
+   *
+   * A confirmacao por digitacao do username existe porque o custo do erro e
+   * assimetrico: "suspender" se desfaz num clique, isto nao se desfaz de jeito
+   * nenhum, e as duas moram na mesma tela.
+   */
+  async excluirDefinitivamente(req: RequisicaoAdmin, id: string, dto: ExcluirDefinitivoDto) {
+    const alvo = await this.exigirAlvo(req, id, { permitirApagado: true });
+
+    if (dto.confirmacao !== alvo.username) {
+      throw new BadRequestException(
+        `Para excluir definitivamente, digite o nome de usuário exato: ${alvo.username}.`,
+      );
+    }
+
+    // A mesma trava do banimento, e pelo mesmo motivo: uma plataforma sem
+    // administrador so se recupera por acesso direto ao banco.
+    await this.exigirOutroAdminRestante(alvo);
+
+    /**
+     * A auditoria e registrada ANTES do delete.
+     *
+     * Depois seria tarde: se o `delete` falhar no meio (uma FK inesperada, uma
+     * queda de conexao), o log ja existe e diz o que se tentou fazer. O
+     * inverso — apagar e so entao registrar — deixa a possibilidade de a conta
+     * sumir sem nenhum registro de quem a apagou.
+     */
+    await this.auditoria.registrar(req, {
+      action: AdminAction.USER_PURGE,
+      targetType: 'user',
+      targetId: id,
+      targetLabel: alvo.username,
+      reason: dto.motivo,
+      metadata: { email: alvo.email },
+    });
+
+    await this.prisma.user.delete({ where: { id } });
+
+    return { sucesso: true, username: alvo.username };
   }
 
   // ─── Travas ────────────────────────────────────────────────────────────────

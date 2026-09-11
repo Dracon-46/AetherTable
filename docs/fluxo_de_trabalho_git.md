@@ -175,12 +175,46 @@ Tipos: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`,
 ### O que NÃO entra numa mensagem de commit
 
 - **Atribuição a ferramenta.** Sem `Co-Authored-By` de assistente, sem
-  "Generated with", sem emoji de robô. O autor do commit é quem responde pelo
-  código — e responder por ele é o que a autoria significa. Uma ferramenta não
-  responde por nada.
+  "Generated with", sem `Claude-Session`, sem emoji de robô. O autor do commit
+  é quem responde pelo código — e responder por ele é o que a autoria
+  significa. Uma ferramenta não responde por nada.
 - **Ruído de processo.** "wip", "ajustes", "correções": se o commit não merece
   uma frase que diga o que ele faz, ele provavelmente deveria estar junto do
   anterior.
+
+#### Esta regra é imposta por máquina, e o motivo é histórico
+
+Ela já era escrita aqui, nestas mesmas palavras. O histórico inteiro já foi
+limpo de `Co-Authored-By` uma vez — **28 commits reescritos**, com force-push
+em `main`.
+
+E voltou. Uma instrução de ferramenta sobrescreveu a regra do projeto no meio
+de uma sessão, quatro commits saíram assinados e chegaram ao remoto antes de
+alguém notar. A limpeza custou uma segunda reescrita de histórico.
+
+Essa é a diferença entre uma regra e uma trava. A regra depende de quem
+escreve o commit lembrar dela **e ter permissão de segui-la** — e o segundo
+não estava sob controle de ninguém aqui. A trava não depende de nenhum dos
+dois. Um documento que já foi desobedecido uma vez não fica mais persuasivo na
+segunda.
+
+`tools/sem-atribuicao-de-ia.mjs` roda em três lugares, e os três existem por
+um motivo diferente:
+
+| Onde                | Quando                        | Por que não basta o anterior                                |
+| ------------------- | ----------------------------- | ----------------------------------------------------------- |
+| `.husky/commit-msg` | ao escrever a mensagem        | —                                                           |
+| `.husky/pre-push`   | em todos os commits que sobem | `git commit --no-verify` pula o anterior                    |
+| CI                  | no push e no PR               | os hooks são locais, e `--no-verify` também pula o pre-push |
+
+O que importa é o terceiro: os dois primeiros são conveniência — falham cedo e
+barato. O do CI é o que garante que a coisa **não chega ao remoto**, que é
+onde limpar deixa de ser um `--amend` e vira reescrita de histórico para todo
+mundo que já puxou.
+
+**Co-autoria entre pessoas continua valendo.** O filtro só recusa co-autor que
+é ferramenta; barrar pair programming junto ensinaria a usar `--no-verify` por
+hábito, e o hábito desliga a trava inteira.
 
 ### O estilo dos comentários no código segue a mesma regra
 

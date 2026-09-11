@@ -1,4 +1,7 @@
 import {
+  CHAVES_DE_PREFERENCIA_DE_MESA,
+  DESCRICAO_DO_ESTILO_DE_MESA,
+  ESTILOS_DE_MESA,
   FATOR_CARTA_MAX,
   FATOR_CARTA_MIN,
   PREFERENCIAS_DE_MESA_PADRAO,
@@ -113,5 +116,55 @@ describe('a ponte com o store da interface', () => {
     expect(s.fatorCarta).toBe(1.6);
     expect(s.vidaModo).toBe('minima');
     expect(s.seguirTurno).toBe(true);
+  });
+});
+
+/**
+ * ─── O FORMATO DA MESA VOLTOU A SER ESCOLHA ─────────────────────────────────
+ *
+ * Três arranjos existem em `canvas/layout.ts` desde sempre, completos e
+ * testados. Dois deles — `montarMesa` e `montarGrade` — ficaram SEM CHAMADOR
+ * quando a mesa focada virou o arranjo fixo: continuaram no código e deixaram
+ * de existir para quem joga.
+ *
+ * O que estes casos protegem é a volta: se `estiloDeMesa` sumir do
+ * normalizador ou do padrão, a preferência vira `undefined`, o `GameBoard` cai
+ * no `else` e os dois arranjos ficam órfãos de novo — em silêncio, e sem
+ * ninguém notar até alguém reclamar que "sumiu de novo".
+ */
+describe('estiloDeMesa', () => {
+  it('os três arranjos são aceitos', () => {
+    for (const estilo of ESTILOS_DE_MESA) {
+      expect(normalizarPreferenciasDeMesa({ estiloDeMesa: estilo }).estiloDeMesa).toBe(estilo);
+    }
+  });
+
+  it('o padrão é `focada` — o arranjo que já estava valendo', () => {
+    // Mudar isto trocaria o tabuleiro de todo mundo que nunca escolheu, o que
+    // é diferente de devolver a escolha a quem quer.
+    expect(PREFERENCIAS_DE_MESA_PADRAO.estiloDeMesa).toBe('focada');
+    expect(normalizarPreferenciasDeMesa({}).estiloDeMesa).toBe('focada');
+  });
+
+  it('valor inventado cai no padrão em vez de quebrar a mesa', () => {
+    // Um cliente de versão anterior, ou um PATCH à mão. A mesa não pode abrir
+    // sem arranjo nenhum.
+    for (const lixo of ['redonda', '', null, 42, {}]) {
+      expect(normalizarPreferenciasDeMesa({ estiloDeMesa: lixo }).estiloDeMesa).toBe('focada');
+    }
+  });
+
+  it('está na lista de chaves — senão não vai para a conta', () => {
+    // `CHAVES_DE_PREFERENCIA_DE_MESA` é derivada do padrão, e é ela que o DTO
+    // do backend usa para validar. Uma chave fora da lista é recusada na borda
+    // e a escolha se perde a cada troca de máquina.
+    expect(CHAVES_DE_PREFERENCIA_DE_MESA).toContain('estiloDeMesa');
+  });
+
+  it('todo arranjo tem nome e resumo para o seletor', () => {
+    for (const estilo of ESTILOS_DE_MESA) {
+      expect(DESCRICAO_DO_ESTILO_DE_MESA[estilo].nome.length).toBeGreaterThan(0);
+      expect(DESCRICAO_DO_ESTILO_DE_MESA[estilo].resumo.length).toBeGreaterThan(0);
+    }
   });
 });

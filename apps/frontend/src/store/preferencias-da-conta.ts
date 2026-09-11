@@ -59,6 +59,7 @@ export function lerPreferenciasDaMesa(): PreferenciasDeMesa {
     // `boardView` guarda um sessionId quando aponta para um oponente, e
     // sessionId não sobrevive à partida: o normalizador derruba para 'ALL'.
     boardView: s.boardView,
+    estiloDeMesa: s.estiloDeMesa,
   });
 }
 
@@ -85,6 +86,7 @@ export function aplicarPreferenciasDaMesa(salvas: unknown): void {
     logAberto: p.logAberto,
     vidaModo: p.vidaModo,
     boardView: p.boardView,
+    estiloDeMesa: p.estiloDeMesa,
   });
 }
 
@@ -146,7 +148,8 @@ export function observarPreferenciasDaMesa(): () => void {
       estado.barraAberta !== anterior.barraAberta ||
       estado.logAberto !== anterior.logAberto ||
       estado.vidaModo !== anterior.vidaModo ||
-      estado.boardView !== anterior.boardView;
+      estado.boardView !== anterior.boardView ||
+      estado.estiloDeMesa !== anterior.estiloDeMesa;
     if (!mudou) return;
     if (temporizador) clearTimeout(temporizador);
     temporizador = setTimeout(enviar, ESPERA_MS);

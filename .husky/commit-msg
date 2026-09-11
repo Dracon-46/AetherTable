@@ -1,0 +1,10 @@
+# ─── A MENSAGEM DE COMMIT NAO LEVA ATRIBUICAO A FERRAMENTA (DOC-091 §5) ──────
+#
+# Isto ja era regra escrita, e ja foi desobedecido: o historico inteiro foi
+# limpo de `Co-Authored-By` uma vez — 28 commits — e o trailer voltou quando
+# uma instrucao de ferramenta sobrescreveu a regra do projeto no meio de uma
+# sessao.
+#
+# Um documento que ja foi ignorado uma vez nao fica mais persuasivo na segunda.
+# A trava nao depende de ninguem lembrar.
+node tools/sem-atribuicao-de-ia.mjs --arquivo "$1"

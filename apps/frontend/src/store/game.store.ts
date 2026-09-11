@@ -7,6 +7,7 @@ import {
   FATOR_CARTA_PADRAO,
   PASSO_DO_FATOR,
 } from '../canvas/layout';
+import type { EstiloDeMesa } from '@aethertable/shared-types';
 
 // ─── gameStore: espelho do estado do servidor ──────────────────────────────
 
@@ -360,6 +361,20 @@ interface UIState {
   /** Trilho de oponentes na direita. FLUTUA: abrir não redimensiona a mesa. */
   trilhoAberto: boolean;
   /**
+   * ─── O FORMATO DO TABULEIRO, DE VOLTA COMO ESCOLHA ──────────────────────
+   *
+   * `canvas/layout.ts` tem TRÊS arranjos completos, cada um desenhado para um
+   * jeito diferente de olhar a mesa. Dois deles — `montarMesa` e
+   * `montarGrade` — ficaram sem chamador quando a mesa focada virou fixa:
+   * continuaram no código, continuaram testados, e deixaram de existir para
+   * quem joga.
+   *
+   * "Quero ver as quatro mesas" contra "quero a minha grande" depende do
+   * momento da partida e da pessoa. Não é decisão de quem escreveu o
+   * `GameBoard`.
+   */
+  estiloDeMesa: EstiloDeMesa;
+  /**
    * A CÂMERA SEGUE DE QUEM É A VEZ.
    *
    * Ligado, passar o turno leva a tela para a mesa do próximo jogador
@@ -481,6 +496,7 @@ interface UIState {
   escalaPedida: number;
 
   setTrilhoAberto: (v: boolean) => void;
+  setEstiloDeMesa: (v: EstiloDeMesa) => void;
   setSeguirTurno: (v: boolean) => void;
   toggleModal: (modal: keyof UIState['activeModals']) => void;
   closeAllModals: () => void;
@@ -515,6 +531,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       trilhoAberto: true,
+      estiloDeMesa: 'focada',
       seguirTurno: false,
       activeModals: {
         chat: false,
@@ -548,6 +565,7 @@ export const useUIStore = create<UIState>()(
       escalaPedida: 1,
 
       setTrilhoAberto: (trilhoAberto) => set({ trilhoAberto }),
+      setEstiloDeMesa: (estiloDeMesa) => set({ estiloDeMesa }),
       setSeguirTurno: (seguirTurno) => set({ seguirTurno }),
       toggleModal: (modal) =>
         set((s) => ({

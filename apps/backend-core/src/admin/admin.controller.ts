@@ -32,6 +32,8 @@ import {
   MudarFlagDto,
   MudarPapelDto,
   MudarTierDto,
+  RedefinirSenhaDto,
+  ExcluirDefinitivoDto,
   ResolverDenunciaDto,
   SuspenderDto,
 } from './admin.dto.js';
@@ -182,6 +184,36 @@ export class AdminController {
     @Body(new ZodValidationPipe(MudarTierDto)) dto: MudarTierDto,
   ) {
     return this.usuarios.mudarTier(req, id, dto);
+  }
+
+  /**
+   * A resposta traz a senha temporaria — a UNICA vez em que ela existe fora da
+   * hash. Ela nao vai para a auditoria nem para log nenhum.
+   */
+  @Post('usuarios/:id/redefinir-senha')
+  @Throttle(ESCRITA)
+  @ApiOperation({ summary: 'Redefine a senha e derruba todas as sessoes da conta' })
+  redefinirSenha(
+    @Request() req: RequisicaoAdmin,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(RedefinirSenhaDto)) dto: RedefinirSenhaDto,
+  ) {
+    return this.usuarios.redefinirSenha(req, id, dto);
+  }
+
+  /**
+   * NAO TEM VOLTA — diferente de `banir`, que e soft delete e se desfaz por
+   * `restaurar`. Exige o username digitado no corpo.
+   */
+  @Delete('usuarios/:id')
+  @Throttle(ESCRITA)
+  @ApiOperation({ summary: 'Exclui a conta DEFINITIVAMENTE (sem volta)' })
+  excluirDefinitivamente(
+    @Request() req: RequisicaoAdmin,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ExcluirDefinitivoDto)) dto: ExcluirDefinitivoDto,
+  ) {
+    return this.usuarios.excluirDefinitivamente(req, id, dto);
   }
 
   @Post('usuarios/:id/inventario')

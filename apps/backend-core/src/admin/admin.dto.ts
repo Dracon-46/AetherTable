@@ -76,6 +76,41 @@ export const MudarTierDto = z.object({
 });
 export type MudarTierDto = z.infer<typeof MudarTierDto>;
 
+/**
+ * ─── O ADMIN REDEFINE, MAS NAO ESCOLHE ──────────────────────────────────────
+ *
+ * O corpo tem so o motivo: a senha nova e GERADA pelo servidor e devolvida uma
+ * unica vez na resposta.
+ *
+ * Deixar o admin digitar a senha seria pior de tres formas ao mesmo tempo:
+ * ele escolheria algo fraco e memorizavel para conseguir ditar por telefone;
+ * a senha passaria pelo corpo da requisicao, pelo log do proxy e pelo campo do
+ * formulario dele; e ele ficaria SABENDO a senha de outra pessoa por tempo
+ * indeterminado — que e exatamente o que um reset deve evitar.
+ *
+ * Gerada, ela e forte por construcao, aparece uma vez e some.
+ */
+export const RedefinirSenhaDto = z.object({ motivo: Motivo });
+export type RedefinirSenhaDto = z.infer<typeof RedefinirSenhaDto>;
+
+/**
+ * ─── EXCLUSAO DEFINITIVA EXIGE DIGITAR O USERNAME ───────────────────────────
+ *
+ * `banir` e soft delete e tem volta (`restaurar`). Isto NAO tem: apaga a linha
+ * e, em cascata, os decks, as preferencias e o inventario.
+ *
+ * A confirmacao por digitacao existe porque o custo do erro e assimetrico. Um
+ * clique errado em "suspender" se desfaz num clique; um clique errado aqui nao
+ * se desfaz de jeito nenhum — e as duas acoes moram na mesma tela, a uma linha
+ * de distancia uma da outra.
+ */
+export const ExcluirDefinitivoDto = z.object({
+  motivo: Motivo,
+  /** Tem de bater com o username do alvo. Conferido no service. */
+  confirmacao: z.string().min(1).max(32),
+});
+export type ExcluirDefinitivoDto = z.infer<typeof ExcluirDefinitivoDto>;
+
 export const InventarioDto = z.object({
   /** Id do item no catálogo de código (`shared-types/cosmetics.ts`). */
   cosmeticoId: Uuid,
@@ -105,12 +140,23 @@ export type InventarioDto = z.infer<typeof InventarioDto>;
  * registrar um item que o cliente não saberia desenhar.
  */
 export const CriarCosmeticoDto = z.object({
-  /** Id no catálogo de código — `aether-classic`, `mesa-padrao`… */
+  /** Id no catálogo — de código (`aether-classic`) ou o slug do item autoral. */
   catalogoId: z.string().trim().min(1).max(64),
   tipo: z.nativeEnum(CosmeticType),
   nome: z.string().trim().min(1).max(64),
   minTier: z.coerce.number().int().min(0).max(10).default(0),
   ativo: z.coerce.boolean().default(true),
+  /**
+   * Descrição procedural, quando o item NÃO existe no catálogo em código.
+   *
+   * Fica como `unknown` de propósito: quem julga o conteúdo é
+   * `normalizarCosmeticoAutoral`, em `shared-types`, e não um segundo esquema
+   * aqui. Duplicar a validação em zod daria dois lugares para a lista de
+   * padrões válidos divergir — e o servidor de jogo, que valida a mesma coisa
+   * na hora de equipar, importa a de lá. Um `z.object` aqui seria uma terceira
+   * versão da mesma regra, livre para discordar das outras duas em silêncio.
+   */
+  parametros: z.unknown().optional(),
 });
 export type CriarCosmeticoDto = z.infer<typeof CriarCosmeticoDto>;
 

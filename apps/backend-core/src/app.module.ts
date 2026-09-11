@@ -11,6 +11,7 @@ import { DecksModule } from './decks/decks.module.js';
 import { MatchesModule } from './matches/matches.module.js';
 import { CardsModule } from './cards/cards.module.js';
 import { AdminModule } from './admin/admin.module.js';
+import { CosmeticosModule } from './cosmeticos/cosmeticos.module.js';
 
 /**
  * Root Module of the application.
@@ -67,6 +68,7 @@ import { AdminModule } from './admin/admin.module.js';
     DecksModule,
     MatchesModule,
     CardsModule,
+    CosmeticosModule,
     AdminModule,
   ],
   providers: [

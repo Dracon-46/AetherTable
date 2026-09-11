@@ -86,6 +86,9 @@ enum CosmeticType {
   SLEEVE
   BORDER
   TITLE
+  /// Mascote da mesa. Faltava aqui e os mascotes ficavam de fora do registro —
+  /// nao dava para conceder um de premio nem para criar um no backoffice.
+  PET
 }
 
 enum ReportReason {
@@ -112,6 +115,10 @@ enum AdminAction {
   USER_BAN
   USER_RESTORE
   USER_ROLE_CHANGE
+  /// Senha redefinida pelo admin. A senha em si NUNCA entra na auditoria.
+  USER_PASSWORD_RESET
+  /// Expurgo definitivo: apaga a linha e tudo em cascata. Nao tem volta.
+  USER_PURGE
   INVENTORY_GRANT
   INVENTORY_REVOKE
   COSMETIC_CREATE
@@ -140,6 +147,20 @@ model User {
   /// Direito a cosmetico de apoiador. Ver o enum: administrado pelo backoffice
   /// enquanto nao houver integracao de pagamento.
   supporterTier   SupporterTier @default(FREE) @map("supporter_tier")
+
+  /// ─── CORTE DE SESSAO: TUDO EMITIDO ANTES DAQUI NAO VALE MAIS ──────────────
+  ///
+  /// A denylist de `revoked_tokens` revoga UM token — ela e por `jti`, e serve
+  /// ao logout, onde se sabe exatamente qual token encerrar.
+  ///
+  /// Trocar de senha e outra coisa: e preciso derrubar TODAS as sessoes, e
+  /// ninguem sabe os `jti` que estao por ai. Sem isto, redefinir a senha de uma
+  /// conta invadida nao expulsa o invasor — ele continua dentro com o token que
+  /// ja tinha, por ate 24h, e a troca de senha vira teatro.
+  ///
+  /// O `JwtStrategy` compara o `iat` do token com esta data. Uma coluna, uma
+  /// comparacao, e nenhuma linha nova por sessao derrubada.
+  tokensValidosApos DateTime? @map("tokens_validos_apos") @db.Timestamptz
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
   lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz
   /// Soft delete para LGPD: expurgo fisico em 30 dias (§7.1).
@@ -566,11 +587,19 @@ model CosmeticItem {
   id          String       @id @default(uuid()) @db.Uuid
   type        CosmeticType
   name        String       @db.VarChar(64)
-  /// URL de imagem ou classe CSS.
+  /// NAO e uma URL: guarda o `catalogoId`, a chave de texto do item no catalogo
+  /// procedural. O cliente desenha a partir do catalogo, entao o que a linha
+  /// precisa guardar e a CHAVE, nao um endereco (DOC-060 §1.1).
   resourceUrl String? @map("resource_url")
   /// Nivel de apoiador necessario.
   minTier  Int     @default(0) @map("min_tier")
   isActive Boolean @default(true) @map("is_active")
+  /// Descricao procedural do item AUTORAL — cores, padrao, forma — quando ele
+  /// foi composto no backoffice em vez de vir do catalogo em codigo. Nulo
+  /// significa "este item existe no bundle"; preenchido significa "este item so
+  /// existe aqui, e o cliente o recebe pela sincronizacao do catalogo".
+  /// Validado por `normalizarCosmeticoAutoral` na entrada E na leitura.
+  parametros Json? @db.JsonB
 
   ownedBy      UserCosmetic[]
   asPlaymatFor UserPreference[] @relation("playmat")

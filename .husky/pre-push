@@ -12,3 +12,14 @@
 # Para pular conscientemente: `git push --no-verify`. Se virar hábito, o
 # problema é a bateria estar lenta ou instável, e é lá que se conserta.
 pnpm verificar
+
+# ─── E NENHUM COMMIT QUE ESTA SUBINDO PODE TER ATRIBUICAO A FERRAMENTA ───────
+#
+# O `commit-msg` ja barra na hora de escrever. Este passo existe porque
+# `git commit --no-verify` pula aquele — e o que nao pode acontecer e a coisa
+# CHEGAR AO REMOTO, que e onde limpar custa reescrita de historico e force
+# push para todo mundo.
+#
+# `main` como base cobre o caso comum (branch saindo de develop, que sai de
+# main). Range invalido nao e violacao: o script sai limpo.
+node tools/sem-atribuicao-de-ia.mjs --range main..HEAD

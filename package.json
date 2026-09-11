@@ -1,6 +1,6 @@
 {
   "name": "aethertable",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "AetherTable — plataforma web sandbox multiformato para Magic: The Gathering. Nao existe motor de regras: o sistema move pecas, sincroniza estado e esconde informacao.",
   "license": "UNLICENSED",
