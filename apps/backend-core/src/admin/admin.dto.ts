@@ -140,12 +140,23 @@ export type InventarioDto = z.infer<typeof InventarioDto>;
  * registrar um item que o cliente não saberia desenhar.
  */
 export const CriarCosmeticoDto = z.object({
-  /** Id no catálogo de código — `aether-classic`, `mesa-padrao`… */
+  /** Id no catálogo — de código (`aether-classic`) ou o slug do item autoral. */
   catalogoId: z.string().trim().min(1).max(64),
   tipo: z.nativeEnum(CosmeticType),
   nome: z.string().trim().min(1).max(64),
   minTier: z.coerce.number().int().min(0).max(10).default(0),
   ativo: z.coerce.boolean().default(true),
+  /**
+   * Descrição procedural, quando o item NÃO existe no catálogo em código.
+   *
+   * Fica como `unknown` de propósito: quem julga o conteúdo é
+   * `normalizarCosmeticoAutoral`, em `shared-types`, e não um segundo esquema
+   * aqui. Duplicar a validação em zod daria dois lugares para a lista de
+   * padrões válidos divergir — e o servidor de jogo, que valida a mesma coisa
+   * na hora de equipar, importa a de lá. Um `z.object` aqui seria uma terceira
+   * versão da mesma regra, livre para discordar das outras duas em silêncio.
+   */
+  parametros: z.unknown().optional(),
 });
 export type CriarCosmeticoDto = z.infer<typeof CriarCosmeticoDto>;
 

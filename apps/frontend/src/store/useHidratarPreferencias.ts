@@ -43,6 +43,7 @@ import { useCosmeticos } from '../cosmetics/store';
 import { aplicarPreferenciasDaMesa, observarPreferenciasDaMesa } from './preferencias-da-conta';
 import { temaDoPrisma, type CosmeticTier } from '@aethertable/shared-types';
 import { useTema } from './tema.store';
+import { useCatalogoDeCosmeticos } from '../cosmetics/useCatalogo';
 
 interface PreferenciaDaConta {
   /**
@@ -80,6 +81,20 @@ interface PreferenciaDaConta {
 }
 
 export function useHidratarPreferencias(): void {
+  /**
+   * O catálogo autoral, antes de tudo.
+   *
+   * Não é preferência da conta — é o CONJUNTO de itens que existem. Mora aqui
+   * porque os dois lugares que hidratam preferências são exatamente os dois
+   * que desenham cosméticos (a Taverna e a mesa), e porque a ordem natural é
+   * saber o que existe antes de resolver o que está equipado.
+   *
+   * O valor devolvido é ignorado de propósito: o efeito colateral (registrar no
+   * catálogo global) é o ponto, e a chamada ainda assina este componente à
+   * versão, que é o que faz a tela redesenhar quando o catálogo muda.
+   */
+  useCatalogoDeCosmeticos();
+
   const token = useAuthStore((s) => s.accessToken);
   const aplicarCosmeticos = useCosmeticos((s) => s.aplicarDoServidor);
   const aplicarAtalhos = useAtalhos((s) => s.aplicarDoServidor);

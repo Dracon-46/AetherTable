@@ -86,6 +86,9 @@ enum CosmeticType {
   SLEEVE
   BORDER
   TITLE
+  /// Mascote da mesa. Faltava aqui e os mascotes ficavam de fora do registro —
+  /// nao dava para conceder um de premio nem para criar um no backoffice.
+  PET
 }
 
 enum ReportReason {
@@ -584,11 +587,19 @@ model CosmeticItem {
   id          String       @id @default(uuid()) @db.Uuid
   type        CosmeticType
   name        String       @db.VarChar(64)
-  /// URL de imagem ou classe CSS.
+  /// NAO e uma URL: guarda o `catalogoId`, a chave de texto do item no catalogo
+  /// procedural. O cliente desenha a partir do catalogo, entao o que a linha
+  /// precisa guardar e a CHAVE, nao um endereco (DOC-060 §1.1).
   resourceUrl String? @map("resource_url")
   /// Nivel de apoiador necessario.
   minTier  Int     @default(0) @map("min_tier")
   isActive Boolean @default(true) @map("is_active")
+  /// Descricao procedural do item AUTORAL — cores, padrao, forma — quando ele
+  /// foi composto no backoffice em vez de vir do catalogo em codigo. Nulo
+  /// significa "este item existe no bundle"; preenchido significa "este item so
+  /// existe aqui, e o cliente o recebe pela sincronizacao do catalogo".
+  /// Validado por `normalizarCosmeticoAutoral` na entrada E na leitura.
+  parametros Json? @db.JsonB
 
   ownedBy      UserCosmetic[]
   asPlaymatFor UserPreference[] @relation("playmat")

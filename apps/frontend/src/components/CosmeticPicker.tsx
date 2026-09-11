@@ -12,11 +12,11 @@
 import React, { useEffect, useRef } from 'react';
 import { Lock } from 'lucide-react';
 import {
-  CHAT_TITLES,
-  PETS,
-  PLAYMATS,
-  PROFILE_BORDERS,
-  SLEEVES,
+  listarBorders,
+  listarPets,
+  listarPlaymats,
+  listarSleeves,
+  listarTitles,
   acharPet,
   podeEquipar,
   type FamiliaDeCosmetico,
@@ -24,6 +24,7 @@ import {
 import { caminhoDoPet, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
 import { useCosmeticos } from '../cosmetics/store';
 import { Avatar } from './Avatar';
+import { useCatalogoDeCosmeticos } from '../cosmetics/useCatalogo';
 
 /** Desenha um canvas procedural dentro de um elemento. */
 function Previa({
@@ -106,6 +107,10 @@ const cardBase =
   'relative flex flex-col overflow-hidden rounded-lg border p-1.5 text-left transition-all hover:-translate-y-0.5';
 
 export function CosmeticPicker() {
+  // Assina a versão do catálogo: sem isto, um cosmético criado no backoffice só
+  // apareceria neste seletor depois de recarregar a página.
+  useCatalogoDeCosmeticos();
+
   const equipado = useCosmeticos();
   const equipar = useCosmeticos((s) => s.equipar);
   const tier = useCosmeticos((s) => s.tier);
@@ -135,7 +140,7 @@ export function CosmeticPicker() {
         descricao="O verso das suas cartas na mesa. Todos são desenhados pela própria plataforma — o verso oficial de Magic é da WotC e não é usado aqui."
       >
         <Grade>
-          {SLEEVES.map((s) => (
+          {listarSleeves().map((s) => (
             <button
               key={s.id}
               onClick={() => equipar({ sleeveId: s.id })}
@@ -156,7 +161,7 @@ export function CosmeticPicker() {
         descricao="O fundo da sua área de jogo. Os oponentes veem o seu playmat só na sua faixa da mesa, sempre com um véu escuro para a carta não se perder no fundo."
       >
         <Grade>
-          {PLAYMATS.map((p) => (
+          {listarPlaymats().map((p) => (
             <button
               key={p.id}
               onClick={() => equipar({ playmatId: p.id })}
@@ -177,7 +182,7 @@ export function CosmeticPicker() {
         descricao="Contorno do seu avatar no painel de vida, no lobby e no perfil."
       >
         <Grade>
-          {PROFILE_BORDERS.map((b) => (
+          {listarBorders().map((b) => (
             <button
               key={b.id}
               onClick={() => equipar({ borderId: b.id })}
@@ -200,7 +205,7 @@ export function CosmeticPicker() {
         descricao="Uma insígnia ao lado do seu nome nas mensagens e no painel de vida."
       >
         <Grade>
-          {CHAT_TITLES.map((t) => (
+          {listarTitles().map((t) => (
             <button
               key={t.id}
               onClick={() => equipar({ titleId: t.id })}
@@ -232,7 +237,7 @@ export function CosmeticPicker() {
         descricao="Um companheiro discreto no canto da sua faixa da mesa. Nunca cobre carta nem disputa atenção com o jogo."
       >
         <Grade>
-          {PETS.map((p) => (
+          {listarPets().map((p) => (
             <button
               key={p.id}
               onClick={() => equipar({ petId: p.id })}

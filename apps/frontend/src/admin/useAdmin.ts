@@ -297,8 +297,14 @@ export function useCosmeticos() {
 export function useRegistrarCosmetico() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (corpo: { catalogoId: string; tipo: string; nome: string; minTier: number }) =>
-      api('/admin/cosmeticos', { method: 'POST', body: corpo }),
+    mutationFn: (corpo: {
+      catalogoId: string;
+      tipo: string;
+      nome: string;
+      minTier: number;
+      /** Só para item AUTORAL. Ausente = registra um item do catálogo em código. */
+      parametros?: Record<string, string>;
+    }) => api('/admin/cosmeticos', { method: 'POST', body: corpo }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: chaves.cosmeticos }),
   });
 }
