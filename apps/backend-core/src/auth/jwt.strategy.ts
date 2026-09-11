@@ -18,6 +18,8 @@ export interface JwtPayload {
   jti?: string;
   /** Expiracao em segundos (padrao JWT). */
   exp: number;
+  /** Emissao em segundos (padrao JWT). Comparada com o corte de sessao. */
+  iat?: number;
 }
 
 /**
@@ -65,6 +67,30 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
      */
     if (payload.jti && (await this.revogacao.estaRevogado(payload.jti))) {
       throw new UnauthorizedException('Sessão encerrada. Entre de novo.');
+    }
+
+    /**
+     * ─── CORTE DE SESSÃO: TROCAR A SENHA DERRUBA TUDO ─────────────────────
+     *
+     * A denylist acima revoga UM token, e serve ao logout — ali se sabe qual
+     * encerrar. Trocar de senha precisa derrubar TODAS as sessões, e ninguém
+     * conhece os `jti` que estão por aí.
+     *
+     * Sem esta comparação, redefinir a senha de uma conta invadida não expulsa
+     * o invasor: ele segue dentro com o token que já tinha, por até 24 horas.
+     * A troca de senha viraria teatro — e é justamente no momento de urgência
+     * que ela precisa funcionar.
+     *
+     * `iat` vem em SEGUNDOS (padrão JWT) e a coluna é timestamp. O segundo de
+     * folga cobre o arredondamento: um token emitido no mesmo segundo do corte
+     * é do próprio login que acabou de acontecer, e derrubá-lo faria a pessoa
+     * não conseguir entrar depois de trocar a senha.
+     */
+    if (payload.iat) {
+      const corte = await this.revogacao.corteDeSessao(payload.sub);
+      if (corte && payload.iat * 1000 < corte.getTime() - 1000) {
+        throw new UnauthorizedException('Sua senha foi alterada. Entre de novo.');
+      }
     }
 
     // `jti` e `exp` vao junto porque o logout precisa dos dois para gravar a

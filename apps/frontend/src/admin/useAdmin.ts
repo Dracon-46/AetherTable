@@ -230,14 +230,14 @@ export function useUsuario(id: string | null) {
  * da visão geral e o log de auditoria ao mesmo tempo. Enumerar as quatro chaves
  * seria uma lista para esquecer de atualizar na próxima ação.
  */
-export function useAcaoDeUsuario<Corpo>(
+export function useAcaoDeUsuario<Corpo, Resposta = unknown>(
   rota: (id: string) => string,
   method: 'POST' | 'PATCH' | 'DELETE' = 'POST',
 ) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, corpo }: { id: string; corpo: Corpo }) =>
-      api(rota(id), { method, body: corpo }),
+      api<Resposta>(rota(id), { method, body: corpo }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin'] });
     },
