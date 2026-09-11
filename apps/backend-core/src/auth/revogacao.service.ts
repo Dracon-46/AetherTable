@@ -74,6 +74,37 @@ export class RevogacaoService {
   }
 
   /**
+   * A data antes da qual nenhum token desta conta vale.
+   *
+   * `null` é o caso comum — a maioria das contas nunca teve corte —, e devolvê-lo
+   * sem consultar nada seria a otimização óbvia. Ela não existe porque o valor
+   * MUDA no momento em que mais importa: quem acabou de trocar a senha de uma
+   * conta invadida precisa que a próxima requisição do invasor já veja o corte,
+   * e não um cache de alguns segundos atrás.
+   */
+  async corteDeSessao(userId: string): Promise<Date | null> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { tokensValidosApos: true },
+    });
+    return u?.tokensValidosApos ?? null;
+  }
+
+  /**
+   * Derruba TODAS as sessões da conta.
+   *
+   * Chamado ao redefinir a senha — pelo admin ou pelo próprio dono. Uma troca
+   * de senha que deixa a sessão anterior viva não protege de nada: o motivo
+   * número um para trocar é justamente suspeitar que alguém entrou.
+   */
+  async derrubarTodasAsSessoes(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokensValidosApos: new Date() },
+    });
+  }
+
+  /**
    * Apaga as linhas cujos tokens já expiraram.
    *
    * Não há scheduler neste projeto (é uma pendência conhecida, junto do

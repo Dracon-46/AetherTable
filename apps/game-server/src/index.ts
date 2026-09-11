@@ -12,6 +12,7 @@ import { AETHER_ROOM } from '@aethertable/shared-types';
 import { config, isProd } from './config';
 import { AetherRoom } from './rooms/AetherRoom';
 import { registry } from './metrics';
+import { iniciarSincronizacaoDoCatalogo } from './services/catalogo-de-cosmeticos';
 import { Encoder } from '@colyseus/schema';
 
 Encoder.BUFFER_SIZE = 100 * 1024; // 100KB for large EDH decks
@@ -220,6 +221,11 @@ gameServer.define(AETHER_ROOM, AetherRoom).filterBy(['roomCode']);
 // Bind explícito em 0.0.0.0: hosts gerenciados (Render, Fly, Koyeb) fazem o
 // health check de fora do container. Ligar só em localhost derruba o deploy.
 gameServer.listen(config.PORT, '0.0.0.0').then(() => {
+  // Depois do listen, nao antes: o catalogo autoral e opcional para servir
+  // partidas, e uma API Core lenta nao pode atrasar a subida do servidor de
+  // jogo. Ate o primeiro ciclo terminar, vale o catalogo do bundle.
+  iniciarSincronizacaoDoCatalogo();
+
   console.log(`[game-server] escutando em ws://localhost:${config.PORT}`);
   console.log(`[game-server] monitor:    http://localhost:${config.PORT}/colyseus`);
   if (!isProd) {

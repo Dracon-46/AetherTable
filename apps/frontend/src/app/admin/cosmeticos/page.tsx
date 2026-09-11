@@ -12,12 +12,19 @@
  * decisão que o código implementa: os cosméticos são PROCEDURAIS, descritos por
  * cores e um nome de padrão, desenhados pelo cliente.
  *
- * Esta tela resolve a favor do mais restritivo. O que ela administra é a
- * DISPONIBILIDADE de itens que já existem no catálogo em código: tier mínimo,
- * ativo/inativo, e o registro que torna um item concedível como prêmio. Arte
- * nova entra por pull request em `shared-types/cosmetics.ts`, onde passa por
- * revisão — e o aviso na tela diz isso, para o administrador não procurar um
- * botão de upload que não vai existir.
+ * Esta tela resolve a favor do mais restritivo — e depois encontrou o meio do
+ * caminho. Ela faz três coisas:
+ *
+ *   1. CRIAR um cosmético (`CriarCosmetico`), compondo cores e um padrão da
+ *      lista fechada. Sem upload, sem arquivo, sem arte de terceiros: o
+ *      vocabulário é o mesmo que o renderizador já conhece.
+ *   2. REGISTRAR um item do catálogo em código como concedível.
+ *   3. Controlar DISPONIBILIDADE: tier mínimo e ativo/inativo.
+ *
+ * O que continua exigindo pull request é uma primitiva NOVA — uma trama que
+ * ninguém sabe desenhar, uma silhueta que não existe. Essas são código, e
+ * código passa por revisão. Combinar o que já existe não precisa de deploy, e
+ * era isso que travava uma promoção de fim de semana numa janela de release.
  */
 
 import { useState } from 'react';
@@ -29,6 +36,7 @@ import {
   useRemoverCosmetico,
 } from '../../../admin/useAdmin';
 import { mensagemDaApi } from '@/lib/fetcher';
+import { CriarCosmetico } from './CriarCosmetico';
 
 const ROTULO_DE_TIPO: Record<string, string> = {
   SLEEVE: 'Protetor',
@@ -76,14 +84,16 @@ export default function CosmeticosPage() {
         <div className="text-text min-w-0 text-sm">
           <p className="mb-1 font-semibold">Não há upload de imagem, e isso é intencional.</p>
           <p className="text-text-muted text-xs leading-relaxed">
-            Os cosméticos são desenhados pelo cliente a partir de um catálogo fechado em código
-            (DOC-060 §1.1) — cores e padrões, não arquivos. Isso evita risco de propriedade
-            intelectual e conteúdo sensível, e faz o catálogo inteiro caber no bundle. Arte nova
-            entra por pull request em <code className="text-text">shared-types/cosmetics.ts</code>.
-            Aqui você controla <strong>quem pode usar</strong> o que já existe.
+            Os cosméticos são desenhados pelo cliente a partir de um vocabulário fechado de tramas,
+            silhuetas e cores (DOC-060 §1.1) — nunca de arquivos. Isso evita risco de propriedade
+            intelectual e conteúdo sensível, e faz o catálogo inteiro caber no bundle. Você{' '}
+            <strong>pode criar itens novos</strong> combinando esse vocabulário, logo abaixo; o que
+            ainda entra por pull request é uma trama ou silhueta que o cliente não sabe desenhar.
           </p>
         </div>
       </div>
+
+      <CriarCosmetico />
 
       {/* ── Registrar ───────────────────────────────────────────────────── */}
       <section className="border-panel-border bg-panel rounded-xl border p-4">

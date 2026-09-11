@@ -21,6 +21,18 @@ Em retribuição a esse apoio, a plataforma oferece **Cosméticos**, que são al
 Para mitigar radicalmente os riscos de **direitos autorais (WotC)** e **conteúdo sensível (+18/ódio)**, os cosméticos de mesa (Playmats e Sleeves) operam sob um **sistema de seleção fechada**.
 Os jogadores escolhem a partir de um catálogo pré-aprovado fornecido pela própria plataforma, gerido pelo Backoffice (ver `DOC-061`).
 
+### 1.2 O que "fechado" fecha, e o que não fecha
+
+Fechado significa **sem arquivo**: não há upload de imagem, em lugar nenhum, por ninguém. Todo cosmético é **procedural** — descrito por cores e pelo nome de um padrão, e desenhado pelo cliente.
+
+O que isso fecha é exatamente o risco que §1.1 nomeia: sem arquivo não entra arte de terceiros, e um catálogo que só combina primitivas não tem como conter conteúdo sensível.
+
+O que isso **não** fecha é a criação de itens novos. O administrador compõe cosméticos no Backoffice a partir de um **vocabulário fixo** — as tramas de sleeve, os fundos de playmat, as silhuetas de mascote — mais cores hexadecimais. Um valor fora do vocabulário é recusado em três lugares independentes: na API ao criar, na API de novo ao reler do banco, e no servidor de jogo ao equipar.
+
+Continua exigindo pull request tudo que é **primitiva nova**: uma trama que nenhum cliente sabe desenhar é código de renderização, e código passa por revisão.
+
+**Consequência operacional.** O catálogo deixou de estar só no bundle, então três processos precisam conhecê-lo: a API Core (valida `PATCH /users/me`), o servidor de jogo (valida a intenção de equipar) e o navegador (desenha). A API Core é a dona; os outros dois buscam `GET /cosmeticos/catalogo` periodicamente. Um processo dessincronizado **recusa** o item que não conhece — nunca aceita o que não pôde verificar.
+
 ---
 
 ## 2. Tipos de Cosméticos

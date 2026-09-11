@@ -1,0 +1,12 @@
+-- Corte de sessao: derruba TODAS as sessoes de uma conta de uma vez.
+--
+-- A denylist de `revoked_tokens` revoga UM token, por `jti` — ela serve ao
+-- logout, onde se sabe qual token encerrar.
+--
+-- Trocar de senha precisa de outra coisa: derrubar tudo que esta por ai, sem
+-- conhecer os `jti`. Sem isto, redefinir a senha de uma conta invadida NAO
+-- expulsa o invasor — ele segue dentro com o token que ja tinha, por ate 24h,
+-- e a troca de senha vira teatro.
+--
+-- Nulo = nunca houve corte, e todo token vale. Aditiva, sem reescrita de dado.
+ALTER TABLE "users" ADD COLUMN "tokens_validos_apos" TIMESTAMPTZ;

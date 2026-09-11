@@ -230,14 +230,14 @@ export function useUsuario(id: string | null) {
  * da visão geral e o log de auditoria ao mesmo tempo. Enumerar as quatro chaves
  * seria uma lista para esquecer de atualizar na próxima ação.
  */
-export function useAcaoDeUsuario<Corpo>(
+export function useAcaoDeUsuario<Corpo, Resposta = unknown>(
   rota: (id: string) => string,
   method: 'POST' | 'PATCH' | 'DELETE' = 'POST',
 ) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, corpo }: { id: string; corpo: Corpo }) =>
-      api(rota(id), { method, body: corpo }),
+      api<Resposta>(rota(id), { method, body: corpo }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin'] });
     },
@@ -297,8 +297,14 @@ export function useCosmeticos() {
 export function useRegistrarCosmetico() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (corpo: { catalogoId: string; tipo: string; nome: string; minTier: number }) =>
-      api('/admin/cosmeticos', { method: 'POST', body: corpo }),
+    mutationFn: (corpo: {
+      catalogoId: string;
+      tipo: string;
+      nome: string;
+      minTier: number;
+      /** Só para item AUTORAL. Ausente = registra um item do catálogo em código. */
+      parametros?: Record<string, string>;
+    }) => api('/admin/cosmeticos', { method: 'POST', body: corpo }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: chaves.cosmeticos }),
   });
 }

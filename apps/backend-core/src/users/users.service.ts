@@ -5,7 +5,13 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { podeEquipar, type CosmeticTier, type FamiliaDeCosmetico } from '@aethertable/shared-types';
+import {
+  podeEquipar,
+  temaParaPrisma,
+  type CosmeticTier,
+  type FamiliaDeCosmetico,
+  type Tema,
+} from '@aethertable/shared-types';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 
 /**
@@ -214,6 +220,8 @@ export class UsersService {
       username?: string;
       displayName?: string;
       language?: string;
+      /** Tema da interface, em portugues. Convertido para o enum do Prisma. */
+      tema?: Tema;
       /** Cosméticos equipados. `null` num campo = volta ao padrão. */
       sleeveId?: string | null;
       playmatId?: string | null;
@@ -260,6 +268,9 @@ export class UsersService {
      */
     const prefs = {
       ...(language ? { language } : {}),
+      // `theme` e o nome da coluna (enum do Prisma, em ingles); `tema` e o
+      // nome no contrato. A traducao mora em `temaParaPrisma`, e nao aqui.
+      ...(data.tema ? { theme: temaParaPrisma(data.tema) as never } : {}),
       ...(data.sleeveId !== undefined ? { sleeveId: data.sleeveId } : {}),
       ...(data.playmatId !== undefined ? { playmatId: data.playmatId } : {}),
       ...(data.borderId !== undefined ? { borderId: data.borderId } : {}),

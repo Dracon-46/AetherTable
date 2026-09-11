@@ -1,9 +1,18 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { AdminAction, CosmeticType, ReportStatus, Role } from '@prisma/client';
-import { CHAT_TITLES, PETS, PLAYMATS, PROFILE_BORDERS, SLEEVES } from '@aethertable/shared-types';
+import { AdminAction, CosmeticType, Prisma, ReportStatus, Role } from '@prisma/client';
+import {
+  CHAT_TITLES,
+  PETS,
+  PLAYMATS,
+  PROFILE_BORDERS,
+  SLEEVES,
+  normalizarCosmeticoAutoral,
+  type CosmeticoAutoral,
+} from '@aethertable/shared-types';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { CardsService } from '../cards/cards.service.js';
 import { AuditoriaService } from './auditoria.service.js';
+import { CatalogoDeCosmeticosService, FAMILIA_POR_TIPO } from '../cosmeticos/catalogo.service.js';
 import type { RequisicaoAdmin } from './papeis.js';
 import type { AtualizarCosmeticoDto, CriarCosmeticoDto, MudarFlagDto } from './admin.dto.js';
 
@@ -63,7 +72,12 @@ function catalogoEmCodigo() {
     // Pets não têm `CosmeticType` no enum do banco. Aparecem no catálogo para o
     // administrador VER o que existe, e não são registráveis como concedíveis —
     // preferir isso a inventar um valor de enum que o banco não conhece.
-    ...PETS.map((i) => ({ catalogoId: i.id, nome: i.nome, tier: i.tier, tipo: null })),
+    ...PETS.map((i) => ({
+      catalogoId: i.id,
+      nome: i.nome,
+      tier: i.tier,
+      tipo: CosmeticType.PET,
+    })),
   ];
 }
 
@@ -75,6 +89,7 @@ export class AdminSistemaService {
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly cards: CardsService,
+    private readonly catalogo: CatalogoDeCosmeticosService,
   ) {}
 
   // ─── Painel inicial ────────────────────────────────────────────────────────
@@ -236,14 +251,57 @@ export class AdminSistemaService {
     };
   }
 
+  /**
+   * Registra um item — do catálogo em código, ou composto aqui.
+   *
+   * ─── DOIS CAMINHOS, E A DIFERENÇA ENTRE ELES ─────────────────────────────
+   *
+   * SEM `parametros`, o `catalogoId` tem que existir no bundle: é o caminho
+   * antigo, que só torna CONCEDÍVEL um item que o cliente já sabe desenhar.
+   *
+   * COM `parametros`, o item nasce aqui. Continua valendo DOC-060 §1.1 — não
+   * há upload, não entra arquivo, não entra arte de terceiros — porque o que
+   * `normalizarCosmeticoAutoral` aceita é só combinação de primitivas que já
+   * estão no cliente: as tramas, as silhuetas e cores hexadecimais. Um
+   * `padrao` fora do vocabulário não passa, e é por isso que o caminho novo
+   * não abre a porta que o documento fecha.
+   *
+   * O id novo não pode colidir com o do bundle. Se colidisse, o backoffice
+   * redefiniria `aether-classic` — o sleeve do verso de TODA carta oculta — e
+   * a mesa inteira mudaria de aparência a partir de uma linha no banco.
+   */
   async criarCosmetico(req: RequisicaoAdmin, dto: CriarCosmeticoDto) {
     const noCatalogo = catalogoEmCodigo().find(
       (i) => i.catalogoId === dto.catalogoId && i.tipo === dto.tipo,
     );
-    if (!noCatalogo) {
-      throw new BadRequestException(
-        `"${dto.catalogoId}" não existe no catálogo de ${dto.tipo}. Arte nova entra por pull request em shared-types/cosmetics.ts — o catálogo é fechado e sem upload (DOC-060 §1.1).`,
-      );
+
+    let autoral: CosmeticoAutoral | null = null;
+    if (dto.parametros === undefined) {
+      if (!noCatalogo) {
+        throw new BadRequestException(
+          `"${dto.catalogoId}" não existe no catálogo de ${dto.tipo}. Para criar um item novo, envie também os parâmetros (cores e padrão) — o catálogo é fechado a arquivos, não a combinações novas (DOC-060 §1.1).`,
+        );
+      }
+    } else {
+      if (noCatalogo) {
+        throw new BadRequestException(
+          `"${dto.catalogoId}" já existe no catálogo em código. Um item autoral não pode redefinir um item do bundle — escolha outro identificador.`,
+        );
+      }
+      autoral = normalizarCosmeticoAutoral({
+        ...(dto.parametros as Record<string, unknown>),
+        familia: FAMILIA_POR_TIPO[dto.tipo],
+        id: dto.catalogoId,
+        nome: dto.nome,
+        // O tier de EQUIPAR sai do `minTier` — é uma coisa só, e duas fontes
+        // dariam um item comprável que a mesa recusa desenhar.
+        tier: dto.minTier > 0 ? 'APOIADOR' : 'FREE',
+      });
+      if (!autoral) {
+        throw new BadRequestException(
+          'Os parâmetros do cosmético não formam um item válido. Cores precisam ser #rrggbb e o padrão precisa ser um dos que o cliente sabe desenhar.',
+        );
+      }
     }
 
     const jaExiste = await this.prisma.cosmeticItem.findFirst({
@@ -258,6 +316,9 @@ export class AdminSistemaService {
         resourceUrl: dto.catalogoId,
         minTier: dto.minTier,
         isActive: dto.ativo,
+        // Grava o item NORMALIZADO, não o que chegou: o que o banco guarda é
+        // exatamente o que o cliente vai desenhar, sem campo extra pendurado.
+        ...(autoral ? { parametros: autoral.item as unknown as Prisma.InputJsonValue } : {}),
       },
     });
 
@@ -266,9 +327,15 @@ export class AdminSistemaService {
       targetType: 'cosmetic',
       targetId: item.id,
       targetLabel: item.name,
-      metadata: { catalogoId: dto.catalogoId, tipo: dto.tipo, minTier: dto.minTier },
+      metadata: {
+        catalogoId: dto.catalogoId,
+        tipo: dto.tipo,
+        minTier: dto.minTier,
+        autoral: Boolean(autoral),
+      },
     });
 
+    this.catalogo.invalidar();
     return item;
   }
 
@@ -296,6 +363,9 @@ export class AdminSistemaService {
       },
     });
 
+    // Desativar um item AUTORAL precisa tirá-lo do catálogo na hora: ele some
+    // do seletor, e quem estava com ele equipado volta ao padrão.
+    this.catalogo.invalidar();
     return item;
   }
 
@@ -327,6 +397,7 @@ export class AdminSistemaService {
       targetId: id,
       targetLabel: item.name,
     });
+    this.catalogo.invalidar();
     return { sucesso: true };
   }
 

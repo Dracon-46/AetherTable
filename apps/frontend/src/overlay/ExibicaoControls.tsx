@@ -52,6 +52,9 @@ import {
   Footprints,
   Grid3x3,
   Heart,
+  LayoutGrid,
+  Rows3,
+  Square,
   Link2Off,
   MessageSquare,
   PanelBottom,
@@ -249,6 +252,8 @@ export function ExibicaoControls() {
   const logAberto = useUIStore((s) => s.logAberto);
   const setLogAberto = useUIStore((s) => s.setLogAberto);
   const trilhoAberto = useUIStore((s) => s.trilhoAberto);
+  const estiloDeMesa = useUIStore((s) => s.estiloDeMesa);
+  const setEstiloDeMesa = useUIStore((s) => s.setEstiloDeMesa);
   const setTrilhoAberto = useUIStore((s) => s.setTrilhoAberto);
   const seguirTurno = useUIStore((s) => s.seguirTurno);
   const setSeguirTurno = useUIStore((s) => s.setSeguirTurno);
@@ -298,6 +303,41 @@ export function ExibicaoControls() {
         // o mesmo problema que o menu da Mesa já tinha tido.
         <div className="painel-entra custom-scrollbar border-panel-border bg-panel absolute right-0 top-full mt-1 max-h-[calc(100dvh-5rem)] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border shadow-2xl">
           <TamanhoDaCarta />
+
+          {/* ─── O FORMATO DO TABULEIRO ──────────────────────────────────
+              Os tres arranjos existem em `canvas/layout.ts` desde sempre,
+              completos e com teste. Dois deles ficaram SEM CHAMADOR quando a
+              mesa focada virou fixa: continuaram no codigo e deixaram de
+              existir para quem joga.
+
+              Cada `dica` diz PARA QUE o arranjo serve, e nao como ele e
+              desenhado — a escolha depende do que a pessoa quer olhar naquele
+              momento da partida. */}
+          <Segmentado
+            rotulo="Formato da mesa"
+            valor={estiloDeMesa}
+            onEscolher={setEstiloDeMesa}
+            opcoes={[
+              {
+                valor: 'focada',
+                texto: 'Focada',
+                Icone: Square,
+                dica: 'A sua mesa ocupa a tela e os oponentes ficam num trilho ao lado. O padrão, e o melhor para jogar.',
+              },
+              {
+                valor: 'empilhada',
+                texto: 'Faixas',
+                Icone: Rows3,
+                dica: 'Uma faixa larga por jogador, a sua na base — como sentar à mesa. Todo mundo visível ao mesmo tempo, ninguém em miniatura.',
+              },
+              {
+                valor: 'grade',
+                texto: 'Grade',
+                Icone: LayoutGrid,
+                dica: 'Todas as mesas em quadrados, vistas de cima. Boa para acompanhar a partida inteira; as cartas ficam menores.',
+              },
+            ]}
+          />
 
           <Segmentado
             rotulo="Painel de vida"
