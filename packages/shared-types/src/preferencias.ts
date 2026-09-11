@@ -44,6 +44,40 @@ export type VisaoDaMesa = 'ALL' | 'ME';
 
 export const VISOES_DA_MESA: readonly VisaoDaMesa[] = ['ALL', 'ME'];
 
+/**
+ * ─── O FORMATO DO TABULEIRO ─────────────────────────────────────────────────
+ *
+ * Três arranjos completos existem em `canvas/layout.ts` desde sempre, cada um
+ * desenhado para um jeito diferente de olhar a mesa. Dois deles ficaram SEM
+ * CHAMADOR quando a mesa focada virou o arranjo fixo: continuaram no código,
+ * continuaram testados, e deixaram de ser alcançáveis pelo jogador.
+ *
+ * Eles voltam a ser escolha, que é o que sempre deveriam ter sido — a decisão
+ * "quero ver as quatro mesas" contra "quero a minha grande" depende do momento
+ * da partida e da pessoa, não de quem escreveu o `GameBoard`.
+ */
+export type EstiloDeMesa = 'focada' | 'empilhada' | 'grade';
+
+export const ESTILOS_DE_MESA: readonly EstiloDeMesa[] = ['focada', 'empilhada', 'grade'];
+
+/** Rótulo e a frase que diz PARA QUE serve cada um. */
+export const DESCRICAO_DO_ESTILO_DE_MESA: Readonly<
+  Record<EstiloDeMesa, { nome: string; resumo: string }>
+> = {
+  focada: {
+    nome: 'Focada',
+    resumo: 'A sua mesa grande, os outros num trilho ao lado. O padrão.',
+  },
+  empilhada: {
+    nome: 'Empilhada',
+    resumo: 'Uma faixa larga por jogador, a sua na base — como sentar à mesa.',
+  },
+  grade: {
+    nome: 'Grade',
+    resumo: 'Todas as mesas em quadrados, vistas de cima. Boa para acompanhar.',
+  },
+};
+
 export interface PreferenciasDeMesa {
   /** Multiplicador do tamanho da carta (0,5 a 2,0). */
   fatorCarta: number;
@@ -65,6 +99,8 @@ export interface PreferenciasDeMesa {
   logAberto: boolean;
   vidaModo: ModoDoPainelDeVida;
   boardView: VisaoDaMesa;
+  /** O arranjo do tabuleiro. Ver `EstiloDeMesa`. */
+  estiloDeMesa: EstiloDeMesa;
 }
 
 /**
@@ -85,6 +121,7 @@ export const PREFERENCIAS_DE_MESA_PADRAO: Readonly<PreferenciasDeMesa> = {
   logAberto: false,
   vidaModo: 'minha',
   boardView: 'ALL',
+  estiloDeMesa: 'focada',
 };
 
 /** As chaves aceitas. Serve à validação e ao teto de tamanho do JSON. */
@@ -127,6 +164,10 @@ export function normalizarPreferenciasDeMesa(entrada: unknown): PreferenciasDeMe
     ? (e.boardView as VisaoDaMesa)
     : p.boardView;
 
+  const estiloDeMesa = ESTILOS_DE_MESA.includes(e.estiloDeMesa as EstiloDeMesa)
+    ? (e.estiloDeMesa as EstiloDeMesa)
+    : p.estiloDeMesa;
+
   return {
     fatorCarta: fator,
     alinharNaGrade: booleano(e.alinharNaGrade, p.alinharNaGrade),
@@ -139,6 +180,7 @@ export function normalizarPreferenciasDeMesa(entrada: unknown): PreferenciasDeMe
     logAberto: booleano(e.logAberto, p.logAberto),
     vidaModo,
     boardView,
+    estiloDeMesa,
   };
 }
 

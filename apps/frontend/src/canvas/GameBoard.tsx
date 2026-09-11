@@ -43,6 +43,8 @@ import {
   CARD_H,
   encaixarNaGrade,
   escalasDaMesaFocada,
+  montarGrade,
+  montarMesa,
   montarMesaFocada,
   posicaoNaMao,
   posicaoNoCampo,
@@ -838,6 +840,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
   const selectedCardIds = useUIStore((s) => s.selectedCardIds);
   const boardView = useUIStore((s) => s.boardView);
   const trilhoAberto = useUIStore((s) => s.trilhoAberto);
+  const estiloDeMesa = useUIStore((s) => s.estiloDeMesa);
   const seguirTurno = useUIStore((s) => s.seguirTurno);
   const fatorCarta = useUIStore((s) => s.fatorCarta);
   const registrarEscalaDaMesa = useUIStore((s) => s.registrarEscalaDaMesa);
@@ -957,6 +960,27 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     /** Todos menos quem está grande, na ordem de assento. */
     const noTrilho = (myId ? [...porAssento, myId] : porAssento).filter((id) => id !== foco);
 
+    /**
+     * ─── TRÊS ARRANJOS, E O JOGADOR ESCOLHE ────────────────────────────────
+     *
+     * `montarMesa` e `montarGrade` existem em `layout.ts` desde sempre,
+     * completos e testados, e ficaram SEM CHAMADOR quando a mesa focada virou
+     * o arranjo fixo. Continuaram no código e deixaram de existir para quem
+     * joga. "Quero ver as quatro mesas" contra "quero a minha grande" depende
+     * do momento da partida, não de quem escreveu este arquivo.
+     *
+     * A ordem dos dois antigos é OPONENTES PRIMEIRO e eu por último — a faixa
+     * de baixo é a de quem está olhando, como numa mesa de verdade. A focada
+     * usa outra convenção (foco + trilho), e é por isso que a chamada não é a
+     * mesma para os três.
+     */
+    if (estiloDeMesa === 'empilhada') {
+      return montarMesa([...porAssento, myId || '—'], foco, { estreito });
+    }
+    if (estiloDeMesa === 'grade') {
+      return montarGrade([...porAssento, myId || '—'], foco);
+    }
+
     return montarMesaFocada({
       largura: utilW,
       altura: utilH,
@@ -972,7 +996,18 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
       fatorCarta,
       temReserva,
     });
-  }, [players, myId, boardView, trilhoAberto, estreito, utilW, utilH, fatorCarta, temReserva]);
+  }, [
+    players,
+    myId,
+    boardView,
+    trilhoAberto,
+    estreito,
+    utilW,
+    utilH,
+    fatorCarta,
+    temReserva,
+    estiloDeMesa,
+  ]);
 
   /**
    * ─── ESCALA 1, SEM CENTRALIZAR ─────────────────────────────────────────────
@@ -984,9 +1019,27 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
    * O deslocamento é só a margem — não há sobra para centralizar nem câmera
    * para somar.
    */
-  const escala = 1;
-  const offsetX = margens.esquerda;
-  const offsetY = margens.topo;
+  /**
+   * ─── DOIS SISTEMAS DE COORDENADA, E A ESCALA DEPENDE DE QUAL ────────────
+   *
+   * `montarMesaFocada` devolve a mesa JÁ no tamanho da área útil, em pixels
+   * reais — multiplicar por uma escala ali é o que produzia a carta de 74px: a
+   * geometria devolvia um plano de 1920 e a linha o reduzia a 61%.
+   *
+   * `montarMesa` e `montarGrade` devolvem um PLANO LÓGICO (1920 de largura), e
+   * precisam ser reduzidos para caber. `min` dos dois eixos, e não `utilW /
+   * largura`: reduzir só pela largura deixa a mesa alta transbordar embaixo, e
+   * a mão — que fica na base — sai da tela.
+   *
+   * A sobra vira centralização. Sem ela a mesa gruda no canto superior
+   * esquerdo e a assimetria fica visível na primeira tela ultrawide.
+   */
+  const usaPlanoLogico = estiloDeMesa !== 'focada';
+  const escala = usaPlanoLogico ? Math.min(utilW / mesa.largura, utilH / mesa.altura) : 1;
+  const offsetX = usaPlanoLogico
+    ? margens.esquerda + (utilW - mesa.largura * escala) / 2
+    : margens.esquerda;
+  const offsetY = usaPlanoLogico ? margens.topo + (utilH - mesa.altura * escala) / 2 : margens.topo;
 
   // ── Derivação do que vai para a tela ─────────────────────────────────────
   const { itens, resumoFaixas } = useMemo(() => {
