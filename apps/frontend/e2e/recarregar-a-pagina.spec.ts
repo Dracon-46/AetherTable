@@ -60,7 +60,21 @@ function carregarJogadores(): Jogador[] {
 }
 
 const JOGADORES = carregarJogadores();
-const STACK_NO_AR = Boolean(process.env.E2E_BASE_URL) && JOGADORES.length >= 1;
+
+/**
+ * ─── ESTA SUÍTE TEM CONTA PRÓPRIA ──────────────────────────────────────────
+ *
+ * As suítes rodam em paralelo (`fullyParallel: true`), e `mesa-multijogador`
+ * ocupa os QUATRO primeiros jogadores. Uma suíte de um jogador só que pegasse
+ * um deles emprestado disputaria a conta — e, pior, `zerarPreferenciasDeMesa`
+ * daqui apagaria a preparação da outra no meio do caminho. Foi exatamente o que
+ * aconteceu quando este arquivo nasceu copiado de `formato-da-mesa`, que usa a
+ * ana: as duas criavam mesa como a mesma pessoa ao mesmo tempo.
+ *
+ * `aether_elo` é o quinto, e existe para isto.
+ */
+const EU = JOGADORES[4];
+const STACK_NO_AR = Boolean(process.env.E2E_BASE_URL) && Boolean(EU);
 
 test.describe('recarregar a página', () => {
   test.skip(!STACK_NO_AR, 'exige o stack completo no ar + fixtures (ver o cabeçalho)');
@@ -74,7 +88,7 @@ test.describe('recarregar a página', () => {
   const erros: string[] = [];
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
-    await zerarPreferenciasDeMesa([JOGADORES[0]!.token]);
+    await zerarPreferenciasDeMesa([EU!.token]);
 
     const ctx = await browser.newContext({ viewport: { width: 1600, height: 950 } });
     await ctx.addInitScript(
@@ -84,7 +98,7 @@ test.describe('recarregar a página', () => {
           JSON.stringify({ state: { accessToken: token, user }, version: 0 }),
         );
       },
-      [JOGADORES[0]!.token, JOGADORES[0]!.user] as [string, Jogador['user']],
+      [EU!.token, EU!.user] as [string, Jogador['user']],
     );
     contextos.push(ctx);
     ana = await ctx.newPage();

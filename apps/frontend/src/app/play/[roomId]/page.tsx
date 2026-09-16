@@ -185,7 +185,7 @@ export default function PlayRoomPage() {
      * primeira entrada ele é recusado com TOKEN_ALREADY_USED para sempre. Como
      * ele vive na query string, um F5 reenviava exatamente o token queimado — e
      * o jogador levava "conexão recusada" numa sala em que o assento dele ainda
-     * estava guardado, esperando por 90 segundos que ninguém usava.
+     * estava guardado, esperando por uma janela que ninguém usava.
      *
      * A chave de reconexão resolve porque ela NÃO é o seat token: o Colyseus a
      * emite por conexão e ela vale enquanto a janela de `allowReconnection`
