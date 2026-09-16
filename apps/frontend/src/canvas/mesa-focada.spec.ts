@@ -9,6 +9,7 @@ import {
   FATOR_CARTA_MIN,
   FATOR_CARTA_PADRAO,
   encaixarNaGrade,
+  escalaDaMao,
   escalasDaMesaFocada,
   montarMesaFocada,
   posicaoNaMao,
@@ -216,22 +217,126 @@ describe('mesa focada — o bloco da direita NUNCA muda', () => {
   });
 });
 
+/**
+ * ─── A MÃO PRECISA ESCUTAR O TAMANHO DA CARTA ────────────────────────────────
+ *
+ * O controle "Tamanho da carta" existia e a mão o ignorava: as cartas dela eram
+ * desenhadas com escala 1 fixa, e o espaçamento do leque usava `CARD_W` cru.
+ * Mexer no controle mudava só a ALTURA da faixa — sobrava um vão embaixo ao
+ * aumentar, e ao diminuir a carta estourava para fora da faixa.
+ *
+ * O acoplamento certo é `escalaDaMao` derivar de `mao.altura`, que já carrega a
+ * escala efetiva. Estes casos travam esse acordo: se alguém voltar a desenhar a
+ * mão com escala fixa, a carta deixa de caber na própria faixa e o primeiro
+ * teste quebra.
+ */
+describe('mesa focada — tamanho da carta na mão', () => {
+  const comFator = (fatorCarta: number) => montarMesaFocada({ ...TELA, focoId: 'eu', fatorCarta });
+
+  it('a carta da mão CABE na faixa da mão, em qualquer fator', () => {
+    for (const fator of [0.5, 0.75, 1, 1.5, 2]) {
+      const mesa = comFator(fator);
+      const altura = CARD_H * escalaDaMao(mesa);
+      expect(altura).toBeGreaterThan(0);
+      expect(altura).toBeLessThanOrEqual(mesa.mao.altura);
+    }
+  });
+
+  it('pedir carta maior aumenta a carta da mão, não só a faixa', () => {
+    // A asserção que o defeito violava: a faixa crescia e a carta não.
+    const pequena = comFator(0.6);
+    const grande = comFator(1.6);
+    expect(grande.mao.altura).toBeGreaterThan(pequena.mao.altura);
+    expect(escalaDaMao(grande)).toBeGreaterThan(escalaDaMao(pequena));
+  });
+
+  it('o leque abre mais com carta maior', () => {
+    // Manter o passo de carta pequena com carta grande empilharia as cartas
+    // quase por inteiro — uma mão ilegível, que é o outro jeito de errar isto.
+    const passo = (mesa: ReturnType<typeof comFator>) =>
+      posicaoNaMao(1, 5, mesa).x - posicaoNaMao(0, 5, mesa).x;
+    expect(passo(comFator(1.6))).toBeGreaterThan(passo(comFator(0.6)));
+  });
+
+  it('a mão continua centrada na tela, com qualquer fator', () => {
+    // O leque é simétrico: o meio da primeira com o meio da última tem de cair
+    // no centro. Errar isto joga a mão para um lado ao mudar o tamanho.
+    for (const fator of [0.5, 1, 2]) {
+      const mesa = comFator(fator);
+      const primeira = posicaoNaMao(0, 7, mesa).x;
+      const ultima = posicaoNaMao(6, 7, mesa).x;
+      expect((primeira + ultima) / 2).toBeCloseTo(mesa.largura / 2, 5);
+    }
+  });
+
+  it('uma carta só fica exatamente no centro', () => {
+    const mesa = comFator(1);
+    expect(posicaoNaMao(0, 1, mesa).x).toBeCloseTo(mesa.largura / 2, 5);
+  });
+});
+
 describe('mesa focada — trilho dos oponentes', () => {
   const oponentes = ['op1', 'op2', 'op3'];
 
-  it('abrir o trilho NÃO muda a geometria da minha mesa', () => {
-    // Foi a escolha explícita do jogador: o trilho flutua por cima, então a
-    // carta dele nunca muda de tamanho ao abrir ou fechar.
+  /**
+   * ─── O TRILHO DEIXOU DE FLUTUAR, E ESTE TESTE MUDOU COM ELE ──────────────
+   *
+   * Antes ele exigia que abrir o trilho não mudasse NADA — porque o trilho era
+   * desenhado por cima do campo. Isso o punha sobre as permanentes do próprio
+   * jogador, com a coluna de zonas ainda à direita: "no centro da tela,
+   * atrapalhando tudo".
+   *
+   * Agora ele é uma coluna na borda e o campo cede largura para ele. O que
+   * continua proibido é o que motivava a decisão antiga: a CARTA e a MÃO não
+   * podem mudar de tamanho quando o painel abre. Essas duas asserções são as
+   * que sobreviveram, e são as que importam — um painel que redimensiona as
+   * cartas a cada clique é intolerável; um que estreita o campo é o normal.
+   */
+  it('abrir o trilho estreita o campo — e só o campo', () => {
     const fechado = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: false });
     const aberto = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: true });
 
     const a = fechado.faixas[0]!;
     const b = aberto.faixas[0]!;
+
+    // A carta e a mão são intocáveis: dependem só da altura da tela.
     expect(b.escala).toBe(a.escala);
-    expect(b.campo).toEqual(a.campo);
-    expect(b.comando).toEqual(a.comando);
-    expect(b.grimorio).toEqual(a.grimorio);
+    expect(b.escalaZonas).toBe(a.escalaZonas);
     expect(fechado.mao).toEqual(aberto.mao);
+
+    // O campo cede exatamente a largura do trilho.
+    expect(b.campo.largura).toBeLessThan(a.campo.largura);
+    expect(b.campo.altura).toBe(a.campo.altura);
+
+    // E a coluna de zonas anda junto, mantendo a distância para a borda do
+    // campo: ela não pode ficar para trás e abrir um buraco no meio.
+    expect(b.grimorio.x).toBeLessThan(a.grimorio.x);
+    expect(a.grimorio.x - b.grimorio.x).toBeCloseTo(a.campo.largura - b.campo.largura, 5);
+  });
+
+  it('o trilho encosta na borda direita da tela', () => {
+    // A afirmação central do pedido: canto direito, como no EDHplay. Ancorado
+    // em `campoLargura`, o trilho parava ANTES da coluna de zonas — no meio.
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: true });
+    const trilho = mesa.faixas.filter((f) => !f.emFoco);
+    expect(trilho.length).toBeGreaterThan(0);
+
+    for (const faixa of trilho) {
+      expect(faixa.esquerda + faixa.largura).toBeCloseTo(mesa.largura, 5);
+    }
+  });
+
+  it('o trilho não invade a coluna de zonas do jogador', () => {
+    // O oposto do defeito: encostar o trilho na borda não pode fazê-lo cobrir
+    // o grimório e o cemitério de quem está jogando.
+    const mesa = montarMesaFocada({ ...TELA, focoId: 'eu', oponentes, trilhoAberto: true });
+    const eu = mesa.faixas.find((f) => f.emFoco)!;
+    const trilho = mesa.faixas.find((f) => !f.emFoco)!;
+
+    // A pilha mais à direita do jogador é o exílio; ela tem de terminar antes
+    // de o trilho começar.
+    const meiaCarta = (CARD_W * eu.escalaZonas) / 2;
+    expect(eu.exilio.x + meiaCarta).toBeLessThanOrEqual(trilho.esquerda);
   });
 
   it('recolhido, existe só a minha faixa', () => {
