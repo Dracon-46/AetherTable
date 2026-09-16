@@ -32,6 +32,20 @@ export function ScryModal({ room }: ScryModalProps) {
   const fecharScry = useTableStore((s) => s.fecharScry);
 
   const [destinos, setDestinos] = React.useState<Record<string, Destino>>({});
+  /**
+   * A ORDEM VIVE AQUI, não no store.
+   *
+   * `mover` reescrevia `useTableStore.setState({ scry: {...} })`, criando um
+   * objeto `scry` novo a cada clique — e o efeito abaixo, que depende de
+   * `scry`, tratava isso como uma ABERTURA nova e zerava `destinos`. Na
+   * prática: marcar uma carta para o fundo e depois reordenar qualquer outra
+   * apagava a marcação, em silêncio.
+   *
+   * A ordem é decisão local de quem está olhando; ela só existe para o resto
+   * do mundo quando o `topOrder` sai na intenção. Guardá-la fora do store
+   * elimina a categoria inteira de defeito.
+   */
+  const [ordem, setOrdem] = React.useState<string[]>([]);
 
   // `confirmar` é declarado depois do `return null` (precisa de `scry`), então
   // o hook de Escape — que vem antes de qualquer retorno — o alcança por ref.
@@ -42,6 +56,7 @@ export function ScryModal({ room }: ScryModalProps) {
   React.useEffect(() => {
     if (!scry) return;
     setDestinos(Object.fromEntries(scry.cards.map((c) => [c.id, 'TOPO' as Destino])));
+    setOrdem(scry.cards.map((c) => c.id));
   }, [scry]);
 
   /**
@@ -64,10 +79,27 @@ export function ScryModal({ room }: ScryModalProps) {
   const ehSurveil = scry.mode === 'SURVEIL';
   const rotuloFora = ehSurveil ? 'Cemitério' : 'Fundo';
 
+  /**
+   * As cartas na ordem escolhida.
+   *
+   * `ordem` pode estar vazia no primeiro render (o efeito acima roda depois),
+   * e pode ficar desalinhada se a sessão trocar entre o render e o efeito —
+   * por isso a lista é reconstruída a partir de `scry.cards`, com `ordem`
+   * mandando só no arranjo. Um id em `ordem` que não exista mais some; uma
+   * carta nova que ainda não está em `ordem` aparece no fim em vez de sumir.
+   */
+  const emOrdem = (() => {
+    const porId = new Map(scry.cards.map((c) => [c.id, c]));
+    const arranjadas = ordem.map((id) => porId.get(id)).filter((c) => c !== undefined);
+    const vistos = new Set(arranjadas.map((c) => c.id));
+    return [...arranjadas, ...scry.cards.filter((c) => !vistos.has(c.id))];
+  })();
+
   const confirmar = () => {
-    const fora = scry.cards.filter((c) => destinos[c.id] === 'FORA').map((c) => c.id);
+    const fora = emOrdem.filter((c) => destinos[c.id] === 'FORA').map((c) => c.id);
     // A ordem do topo é a ordem em que aparecem na tela, de cima para baixo.
-    const topo = scry.cards.filter((c) => destinos[c.id] !== 'FORA').map((c) => c.id);
+    // O servidor a inverte ao gravar, porque lá o topo é o FIM do array.
+    const topo = emOrdem.filter((c) => destinos[c.id] !== 'FORA').map((c) => c.id);
 
     if (ehSurveil) intents.surveilCommit(room, fora, topo);
     else intents.scryCommit(room, fora, topo);
@@ -78,13 +110,16 @@ export function ScryModal({ room }: ScryModalProps) {
 
   const mover = (id: string, direcao: -1 | 1) => {
     // Reordenar o topo importa: scry 3 sem poder ordenar é meio scry.
-    const idx = scry.cards.findIndex((c) => c.id === id);
-    const alvo = idx + direcao;
-    if (idx < 0 || alvo < 0 || alvo >= scry.cards.length) return;
-    const copia = [...scry.cards];
-    const [item] = copia.splice(idx, 1);
-    if (item) copia.splice(alvo, 0, item);
-    useTableStore.setState({ scry: { ...scry, cards: copia } });
+    setOrdem((atual) => {
+      const base = atual.length ? atual : scry.cards.map((c) => c.id);
+      const idx = base.indexOf(id);
+      const alvo = idx + direcao;
+      if (idx < 0 || alvo < 0 || alvo >= base.length) return atual;
+      const copia = [...base];
+      const [item] = copia.splice(idx, 1);
+      if (item) copia.splice(alvo, 0, item);
+      return copia;
+    });
   };
 
   return (
@@ -101,7 +136,7 @@ export function ScryModal({ room }: ScryModalProps) {
         </header>
 
         <ul className="flex flex-col gap-3">
-          {scry.cards.map((c, i) => {
+          {emOrdem.map((c, i) => {
             const fora = destinos[c.id] === 'FORA';
             return (
               <li
@@ -121,7 +156,7 @@ export function ScryModal({ room }: ScryModalProps) {
                   </button>
                   <button
                     onClick={() => mover(c.id, 1)}
-                    disabled={i === scry.cards.length - 1 || fora}
+                    disabled={i === emOrdem.length - 1 || fora}
                     className="border-panel-border text-text-muted hover:text-text rounded border p-1 transition-colors disabled:opacity-30"
                     aria-label="Descer"
                   >

@@ -8,6 +8,42 @@
 
 import { API_URL } from '@/lib/api';
 
+/**
+ * ─── O CACHE PRECISOU DE TETO ──────────────────────────────────────────────
+ *
+ * Ele era um `Map` que só crescia: `limparCache()` existia e nunca era chamado
+ * durante a partida. Toda carta que APARECEU alguma vez ficava guardada, na
+ * qualidade `normal` — e um bitmap `normal` decodificado ocupa em torno de
+ * 750 x 1050 x 4 bytes, uns 3 MB de memória de vídeo, independente do tamanho
+ * em disco.
+ *
+ * Numa mesa de Commander com quatro jogadores são 400 cartas distintas, mais
+ * fichas e as cartas que passaram por cemitério e exílio. Algumas centenas de
+ * entradas × 3 MB chega facilmente à casa do gigabyte — e o sintoma disso não é
+ * um erro: é a aba ficar cada vez mais lenta e depois travar, depois de tempo
+ * suficiente de jogo. O relato foi exatamente esse, "depois de uns 15 minutos o
+ * jogo trava", numa partida que dura três ou quatro horas.
+ *
+ * ─── POR QUE LRU, E POR QUE ESTE TAMANHO ───────────────────────────────────
+ *
+ * O que está na tela AGORA é um punhado de cartas; o resto é histórico. Um teto
+ * com descarte do menos usado recentemente mantém exatamente o conjunto quente
+ * e devolve o resto ao coletor.
+ *
+ * 300 entradas cobre com folga o que uma mesa cheia mostra ao mesmo tempo
+ * (campo, mão, topos de pilha, o inspetor) e ainda segura o histórico recente,
+ * sem nunca virar o gigabyte. Descartar não perde nada de verdade: a imagem
+ * volta do cache do NAVEGADOR, que continua valendo — a resposta tem `immutable`
+ * e ETag —, então o custo de um descarte errado é uma decodificação, não um
+ * download.
+ */
+const TETO_DE_TEXTURAS = 300;
+
+/**
+ * `Map` preserva a ordem de inserção, e é isso que o torna um LRU pronto:
+ * reinserir uma chave a manda para o fim, e a primeira chave do iterador é
+ * sempre a menos usada recentemente.
+ */
 const cache = new Map<string, HTMLImageElement>();
 
 type Quality = 'small' | 'normal' | 'art_crop' | 'large';
@@ -61,14 +97,53 @@ export function getTexture(
   face: Face = 'front',
 ): HTMLImageElement {
   const cacheKey = `${scryfallId}:${quality}:${face}`;
-  let img = cache.get(cacheKey);
-  if (!img) {
-    img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = cardImageUrl(scryfallId, quality, face);
-    cache.set(cacheKey, img);
+  const emCache = cache.get(cacheKey);
+  if (emCache) {
+    // Reinserir move a chave para o fim da ordem: é o "usado recentemente" do
+    // LRU, e custa um delete mais um set.
+    cache.delete(cacheKey);
+    cache.set(cacheKey, emCache);
+    return emCache;
   }
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = cardImageUrl(scryfallId, quality, face);
+  cache.set(cacheKey, img);
+
+  /**
+   * Descarta as mais antigas até caber.
+   *
+   * `while` e não `if` porque o teto pode ter sido baixado entre duas chamadas
+   * — e porque um laço que termina sozinho é mais fácil de conferir do que uma
+   * condição que assume que o cache cresce de um em um.
+   *
+   * ─── O DESCARTE SOLTA A REFERÊNCIA E NÃO MEXE NA IMAGEM ──────────────────
+   *
+   * A tentação é cancelar um download em andamento (`img.src = ''`) para não
+   * gastar banda com uma imagem que "ninguém mais vai desenhar". É errado, e o
+   * erro é caro: sair do cache NÃO significa sair da tela. Um nó do Konva pode
+   * estar segurando aquela mesma instância, e cancelar o carregamento dela
+   * deixaria a carta em branco PARA SEMPRE — nada reemite o pedido enquanto
+   * aquele nó não for reconstruído.
+   *
+   * Soltar a referência e deixar o download terminar custa uma imagem de banda
+   * no pior caso, e ainda por cima aquece o cache do navegador. A imagem é
+   * coletada quando ninguém mais a segurar, que é exatamente o comportamento
+   * desejado.
+   */
+  while (cache.size > TETO_DE_TEXTURAS) {
+    const maisAntiga = cache.keys().next();
+    if (maisAntiga.done) break;
+    cache.delete(maisAntiga.value);
+  }
+
   return img;
+}
+
+/** Quantas texturas estão guardadas. Só para teste e diagnóstico. */
+export function tamanhoDoCache(): number {
+  return cache.size;
 }
 
 /** Limpa o cache (testes / memória). */

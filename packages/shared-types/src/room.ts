@@ -59,8 +59,31 @@ export const REALTIME_LIMITS = {
   PATCH_RATE_MS: 50,
   HEARTBEAT_MS: 15_000,
   CONNECTION_TIMEOUT_MS: 45_000,
-  /** Janela de reconexao, em segundos (RN10). */
-  RECONNECTION_WINDOW_S: 90,
+  /**
+   * Janela de reconexao, em segundos (RN10).
+   *
+   * ─── DEZ MINUTOS, E A VAGA FICA RESERVADA ────────────────────────────────
+   *
+   * Eram 90 segundos, e 90 segundos cobrem um F5 e nada mais. Uma partida de
+   * Commander leva de tres a quatro horas; nesse tempo um navegador trava e
+   * precisa ser reaberto, um wi-fi cai, um notebook hiberna. Perder o assento —
+   * e com ele a mao, o campo e o grimorio — por um tropeco de dois minutos no
+   * meio de uma partida longa e o pior resultado possivel, porque nao ha como
+   * desfazer: a mesa segue sem a pessoa.
+   *
+   * ─── O QUE O PRAZO CUSTA ─────────────────────────────────────────────────
+   *
+   * O jogador desconectado CONTINUA em `state.players` (so com
+   * `connected: false`), e `haAssentoLivre` conta essa lista — entao a vaga dele
+   * fica bloqueada durante toda a janela. Ninguem entra no lugar dele, nem por
+   * engano nem de proposito.
+   *
+   * Isso e o desejado: a vaga e dele. O custo e que uma mesa publica com um
+   * jogador que abandonou de vez so libera o assento apos dez minutos. Quem
+   * SAI de propósito nao paga esse preço — saida consentida (`INTENT_LEAVE` e o
+   * botao de sair) remove o assento na hora, e o anfitriao pode expulsar.
+   */
+  RECONNECTION_WINDOW_S: 600,
   /** Intencoes por segundo, por cliente. Excedente e descartado com `warning`. */
   MAX_INTENTS_PER_SECOND: 30,
   /** Intencoes sao pequenas por natureza. Acima disto, fecha a conexao. */

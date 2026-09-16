@@ -53,6 +53,7 @@ import { useGameStore, useUIStore } from '../store/game.store';
 import { useVoiceStore } from '../net/voice';
 import { useToast } from '../components/Toast';
 import type { RoomState } from '../net/schema/RoomState';
+import { esquecerReconexao } from '@/net/reconexao';
 
 interface ActionBarProps {
   room: Room<RoomState>;
@@ -190,6 +191,10 @@ export function ActionBar({ room }: ActionBarProps) {
   };
 
   const handleLeave = () => {
+    // Apaga a chave ANTES de fechar: sem isto, voltar para esta mesa na mesma
+    // aba tentaria reconectar num assento que acabou de ser abandonado de
+    // propósito, e a falha atrasaria a entrada nova com um round-trip inútil.
+    esquecerReconexao(room.roomId);
     intents.leave(room);
     room.leave();
     router.push('/dashboard');

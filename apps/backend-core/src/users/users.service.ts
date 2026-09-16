@@ -151,6 +151,20 @@ export class UsersService {
   }
 
   /**
+   * Busca por id incluindo a hash. Só para trocar a própria senha.
+   *
+   * Gêmea de `findForAuthByEmail`, e separada dela de propósito: o login
+   * procura por e-mail porque é o que a pessoa digita; a troca de senha já tem
+   * o id do token e procurar por e-mail exigiria uma consulta a mais só para
+   * descobrir um e-mail que ninguém informou.
+   *
+   * `deletedAt: null` continua valendo: conta banida não troca de senha.
+   */
+  async findForAuthById(id: string) {
+    return this.prisma.user.findFirst({ where: { id, deletedAt: null } });
+  }
+
+  /**
    * Deleta a conta de forma lógica (Soft Delete) agendando expurgo para 30 dias.
    */
   async softDelete(id: string) {

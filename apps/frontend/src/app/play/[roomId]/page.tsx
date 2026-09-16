@@ -40,6 +40,7 @@ import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { VoiceBridge } from '@/net/voice';
 import { ToastHost } from '@/components/Toast';
 import { mensagemDeConexao } from '@/net/erros';
+import { esquecerReconexao, guardarReconexao, lerReconexao } from '@/net/reconexao';
 import { useAuthStore } from '@/store/auth.store';
 import { useGameStore } from '@/store/game.store';
 import { intents } from '@/net/intents';
@@ -147,33 +148,97 @@ export default function PlayRoomPage() {
     let joinedRoom: Colyseus.Room<RoomState> | null = null;
     const client = new Colyseus.Client(WS_URL);
 
-    client
-      .joinOrCreate<RoomState>(
-        AETHER_ROOM,
-        { roomCode: roomId, seatToken: token, maxClients, gameType },
-        RoomState,
-      )
-      .then((r) => {
-        if (!active) {
-          void r.leave();
-          return;
-        }
-        joinedRoom = r;
-        setRoom(r);
-      })
-      .catch((e) => {
-        if (!active) return;
-        console.error('Colyseus join error', e);
-        // O servidor SEMPRE soube qual dos casos era — `onAuth` lança
-        // INVALID_TOKEN, TOKEN_EXPIRED ou TOKEN_ALREADY_USED. Esta linha
-        // colapsava os três num chute com três hipóteses, e o jogador ficava
-        // sem saber qual delas era a dele nem o que fazer a respeito.
-        setError(mensagemDeConexao(e));
-      });
+    /**
+     * Guarda a chave de volta assim que a sala responde.
+     *
+     * O `reconnectionToken` do Colyseus muda a cada conexão, então ele precisa
+     * ser regravado inclusive depois de uma reconexão bem-sucedida — senão a
+     * segunda recarga seguida usaria a chave da primeira, que já queimou.
+     */
+    const guardar = (r: Colyseus.Room<RoomState>) => {
+      joinedRoom = r;
+      guardarReconexao(roomId, r.reconnectionToken);
+      setRoom(r);
+    };
+
+    const entrarDoZero = () =>
+      client
+        .joinOrCreate<RoomState>(
+          AETHER_ROOM,
+          { roomCode: roomId, seatToken: token, maxClients, gameType },
+          RoomState,
+        )
+        .then((r) => {
+          if (!active) {
+            void r.leave();
+            return;
+          }
+          guardar(r);
+        });
+
+    const guardada = lerReconexao(roomId);
+
+    /**
+     * Reconectar PRIMEIRO, entrar do zero só se não der.
+     *
+     * O seat token é de uso único (`jtisUsados` no servidor): depois da
+     * primeira entrada ele é recusado com TOKEN_ALREADY_USED para sempre. Como
+     * ele vive na query string, um F5 reenviava exatamente o token queimado — e
+     * o jogador levava "conexão recusada" numa sala em que o assento dele ainda
+     * estava guardado, esperando por uma janela que ninguém usava.
+     *
+     * A chave de reconexão resolve porque ela NÃO é o seat token: o Colyseus a
+     * emite por conexão e ela vale enquanto a janela de `allowReconnection`
+     * estiver aberta.
+     */
+    const promessa = guardada
+      ? client
+          .reconnect<RoomState>(guardada, RoomState)
+          .then((r) => {
+            if (!active) {
+              void r.leave();
+              return;
+            }
+            guardar(r);
+          })
+          .catch(() => {
+            /**
+             * Janela fechada, token já usado, ou a sala morreu. Nenhum desses é
+             * erro para mostrar: o caminho normal é tentar entrar do zero, e é
+             * ali que o servidor diz o motivo de verdade se também recusar.
+             */
+            esquecerReconexao(roomId);
+            if (!active) return;
+            return entrarDoZero();
+          })
+      : entrarDoZero();
+
+    void promessa.catch((e) => {
+      if (!active) return;
+      console.error('Colyseus join error', e);
+      // O servidor SEMPRE soube qual dos casos era — `onAuth` lança
+      // INVALID_TOKEN, TOKEN_EXPIRED ou TOKEN_ALREADY_USED. Esta linha
+      // colapsava os três num chute com três hipóteses, e o jogador ficava
+      // sem saber qual delas era a dele nem o que fazer a respeito.
+      setError(mensagemDeConexao(e));
+    });
 
     return () => {
       active = false;
-      if (joinedRoom) void joinedRoom.leave();
+      /**
+       * `leave(false)` — saída NÃO consentida, e a diferença é tudo.
+       *
+       * `leave()` sem argumento é consentida, e o servidor trata saída
+       * consentida como "o jogador clicou em sair": remove o assento na hora,
+       * sem janela de reconexão. Este cleanup roda em toda desmontagem —
+       * inclusive na de um F5 — então a recarga destruía o próprio assento
+       * antes de tentar voltar para ele.
+       *
+       * Sair de verdade continua funcionando: a barra de ações manda
+       * `INTENT_LEAVE` antes de fechar, que remove o jogador pelo caminho
+       * explícito, e `esquecerReconexao` apaga a chave.
+       */
+      if (joinedRoom) void joinedRoom.leave(false);
     };
   }, [roomId, token, maxClients, gameType]);
 

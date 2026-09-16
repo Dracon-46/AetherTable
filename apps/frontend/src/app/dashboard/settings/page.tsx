@@ -7,6 +7,7 @@ import { Settings, Save, Check, Palette, User as UserIcon, Sun, Moon, Monitor } 
 import { DESCRICAO_DO_TEMA, TEMAS } from '@aethertable/shared-types';
 import { useTema } from '../../../store/tema.store';
 import { CosmeticPicker } from '../../../components/CosmeticPicker';
+import { TrocarSenha } from './TrocarSenha';
 
 export default function SettingsPage() {
   const tema = useTema((t) => t.tema);
@@ -209,6 +210,8 @@ export default function SettingsPage() {
               </div>
             </form>
           </section>
+
+          <TrocarSenha />
         </>
       )}
     </div>

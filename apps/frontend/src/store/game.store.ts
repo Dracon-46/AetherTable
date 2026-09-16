@@ -8,6 +8,7 @@ import {
   PASSO_DO_FATOR,
 } from '../canvas/layout';
 import type { EstiloDeMesa } from '@aethertable/shared-types';
+import type { LoteDeCartas } from '../net/lote';
 
 // ─── gameStore: espelho do estado do servidor ──────────────────────────────
 
@@ -220,6 +221,8 @@ interface GameState {
   setConnectionState: (state: GameState['connectionState']) => void;
   upsertCard: (id: string, data: Partial<CardData>) => void;
   removeCard: (id: string) => void;
+  /** Um quadro inteiro de mudanças de carta, numa cópia só. Ver `net/lote.ts`. */
+  aplicarLoteDeCartas: (lote: LoteDeCartas<Partial<CardData>>) => void;
   upsertPlayer: (id: string, data: Partial<PlayerData>) => void;
   setZoneOrder: (chave: string, ids: string[]) => void;
   removePlayer: (id: string) => void;
@@ -270,6 +273,37 @@ export const useGameStore = create<GameState>((set) => ({
     set((s) => {
       const cards = { ...s.cards };
       delete cards[id];
+      return { cards };
+    }),
+
+  /**
+   * Aplica um quadro inteiro de mudanças numa cópia só.
+   *
+   * ─── POR QUE ISTO EXISTE AO LADO DE `upsertCard` ─────────────────────────
+   *
+   * `upsertCard` copia as ~400 chaves de `cards` a cada CAMPO alterado. Numa
+   * mesa cheia, um patch do servidor traz dezenas de campos, e cada um pagava a
+   * cópia inteira e produzia uma identidade nova de `cards` — que o `GameBoard`
+   * assina por inteiro, então cada uma custava um render completo do tabuleiro.
+   *
+   * Aqui a cópia é uma só por quadro, e o render também. Ver `net/lote.ts`,
+   * que é quem junta as mudanças antes de chegar aqui.
+   *
+   * `upsertCard` continua existindo porque continua sendo o caminho certo para
+   * uma mudança AVULSA — uma correção local, um teste. O que não pode é ele ser
+   * o caminho de uma enxurrada.
+   */
+  aplicarLoteDeCartas: ({ alteradas, removidas }) =>
+    set((s) => {
+      if (alteradas.size === 0 && removidas.size === 0) return {};
+      const cards = { ...s.cards };
+      for (const [id, dados] of alteradas) {
+        cards[id] = { ...(cards[id] ?? {}), ...dados } as CardData;
+      }
+      // Remoções por último: uma carta alterada e removida no mesmo quadro tem
+      // de sair. O coalescedor já garante que ela não esteja nos dois lados,
+      // mas a ordem aqui torna a garantia desnecessária em vez de obrigatória.
+      for (const id of removidas) delete cards[id];
       return { cards };
     }),
 
