@@ -49,7 +49,7 @@ cd apps/frontend
 E2E_BASE_URL=http://localhost:3030 npx playwright test --project=desktop
 ```
 
-Três suítes, e cada uma existe por um motivo diferente:
+Cada suíte existe por um motivo diferente:
 
 - **`mesa-multijogador`** (33) — quatro navegadores de verdade numa sala de
   verdade. É a única que enxerga interação entre jogadores.
@@ -57,8 +57,30 @@ Três suítes, e cada uma existe por um motivo diferente:
   espectador, que só se encontram em execução. Ela pegou dois defeitos que
   passaram por typecheck, lint e 353 testes de unidade: o CORS ausente no
   game-server e o `onChange` do Colyseus que não dispara retroativamente.
+- **`formato-da-mesa`** (6) — os três arranjos do tabuleiro desenham de verdade.
+  `montarMesa` e `montarGrade` ficaram sem chamador por vários commits sem
+  nenhum teste reclamar: os dois estavam corretos, faltava alguém chamá-los.
+- **`recarregar-a-pagina`** (6) — o F5 volta para a mesa. O `reconnectionToken`
+  é emitido pelo servidor, guardado no `sessionStorage` e usado num handshake de
+  WebSocket; as três pontas só existem juntas num navegador.
 - **`telas-publicas`** (14) — o que roda sem banco e sem serviços. É a única
   que o CI executa, e é por isso que ela é assim.
+
+### Uma suíte não pode pegar a conta de outra emprestada
+
+`fullyParallel: true`: as suítes rodam ao mesmo tempo, em navegadores
+diferentes, contra **a mesma API e o mesmo banco**. Duas suítes logadas na mesma
+conta disputam preferências, decks e assentos — e `zerarPreferenciasDeMesa` de
+uma apaga a preparação da outra no meio do caminho.
+
+O sintoma não parece conflito: é um `waitForURL` estourando o tempo no primeiro
+teste de uma suíte, e as outras 30 marcadas como "did not run". Parece regressão
+no produto; é briga de fixture.
+
+`preparar-jogadores.mjs` cria **cinco**: os quatro primeiros são a mesa de
+`mesa-multijogador`, e `aether_elo` é o avulso. **Uma suíte nova de um jogador
+só usa `aether_elo`** — não um dos quatro. Se uma segunda suíte de um jogador só
+aparecer, acrescente um sexto em vez de compartilhar.
 
 ## 3. Por que o E2E completo não roda no CI
 

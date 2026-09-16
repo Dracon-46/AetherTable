@@ -25,7 +25,18 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const SAIDA = join(AQUI, 'jogadores.json');
 
 /** Quatro assentos é a mesa clássica de Commander; o teto agora é oito. */
-const JOGADORES = ['aether_ana', 'aether_bruno', 'aether_caio', 'aether_dora'];
+/**
+ * Os quatro da mesa, mais um AVULSO.
+ *
+ * `mesa-multijogador` usa os quatro, e as suites rodam em paralelo
+ * (`fullyParallel: true`). Toda suite que pegasse um dos quatro emprestado
+ * disputaria conta com ela — e `zerarPreferenciasDeMesa` de uma apagaria a
+ * preparacao da outra no meio do caminho.
+ *
+ * `aether_elo` existe para as suites de UM jogador so, que nao precisam de mesa
+ * cheia e nao podem atrapalhar quem precisa.
+ */
+const JOGADORES = ['aether_ana', 'aether_bruno', 'aether_caio', 'aether_dora', 'aether_elo'];
 const SENHA = 'SenhaDeTeste123';
 
 /**

@@ -90,6 +90,8 @@ const PASSOS = [
 const EXIGEM_E2E = [
   'apps/frontend/src/canvas/',
   'apps/frontend/src/net/useRoomSync',
+  'apps/frontend/src/net/lote',
+  'apps/frontend/src/net/reconexao',
   'apps/frontend/src/app/play/',
   'apps/game-server/src/rooms/AetherRoom',
 ];

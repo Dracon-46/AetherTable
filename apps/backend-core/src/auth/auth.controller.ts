@@ -15,7 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
-import { LoginDto, RegisterDto } from './auth.dto.js';
+import { LoginDto, RegisterDto, TrocarSenhaDto } from './auth.dto.js';
 import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import type {
@@ -163,6 +163,31 @@ export class AuthController {
     // Limpeza oportunista: nao ha scheduler no projeto, e o logout e
     // justamente quando uma linha nova entra.
     await this.revogacao.expurgarVencidos();
+  }
+
+  /**
+   * Trocar a própria senha.
+   *
+   * ─── O LIMITE É APERTADO DE PROPÓSITO ────────────────────────────────────
+   *
+   * A rota recebe a senha atual e diz se ela confere — ou seja, é um oráculo de
+   * senha para quem já tem o token. Com limite generoso, um token roubado viraria
+   * força bruta contra a senha real, que é justamente a proteção que a conta
+   * ainda teria nesse cenário. Cinco por minuto é folgado para quem erra ao
+   * digitar e inútil para quem adivinha.
+   *
+   * Devolve um token NOVO: a troca derruba as outras sessões, e sem isso
+   * derrubaria também a de quem trocou — deslogar alguém por ter ido nos
+   * ajustes no meio de uma partida.
+   */
+  @Post('senha')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ curto: { limit: 2, ttl: 10_000 }, longo: { limit: 5, ttl: 60_000 } })
+  @UsePipes(new ZodValidationPipe(TrocarSenhaDto))
+  @ApiOperation({ summary: 'Troca a senha da própria conta e derruba as outras sessões' })
+  async trocarSenha(@Req() req: RequisicaoAutenticada, @Body() dto: TrocarSenhaDto) {
+    return this.authService.trocarSenha(req.user.sub, dto.senhaAtual, dto.novaSenha);
   }
 
   // ── OAuth Google ───────────────────────────────────────────────────────────

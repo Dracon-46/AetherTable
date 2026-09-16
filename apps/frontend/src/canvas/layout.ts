@@ -492,12 +492,52 @@ export function encaixarNaGrade(faixa: Faixa, p: Ponto): Ponto {
 }
 
 /**
+ * A escala com que as cartas DA MÃO são desenhadas.
+ *
+ * ─── A MÃO NÃO OBEDECIA AO TAMANHO DA CARTA ────────────────────────────────
+ *
+ * O controle "Tamanho da carta" existe no painel de Exibição desde sempre, e a
+ * mão o ignorava: o `GameBoard` desenhava cada carta da mão com `escala: 1`
+ * fixo, e `posicaoNaMao` espaçava por `CARD_W` cru. Mexer no controle mudava a
+ * ALTURA da faixa da mão — o espaço reservado — sem mudar as cartas dentro
+ * dela. Aumentar deixava um vão vazio embaixo; diminuir cortava as cartas.
+ *
+ * O relato foi "eu tenho que poder aumentar e diminuir o tamanho das cartas na
+ * mão". O controle estava lá; o que faltava era a mão escutá-lo.
+ *
+ * ─── POR QUE VEM DE `mao.altura`, E NÃO DO FATOR DIRETO ────────────────────
+ *
+ * `mao.altura` já é `cardH + FOLGA_DA_MAO * escala` — ou seja, já carrega a
+ * escala efetiva, que é o fator PEDIDO depois do teto da janela. Derivar daqui
+ * mantém a carta e a faixa em acordo por construção: não existe conta a
+ * repetir, e portanto não existe conta para divergir quando uma das duas mudar.
+ */
+export function escalaDaMao(mesa: Mesa): number {
+  const disponivel = mesa.mao.altura - FOLGA_DA_MAO_MINIMA;
+  return Math.max(0.1, disponivel / CARD_H);
+}
+
+/**
+ * Folga vertical mínima dentro da faixa da mão, em pixels.
+ *
+ * Sem ela a carta encosta nas duas bordas da faixa e o leque fica parecendo
+ * cortado. É pequena de propósito: o espaço da mão é caro numa tela baixa.
+ */
+const FOLGA_DA_MAO_MINIMA = 10;
+
+/**
  * Leque da mão: centraliza e comprime o espaçamento quando há muitas cartas,
  * para que 12+ cartas não saiam pela borda.
+ *
+ * O espaçamento acompanha a escala da mão: com carta grande as cartas não
+ * podem continuar a um passo de carta pequena, senão elas se sobrepõem quase
+ * por inteiro e a mão vira uma pilha ilegível.
  */
 export function posicaoNaMao(indice: number, total: number, mesa: Mesa): Ponto {
-  const larguraMax = mesa.largura - 2 * (CARD_W * 0.6);
-  const passoIdeal = CARD_W + 12;
+  const escala = escalaDaMao(mesa);
+  const cardW = CARD_W * escala;
+  const larguraMax = mesa.largura - 2 * (cardW * 0.6);
+  const passoIdeal = cardW + 12 * escala;
   const passo = total > 1 ? Math.min(passoIdeal, larguraMax / (total - 1)) : 0;
   const larguraTotal = passo * (total - 1);
   return {
@@ -729,10 +769,21 @@ export function escalaDaMesaFocada(altura: number, fator: number = FATOR_CARTA_P
 /**
  * Largura do trilho de oponentes, em múltiplos da largura da carta.
  *
- * O trilho FLUTUA sobre o campo: abrir e fechar não muda a geometria da mesa,
- * então a carta do jogador nunca muda de tamanho por causa dele. Foi a escolha
- * explícita do jogador entre as duas alternativas — a outra era o trilho
- * empurrar o campo, que redimensiona a mão a cada clique.
+ * ─── O TRILHO DEIXOU DE FLUTUAR SOBRE O CAMPO ──────────────────────────────
+ *
+ * Ele ficava ancorado em `campoLargura` — a largura do campo, que JÁ exclui a
+ * coluna de zonas. Na tela isso o punha sobre as permanentes do próprio
+ * jogador, com a coluna de grimório/cemitério/exílio ainda à direita dele: nem
+ * na borda, nem fora do caminho. O relato foi direto — "a visão das mesas dos
+ * oponentes tá no centro da tela, atrapalhando tudo".
+ *
+ * Agora ele é uma COLUNA de verdade, na borda direita da tela, e o campo se
+ * ajusta ao que sobra. É o arranjo do EDHplay, e é o que foi pedido.
+ *
+ * O medo que justificava flutuar — "empurrar o campo redimensiona a mão a cada
+ * clique" — não se sustenta: `escalasDaMesaFocada` depende só da ALTURA da
+ * tela e do fator de carta. Estreitar o campo não muda a escala da carta, nem
+ * a altura da mão. Fechar o trilho devolve a largura ao campo e nada mais.
  */
 const TRILHO_EM_CARTAS = 2.6;
 
@@ -894,8 +945,18 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
   const blocoLargura =
     COLUNAS_DO_BLOCO * zonaW + (COLUNAS_DO_BLOCO - 1) * vao + FOLGA_COLUNA * escalaZonas * 2;
 
-  // ── Campo de batalha: tudo menos o bloco da direita e a mão ──────────────
-  const campoLargura = largura - blocoLargura;
+  /**
+   * A coluna dos oponentes, reservada antes de qualquer outra coisa.
+   *
+   * Zero quando não há oponente ou o trilho está recolhido — e aí o campo
+   * recupera a largura inteira, que é o comportamento esperado de um painel
+   * que se fecha.
+   */
+  const trilhoLargura =
+    trilhoAberto && oponentes.length > 0 ? zonaW * TRILHO_EM_CARTAS + FOLGA_TRILHO : 0;
+
+  // ── Campo de batalha: tudo menos a coluna de zonas, o trilho e a mão ─────
+  const campoLargura = largura - blocoLargura - trilhoLargura;
 
   /**
    * Passo vertical entre as fileiras do bloco.
@@ -984,10 +1045,14 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
 
   const faixas: Faixa[] = [faixaDoFoco];
 
-  // ── Trilho dos oponentes: FLUTUA sobre o campo, à esquerda da coluna ─────
+  // ── Trilho dos oponentes: coluna PRÓPRIA, na borda direita da tela ───────
   if (trilhoAberto && oponentes.length > 0) {
-    const trilhoLargura = zonaW * TRILHO_EM_CARTAS;
-    const trilhoX = campoLargura - trilhoLargura - FOLGA_TRILHO;
+    // `- FOLGA_TRILHO` na largura porque a folga já entrou na reserva acima: o
+    // vão fica ENTRE a coluna de zonas e o trilho, não depois dele — grudar o
+    // trilho na borda é o ponto, e uma margem à direita o traria de volta para
+    // dentro da tela.
+    const larguraUtil = trilhoLargura - FOLGA_TRILHO;
+    const trilhoX = largura - larguraUtil;
     const disponivel = altura - maoAltura - rotulo;
     const alturaPorOponente = Math.min(
       disponivel / oponentes.length,
@@ -997,7 +1062,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
     // oponente caber "de forma pequena mesmo" sem deformar nada.
     // A miniatura precisa caber um campinho MAIS o bloco de três pilhas.
     const escalaTrilho = Math.min(
-      trilhoLargura / (CARD_W * 4),
+      larguraUtil / (CARD_W * 4),
       alturaPorOponente / (CARD_H * 3 + (VAO_DO_BLOCO + ROTULO_DA_PILHA) * 2),
     );
     const cardWt = CARD_W * escalaTrilho;
@@ -1013,7 +1078,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
       // reaprender onde está o cemitério do vizinho.
       const vaoT = 5 * escalaTrilho;
       const blocoLarguraT = COLUNAS_DO_BLOCO * cardWt + (COLUNAS_DO_BLOCO - 1) * vaoT;
-      const campoLarguraT = Math.max(cardWt * 0.6, trilhoLargura - blocoLarguraT - vaoT);
+      const campoLarguraT = Math.max(cardWt * 0.6, larguraUtil - blocoLarguraT - vaoT);
       const passoT = cardHt + vaoT + ROTULO_DA_PILHA * escalaTrilho;
       const blocoXt = trilhoX + campoLarguraT + vaoT;
       const colXt = (c: number) => blocoXt + cardWt / 2 + c * (cardWt + vaoT);
@@ -1023,7 +1088,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
       faixas.push({
         playerId,
         esquerda: trilhoX,
-        largura: trilhoLargura,
+        largura: larguraUtil,
         topo,
         altura: alturaPorOponente,
         emFoco: false,

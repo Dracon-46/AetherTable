@@ -65,6 +65,7 @@ import { useAuthStore } from '../store/auth.store';
 import { intents } from '../net/intents';
 import { API_URL } from '@/lib/api';
 import type { RoomState } from '../net/schema/RoomState';
+import { esquecerReconexao } from '@/net/reconexao';
 
 interface RoomLobbyProps {
   room: Room<RoomState>;
@@ -210,6 +211,7 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   };
 
   const sair = () => {
+    esquecerReconexao(room.roomId);
     intents.leave(room);
     room.leave();
     router.push('/dashboard');

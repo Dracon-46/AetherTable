@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
@@ -174,6 +175,69 @@ export class AuthService {
   /**
    * Registra um novo usuário no banco de dados
    */
+  /**
+   * Troca a própria senha.
+   *
+   * ─── O QUE ACONTECE COM AS OUTRAS SESSÕES ────────────────────────────────
+   *
+   * Todas caem. `tokensValidosApos` é o corte lido em `jwt.strategy.ts`: todo
+   * token emitido ANTES deste instante passa a ser recusado.
+   *
+   * Isso é o ponto, não um efeito colateral. A razão mais comum para alguém
+   * trocar a senha é suspeitar que outra pessoa entrou na conta — e uma troca
+   * que deixasse a sessão do invasor viva resolveria nada. É o mesmo corte que
+   * a redefinição pelo administrador aplica, pelo mesmo motivo.
+   *
+   * ─── MENOS A SESSÃO DE QUEM TROCOU ───────────────────────────────────────
+   *
+   * Um token NOVO é emitido e devolvido. Sem ele, a pessoa seria deslogada pelo
+   * próprio ato de trocar a senha, e — no meio de uma partida de três horas —
+   * cairia da mesa por ter ido nos ajustes. O token novo nasce depois do corte,
+   * então passa; os antigos, inclusive o que fez esta chamada, não.
+   */
+  async trocarSenha(userId: string, senhaAtual: string, novaSenha: string) {
+    const user = await this.usersService.findForAuthById(userId);
+
+    /**
+     * Conta de OAuth não tem senha para conferir.
+     *
+     * Deixar passar criaria uma senha do nada para quem entra pelo Google — e
+     * qualquer um com o token faria isso. A saída certa é "defina uma senha",
+     * que é outro fluxo e ainda não existe; até lá, a recusa é explícita em vez
+     * de um erro genérico de credencial.
+     */
+    if (!user?.passwordHash) {
+      throw new BadRequestException(
+        'Esta conta entra por Google ou Discord e não tem senha para trocar.',
+      );
+    }
+
+    const confere = await argon2.verify(user.passwordHash, senhaAtual);
+    if (!confere) throw new UnauthorizedException('A senha atual não confere.');
+
+    const hash = await this.hashPassword(novaSenha);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: hash, tokensValidosApos: new Date() },
+    });
+
+    /**
+     * O token novo é assinado DEPOIS do update.
+     *
+     * O corte usa o `iat` do token, que tem resolução de SEGUNDOS. Assinar
+     * antes de gravar poderia produzir um token com `iat` igual ao segundo do
+     * corte — e a comparação o derrubaria junto com os outros, deslogando
+     * exatamente quem acabou de trocar a senha. `jwt.strategy.ts` já dá uma
+     * folga de um segundo por esta razão; a ordem aqui é a outra metade.
+     */
+    const accessToken = this.jwtService.sign(
+      { username: user.username, sub: user.id },
+      { jwtid: randomBytes(16).toString('hex') },
+    );
+
+    return { accessToken, expiresIn: this.ttlSegundos };
+  }
+
   async register(email: string, username: string, pass: string) {
     /**
      * O INTERRUPTOR DE CADASTRO (DOC-061 §5).

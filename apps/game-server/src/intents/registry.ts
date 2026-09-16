@@ -1674,9 +1674,20 @@ const INTENT_SCRY_COMMIT: IntentHandler<typeof S.ScryCommitIntent> = {
       return;
     }
 
-    // Remove todas as envolvidas e recoloca: fundo primeiro, topo por ultimo.
+    /**
+     * ─── `topOrder` CHEGA NA ORDEM DA TELA E ENTRA INVERTIDO ────────────────
+     *
+     * O topo do grimorio e o FIM do array (ver `topoDe`, logo acima). O cliente
+     * manda `topOrder` na ordem em que as cartas aparecem na tela, de cima para
+     * baixo -- `topOrder[0]` e a que o jogador quer comprar PRIMEIRO.
+     *
+     * Emendar a lista direto no fim colocava `topOrder[0]` no fundo do bloco e
+     * a ULTIMA carta no topo: reordenar fazia exatamente o contrario do pedido.
+     * Com scry 1 nao da para notar, porque uma carta sozinha nao tem ordem --
+     * o defeito so aparece de scry 2 para cima, onde reordenar e o ponto.
+     */
     const restante = Array.from(grimorio).filter((id) => !envolvidas.includes(id));
-    const nova = [...toBottom, ...restante, ...topOrder];
+    const nova = [...toBottom, ...restante, ...[...topOrder].reverse()];
     grimorio.splice(0, grimorio.length, ...nova);
 
     revogarOlhada(ctx, envolvidas);
@@ -1726,8 +1737,10 @@ const INTENT_SURVEIL_COMMIT: IntentHandler<typeof S.SurveilCommitIntent> = {
       return;
     }
 
+    // Invertido pelo mesmo motivo do scry: topo = fim do array, e `topOrder`
+    // chega na ordem da tela. Ver o comentario em INTENT_SCRY_COMMIT.
     const restante = Array.from(grimorio).filter((id) => !envolvidas.includes(id));
-    grimorio.splice(0, grimorio.length, ...restante, ...topOrder);
+    grimorio.splice(0, grimorio.length, ...restante, ...[...topOrder].reverse());
 
     for (const id of toGraveyard) {
       const c = carta(ctx.state, id);

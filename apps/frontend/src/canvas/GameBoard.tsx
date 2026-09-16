@@ -46,6 +46,7 @@ import {
   montarGrade,
   montarMesa,
   montarMesaFocada,
+  escalaDaMao,
   posicaoNaMao,
   posicaoNoCampo,
   posicaoNoComando,
@@ -1095,6 +1096,10 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     // Minha mão, na base. Só existe quando a MINHA faixa está na mesa: no
     // celular, olhando a mesa de um oponente, a mão não tem onde ficar.
     const minhaMao = myId && mesa.porJogador.has(myId) ? daZona('HAND', myId) : [];
+    // A escala sai da própria faixa da mão: era `1` fixo, e por isso o controle
+    // "Tamanho da carta" mudava a altura da faixa sem mexer nas cartas dentro
+    // dela. Ver `escalaDaMao`.
+    const escalaDasCartasNaMao = escalaDaMao(mesa);
     minhaMao.forEach((c, i) => {
       out.push({
         card: c,
@@ -1103,7 +1108,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
         arrastavel: true,
         frente: temIdentidade(c),
         face: c.isFlipped ? 1 : 0,
-        escala: 1,
+        escala: escalaDasCartasNaMao,
         sleeveId: sleeveDe(c.ownerId),
       });
     });
