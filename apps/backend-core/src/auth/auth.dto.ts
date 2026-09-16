@@ -30,3 +30,28 @@ export const RegisterDto = z.object({
   password: z.string().min(8, 'A senha precisa de ao menos 8 caracteres').max(200),
 });
 export type RegisterDto = z.infer<typeof RegisterDto>;
+
+/**
+ * Trocar a própria senha.
+ *
+ * ─── A SENHA ATUAL É EXIGIDA, E NÃO É BUROCRACIA ───────────────────────────
+ *
+ * Um token de sessão vive 24 horas. Um notebook desbloqueado por um minuto, um
+ * navegador de laboratório, uma aba aberta num computador emprestado — em todos
+ * esses, quem chega tem o token e não tem a senha. Sem esta confirmação, trocar
+ * a senha (e portanto DERRUBAR o dono da própria conta) seria a primeira coisa
+ * que qualquer um faria.
+ *
+ * O mínimo de 8 caracteres é o mesmo do cadastro, e é deliberado: uma regra
+ * mais frouxa aqui viraria o caminho para burlar a do cadastro.
+ */
+export const TrocarSenhaDto = z
+  .object({
+    senhaAtual: z.string().min(1, 'Informe sua senha atual').max(200),
+    novaSenha: z.string().min(8, 'A senha nova precisa de ao menos 8 caracteres').max(200),
+  })
+  .refine((d) => d.senhaAtual !== d.novaSenha, {
+    message: 'A senha nova precisa ser diferente da atual',
+    path: ['novaSenha'],
+  });
+export type TrocarSenhaDto = z.infer<typeof TrocarSenhaDto>;
