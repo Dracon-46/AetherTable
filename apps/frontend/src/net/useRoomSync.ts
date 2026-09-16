@@ -19,6 +19,7 @@ import {
 import { useToast } from '../components/Toast';
 import { useUIStore } from '../store/game.store';
 import { mensagemDeErro } from './erros';
+import { criarCoalescedor, type Coalescedor } from './lote';
 import type { RoomState } from './schema/RoomState';
 import type { Card } from './schema/Card';
 import type { Player } from './schema/Player';
@@ -122,6 +123,8 @@ function snapPlayer(p: Player): PlayerData {
 export function useRoomSync(room: Room<RoomState> | null) {
   const store = useGameStore.getState();
   const roomRef = useRef<Room<RoomState> | null>(null);
+  /** Vive fora do efeito só para a limpeza alcançá-lo. Ver `net/lote.ts`. */
+  const coalescedorRef = useRef<Coalescedor<Partial<CardData>> | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -152,8 +155,22 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * aninhado do schema: aqui, `Card.counters`; abaixo,
      * `Player.commanderDamage` e `Player.sharedZones`.
      */
+    /**
+     * ─── AS MUDANÇAS DE CARTA PASSAM POR UM LOTE ──────────────────────────
+     *
+     * Cada `reSnap` escrevia direto no store, e cada escrita copiava as ~400
+     * chaves de `cards` e trocava a identidade do objeto — que o `GameBoard`
+     * assina inteiro. Um patch do servidor traz dezenas de campos alterados, e
+     * a mesa era redesenhada uma vez por campo para mostrar o mesmo resultado
+     * final. Ver o cabeçalho de `net/lote.ts`.
+     */
+    const loteDeCartas = criarCoalescedor<Partial<CardData>>((lote) =>
+      useGameStore.getState().aplicarLoteDeCartas(lote),
+    );
+    coalescedorRef.current = loteDeCartas;
+
     const assinarCarta = (card: Card, id: string) => {
-      const reSnap = () => useGameStore.getState().upsertCard(id, snapCard(card));
+      const reSnap = () => loteDeCartas.alterar(id, snapCard(card));
       $(card).onChange(reSnap);
       $(card).counters.onAdd(reSnap);
       $(card).counters.onChange(reSnap);
@@ -166,7 +183,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
     });
 
     $(room.state).cards.onRemove((_card: Card, id: string) => {
-      useGameStore.getState().removeCard(id);
+      loteDeCartas.remover(id);
     });
 
     // ── Ordem das zonas ────────────────────────────────────────────────────
@@ -558,6 +575,10 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     // ── Limpeza ─────────────────────────────────────────────────────────────
     return () => {
+      // Sem isto, o quadro agendado dispararia depois do `reset()` abaixo e
+      // repovoaria o store com as cartas de uma sala que já foi deixada.
+      coalescedorRef.current?.cancelar();
+      coalescedorRef.current = null;
       // NOTA: room.removeAllListeners() foi removido pois no React StrictMode
       // a remontagem rápida destruía permanentemente a comunicação com o Colyseus.
       // O ciclo de vida da sala é controlado por room.leave() no page.tsx.
