@@ -367,6 +367,47 @@ apps/frontend/src/
 └── lib/                          hooks, utilitários, formatação
 ```
 
+> Este bloco é o desenho original e **diverge do que existe**: não há `login/` (a tela de entrada é a
+> própria `app/page.tsx`), a mesa está em `play/[roomId]/` e o cliente REST está em `lib/fetcher.ts`,
+> não em `api/`. Trate-o como intenção, e o repositório como fonte.
+
+### 8.1 As telas de acesso
+
+Quatro rotas fora da casca autenticada. Todas usam o mesmo painel de vidro sobre `min-h-dvh` — `dvh` e
+não `vh` porque `100vh` no celular é a altura da janela **sem** a barra do navegador, e o botão de
+entrar termina embaixo dela.
+
+| Rota               | Arquivo                        | O que faz                                                   |
+| ------------------ | ------------------------------ | ----------------------------------------------------------- |
+| `/`                | `app/page.tsx`                 | Entrada: e-mail e senha, botões de provedor, erros de OAuth |
+| `/register`        | `app/register/page.tsx`        | Cadastro                                                    |
+| `/senha/esqueci`   | `app/senha/esqueci/page.tsx`   | Pede o link de redefinição                                  |
+| `/senha/redefinir` | `app/senha/redefinir/page.tsx` | Escolhe a senha nova, com o token do e-mail                 |
+
+`app/senha/Moldura.tsx` é a casca compartilhada pelas duas telas de senha. Ela **não** foi aplicada
+retroativamente a `/` e `/register`: aquelas duas carregam a `CenaDoDragao` com o estado de sopro
+ligado ao envio do formulário, e migrá-las junto misturaria a recuperação de senha com uma mudança na
+porta de entrada do produto. Fica como o próximo passo de quem mexer nelas.
+
+**Três decisões que se repetem nessas telas, e o porquê:**
+
+1. **Nada de `useSearchParams()`.** O token de redefinição e o `?erro=` do OAuth são lidos de
+   `window.location` dentro de um efeito. O hook obriga a rota a renderizar no cliente e já quebrou o
+   `next build` deste projeto com _"useSearchParams() should be wrapped in a suspense boundary"_ — foi
+   o motivo de `OAuthTokenCapture` existir como componente separado. As duas telas novas são estáticas
+   (`○` no relatório do `next build`) por causa disso.
+2. **O que veio na URL sai da URL.** Token e código de erro são apagados com `replaceState` assim que
+   lidos — um token de redefinição na querystring entra no histórico e no `Referer`, e um erro já
+   lido não deve ressuscitar quando a pessoa recarrega.
+3. **O botão do provedor só aparece se funcionar.** `GET /auth/provedores` diz quais existem no
+   servidor. Antes, os dois botões eram desenhados sempre e o aviso de "DUMMY KEYS" era condicionado a
+   `NODE_ENV` — ou seja, sumia em produção, que é justo onde as chaves não estavam configuradas e o
+   clique levava a uma página de erro do Google.
+
+O dicionário de mensagens de erro de OAuth vive no **frontend** (`MENSAGEM_DE_OAUTH` em
+`app/page.tsx`), não na URL: desenhar texto arbitrário vindo da querystring transformaria a tela de
+entrada numa página de phishing hospedada no domínio certo.
+
 ---
 
 ## 9. Acessibilidade no frontend

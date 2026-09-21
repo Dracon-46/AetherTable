@@ -232,8 +232,8 @@ da interface. Hoje é um controle que mente.
 | Sem job de expurgo LGPD dos 30 dias                                                                                                                    | nenhum cron/scheduler no repo              | `User.deletedAt` acumula para sempre                                                                                                |
 | `Block` no schema com **zero uso**                                                                                                                     | `schema.prisma:320`                        | `PLAYER_BLOCKED` nunca é lançado; não há bloquear jogador                                                                           |
 | `CardCache` (tabela) nunca lida nem escrita                                                                                                            | `schema.prisma:293`                        | o cache real é LRU em RAM; a tabela é peso morto                                                                                    |
-| `emailVerifiedAt` nunca escrito nem verificado                                                                                                         | `schema.prisma`                            | não há verificação de e-mail                                                                                                        |
-| "Esqueceu?" é `<a href="#">`                                                                                                                           | `app/page.tsx`                             | não há recuperação de senha                                                                                                         |
+| ~~`emailVerifiedAt` nunca escrito nem verificado~~ ✅                                                                                                  | `auth.service.ts`                          | **resolvido:** escrito no login por OAuth, e o vínculo por e-mail passou a exigir e-mail verificado pelo provedor                   |
+| ~~"Esqueceu?" é `<a href="#">`~~ ✅                                                                                                                    | `app/senha/esqueci`                        | **resolvido:** recuperação de senha por e-mail, token de uso único de 30 min                                                        |
 | Sem `<meta viewport>` / `export const viewport`                                                                                                        | `app/layout.tsx`                           | mobile depende do default do Next                                                                                                   |
 | `UserPreference.theme`, `voiceMode`, `pttKey`, `masterVolume` sem UI e sem leitura                                                                     | `schema.prisma`                            | quatro colunas mortas                                                                                                               |
 | `Deck.description`, `isPublic`, `isFavorite`, `colorIdentity`, `commanderId`, `partnerId`, `DeckCard.isCommander`, `DeckCard.sortOrder` nunca escritos | `schema.prisma`                            | oito colunas mortas                                                                                                                 |
@@ -289,7 +289,14 @@ FAQ, tutorial, termos, privacidade ou contato existe (`grep` por `help`, `faq`,
    detentores de direitos, termos e privacidade. **Isto não é opcional se você
    publicar.** Copie a estrutura: não oficial, sem venda de cartas, sem torneios,
    sem serviços ranqueados, uso não comercial, e um endereço de contato.
-6. Corrigir I.4 (banner de dummy keys), I.3 (token na URL) e o "Esqueceu?".
+6. ~~Corrigir I.4 (banner de dummy keys), I.3 (token na URL) e o "Esqueceu?".~~ ✅ **feito.** O banner
+   saiu e foi substituído por `GET /auth/provedores` — o botão do provedor só é desenhado quando ele
+   existe no servidor, em qualquer ambiente. O "Esqueceu?" leva a `/senha/esqueci`. Na mesma passagem
+   apareceram três coisas que **não estavam nesta auditoria**: as credenciais de OAuth nunca
+   estiveram no `render.yaml` (em produção os botões levavam a uma página de erro do Google); o
+   `state` do OAuth **não era verificado** (`NullStore` do `passport-oauth2`), embora DOC-050 §2.4 o
+   desse como existente; e o vínculo por e-mail aceitava e-mail **não verificado** pelo provedor, o
+   que é um caminho de tomada de conta pelo Discord.
 7. `export const viewport` + `manifest` + ícones — ver II.22.
 
 ### II.2 Taverna / dashboard / browser de salas · 🔴

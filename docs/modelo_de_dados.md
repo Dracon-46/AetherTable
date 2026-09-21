@@ -129,7 +129,7 @@ redistribuição de conteúdo protegido.
 | `password_hash`     | `VARCHAR(255)` | **nullable**                               | Argon2id. Nulo quando a conta é exclusivamente OAuth |
 | `avatar_url`        | `TEXT`         | nullable                                   | URL do provedor ou upload                            |
 | `role`              | `ENUM`         | `USER` \| `MOD` \| `ADMIN`, default `USER` | Autorização                                          |
-| `email_verified_at` | `TIMESTAMPTZ`  | nullable                                   | —                                                    |
+| `email_verified_at` | `TIMESTAMPTZ`  | nullable                                   | Escrito **só** pelo login OAuth (§3.2)               |
 | `last_seen_at`      | `TIMESTAMPTZ`  | nullable                                   | Atualizado no login                                  |
 | `deleted_at`        | `TIMESTAMPTZ`  | nullable                                   | _Soft delete_ para LGPD (§7)                         |
 | `created_at`        | `TIMESTAMPTZ`  | not null, default `now()`                  | —                                                    |
@@ -152,6 +152,16 @@ conta sem duplicar usuário (`CDU01` A1).
 
 > **Não armazenamos** _access token_ nem _refresh token_ do provedor. Usamos OAuth apenas para
 > identificar, nunca para agir em nome do usuário (`RN11`).
+
+**O vínculo por e-mail exige e-mail verificado pelo provedor.** Quando não há linha em `Account` para
+aquela identidade, a conta local é encontrada **pelo e-mail** — então um provedor que não confirme a
+posse do endereço seria um caminho de tomada de conta: bastaria criar uma conta Discord declarando o
+e-mail da vítima. O Google sempre verifica; o Discord permite conta com e-mail não confirmado.
+Ausência do campo conta como **não verificado** (falha fechada).
+
+`User.email_verified_at` é escrito aqui, e só aqui. Ele existia no schema e **nunca era escrito por
+nada** (DOC-094 §I.8); o login por provedor é a primeira fonte legítima — é mais verificação do que
+o cadastro por senha jamais fez.
 
 ### 3.3 `Deck`
 
@@ -302,6 +312,48 @@ Tabela de ligação `MatchParticipant (match_id, user_id)` existe para alimentar
 | `cosmetic_id` | `UUID`        | FK → `CosmeticItem`   |
 | `acquired_at` | `TIMESTAMPTZ` | not null              |
 
+### 3.10 `RevokedToken` e `PasswordResetToken` — as duas tabelas de sessão
+
+Nenhuma das duas estava neste dicionário. Elas são pequenas, curtas e efêmeras, e é justamente por
+isso que ficam invisíveis numa auditoria — cada uma é uma tranca de segurança.
+
+**`revoked_tokens`** — a denylist que faz `POST /auth/logout` deslogar de verdade.
+
+| Coluna       | Tipo          | Restrições                | Descrição                        |
+| ------------ | ------------- | ------------------------- | -------------------------------- |
+| `jti`        | `VARCHAR(64)` | PK                        | Identificador do access token    |
+| `user_id`    | `UUID`        | not null, **sem FK**      | Dono                             |
+| `expires_at` | `TIMESTAMPTZ` | not null, indexado        | Quando o token expiraria sozinho |
+| `revoked_at` | `TIMESTAMPTZ` | not null, default `now()` | —                                |
+
+**Sem chave estrangeira de propósito:** o registro de que um token foi revogado pode sobreviver à
+conta. É o rastro de algo que aconteceu.
+
+**`password_reset_tokens`** — o link de "Esqueci minha senha".
+
+| Coluna       | Tipo          | Restrições                       | Descrição                         |
+| ------------ | ------------- | -------------------------------- | --------------------------------- |
+| `token_hash` | `VARCHAR(64)` | PK                               | **SHA-256** do token, hexadecimal |
+| `user_id`    | `UUID`        | FK → `User`, `ON DELETE CASCADE` | Dono                              |
+| `expires_at` | `TIMESTAMPTZ` | not null, indexado               | Emissão + 30 min                  |
+| `used_at`    | `TIMESTAMPTZ` | nullable                         | Uso único: nulo enquanto não foi  |
+| `created_at` | `TIMESTAMPTZ` | not null, default `now()`        | —                                 |
+
+Três decisões que valem a leitura:
+
+- **A coluna guarda a hash, não o token.** Em claro, um dump deste banco — backup exposto, `SELECT`
+  de uma injeção, painel do Postgres aberto na máquina errada — entregaria uma lista de links de
+  redefinição **vivos** das contas mais recentes. Com SHA-256, entrega uma coluna inútil.
+- **Sem sal e sem Argon2**, ao contrário de `User.password_hash`. Sal e custo de CPU protegem
+  segredos que um humano escolheu e que caem por dicionário; este tem 256 bits de CSPRNG e vive 30
+  minutos. Uma hash lenta só tornaria lenta a consulta por chave primária que valida o link.
+- **`ON DELETE CASCADE`**, ao contrário de `revoked_tokens`: isto é uma **chave de entrada**, e uma
+  chave de entrada não pode sobreviver à conta que ela abre.
+
+Nenhuma das duas tem expurgo agendado — **não há scheduler neste projeto**, a mesma pendência do
+expurgo LGPD de 30 dias (§7.1). A limpeza é oportunista: `deleteMany` das linhas vencidas roda no
+logout e em cada pedido/uso de redefinição, que é quando uma linha nova entra.
+
 ---
 
 ## 4. Schema Prisma (referência)
@@ -384,8 +436,10 @@ model DeckCard {
 }
 ```
 
-_(`Account`, `UserPreference`, `CardCache`, `Block`, `Report`, `MatchSummary` seguem o mesmo padrão de
-mapeamento `snake_case` no banco e `camelCase` no cliente.)_
+_(`Account`, `UserPreference`, `CardCache`, `Block`, `Report`, `MatchSummary`, `RevokedToken` e
+`PasswordResetToken` seguem o mesmo padrão de mapeamento `snake_case` no banco e `camelCase` no
+cliente. Este bloco é um recorte para leitura — a fonte é
+[`schema.prisma`](../apps/backend-core/prisma/schema.prisma).)_
 
 ---
 
