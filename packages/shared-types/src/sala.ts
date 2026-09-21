@@ -303,9 +303,12 @@ export function nomeDeSalaSugerido(username?: string | null): string {
 // quem sentou. Por isso ela trafega por intenção autorizada e aquela não.
 
 /**
- * COMMANDER — o teto de sete mulligans é a mão vazia; não existe oitavo.
- * LONDON   — mesma regra no servidor; a diferença é do cliente, que compra
- *            sete e devolve N ao fundo.
+ * COMMANDER — o primeiro mulligan é grátis (regra oficial desde 2019): só a
+ *             partir do segundo o cliente devolve carta ao fundo, e sempre uma
+ *             a menos do que o total, porque o grátis não conta. Ver
+ *             `cartasParaDevolverNoMulligan`.
+ * LONDON   — mesmo teto de sete no servidor; a diferença é do cliente, que
+ *            compra sete e devolve N ao fundo, sem mulligan grátis.
  * LIVRE    — sem teto e sem as três condições que fecham a janela. É o
  *            formato-escape, e existe pelo mesmo motivo do formato `Livre` de
  *            deck: UM escape explícito e nomeado, em vez de meia dúzia de
@@ -316,10 +319,45 @@ export type TipoDeMulligan = (typeof TIPOS_DE_MULLIGAN)[number];
 
 /** Uma linha explicando qual regra está valendo, para o modal de mulligan. */
 export const REGRA_DO_MULLIGAN: Readonly<Record<TipoDeMulligan, string>> = {
-  COMMANDER: 'Mulligan de Commander: até sete, e a sétima já é a mão vazia.',
+  COMMANDER:
+    'Mulligan de Commander: o primeiro é grátis; do segundo em diante, devolva uma carta ao fundo por mulligan. O teto é sete.',
   LONDON: 'Mulligan de London: compre sete e devolva ao fundo uma carta por mulligan.',
   LIVRE: 'Mulligan livre: sem teto e sem janela. A mesa combina o resto.',
 };
+
+/**
+ * Quantas cartas vão para o FUNDO quando o jogador mantém a mão.
+ *
+ * O servidor não participa desta conta: `INTENT_MULLIGAN` devolve a mão,
+ * embaralha e compra sete em todos os tipos, e é o cliente que devolve N ao
+ * fundo (ver o comentário de `TIPOS_DE_MULLIGAN`). Por isso a regra mora aqui,
+ * e não no modal: era uma expressão dentro do JSX, sem teste nenhum, e o custo
+ * saía errado justamente no caso mais comum da plataforma.
+ *
+ * COMMANDER dá o PRIMEIRO mulligan de graça — é a regra oficial desde 2019, e
+ * é a razão de o tipo existir separado de LONDON. O modal usava `mulliganCount`
+ * cru para os dois: quem jogava Commander e fazia um único mulligan já era
+ * obrigado a devolver uma carta, ou seja, jogava London numa mesa que escolheu
+ * Commander. Descontar o mulligan grátis é toda a diferença entre os dois.
+ *
+ * LIVRE não cobra nada. Não é só coerência com o nome: a janela do LIVRE não
+ * tem teto, então `mulliganCount` passa de sete — e cobrar N cartas de uma mão
+ * de sete deixaria a confirmação impossível de satisfazer, prendendo o jogador
+ * na tela de devolução.
+ *
+ * `tipo` entra como `string` porque é o que chega do estado da sala, escrito
+ * pelo navegador do anfitrião. Valor não reconhecido cai em COMMANDER, que é o
+ * padrão da plataforma — a mesma queda que o modal já faz para o texto da
+ * regra.
+ */
+export function cartasParaDevolverNoMulligan(tipo: string, mulliganCount: number): number {
+  // `mulliganCount` vem do estado da sala e pode chegar negativo ou quebrado se
+  // alguém mexer no schema; o piso em zero evita pedir "-1 cartas".
+  const feitos = Number.isFinite(mulliganCount) ? Math.max(0, Math.floor(mulliganCount)) : 0;
+  if (tipo === 'LONDON') return feitos;
+  if (tipo === 'LIVRE') return 0;
+  return Math.max(0, feitos - 1);
+}
 
 /**
  * ─── O CRONÔMETRO CONTA E AVISA. NUNCA AGE. ────────────────────────────────
