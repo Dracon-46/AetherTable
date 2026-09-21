@@ -32,7 +32,7 @@ import {
   type IntentHandler,
 } from '../intents/registry';
 import { embaralhar } from '../services/rng';
-import { JornalUndo } from '../services/undo';
+import { ComandoDeIntencao, HistoricoDeComandos } from '../intents/comandos';
 import { logSistema } from '../services/log';
 import { reconciliarClient, reconciliarTudo } from '../services/view-sync';
 import { intentsRecebidas, intentsRejeitadas, salasAtivas } from '../metrics';
@@ -143,8 +143,14 @@ export class AetherRoom extends Room<RoomState> {
     REALTIME_LIMITS.MAX_SORTEIOS_POR_JANELA,
     REALTIME_LIMITS.SORTEIO_JANELA_MS,
   );
-  /** Janela de arrependimento de 10 s por jogador (DOC-036 item 130). */
-  private readonly jornal = new JornalUndo();
+  /**
+   * Os comandos ja executados, um por jogador (DOC-036 item 130).
+   *
+   * Antes era um jornal de snapshots, e a Room precisava lembrar de capturar
+   * ANTES de executar. Agora quem captura e o proprio comando: a Room so o
+   * monta e entrega ao historico.
+   */
+  private readonly historico = new HistoricoDeComandos();
   /** Uso unico do seat token (FR-20): jti ja consumido nesta sala. */
   private readonly jtisUsados = new Set<string>();
   /**
@@ -637,16 +643,24 @@ export class AetherRoom extends Room<RoomState> {
         }
 
         try {
-          // O snapshot e tirado ANTES da mutacao e so para intencoes
-          // reversiveis — a propria lista de exclusoes vive em services/undo.ts.
-          this.jornal.registrar(this.state, client.sessionId, tipo);
-
           // A fase e lida ANTES para saber se o handler a mudou. START_MATCH e
           // RESET_MATCH viram `emPartida` na lista publica, e o REGISTRY nao
           // tem — nem deve ter — acesso a Room para publicar isso sozinho.
           const faseAntes = this.state.phase;
           const contexto = this.montarContexto(client);
-          handler.executa(contexto, parsed.data);
+
+          /**
+           * A INTENCAO VIRA UM COMANDO, E E O HISTORICO QUE A EXECUTA.
+           *
+           * O snapshot para o undo sai de dentro do comando, imediatamente
+           * antes da mutacao. Enquanto eram duas chamadas aqui — capturar,
+           * depois executar — nada impedia que alguem as reordenasse, e um
+           * snapshot tirado DEPOIS faz o undo restaurar exatamente o estado
+           * que o jogador queria desfazer, sem erro nenhum na tela.
+           */
+          this.historico.executar(
+            new ComandoDeIntencao(tipo, handler, contexto, parsed.data, this.state),
+          );
           if (this.state.phase !== faseAntes) this.publicarMetadados();
 
           /**
@@ -693,7 +707,7 @@ export class AetherRoom extends Room<RoomState> {
       send: (event, payload) => client.send(event, payload),
       broadcast: (event, payload) => this.broadcast(event, payload),
       log: (entrada) => this.publicarLog(entrada),
-      desfazer: () => this.jornal.desfazer(this.state, client.sessionId),
+      desfazer: () => this.historico.desfazer(client.sessionId),
       expulsar: (sessionId) => this.expulsar(sessionId),
     };
   }
@@ -790,7 +804,7 @@ export class AetherRoom extends Room<RoomState> {
     const player = this.state.players.get(sessionId);
     this.state.players.delete(sessionId);
     this.rateLimiter.esquecer(sessionId);
-    this.jornal.esquecer(sessionId);
+    this.historico.esquecer(sessionId);
 
     for (const zone of ZONES) {
       this.state.zoneOrder.delete(zoneOrderKey(sessionId, zone));
