@@ -75,6 +75,8 @@ const COR_FAIXA_FOCO = 'rgba(15,23,42,0.55)';
 const COR_FAIXA = 'rgba(15,23,42,0.72)';
 /** Borda de quem está na vez. Dourado, e nunca usado para mais nada. */
 const COR_VEZ = 'rgba(250,204,21,0.9)';
+/** Assento reservado para quem caiu e ainda pode voltar. Ver o rótulo da faixa. */
+const COR_DESCONECTADO = 'rgba(248,113,113,0.85)';
 /** Âmbar da zona de comando — a mesma família do ícone de coroa da UI. */
 const COR_COMANDO = 'rgba(69,53,22,0.42)';
 const COR_COMANDO_BORDA = 'rgba(251,191,36,0.35)';
@@ -1403,15 +1405,27 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                   width={r.faixa.largura - 12}
                   height={r.faixa.altura - 6}
                   stroke={
-                    r.faixa.playerId === activePlayerId
-                      ? COR_VEZ
-                      : r.faixa.emFoco
-                        ? 'rgba(96,165,250,0.55)'
-                        : 'rgba(148,163,184,0.28)'
+                    r.player?.connected === false
+                      ? COR_DESCONECTADO
+                      : r.faixa.playerId === activePlayerId
+                        ? COR_VEZ
+                        : r.faixa.emFoco
+                          ? 'rgba(96,165,250,0.55)'
+                          : 'rgba(148,163,184,0.28)'
                   }
                   strokeWidth={
-                    r.faixa.playerId === activePlayerId ? 3.5 : r.faixa.emFoco ? 2.5 : 1.5
+                    r.player?.connected === false
+                      ? 2.5
+                      : r.faixa.playerId === activePlayerId
+                        ? 3.5
+                        : r.faixa.emFoco
+                          ? 2.5
+                          : 1.5
                   }
+                  /* Tracejado: a borda de um assento que está guardado, não
+                     ocupado. Diz "caiu" mesmo para quem não distingue o
+                     vermelho do dourado da vez. */
+                  dash={r.player?.connected === false ? [6, 4] : undefined}
                   cornerRadius={12}
                 />
                 <Text
@@ -1419,7 +1433,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                     r.player
                       ? `${r.faixa.playerId === activePlayerId ? '▶ ' : ''}${r.player.name}${
                           r.player.id === myId ? ' (você)' : ''
-                        } · ${r.player.life} PV${r.player.isMonarch ? ' · monarca' : ''}`
+                        } · ${r.player.life} PV${r.player.isMonarch ? ' · monarca' : ''}${
+                          r.player.connected === false ? ' · ⚠ desconectado' : ''
+                        }`
                       : 'assento vazio'
                   }
                   x={r.faixa.rotulo.x + 8}
@@ -1428,13 +1444,24 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                   fontStyle="bold"
                   /* O triângulo acompanha a borda dourada porque cor sozinha
                      não é sinal acessível: quem não distingue dourado de azul
-                     ficaria sem saber de quem é a vez. */
+                     ficaria sem saber de quem é a vez.
+
+                     DESCONEXÃO VEM ANTES DA VEZ na ordem das cores. O assento
+                     fica reservado por dez minutos depois de a conexão cair
+                     (`RECONNECTION_WINDOW_S`), e isso é deliberado — é o que
+                     faz um F5 não expulsar ninguém. Mas o rótulo lia só nome,
+                     vida e monarca: na mesa, quem fechou a aba ficava idêntico
+                     a quem está jogando, e a mesa inteira esperava a vez de um
+                     jogador que não estava mais lá. O aviso e a cor apagada
+                     dizem isso sem abrir o painel de jogadores. */
                   fill={
-                    r.faixa.playerId === activePlayerId
-                      ? COR_VEZ
-                      : r.faixa.emFoco
-                        ? 'rgba(147,197,253,0.9)'
-                        : 'rgba(255,255,255,0.4)'
+                    r.player?.connected === false
+                      ? COR_DESCONECTADO
+                      : r.faixa.playerId === activePlayerId
+                        ? COR_VEZ
+                        : r.faixa.emFoco
+                          ? 'rgba(147,197,253,0.9)'
+                          : 'rgba(255,255,255,0.4)'
                   }
                 />
                 <Mascote

@@ -7,7 +7,7 @@ import { Server, matchMaker } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { monitor } from '@colyseus/monitor';
 import { playground } from '@colyseus/playground';
-import { AETHER_ROOM } from '@aethertable/shared-types';
+import { AETHER_ROOM, REALTIME_LIMITS } from '@aethertable/shared-types';
 
 import { config, isProd } from './config';
 import { AetherRoom } from './rooms/AetherRoom';
@@ -15,7 +15,39 @@ import { registry } from './metrics';
 import { iniciarSincronizacaoDoCatalogo } from './services/catalogo-de-cosmeticos';
 import { Encoder } from '@colyseus/schema';
 
-Encoder.BUFFER_SIZE = 100 * 1024; // 100KB for large EDH decks
+/**
+ * ─── O BUFFER DE ENCODE E O TETO REAL DE JOGADORES POR MESA ─────────────────
+ *
+ * Isto era `100 * 1024` com o comentario "100KB for large EDH decks", e esse
+ * numero era o limite de jogadores da plataforma sem que ninguem tivesse
+ * decidido isso. `MAX_PLAYERS` dizia 8; a mesa quebrava por volta do sexto.
+ *
+ * O buffer e UM por sala, alocado uma vez, e nao cresce. O estado completo de
+ * um assento com deck de cem cartas custa de 20 a 25 KB: cada `Card` leva UUID
+ * de chave, UUID de `id` e quase trinta campos, e ainda entra a lista de
+ * `zoneOrder` com cem UUIDs. Cinco assentos chegam a ~120 KB e ja raspam o
+ * teto; seis passam.
+ *
+ * E o estouro nao falha alto — e isso que fazia o defeito chegar como "ela
+ * parece estar na partida mas cai". No caminho com `view()` (e `Card.scryfallId`
+ * e `view()`), o encoder que estourou aloca um buffer maior LOCAL, mas nao
+ * guarda esse buffer de volta; a etapa seguinte volta a escrever no buffer
+ * pequeno com um offset fora de faixa e o `subarray` corta em silencio. O
+ * cliente que estava ENTRANDO recebe um ROOM_STATE truncado, o decoder dele
+ * quebra e a conexao morre — enquanto o servidor ja o tinha sentado. Para o
+ * resto da mesa ele fica no assento, porque a saida sem consentimento reserva
+ * a cadeira pela janela de reconexao. Quem ja estava conectado nao percebe:
+ * recebe patches, nao o estado inteiro.
+ *
+ * Por isso o tamanho agora SAI DE `MAX_PLAYERS`, e nao de uma constante solta:
+ * subir o teto de assentos sem subir o buffer reintroduz exatamente este bug,
+ * de novo em silencio. 64 KB por assento e ~2,5x o pior caso medido, e a folga
+ * tambem cobre o caminho de patch — `reconciliarTudo` marca `scryfallId` de
+ * TODAS as cartas como sujo, entao provisionar um deck na sala de espera emite
+ * um patch do tamanho do conjunto inteiro.
+ */
+const BYTES_DE_ESTADO_POR_ASSENTO = 64 * 1024;
+Encoder.BUFFER_SIZE = REALTIME_LIMITS.MAX_PLAYERS * BYTES_DE_ESTADO_POR_ASSENTO;
 
 /**
  * Ponto de entrada do game server.
