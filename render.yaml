@@ -75,6 +75,59 @@ services:
       - key: FRONTEND_URL
         sync: false
 
+      # ─── OAuth: Google e Discord ──────────────────────────────────────────
+      #
+      # Estas quatro NUNCA estiveram neste arquivo, e a consequência era visível
+      # na porta de entrada do produto: o backend subia com credenciais de
+      # exemplo (`DUMMY_GOOGLE_CLIENT_ID`), a tela de login desenhava os dois
+      # botões assim mesmo, e clicar levava a uma página de erro do próprio
+      # Google. O aviso de "DUMMY KEYS" da tela era condicionado a NODE_ENV —
+      # sumia exatamente aqui, onde o problema estava.
+      #
+      # DEIXAR EM BRANCO É UMA OPÇÃO LEGÍTIMA: sem as duas variáveis de um
+      # provedor, a estratégia não é registrada, `GET /auth/provedores` responde
+      # `false` e a tela simplesmente não desenha o botão. O login por e-mail e
+      # senha continua inteiro.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+
+      # Endereço público DESTA API, COM o `/api/v1`. É de onde saem as URLs de
+      # callback que você cadastra no console de cada provedor:
+      #
+      #   <API_PUBLIC_URL>/auth/google/callback
+      #   <API_PUBLIC_URL>/auth/discord/callback
+      #
+      # Ex.: https://aethertable-api.onrender.com/api/v1
+      #
+      # Sem isto, o padrão é `http://localhost:3333/api/v1` — o provedor
+      # devolveria o usuário para a máquina dele.
+      - key: API_PUBLIC_URL
+        sync: false
+
+      # ─── E-mail: recuperação de senha ─────────────────────────────────────
+      #
+      # SEM ESTA CHAVE, `POST /auth/senha/esqueci` RESPONDE 503 EM PRODUÇÃO —
+      # de propósito. A alternativa seria responder "se houver uma conta,
+      # enviamos o link" sem ter enviado nada, e ninguém descobriria.
+      #
+      # É API HTTP e não SMTP porque o plano gratuito do Render bloqueia tráfego
+      # de saída nas portas 25, 465 e 587. Um `nodemailer` apontando para SMTP
+      # funcionaria na máquina do desenvolvedor e ficaria pendurado até o
+      # timeout aqui.
+      - key: RESEND_API_KEY
+        sync: false
+
+      # Remetente. O domínio precisa estar verificado no provedor; o remetente
+      # de teste da Resend só entrega para o e-mail dono da conta.
+      - key: MAIL_FROM
+        sync: false
+
       # Segredo das rotas máquina-a-máquina. `GET /api/v1/internal/decks/:id`
       # devolve o decklist completo sem checar dono — é o que o game-server
       # precisa para provisionar a partida.

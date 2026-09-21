@@ -55,3 +55,35 @@ export const TrocarSenhaDto = z
     path: ['novaSenha'],
   });
 export type TrocarSenhaDto = z.infer<typeof TrocarSenhaDto>;
+
+/**
+ * Pedir o link de redefinição.
+ *
+ * Só o e-mail. Não há campo de "confirme que é você" nem captcha, e a proteção
+ * é outra: a resposta é sempre a mesma (`202`), o link vai para a caixa de
+ * entrada do dono do endereço, e o throttler da rota limita o volume. Ver
+ * `recuperacao.service.ts`.
+ */
+export const EsqueciSenhaDto = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+});
+export type EsqueciSenhaDto = z.infer<typeof EsqueciSenhaDto>;
+
+/**
+ * Redefinir a senha com o token do e-mail.
+ *
+ * ─── O MÍNIMO É O MESMO DO CADASTRO, E ISSO IMPORTA ────────────────────────
+ *
+ * Oito caracteres, igual a `RegisterDto` e a `TrocarSenhaDto`. Uma regra mais
+ * frouxa aqui viraria o caminho para burlar a dos outros dois: bastaria pedir a
+ * redefinição para escolher uma senha que o cadastro recusaria.
+ *
+ * O `max(512)` do token não é decoração: ele chega pela querystring da URL e
+ * daí para o corpo do POST. Sem teto, um "token" de 10 MB atravessaria até o
+ * `createHash` — que aceitaria de bom grado e gastaria CPU numa rota pública.
+ */
+export const RedefinirComTokenDto = z.object({
+  token: z.string().trim().min(1, 'Link de redefinição inválido').max(512),
+  novaSenha: z.string().min(8, 'A senha precisa de ao menos 8 caracteres').max(200),
+});
+export type RedefinirComTokenDto = z.infer<typeof RedefinirComTokenDto>;

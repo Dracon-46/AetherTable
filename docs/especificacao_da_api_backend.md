@@ -84,13 +84,22 @@ login, decks, salas) usa arquitetura **RESTful** servida por NestJS.
 
 ### 1.4 Rate limiting (`NFR-04`)
 
-| Escopo                                | Limite      | Chave   |
-| ------------------------------------- | ----------- | ------- |
-| Global                                | 100 req/min | IP      |
-| `POST /auth/login` e `/auth/register` | 5 req/min   | IP      |
-| `POST /rooms`                         | 3 req/hora  | usuário |
-| `POST /decks/import`                  | 10 req/min  | usuário |
-| `GET /cards/search`                   | 30 req/min  | usuário |
+| Escopo                       | Limite                   | Chave   |
+| ---------------------------- | ------------------------ | ------- |
+| Global                       | 100 req/min              | IP      |
+| `POST /auth/login`           | 5 req/min, 20 req/15 min | IP      |
+| `POST /auth/register`        | 3 req/min, 10 req/hora   | IP      |
+| `POST /auth/senha`           | 2 req/10 s, 5 req/min    | IP      |
+| `POST /auth/senha/esqueci`   | 3 req/min, 10 req/hora   | IP      |
+| `POST /auth/senha/redefinir` | 5 req/min, 20 req/hora   | IP      |
+| `POST /rooms`                | 3 req/hora               | usuário |
+| `POST /decks/import`         | 10 req/min               | usuário |
+| `GET /cards/search`          | 30 req/min               | usuário |
+
+`/auth/senha/esqueci` é o mais apertado dos três de senha por um motivo que não é força bruta: cada
+pedido bem-sucedido dispara um **e-mail para um endereço que quem pede escolhe**. Sem limite, a rota
+é um canhão de spam remetido pelo nosso domínio, e o preço não é a fatura do provedor — é o domínio
+entrar em lista de bloqueio e nenhum e-mail do AetherTable chegar a lugar nenhum depois.
 
 Headers em toda resposta: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
@@ -137,27 +146,145 @@ verificada contra lista de senhas vazadas comuns. Hash **Argon2id**.
 Resposta idêntica à de registro. Falha retorna `401 UNAUTHENTICATED` com mensagem genérica —
 **nunca** revela se o e-mail existe (evita enumeração de contas).
 
-### 2.3 `GET /auth/oauth/:provider`
+### 2.3 `GET /auth/google` e `GET /auth/discord`
 
-`provider` ∈ {`google`, `discord`}. Redireciona ao provedor com `state` aleatório e PKCE.
+Redireciona ao provedor. **O caminho é `/auth/<provedor>`, não `/auth/oauth/:provider`** — este
+documento descrevia a segunda forma, que nunca existiu no código.
 
-### 2.4 `GET /auth/oauth/:provider/callback`
+**Provedor não configurado neste servidor redireciona para `<FRONTEND_URL>/?erro=indisponivel`** — e
+não para um erro de API, porque isto é navegação (ver §2.4). As estratégias só são registradas quando
+`<PROVEDOR>_CLIENT_ID` **e** `<PROVEDOR>_CLIENT_SECRET` existem; antes disso o backend subia com
+credenciais de exemplo e o usuário terminava numa página de erro do próprio Google. Ver §2.5.
 
-Troca o código por identidade, faz `upsert` do usuário, emite tokens e redireciona ao frontend.
+A URL de callback registrada no console do provedor é derivada de `API_PUBLIC_URL`:
 
-**Erros:** `OAUTH_STATE_MISMATCH`, `EMAIL_IN_USE` (quando o e-mail já pertence a outra conta e o
-usuário não confirmou a vinculação — `CDU01` A1).
+```
+<API_PUBLIC_URL>/auth/google/callback
+<API_PUBLIC_URL>/auth/discord/callback
+```
 
-### 2.5 `POST /auth/refresh`
+### 2.4 `GET /auth/google/callback` e `GET /auth/discord/callback`
+
+Troca o código por identidade, cria ou vincula o usuário, emite o access token e **redireciona ao
+frontend com o token no FRAGMENTO**: `<FRONTEND_URL>/dashboard#token=<jwt>`. O fragmento não viaja
+no `Referer` nem em log de proxy; quem o lê é `OAuthTokenCapture`, que grava a sessão e apaga o
+fragmento com `replaceState`.
+
+**O e-mail precisa estar verificado pelo provedor.** Sem vínculo prévio, a identidade é casada com
+uma conta local **pelo e-mail** — então um provedor que não confirme a posse do endereço seria um
+caminho de tomada de conta: bastaria criar uma conta Discord declarando o e-mail da vítima. O Google
+sempre verifica; o Discord permite conta com e-mail não confirmado, e é justamente esse o caso
+recusado. Ausência do campo conta como **não verificado** (falha fechada).
+
+Uma conta criada por OAuth recebe `emailVerifiedAt` — a primeira e única fonte legítima desse campo
+no sistema.
+
+**Falha é NAVEGAÇÃO, não JSON.** Qualquer erro no fluxo redireciona para `<FRONTEND_URL>/?erro=<código>`;
+a tela de entrada traduz o código. Antes, o usuário terminava olhando
+`{"statusCode":401,"message":"Unauthorized"}` numa página em branco.
+
+| Código                 | Quando                                                         |
+| ---------------------- | -------------------------------------------------------------- |
+| `indisponivel`         | provedor sem credenciais neste servidor                        |
+| `sem_email`            | o provedor não expôs e-mail utilizável                         |
+| `email_nao_verificado` | o provedor não confirmou a posse do e-mail                     |
+| `email_em_uso`         | o e-mail pertence a outra conta e o vínculo não foi confirmado |
+| `recusado`             | a pessoa cancelou na tela de autorização do provedor           |
+| `falhou`               | qualquer outra falha                                           |
+
+A **mensagem** nunca viaja na URL, só o código: desenhar texto arbitrário vindo da querystring
+transformaria a tela de login numa página de phishing hospedada no domínio certo.
+
+### 2.5 `GET /auth/provedores`
+
+```json
+{ "google": true, "discord": false }
+```
+
+Pública e sem corpo. Existe porque a tela de login desenhava os dois botões em **todo** ambiente,
+enquanto `render.yaml` nunca declarou as credenciais: em produção, clicar levava a uma página de
+erro do provedor. Um botão na tela passa a ser a promessa de que aquele caminho funciona.
+
+### 2.6 `POST /auth/senha`
+
+Troca a **própria** senha, autenticado. Exige a senha atual.
+
+```json
+{ "senhaAtual": "...", "novaSenha": "ao menos 8 caracteres" }
+```
+
+Responde `200` com `{ accessToken, expiresIn }`. A troca derruba **todas as outras sessões** da conta
+(`User.tokensValidosApos`) e devolve um token novo para esta — sem isso, trocar a senha deslogaria
+quem trocou, no meio de uma partida.
+
+Conta de OAuth não tem senha para conferir e recebe `400` explícito.
+
+**Limite:** 2 req/10 s e 5 req/min por IP. A rota diz se a senha atual confere, então é um oráculo de
+senha para quem já tem o token.
+
+### 2.7 `POST /auth/senha/esqueci`
+
+```json
+{ "email": "jogador@exemplo.com" }
+```
+
+**`202` sempre**, com o mesmo corpo:
+
+```json
+{ "mensagem": "Se houver uma conta com este e-mail, o link de redefinição chegará em instantes." }
+```
+
+Conta inexistente, banida, suspensa e de OAuth saem todas com a **mesma** resposta. Distingui-las
+transformaria a rota num verificador de cadastro público — útil para phishing dirigido e para cruzar
+vazamentos de outras plataformas (§8, "Enumeração de contas").
+
+A conta **de OAuth** recebe um e-mail diferente, dizendo que ela entra por Google ou Discord e não
+tem senha. Isso vai para a caixa de entrada do dono do endereço, que já sabe disso — o que seria
+vazamento é dizer na tela.
+
+O token tem 256 bits de CSPRNG, vale **30 minutos**, é de **uso único**, e cada pedido novo invalida
+os anteriores da mesma conta. A tabela guarda o **SHA-256** do token, nunca o texto.
+
+**Limite:** 3 req/min e 10 req/hora por IP. Cada pedido dispara um e-mail para um endereço que **quem
+pede** escolhe: sem limite, a rota é um canhão de spam remetido pelo nosso domínio, e o preço é o
+domínio entrar em lista de bloqueio.
+
+**`503` quando o envio de e-mail não está configurado** (`RESEND_API_KEY` ausente em produção). A
+alternativa — responder "enviamos" sem ter enviado — foi recusada: ninguém descobriria. Falha de
+**entrega** (provedor fora do ar) não muda a resposta, pelo mesmo motivo que os outros casos não
+mudam: seria um `503` só para e-mails que existem.
+
+### 2.8 `POST /auth/senha/redefinir`
+
+```json
+{ "token": "<do link do e-mail>", "novaSenha": "ao menos 8 caracteres" }
+```
+
+`204`. **Não devolve sessão**, e a diferença para §2.6 é deliberada: quem chega por aqui esqueceu a
+senha ou perdeu o controle da conta, e emitir sessão a partir do link do e-mail transformaria o
+e-mail no próprio fator de autenticação. A tela manda entrar com a senha nova.
+
+Derruba **todas** as sessões da conta. As três causas de recusa — token inexistente, já usado e
+vencido — devolvem o **mesmo** `400`: distingui-las contaria a quem tenta se ele acertou um token e
+apenas chegou tarde.
+
+**Limite:** 5 req/min e 20 req/hora por IP.
+
+### 2.9 `POST /auth/refresh` — **não implementado**
+
+> Descrito abaixo como projetado, e **não existe no código**. Não há refresh token no sistema: o
+> access token vale 24 h (`JWT_ACCESS_TTL`) e a sessão morre quando ele expira. `JWT_REFRESH_TTL` foi
+> removido do `render.yaml` por isso. O `expiresIn: 900` do exemplo de §2.1 é do mesmo projeto e
+> também não corresponde ao valor real.
 
 Sem corpo — usa o cookie. Retorna novo `accessToken` e **rotaciona** o _refresh token_.
 Reuso de um _refresh_ já rotacionado invalida toda a família de tokens e retorna `401`.
 
-### 2.6 `POST /auth/logout`
+### 2.10 `POST /auth/logout`
 
-Revoga o _refresh token_ atual e limpa o cookie. `204`.
+Revoga o access token desta sessão gravando o `jti` na denylist (`revoked_tokens`). `204`.
 
-### 2.7 `GET /users/me`
+### 2.11 `GET /users/me`
 
 ```json
 {
@@ -172,15 +299,15 @@ Revoga o _refresh token_ atual e limpa o cookie. `204`.
 }
 ```
 
-### 2.8 `GET /users/:username`
+### 2.12 `GET /users/:username`
 
 Perfil público: `username`, `displayName`, `avatarUrl`, `stats`, `createdAt`. **Sem e-mail.**
 
-### 2.9 `PATCH /users/me`
+### 2.13 `PATCH /users/me`
 
 Campos aceitos: `displayName`, `avatarUrl`.
 
-### 2.10 As preferências viajam no `GET /users/me` e no `PATCH /users/me`
+### 2.14 As preferências viajam no `GET /users/me` e no `PATCH /users/me`
 
 Não há rota `/users/me/preferences` separada, e não é omissão: as preferências são lidas no mesmo
 instante que o perfil (a casca autenticada precisa das duas coisas para desenhar a primeira tela) e
@@ -231,7 +358,7 @@ colunas JSONB (`keybindings` e `preferenciasDeMesa`):
    controle) e não por gramática — quem decide o que é um valor aceitável é a função de normalização
    que as duas pontas usam.
 
-### 2.11 `DELETE /users/me`
+### 2.15 `DELETE /users/me`
 
 Exige `{ "confirmation": "<username>" }` no corpo. Aplica _soft delete_, invalida todas as sessões e
 agenda o expurgo em 30 dias (`RF13`, `DOC-023` §7).

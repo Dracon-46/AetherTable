@@ -163,12 +163,29 @@ JWT_SECRET="troque-por-uma-string-longa-e-aleatoria"
 JWT_ACCESS_TTL=900
 JWT_REFRESH_TTL=604800
 
-# OAuth — opcional em dev; sem isso, use login por e-mail/senha
+# OAuth — opcional. Sem as DUAS variáveis de um provedor (id E segredo), a
+# estratégia dele não é registrada, GET /auth/provedores responde `false` e a
+# tela de login NÃO desenha o botão. Não existe mais credencial de exemplo.
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
+
+# Endereço público DESTA API, COM o /api/v1. É de onde saem as URLs de callback
+# que você cadastra no console de cada provedor.
+API_PUBLIC_URL="http://localhost:3333/api/v1"
+
+# Só preencha se o provedor exigir um caminho diferente do derivado acima.
+# GOOGLE_CALLBACK_URL=
+# DISCORD_CALLBACK_URL=
+
 OAUTH_REDIRECT_BASE="http://localhost:3333/api/v1/auth/oauth"
+
+# E-mail (recuperação de senha). SEM a chave, em dev o link de redefinição vai
+# para o LOG do servidor — dá para testar o fluxo inteiro sem contratar nada.
+# Em produção a rota recusa com 503 em vez de mentir que enviou.
+RESEND_API_KEY=
+MAIL_FROM="AetherTable <onboarding@resend.dev>"
 
 SCRYFALL_USER_AGENT="AetherTable-dev/1.0 (seu-email@exemplo.com)"
 
@@ -404,23 +421,67 @@ Nunca chame `api.scryfall.com` direto de um service: passaria por cima da fila d
 
 ## 9. Troubleshooting
 
-| Problema                                   | Causa provável                                                   | Solução                                                                                                        |
-| ------------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **`Invalid seat token` ao entrar na sala** | `JWT_SECRET` diferente entre `backend-core` e `game-server`      | Igualar os dois `.env`                                                                                         |
-| `ECONNREFUSED 5432`                        | Postgres não subiu                                               | `docker compose up -d` e conferir `docker compose ps`                                                          |
-| `Prisma migrate` falha                     | Banco inexistente ou credenciais erradas                         | Conferir `DATABASE_URL`; `pnpm db:reset`                                                                       |
-| Frontend não conecta ao WS                 | `NEXT_PUBLIC_WS_URL` errado                                      | Deve ser `ws://localhost:2567`                                                                                 |
-| Cartas sem imagem                          | `SCRYFALL_USER_AGENT` vazio ou _rate limit_                      | Preencher o `User-Agent`; aguardar                                                                             |
-| Mesa toda em branco, sem erro no console   | A rede bloqueia `scryfall.io` — e o **backend** também está nela | Apontar `SCRYFALL_API_URL`/`SCRYFALL_IMAGE_URL` para um espelho liberado, ou rodar a API fora da rede filtrada |
-| `429` da Scryfall                          | Fila de 100 ms sendo ignorada                                    | Verificar se a chamada passa pelo `scryfall-client`                                                            |
-| Voz não conecta                            | LiveKit local não está rodando                                   | Subir o LiveKit ou ignorar (a mesa funciona sem voz)                                                           |
-| Porta em uso                               | Outro processo na 3030/3333/2567                                 | `pnpm dev:kill` (ver Passo 7)                                                                                  |
-| Tipos não resolvem                         | `shared-types` não compilado                                     | `pnpm build --filter shared-types`                                                                             |
-| FPS baixo em dev                           | _Source maps_ e HMR pesam                                        | Medir performance sempre com `pnpm build && pnpm start`                                                        |
-| Erro de CORS                               | Origem não permitida                                             | Incluir `http://localhost:3030` em `CORS_ORIGINS`                                                              |
-| Vitrine de mesas sempre vazia              | `CORS_ORIGINS` ausente **no game-server**                        | A rota `/salas` é do game-server, não da API. Confira a variável nos dois `.env`                               |
-| Mudança no `Schema` não reflete            | Cliente com versão antiga do serializador                        | Reiniciar frontend e game server juntos                                                                        |
-| `pnpm install` reclamando de peer deps     | Divergência de versão no workspace                               | `pnpm install --force` e conferir o `pnpm-lock.yaml`                                                           |
+| Problema                                    | Causa provável                                                   | Solução                                                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **`Invalid seat token` ao entrar na sala**  | `JWT_SECRET` diferente entre `backend-core` e `game-server`      | Igualar os dois `.env`                                                                                         |
+| `ECONNREFUSED 5432`                         | Postgres não subiu                                               | `docker compose up -d` e conferir `docker compose ps`                                                          |
+| `Prisma migrate` falha                      | Banco inexistente ou credenciais erradas                         | Conferir `DATABASE_URL`; `pnpm db:reset`                                                                       |
+| Frontend não conecta ao WS                  | `NEXT_PUBLIC_WS_URL` errado                                      | Deve ser `ws://localhost:2567`                                                                                 |
+| Cartas sem imagem                           | `SCRYFALL_USER_AGENT` vazio ou _rate limit_                      | Preencher o `User-Agent`; aguardar                                                                             |
+| Mesa toda em branco, sem erro no console    | A rede bloqueia `scryfall.io` — e o **backend** também está nela | Apontar `SCRYFALL_API_URL`/`SCRYFALL_IMAGE_URL` para um espelho liberado, ou rodar a API fora da rede filtrada |
+| `429` da Scryfall                           | Fila de 100 ms sendo ignorada                                    | Verificar se a chamada passa pelo `scryfall-client`                                                            |
+| Voz não conecta                             | LiveKit local não está rodando                                   | Subir o LiveKit ou ignorar (a mesa funciona sem voz)                                                           |
+| Porta em uso                                | Outro processo na 3030/3333/2567                                 | `pnpm dev:kill` (ver Passo 7)                                                                                  |
+| Tipos não resolvem                          | `shared-types` não compilado                                     | `pnpm build --filter shared-types`                                                                             |
+| FPS baixo em dev                            | _Source maps_ e HMR pesam                                        | Medir performance sempre com `pnpm build && pnpm start`                                                        |
+| Erro de CORS                                | Origem não permitida                                             | Incluir `http://localhost:3030` em `CORS_ORIGINS`                                                              |
+| Vitrine de mesas sempre vazia               | `CORS_ORIGINS` ausente **no game-server**                        | A rota `/salas` é do game-server, não da API. Confira a variável nos dois `.env`                               |
+| Mudança no `Schema` não reflete             | Cliente com versão antiga do serializador                        | Reiniciar frontend e game server juntos                                                                        |
+| `pnpm install` reclamando de peer deps      | Divergência de versão no workspace                               | `pnpm install --force` e conferir o `pnpm-lock.yaml`                                                           |
+| **Botão "Google"/"Discord" não aparece**    | O provedor não está configurado — e a tela agora diz a verdade   | Preencher as **duas** variáveis (`_CLIENT_ID` **e** `_CLIENT_SECRET`) e reiniciar a API. Ver §9.1              |
+| OAuth volta para a tela de entrada com erro | O código na URL (`?erro=…`) diz qual                             | `indisponivel` = sem credencial; `email_nao_verificado` = confirme o e-mail no provedor; ver DOC-030 §2.4      |
+| E-mail de redefinição não chega em dev      | `RESEND_API_KEY` vazio — é o comportamento esperado              | O link está no **log da API**: procure por `EmailService` na saída do `pnpm dev`. Ver §9.2                     |
+
+### 9.1 Ligar o login com Google e com Discord localmente
+
+A API só registra a estratégia de um provedor quando **as duas** variáveis dele existem. Sem elas,
+`GET /auth/provedores` responde `false` e a tela de login simplesmente não desenha o botão — antes,
+ela desenhava sempre e o clique terminava numa página de erro do próprio provedor.
+
+O log do boot diz o que está ligado:
+
+```
+[AuthModule] Login com Google DESLIGADO: GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET ausentes.
+```
+
+Para ligar, cadastre a URL de callback no console do provedor. Ela é derivada de `API_PUBLIC_URL`:
+
+| Provedor | Onde                                                                       | Callback a cadastrar                                 |
+| -------- | -------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Google   | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID | `http://localhost:3333/api/v1/auth/google/callback`  |
+| Discord  | Discord Developer Portal → sua aplicação → OAuth2 → Redirects              | `http://localhost:3333/api/v1/auth/discord/callback` |
+
+O caminho precisa bater **exatamente**, inclusive o `v1` — o padrão antigo no código era
+`/api/auth/google/callback`, uma rota que não existe, e o provedor devolvia o usuário num 404.
+
+### 9.2 Testar a recuperação de senha sem contratar provedor de e-mail
+
+Com `RESEND_API_KEY` vazio e `NODE_ENV=development`, o `EmailService` não envia nada e **imprime a
+mensagem inteira no log**, com o link:
+
+```
+[EmailService] RESEND_API_KEY ausente — e-mail NÃO enviado. Conteúdo abaixo (só em desenvolvimento).
+Para: jogador@teste.com
+Assunto: Redefinir sua senha no AetherTable
+...
+http://localhost:3030/senha/redefinir?token=hR7k...
+```
+
+Copie o link para o navegador e o fluxo segue normal. **Em produção o mesmo caso responde `503`**, em
+vez de dizer "enviamos" sem ter enviado.
+
+O link vale 30 minutos, é de uso único, e pedir outro invalida o anterior — se você estiver testando
+com dois links abertos, só o último funciona.
 
 ---
 
