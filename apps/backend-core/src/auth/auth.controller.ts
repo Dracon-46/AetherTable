@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Body,
   HttpCode,
   HttpStatus,
   Get,
+  UseFilters,
   UseGuards,
   Req,
   Res,
@@ -15,7 +17,13 @@ import { AuthGuard } from '@nestjs/passport';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
-import { LoginDto, RegisterDto, TrocarSenhaDto } from './auth.dto.js';
+import {
+  EsqueciSenhaDto,
+  LoginDto,
+  RedefinirComTokenDto,
+  RegisterDto,
+  TrocarSenhaDto,
+} from './auth.dto.js';
 import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import type {
@@ -25,6 +33,10 @@ import type {
 } from './http.types.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { RevogacaoService } from './revogacao.service.js';
+import { RecuperacaoService, TokenDeRedefinicaoInvalido } from './recuperacao.service.js';
+import { provedoresDisponiveis } from './provedores.js';
+import { ExigirProvedorConfigurado, RedirecionarFalhaDeOAuth } from './oauth.guard.js';
+import { urlDoFrontend } from './url-do-frontend.js';
 import { randomBytes } from 'node:crypto';
 
 @ApiTags('Auth')
@@ -39,33 +51,8 @@ export class AuthController {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly revogacao: RevogacaoService,
+    private readonly recuperacao: RecuperacaoService,
   ) {}
-
-  /**
-   * Para onde devolver o navegador depois do OAuth.
-   *
-   * Estava `http://localhost:3000/dashboard` escrito à mão nos dois callbacks —
-   * e a porta nem era a do projeto (3030, ver `CORS_ORIGINS` em main.ts). Em
-   * produção o usuário era redirecionado para a própria máquina dele.
-   *
-   * A primeira origem de `CORS_ORIGINS` é o melhor palpite disponível quando
-   * nada foi configurado: é, por definição, uma origem de frontend que a API já
-   * aceita. `OAUTH_REDIRECT_BASE` existe no .env do projeto e nunca era lido.
-   */
-  private urlDoFrontend(): string {
-    const primeiraOrigemCors = (this.config.get<string>('CORS_ORIGINS') ?? '')
-      .split(',')
-      .map((o) => o.trim())
-      .find(Boolean);
-
-    const base =
-      this.config.get<string>('FRONTEND_URL') ??
-      this.config.get<string>('OAUTH_REDIRECT_BASE') ??
-      primeiraOrigemCors ??
-      'http://localhost:3030';
-
-    return base.replace(/\/+$/, '');
-  }
 
   private redirecionarComToken(req: RequisicaoOAuth, res: RespostaRedirecionavel): void {
     const accessToken = this.jwtService.sign(
@@ -94,7 +81,7 @@ export class AuthController {
      * historico local.
      */
     return res.redirect(
-      `${this.urlDoFrontend()}/dashboard#token=${encodeURIComponent(accessToken)}`,
+      `${urlDoFrontend(this.config)}/dashboard#token=${encodeURIComponent(accessToken)}`,
     );
   }
 
@@ -190,17 +177,126 @@ export class AuthController {
     return this.authService.trocarSenha(req.user.sub, dto.senhaAtual, dto.novaSenha);
   }
 
+  // ── Recuperação de senha ───────────────────────────────────────────────────
+
+  /**
+   * Pedir o link de redefinição.
+   *
+   * ─── A RESPOSTA É `202` SEMPRE, E É ISSO QUE PROTEGE ─────────────────────
+   *
+   * Conta inexistente, banida, suspensa ou de OAuth: todas saem daqui com o
+   * mesmo corpo. Uma rota pública que distinguisse os casos seria um
+   * verificador de cadastro à disposição de qualquer um — útil para phishing
+   * dirigido e para cruzar vazamentos de outras plataformas. É o mesmo
+   * princípio do "credenciais inválidas" genérico do login (DOC-050, DOC-060).
+   *
+   * ─── O LIMITE É POR IP E É APERTADO ──────────────────────────────────────
+   *
+   * Cada pedido bem-sucedido dispara um e-mail para um endereço que QUEM PEDE
+   * escolhe. Sem limite, a rota é um canhão de spam apontado para terceiros,
+   * remetido pelo nosso domínio — e o preço disso não é a fatura do provedor,
+   * é o domínio entrar em lista de bloqueio e nenhum e-mail do AetherTable
+   * chegar a lugar nenhum depois.
+   *
+   * Três por minuto cobre "não chegou, manda de novo" e não cobre um script.
+   */
+  @Post('senha/esqueci')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Throttle({ curto: { ttl: 60_000, limit: 3 }, longo: { ttl: 3_600_000, limit: 10 } })
+  @UsePipes(new ZodValidationPipe(EsqueciSenhaDto))
+  @ApiOperation({ summary: 'Envia o link de redefinição de senha, se a conta existir' })
+  async esqueciSenha(@Body() dto: EsqueciSenhaDto) {
+    await this.recuperacao.solicitar(dto.email);
+    return {
+      mensagem: 'Se houver uma conta com este e-mail, o link de redefinição chegará em instantes.',
+    };
+  }
+
+  /**
+   * Redefinir a senha com o token do e-mail.
+   *
+   * ─── NÃO DEVOLVE TOKEN DE SESSÃO, E A DIFERENÇA É DE PROPÓSITO ───────────
+   *
+   * `POST /auth/senha` (troca com a senha atual) devolve um `accessToken` novo
+   * para não deslogar quem foi aos ajustes no meio de uma partida. Aqui é o
+   * contrário: quem chega por este caminho ESQUECEU a senha ou perdeu o
+   * controle da conta, e entrar de novo com a senha nova é a confirmação
+   * barata de que a redefinição fez o que prometeu. Emitir sessão direto do
+   * link do e-mail transformaria o e-mail no próprio fator de autenticação.
+   *
+   * O limite existe porque a rota é o oráculo do token: sem ele, um atacante
+   * varreria tokens contra ela. 256 bits não se varrem, mas o limite é o que
+   * torna a afirmação verdadeira sem depender só do tamanho do segredo.
+   */
+  @Post('senha/redefinir')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ curto: { ttl: 60_000, limit: 5 }, longo: { ttl: 3_600_000, limit: 20 } })
+  @UsePipes(new ZodValidationPipe(RedefinirComTokenDto))
+  @ApiOperation({ summary: 'Redefine a senha a partir do token enviado por e-mail' })
+  async redefinirSenha(@Body() dto: RedefinirComTokenDto): Promise<void> {
+    try {
+      await this.recuperacao.redefinir(dto.token, dto.novaSenha);
+    } catch (erro) {
+      /**
+       * As três causas — token inexistente, já usado e vencido — viram a MESMA
+       * resposta. Distingui-las contaria a quem está tentando se ele acertou um
+       * token e apenas chegou tarde, que é a única informação que faltaria para
+       * saber que vale a pena continuar tentando. O motivo real vai para o log,
+       * dentro do serviço.
+       */
+      if (erro instanceof TokenDeRedefinicaoInvalido) {
+        throw new BadRequestException(erro.message);
+      }
+      throw erro;
+    }
+  }
+
+  // ── OAuth ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Quais provedores existem NESTE ambiente.
+   *
+   * ─── O BOTÃO PRECISA SABER SE LEVA A ALGUM LUGAR ─────────────────────────
+   *
+   * A tela de login desenhava Google e Discord sempre, e `render.yaml` nunca
+   * declarou `GOOGLE_CLIENT_ID` nem `DISCORD_CLIENT_ID`: em produção os dois
+   * botões levavam a uma página de erro do próprio provedor. O aviso de "DUMMY
+   * KEYS" era condicionado a `NODE_ENV` e não à configuração real — ou seja,
+   * sumia exatamente onde o problema existia.
+   *
+   * Pública e sem limite próprio (o global de 10 req/5 s basta): é uma leitura
+   * de duas variáveis de ambiente, sem banco, e a primeira tela do produto a
+   * chama antes de qualquer sessão existir.
+   */
+  @Get('provedores')
+  @ApiOperation({ summary: 'Lista quais provedores de OAuth estão configurados no servidor' })
+  provedores(): Record<string, boolean> {
+    return provedoresDisponiveis(this.config);
+  }
+
   // ── OAuth Google ───────────────────────────────────────────────────────────
 
+  /**
+   * `@UseFilters` nas quatro rotas de OAuth: elas são NAVEGAÇÃO, não chamada de
+   * API. Sem isso, uma falha no meio do fluxo termina com o usuário olhando
+   * `{"statusCode":401,"message":"Unauthorized"}` numa página em branco, sem
+   * caminho de volta. Ver `oauth.guard.ts`.
+   *
+   * A ordem dos guards importa: `ExigirProvedorConfigurado` roda ANTES do
+   * `AuthGuard`, então o Passport nunca procura uma estratégia que não foi
+   * registrada (o que seria um 500 de `Unknown authentication strategy`).
+   */
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  @UseFilters(RedirecionarFalhaDeOAuth)
+  @UseGuards(ExigirProvedorConfigurado('google'), AuthGuard('google'))
   @ApiOperation({ summary: 'Inicia o fluxo OAuth com Google' })
   googleAuth(): void {
     // O guard redireciona para o provedor; este corpo nunca executa.
   }
 
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseFilters(RedirecionarFalhaDeOAuth)
+  @UseGuards(ExigirProvedorConfigurado('google'), AuthGuard('google'))
   @ApiOperation({ summary: 'Callback do fluxo OAuth Google' })
   googleAuthRedirect(@Req() req: RequisicaoOAuth, @Res() res: RespostaRedirecionavel): void {
     return this.redirecionarComToken(req, res);
@@ -209,14 +305,16 @@ export class AuthController {
   // ── OAuth Discord ──────────────────────────────────────────────────────────
 
   @Get('discord')
-  @UseGuards(AuthGuard('discord'))
+  @UseFilters(RedirecionarFalhaDeOAuth)
+  @UseGuards(ExigirProvedorConfigurado('discord'), AuthGuard('discord'))
   @ApiOperation({ summary: 'Inicia o fluxo OAuth com Discord' })
   discordAuth(): void {
     // Idem: o guard redireciona.
   }
 
   @Get('discord/callback')
-  @UseGuards(AuthGuard('discord'))
+  @UseFilters(RedirecionarFalhaDeOAuth)
+  @UseGuards(ExigirProvedorConfigurado('discord'), AuthGuard('discord'))
   @ApiOperation({ summary: 'Callback do fluxo OAuth Discord' })
   discordAuthRedirect(@Req() req: RequisicaoOAuth, @Res() res: RespostaRedirecionavel): void {
     return this.redirecionarComToken(req, res);
