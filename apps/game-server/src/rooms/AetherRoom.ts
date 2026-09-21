@@ -25,12 +25,15 @@ import {
   RateLimiter,
   REGISTRY,
   aplicarTopoRevelado,
-  espectadorBarrado,
   haAssentoLivre,
-  verificarAutorizacao,
   type IntentContext,
   type IntentHandler,
 } from '../intents/registry';
+import {
+  correnteDaMesa,
+  type ObservadorDeDespacho,
+  type SalaDoDespacho,
+} from '../intents/pipeline';
 import { embaralhar } from '../services/rng';
 import { JornalUndo } from '../services/undo';
 import { logSistema } from '../services/log';
@@ -125,7 +128,7 @@ const OpcoesDeCriacao = z
   // ignoraria — mas o proximo a ler o codigo nao teria como saber disso.
   .strip();
 
-export class AetherRoom extends Room<RoomState> {
+export class AetherRoom extends Room<RoomState> implements SalaDoDespacho {
   override maxClients: number = REALTIME_LIMITS.MAX_PLAYERS;
 
   private readonly rateLimiter = new RateLimiter();
@@ -145,6 +148,17 @@ export class AetherRoom extends Room<RoomState> {
   );
   /** Janela de arrependimento de 10 s por jogador (DOC-036 item 130). */
   private readonly jornal = new JornalUndo();
+  /**
+   * A fase lida ANTES do handler rodar, para saber se ele a mudou.
+   *
+   * Vive num campo porque `antesDaMutacao` e `depoisDaMutacao` sao dois avisos
+   * do mesmo elo, sempre em par e sempre na mesma volta do laco de eventos —
+   * Node e de uma thread so, entao nao ha despacho de outra intencao entre os
+   * dois. START_MATCH e RESET_MATCH viram `emPartida` na lista publica de
+   * salas, e o REGISTRY nao tem — nem deve ter — acesso a Room para publicar
+   * isso sozinho.
+   */
+  private faseAoEntrar = '';
   /** Uso unico do seat token (FR-20): jti ja consumido nesta sala. */
   private readonly jtisUsados = new Set<string>();
   /**
@@ -565,124 +579,78 @@ export class AetherRoom extends Room<RoomState> {
     // REGISTRY — o dispatcher so precisa saber "valida, autoriza, executa".
     const entradas = Object.entries(REGISTRY) as Array<[string, IntentHandler<z.ZodTypeAny>]>;
 
+    /**
+     * UMA corrente para as 96 intencoes, e nao uma por `onMessage`.
+     *
+     * Os elos nao guardam nada do pedido — o estado por cliente vive nos
+     * limitadores, que ja eram compartilhados. Montar uma corrente por intencao
+     * registrada criaria 96 copias de seis objetos por sala, sem nenhum ganho.
+     */
+    const corrente = correnteDaMesa({
+      sala: this,
+      observador: this.observadorDeDespacho(),
+      limitePadrao: this.rateLimiter,
+      limiteDeSorteio: this.limitadorDeSorteio,
+      intencoesDeSorteio: INTENCOES_DE_SORTEIO,
+      mensagemDeSorteio: `Calma com os sorteios: até ${REALTIME_LIMITS.MAX_SORTEIOS_POR_JANELA} a cada ${Math.round(REALTIME_LIMITS.SORTEIO_JANELA_MS / 1000)} s.`,
+    });
+
     for (const [tipo, handler] of entradas) {
       this.onMessage(tipo, (client, payload: unknown) => {
-        // Rate limit antes de qualquer trabalho: 30 intencoes/s (NFR-04).
-        if (!this.rateLimiter.permitir(client.sessionId)) {
-          intentsRejeitadas.inc({ reason: 'rate_limit' });
-          client.send('warning', {
-            code: 'RATE_LIMITED',
-            message: 'Muitas ações por segundo. Algumas foram descartadas.',
-          });
-          return;
-        }
-
-        // Sorteios tem janela propria — ver `limitadorDeSorteio`.
-        if (INTENCOES_DE_SORTEIO.has(tipo) && !this.limitadorDeSorteio.permitir(client.sessionId)) {
-          intentsRejeitadas.inc({ reason: 'too_many_rolls' });
-          client.send('warning', {
-            code: 'RATE_LIMITED',
-            message: `Calma com os sorteios: até ${REALTIME_LIMITS.MAX_SORTEIOS_POR_JANELA} a cada ${Math.round(REALTIME_LIMITS.SORTEIO_JANELA_MS / 1000)} s.`,
-          });
-          return;
-        }
-
-        /**
-         * ─── ESPECTADOR NAO MEXE NA MESA ───────────────────────────────────
-         *
-         * `verificarAutorizacao` NAO cobre isto, e e importante entender por
-         * que: ela devolve `null` na hora para `QUALQUER_JOGADOR`, sem checar
-         * se o remetente e mesmo um jogador — o nome da regra sempre foi uma
-         * promessa que ninguem verificava, porque ate agora todo mundo na sala
-         * tinha assento.
-         *
-         * A barreira fica AQUI, e nao dentro de cada handler, pelo mesmo motivo
-         * de `exigirAnfitriao` existir: a proxima intencao nasce protegida em
-         * vez de nascer aberta. Espalhar a checagem por 90 handlers e como
-         * garantir que os 90 lembrem — e os que esquecessem falhariam em
-         * silencio, porque quase todos comecam com um
-         * `state.players.get(sid)` que devolve `undefined` e sai calado.
-         *
-         * O CHAT E A UNICA EXCECAO. Quem assiste comenta a partida; e o
-         * conteudo inteiro de assistir. Ele nao muta estado nenhum — so
-         * transmite texto que o servidor ja limpa de caracteres de controle.
-         */
-        if (espectadorBarrado(this.state, client.sessionId, tipo)) {
-          intentsRejeitadas.inc({ reason: 'spectator' });
-          client.send('error', {
-            code: 'SPECTATOR',
-            message: 'Você está assistindo a esta mesa. Só quem tem assento pode agir nela.',
-            intent: tipo,
-          });
-          return;
-        }
-
-        const parsed = handler.schema.safeParse(payload);
-        if (!parsed.success) {
-          intentsRejeitadas.inc({ reason: 'invalid_payload' });
-          // Nunca inclui nome de carta na mensagem de erro (DOC-031 §5.4).
-          client.send('error', {
-            code: 'INVALID_PAYLOAD',
-            message: 'Ação rejeitada: o formato do pedido é inválido.',
-            intent: tipo,
-          });
-          return;
-        }
-
-        const negado = verificarAutorizacao(handler, this.state, client.sessionId, parsed.data);
-        if (negado) {
-          intentsRejeitadas.inc({ reason: negado.toLowerCase() });
-          client.send('error', { code: negado, message: 'Ação não permitida.', intent: tipo });
-          return;
-        }
-
-        try {
-          // O snapshot e tirado ANTES da mutacao e so para intencoes
-          // reversiveis — a propria lista de exclusoes vive em services/undo.ts.
-          this.jornal.registrar(this.state, client.sessionId, tipo);
-
-          // A fase e lida ANTES para saber se o handler a mudou. START_MATCH e
-          // RESET_MATCH viram `emPartida` na lista publica, e o REGISTRY nao
-          // tem — nem deve ter — acesso a Room para publicar isso sozinho.
-          const faseAntes = this.state.phase;
-          const contexto = this.montarContexto(client);
-          handler.executa(contexto, parsed.data);
-          if (this.state.phase !== faseAntes) this.publicarMetadados();
-
-          /**
-           * ─── O TOPO REVELADO SE REAPLICA AQUI, E SO AQUI ────────────────
-           *
-           * Dez intencoes mudam o topo do grimorio (comprar, moer, embaralhar,
-           * mulligan, topo-para-o-fundo, reordenar, confirmar scry, confirmar
-           * surveil, devolver zona, mover carta para o grimorio). Chamar a
-           * reaplicacao dentro de cada uma seria dez chances de esquecer — e o
-           * modo de falhar do esquecimento nao e a carta sumir da tela, e uma
-           * carta que DEIXOU de ser o topo continuar revelada para a mesa.
-           *
-           * Aqui e um ponto so, e ele e correto por construcao: nao existe
-           * caminho que mude o estado sem passar por um handler.
-           *
-           * So o remetente: ninguem move carta para o grimorio de outro
-           * jogador. `INTENT_GIVE_CARD` troca o controlador de uma permanente,
-           * nao a zona. A funcao e idempotente, entao nas intencoes que nao
-           * tocam o grimorio ela nao escreve nada e nao gera patch.
-           */
-          aplicarTopoRevelado(contexto, client.sessionId);
-
-          intentsRecebidas.inc({ type: tipo });
-        } catch (erro) {
-          // Uma intencao malformada NUNCA deve derrubar a sala dos outros tres
-          // jogadores. Loga com o roomId e responde erro genérico.
-          intentsRejeitadas.inc({ reason: 'internal' });
-          console.error(`[${this.roomId}] handler ${tipo} falhou:`, erro);
-          client.send('error', {
-            code: 'INTERNAL',
-            message: 'Erro interno na mesa. A ação não foi aplicada.',
-            intent: tipo,
-          });
-        }
+        corrente.tratar({ tipo, client, payload, handler });
       });
     }
+  }
+
+  /** Liga o resultado do despacho as metricas do /metrics (NFR-11). */
+  private observadorDeDespacho(): ObservadorDeDespacho {
+    return {
+      aceita: (tipo) => intentsRecebidas.inc({ type: tipo }),
+      recusada: (motivo) => intentsRejeitadas.inc({ reason: motivo }),
+      falhou: (tipo, erro) => {
+        intentsRejeitadas.inc({ reason: 'internal' });
+        console.error(`[${this.roomId}] handler ${tipo} falhou:`, erro);
+      },
+    };
+  }
+
+  // ─── SalaDoDespacho ────────────────────────────────────────────────────────
+  //
+  // O que o ultimo elo da corrente precisa da sala. Os tres metodos sao a
+  // fronteira inteira entre o despacho e a Room: tudo o mais que a corrente faz
+  // (limites, espectador, zod, autorizacao) nao depende de Colyseus nenhum.
+
+  contextoPara(client: Client): IntentContext {
+    return this.montarContexto(client);
+  }
+
+  antesDaMutacao(client: Client, tipo: string): void {
+    this.faseAoEntrar = this.state.phase;
+    this.jornal.registrar(this.state, client.sessionId, tipo);
+  }
+
+  depoisDaMutacao(ctx: IntentContext, _tipo: string): void {
+    if (this.state.phase !== this.faseAoEntrar) this.publicarMetadados();
+
+    /**
+     * ─── O TOPO REVELADO SE REAPLICA AQUI, E SO AQUI ────────────────────────
+     *
+     * Dez intencoes mudam o topo do grimorio (comprar, moer, embaralhar,
+     * mulligan, topo-para-o-fundo, reordenar, confirmar scry, confirmar
+     * surveil, devolver zona, mover carta para o grimorio). Chamar a
+     * reaplicacao dentro de cada uma seria dez chances de esquecer — e o modo
+     * de falhar do esquecimento nao e a carta sumir da tela, e uma carta que
+     * DEIXOU de ser o topo continuar revelada para a mesa.
+     *
+     * Aqui e um ponto so, e ele e correto por construcao: nao existe caminho
+     * que mude o estado sem passar pelo ultimo elo da corrente.
+     *
+     * So o remetente: ninguem move carta para o grimorio de outro jogador.
+     * `INTENT_GIVE_CARD` troca o controlador de uma permanente, nao a zona. A
+     * funcao e idempotente, entao nas intencoes que nao tocam o grimorio ela
+     * nao escreve nada e nao gera patch.
+     */
+    aplicarTopoRevelado(ctx, ctx.client.sessionId);
   }
 
   private montarContexto(client: Client): IntentContext {

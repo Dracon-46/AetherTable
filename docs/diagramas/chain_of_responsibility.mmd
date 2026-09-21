@@ -1,0 +1,85 @@
+%% AetherTable — DOC-096 — Chain of Responsibility no despacho de intencoes
+%% Fonte: apps/game-server/src/intents/pipeline.ts
+classDiagram
+    direction TB
+
+    class EloDoDespacho {
+        <<abstract>>
+        -seguinte: EloDoDespacho
+        +seguidoPor(elo) EloDoDespacho
+        +tratar(pedido)* void
+        #passar(pedido) void
+    }
+
+    class Pedido {
+        <<request object>>
+        +tipo: string
+        +client: Client
+        +payload: unknown
+        +handler: IntentHandler
+        +dados: unknown
+    }
+
+    class LimiteDeIntencoes {
+        30 por segundo, por cliente
+        +tratar(pedido) void
+    }
+    class LimiteDeSorteios {
+        teto proprio de dado e moeda
+        +tratar(pedido) void
+    }
+    class BarreiraDeEspectador {
+        so o CHAT passa
+        +tratar(pedido) void
+    }
+    class ValidacaoDePayload {
+        zod, e escreve pedido.dados
+        +tratar(pedido) void
+    }
+    class Autorizacao {
+        CONTROLLER / OWNER / OWNER_DA_ZONA
+        +tratar(pedido) void
+    }
+    class ExecucaoDoHandler {
+        o unico que muta estado
+        +tratar(pedido) void
+    }
+
+    class SalaDoDespacho {
+        <<interface>>
+        +state: RoomState
+        +contextoPara(client) IntentContext
+        +antesDaMutacao(client, tipo) void
+        +depoisDaMutacao(ctx, tipo) void
+    }
+
+    class ObservadorDeDespacho {
+        <<interface>>
+        +aceita(tipo) void
+        +recusada(motivo) void
+        +falhou(tipo, erro) void
+    }
+
+    class AetherRoom {
+        <<cliente>>
+        +onMessage(tipo) corrente.tratar(...)
+    }
+
+    EloDoDespacho <|-- LimiteDeIntencoes
+    EloDoDespacho <|-- LimiteDeSorteios
+    EloDoDespacho <|-- BarreiraDeEspectador
+    EloDoDespacho <|-- ValidacaoDePayload
+    EloDoDespacho <|-- Autorizacao
+    EloDoDespacho <|-- ExecucaoDoHandler
+
+    EloDoDespacho --> EloDoDespacho : seguinte
+    EloDoDespacho ..> Pedido : tratar
+
+    ExecucaoDoHandler --> SalaDoDespacho
+    BarreiraDeEspectador --> SalaDoDespacho
+    Autorizacao --> SalaDoDespacho
+    LimiteDeIntencoes --> ObservadorDeDespacho
+    ExecucaoDoHandler --> ObservadorDeDespacho
+
+    AetherRoom ..|> SalaDoDespacho
+    AetherRoom ..> EloDoDespacho : monta a corrente

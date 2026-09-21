@@ -1,0 +1,93 @@
+%% AetherTable — DOC-096 — Padrao Iterator no game-server
+%% Fonte: apps/game-server/src/services/iteradores.ts
+classDiagram
+    direction LR
+
+    class Iterador~T~ {
+        <<interface>>
+        +temProximo() boolean
+        +proximo() T
+        +Symbol.iterator() Iterator~T~
+    }
+
+    class ZonaDeCartas {
+        <<agregado>>
+        -state: RoomState
+        -itens: ListaDeIds
+        +dono: string
+        +zona: Zone
+        +de(state, dono, zona)$ ZonaDeCartas
+        +tamanho: number
+        +percorrer(sentido, limite) Iterador~Card~
+        +retirar(sentido, quantidade) Iterador~Card~
+        +idsDoTopo(n) string[]
+        +todosOsIds() string[]
+        +reordenar(ids) void
+        +porNoTopo(id) void
+        +porNoFundo(id) void
+    }
+
+    class MesaDeAssentos {
+        <<agregado>>
+        -assentos: Player[]
+        +vazia: boolean
+        +aPartirDaVez() IteradorDeTurno
+    }
+
+    class IteradorDeZona {
+        <<iterador concreto>>
+        -cursor: number
+        -entregues: number
+        -buffer: Card
+        -carregar() void
+    }
+
+    class IteradorDeRetirada {
+        <<iterador concreto>>
+        -sentido: TOPO|ACASO
+        -quantidade: number
+        -carregar() void
+    }
+
+    class IteradorDeTurno {
+        <<iterador concreto>>
+        -cursor: number
+        -voltou: boolean
+        +deuVolta() boolean
+    }
+
+    class ListaDeIds {
+        <<interface>>
+        +length: number
+        +push(ids) unknown
+        +pop() string
+        +unshift(ids) unknown
+        +splice(inicio, qtd, ids) unknown
+    }
+
+    class Handlers {
+        <<cliente>>
+        INTENT_DRAW
+        INTENT_MILL
+        INTENT_SHUFFLE
+        INTENT_SCRY
+        INTENT_MULLIGAN
+        INTENT_PASS_TURN
+        ...
+    }
+
+    Iterador~T~ <|.. IteradorDeZona
+    Iterador~T~ <|.. IteradorDeRetirada
+    Iterador~T~ <|.. IteradorDeTurno
+
+    ZonaDeCartas ..> IteradorDeZona : cria
+    ZonaDeCartas ..> IteradorDeRetirada : cria
+    MesaDeAssentos ..> IteradorDeTurno : cria
+
+    ZonaDeCartas o-- ListaDeIds : ArraySchema do Colyseus
+    IteradorDeZona --> ListaDeIds : le
+    IteradorDeRetirada --> ListaDeIds : le e remove
+
+    Handlers ..> ZonaDeCartas : pede a travessia
+    Handlers ..> MesaDeAssentos : pede a rotacao
+    Handlers ..> Iterador~T~ : for...of

@@ -29,6 +29,7 @@ se dois documentos discordarem, vale o canônico.
 | Lista completa de funcionalidades (F01…Fnn)                                          | [documento_de_funcionalidades.md](documento_de_funcionalidades.md)                                     | [documento_de_requisitos_do_produto_prd.md](documento_de_requisitos_do_produto_prd.md)                 |
 | Requisitos formais, mensuráveis, testáveis (FR/NFR)                                  | [especificacao_de_requisitos_de_software.md](especificacao_de_requisitos_de_software.md)               | [plano_de_testes_e_qualidade.md](plano_de_testes_e_qualidade.md)                                       |
 | Como abrir branch, versionar e cortar release                                        | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)                                                   | [../CONTRIBUTING.md](../CONTRIBUTING.md)                                                               |
+| Padrões de projeto aplicados no game-server                                          | [padroes_iterator_e_chain_of_responsibility.md](padroes_iterator_e_chain_of_responsibility.md)         | [documento_de_arquitetura.md](documento_de_arquitetura.md)                                             |
 | O que rodar antes de subir, e qual teste escrever                                    | [politica_de_testes.md](politica_de_testes.md)                                                         | [plano_de_testes_e_qualidade.md](plano_de_testes_e_qualidade.md)                                       |
 | Qual documento atualizar quando o código muda                                        | [politica_de_documentacao.md](politica_de_documentacao.md)                                             | —                                                                                                      |
 | Regras invariáveis do negócio (RN01…)                                                | [regras_de_negocio_e_casos_de_uso.md](regras_de_negocio_e_casos_de_uso.md)                             | —                                                                                                      |
@@ -116,14 +117,16 @@ se dois documentos discordarem, vale o canônico.
 
 ### Trilha 8 — Processo de trabalho _(como se contribui)_
 
-| ID        | Documento                                                    | Conteúdo em uma linha                                                                       | Status  |
-| --------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------- |
-| `DOC-090` | [estado_de_implementacao.md](estado_de_implementacao.md)     | **Gerado.** Paridade entre contrato de intenções, servidor e cliente.                       | Gerado  |
-| `DOC-091` | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)         | Git Flow: branches, versionamento, tags, receitas de release e hotfix, mensagem de commit.  | Estável |
-| `DOC-092` | [politica_de_testes.md](politica_de_testes.md)               | O que roda antes de subir, qual teste acompanha qual mudança, quando o E2E é obrigatório.   | Estável |
-| `DOC-093` | [politica_de_documentacao.md](politica_de_documentacao.md)   | Qual documento é atualizado junto com o código, e por que no mesmo PR.                      | Estável |
-| `DOC-094` | [plano_de_paridade_edhplay.md](plano_de_paridade_edhplay.md) | Auditoria de paridade com o EDHPlay e plano de execução por fases, **com estado**.          | Vivo    |
-| `DOC-095` | [desempenho_da_mesa.md](desempenho_da_mesa.md)               | Por que a mesa travava em partida longa, o que foi corrigido, e o que medir antes de mexer. | Vivo    |
+| ID        | Documento                                                                                              | Conteúdo em uma linha                                                                            | Status  |
+| --------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ------- |
+| `DOC-090` | [estado_de_implementacao.md](estado_de_implementacao.md)                                               | **Gerado.** Paridade entre contrato de intenções, servidor e cliente.                            | Gerado  |
+| `DOC-091` | [fluxo_de_trabalho_git.md](fluxo_de_trabalho_git.md)                                                   | Git Flow: branches, versionamento, tags, receitas de release e hotfix, mensagem de commit.       | Estável |
+| `DOC-092` | [politica_de_testes.md](politica_de_testes.md)                                                         | O que roda antes de subir, qual teste acompanha qual mudança, quando o E2E é obrigatório.        | Estável |
+| `DOC-093` | [politica_de_documentacao.md](politica_de_documentacao.md)                                             | Qual documento é atualizado junto com o código, e por que no mesmo PR.                           | Estável |
+| `DOC-094` | [plano_de_paridade_edhplay.md](plano_de_paridade_edhplay.md)                                           | Auditoria de paridade com o EDHPlay e plano de execução por fases, **com estado**.               | Vivo    |
+| `DOC-095` | [desempenho_da_mesa.md](desempenho_da_mesa.md)                                                         | Por que a mesa travava em partida longa, o que foi corrigido, e o que medir antes de mexer.      | Vivo    |
+| `DOC-096` | [padroes_iterator_e_chain_of_responsibility.md](padroes_iterator_e_chain_of_responsibility.md)         | Iterator na travessia de zona e de assentos, e Chain of Responsibility no despacho de intenções. | Estável |
+| `DOC-098` | [guia_rapido_iterator_e_chain_of_responsibility.md](guia_rapido_iterator_e_chain_of_responsibility.md) | Versão curta do DOC-096: o que cada padrão resolve, com um exemplo de cada.                      | Estável |
 
 ---
 

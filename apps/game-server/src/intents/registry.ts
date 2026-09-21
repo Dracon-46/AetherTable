@@ -32,7 +32,6 @@ import type { RoomState } from '../schema/RoomState';
 import { concede, revoga } from '../schema/visibility';
 import { Arrow } from '../schema/Arrow';
 import {
-  abaixoDe,
   embaralhar,
   embaralharMantendoTopo,
   girarMoeda,
@@ -57,6 +56,7 @@ import {
   reconciliarCartaParaTodos,
   reconciliarTudo,
 } from '../services/view-sync';
+import { MesaDeAssentos, ZonaDeCartas } from '../services/iteradores';
 import * as S from './schemas';
 
 /** O que um handler recebe. Abstrai a Room para o handler ser testavel puro. */
@@ -530,31 +530,30 @@ const INTENT_DRAW: IntentHandler<typeof S.DrawIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
-    const mao = ordem(ctx.state, sid, 'HAND');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
+    const mao = ZonaDeCartas.de(ctx.state, sid, 'HAND');
     if (!grimorio || !mao) return;
 
     /**
      * COMPRAR DE UM GRIMORIO VAZIO FAZ PERDER.
      *
-     * Antes este `Math.min` era a historia inteira: pedir 3 cartas com 1 no
+     * Antes o `Math.min` do laco era a historia inteira: pedir 3 cartas com 1 no
      * grimorio comprava 1 e seguia a partida, sem erro, sem aviso e sem nada no
      * log. O jogador so descobria que tinha "descado" olhando o contador.
      *
      * A regra de Magic e clara e vale aqui: quem TENTA comprar sem ter, perde.
      * O que sobrou ainda vai para a mao — a derrota nao apaga a compra parcial.
+     *
+     * A comparacao vem ANTES da travessia porque o iterador consome a zona:
+     * depois do laco, `grimorio.tamanho` ja nao responde a pergunta.
      */
-    const faltou = amount > grimorio.length;
+    const faltou = amount > grimorio.tamanho;
 
-    // Topo do grimorio = FIM do array (stack cresce no fim).
-    const compradas = Math.min(amount, grimorio.length);
-    for (let i = 0; i < compradas; i += 1) {
-      const id = grimorio.pop();
-      if (!id) break;
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      mao.push(id);
+    let compradas = 0;
+    for (const c of grimorio.retirar('TOPO', amount)) {
+      mao.porNoTopo(c.id);
       aplicarEfeitosDeZona(ctx, c, 'HAND');
+      compradas += 1;
     }
 
     atualizarContagens(ctx.state, sid);
@@ -574,17 +573,18 @@ const INTENT_SHUFFLE: IntentHandler<typeof S.ShuffleIntent> = {
   autoriza: 'OWNER_DA_ZONA',
   executa(ctx, { zone, keepTop }) {
     const sid = ctx.client.sessionId;
-    const lista = ordem(ctx.state, sid, zone);
-    if (!lista) return;
+    const alvo = ZonaDeCartas.de(ctx.state, sid, zone);
+    if (!alvo) return;
 
     // ArraySchema nao aceita embaralhamento no lugar de forma confiavel:
-    // extrai, embaralha com CSPRNG e reescreve.
+    // extrai, embaralha com CSPRNG e reescreve — e `reordenar` e o unico lugar
+    // que sabe disso.
     //
     // `keepTop` fazia parte do payload desde sempre e era IGNORADO: quem pedia
     // "embaralhe mantendo as 2 do topo" tinha o topo embaralhado junto.
-    const ids =
-      keepTop && keepTop > 0 ? embaralharMantendoTopo([...lista], keepTop) : embaralhar([...lista]);
-    lista.splice(0, lista.length, ...ids);
+    const manter = keepTop && keepTop > 0 ? keepTop : 0;
+    const ids = alvo.todosOsIds();
+    alvo.reordenar(manter > 0 ? embaralharMantendoTopo(ids, manter) : embaralhar(ids));
 
     // Embaralhar destroi qualquer olhada anterior: a ordem que o jogador viu
     // deixou de valer. Nao revogar aqui manteria conhecimento sobre cartas que
@@ -592,15 +592,12 @@ const INTENT_SHUFFLE: IntentHandler<typeof S.ShuffleIntent> = {
     //
     // Excecao: as `keepTop` do topo NAO foram movidas, entao a olhada sobre
     // elas continua legitima.
-    const preservadas =
-      keepTop && keepTop > 0 ? new Set(topoDe(lista, keepTop)) : new Set<string>();
-    lista.forEach((id) => {
-      if (preservadas.has(id)) return;
-      const c = carta(ctx.state, id);
-      if (!c) return;
+    const preservadas = new Set(manter > 0 ? alvo.idsDoTopo(manter) : []);
+    for (const c of alvo.percorrer('FUNDO')) {
+      if (preservadas.has(c.id)) continue;
       limparConcessoes(c);
       reconciliarCartaParaTodos(ctx.clients, c);
-    });
+    }
 
     ctx.log(logEmbaralhar(sid, nomeDe(ctx.state, sid)));
   },
@@ -897,8 +894,8 @@ const INTENT_MULLIGAN: IntentHandler<typeof S.MulliganIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx) {
     const sid = ctx.client.sessionId;
-    const mao = ordem(ctx.state, sid, 'HAND');
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const mao = ZonaDeCartas.de(ctx.state, sid, 'HAND');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
     const jogador = ctx.state.players.get(sid);
     if (!mao || !grimorio || !jogador) return;
 
@@ -913,42 +910,23 @@ const INTENT_MULLIGAN: IntentHandler<typeof S.MulliganIntent> = {
 
     jogador.mulliganCount = (jogador.mulliganCount || 0) + 1;
 
-    // 1. Devolve tudo da mão para o grimório
-    while (mao.length > 0) {
-      const id = mao.pop();
-      if (id) {
-        grimorio.push(id);
-        const c = carta(ctx.state, id);
-        if (c) aplicarEfeitosDeZona(ctx, c, 'LIBRARY');
-      }
+    // 1. Devolve tudo da mao para o grimorio.
+    for (const c of mao.retirar('TOPO', mao.tamanho)) {
+      grimorio.porNoTopo(c.id);
+      aplicarEfeitosDeZona(ctx, c, 'LIBRARY');
     }
 
-    // 2. Embaralha o grimório (usa CSPRNG e limpa concessões)
-    const ids = embaralhar(Array.from(grimorio));
-    // Limpar o grimório
-    while (grimorio.length > 0) grimorio.pop();
-    // Repopular
-    for (const id of ids) {
-      grimorio.push(id);
+    // 2. Embaralha o grimorio (CSPRNG) e derruba as olhadas antigas.
+    grimorio.reordenar(embaralhar(grimorio.todosOsIds()));
+    for (const c of grimorio.percorrer('FUNDO')) {
+      limparConcessoes(c);
+      reconciliarCartaParaTodos(ctx.clients, c);
     }
-    grimorio.forEach((id) => {
-      const c = carta(ctx.state, id);
-      if (c) {
-        limparConcessoes(c);
-        reconciliarCartaParaTodos(ctx.clients, c);
-      }
-    });
 
-    // 3. Saca 7 cartas
-    const compradas = Math.min(7, grimorio.length);
-    for (let i = 0; i < compradas; i += 1) {
-      const id = grimorio.pop();
-      if (!id) break;
-      const c = carta(ctx.state, id);
-      if (c) {
-        mao.push(id);
-        aplicarEfeitosDeZona(ctx, c, 'HAND');
-      }
+    // 3. Saca 7 cartas.
+    for (const c of grimorio.retirar('TOPO', 7)) {
+      mao.porNoTopo(c.id);
+      aplicarEfeitosDeZona(ctx, c, 'HAND');
     }
 
     atualizarContagens(ctx.state, sid);
@@ -989,18 +967,15 @@ const INTENT_MILL: IntentHandler<typeof S.MillIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount, target, faceDown }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
-    const destino = ordem(ctx.state, sid, target);
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
+    const destino = ZonaDeCartas.de(ctx.state, sid, target);
     if (!grimorio || !destino) return;
 
-    const movidas = Math.min(amount, grimorio.length);
-    for (let i = 0; i < movidas; i += 1) {
-      const id = grimorio.pop();
-      if (!id) break;
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      destino.push(id);
+    let movidas = 0;
+    for (const c of grimorio.retirar('TOPO', amount)) {
+      destino.porNoTopo(c.id);
       aplicarEfeitosDeZona(ctx, c, target);
+      movidas += 1;
       /**
        * DEPOIS de `aplicarEfeitosDeZona`, e nao antes.
        *
@@ -1261,8 +1236,8 @@ const INTENT_PASS_TURN: IntentHandler<typeof S.PassTurnIntent> = {
   executa(ctx) {
     const sid = ctx.client.sessionId;
     // Marcador VISUAL (F29): o motor nao impoe turno, so anuncia de quem e a vez.
-    const assentos = Array.from(ctx.state.players.values()).sort((a, b) => a.seat - b.seat);
-    if (assentos.length === 0) return;
+    const mesa = new MesaDeAssentos(ctx.state);
+    if (mesa.vazia) return;
 
     /**
      * SO QUEM ESTA NA VEZ PASSA A VEZ.
@@ -1279,12 +1254,16 @@ const INTENT_PASS_TURN: IntentHandler<typeof S.PassTurnIntent> = {
      */
     if (exigirVez(ctx, 'INTENT_PASS_TURN')) return;
 
-    const atual = assentos.findIndex((p) => p.id === ctx.state.activePlayerId);
-    const proximo = assentos[(atual + 1) % assentos.length];
+    const rotacao = mesa.aPartirDaVez();
+    const proximo = rotacao.proximo();
     if (!proximo) return;
 
     ctx.state.activePlayerId = proximo.id;
-    if (proximo.seat === 0 || atual === assentos.length - 1) {
+    // Duas condicoes, porque o assento 0 pode nao existir mais: `removerJogador`
+    // reatribui assentos, e a mesa que perdeu o anfitriao no meio da partida
+    // ainda precisa contar a volta. `deuVolta` e a mesma conta que o `%` fazia
+    // — so que agora quem sabe o tamanho da mesa e o iterador, nao o handler.
+    if (proximo.seat === 0 || rotacao.deuVolta()) {
       ctx.state.turn = Math.min(9999, ctx.state.turn + 1);
     }
 
@@ -1469,16 +1448,6 @@ const INTENT_START_MATCH: IntentHandler<typeof S.StartMatchIntent> = {
 //    - toda mutacao de visibilidade termina em reconciliacao.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Topo do grimorio = FIM do array. Ver DOC-032 §2. */
-function topoDe(lista: ArrayLike<string> & { length: number }, n: number): string[] {
-  const ids: string[] = [];
-  for (let i = lista.length - 1; i >= 0 && ids.length < n; i -= 1) {
-    const id = lista[i];
-    if (id) ids.push(id);
-  }
-  return ids;
-}
-
 /** Concede olhada ao remetente sobre um conjunto de cartas e reconcilia. */
 function concederOlhada(
   ctx: IntentContext,
@@ -1516,28 +1485,33 @@ const INTENT_MOVE_TOP_TO_BOTTOM: IntentHandler<typeof S.MoveTopToBottomIntent> =
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
     if (!grimorio) return;
 
-    const n = Math.min(amount, grimorio.length);
-    for (let i = 0; i < n; i += 1) {
-      const id = grimorio.pop();
-      if (!id) break;
+    /**
+     * O LIMITE E O TAMANHO DA ZONA, E AQUI ISSO NAO E DETALHE.
+     *
+     * Esta e a unica travessia que DEVOLVE a carta a mesma zona. Sem o corte,
+     * pedir 10 num grimorio de 3 daria a volta na pilha e moveria a mesma carta
+     * duas vezes — o iterador contaria 10 entregas, todas legitimas do ponto de
+     * vista dele.
+     */
+    const n = Math.min(amount, grimorio.tamanho);
+    let movidas = 0;
+    for (const c of grimorio.retirar('TOPO', n)) {
       // Fundo = INICIO do array.
-      grimorio.unshift(id);
-      const c = carta(ctx.state, id);
-      if (c) {
-        // Quem tinha olhado o topo perde o direito: a carta mudou de posicao.
-        limparConcessoes(c);
-        reconciliarCartaParaTodos(ctx.clients, c);
-      }
+      grimorio.porNoFundo(c.id);
+      // Quem tinha olhado o topo perde o direito: a carta mudou de posicao.
+      limparConcessoes(c);
+      reconciliarCartaParaTodos(ctx.clients, c);
+      movidas += 1;
     }
 
     ctx.log(
       criarLog(
         'SHUFFLE',
         sid,
-        `${nomeDe(ctx.state, sid)} moveu ${n} carta(s) do topo para o fundo`,
+        `${nomeDe(ctx.state, sid)} moveu ${movidas} carta(s) do topo para o fundo`,
       ),
     );
   },
@@ -1548,19 +1522,16 @@ const INTENT_DRAW_UP_TO: IntentHandler<typeof S.DrawUpToIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { target }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
-    const mao = ordem(ctx.state, sid, 'HAND');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
+    const mao = ZonaDeCartas.de(ctx.state, sid, 'HAND');
     if (!grimorio || !mao) return;
 
-    const faltam = Math.max(0, target - mao.length);
-    const compradas = Math.min(faltam, grimorio.length);
-    for (let i = 0; i < compradas; i += 1) {
-      const id = grimorio.pop();
-      if (!id) break;
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      mao.push(id);
+    const faltam = Math.max(0, target - mao.tamanho);
+    let compradas = 0;
+    for (const c of grimorio.retirar('TOPO', faltam)) {
+      mao.porNoTopo(c.id);
       aplicarEfeitosDeZona(ctx, c, 'HAND');
+      compradas += 1;
     }
 
     atualizarContagens(ctx.state, sid);
@@ -1573,29 +1544,22 @@ const INTENT_RETURN_ZONE: IntentHandler<typeof S.ReturnZoneIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { from, to, shuffle }) {
     const sid = ctx.client.sessionId;
-    const origem = ordem(ctx.state, sid, from);
-    const destino = ordem(ctx.state, sid, to);
+    const origem = ZonaDeCartas.de(ctx.state, sid, from);
+    const destino = ZonaDeCartas.de(ctx.state, sid, to);
     if (!origem || !destino) return;
 
-    const movidas = origem.length;
-    while (origem.length > 0) {
-      const id = origem.pop();
-      if (!id) break;
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      destino.push(id);
+    const movidas = origem.tamanho;
+    for (const c of origem.retirar('TOPO', movidas)) {
+      destino.porNoTopo(c.id);
       aplicarEfeitosDeZona(ctx, c, to);
     }
 
     if (shuffle) {
-      const ids = embaralhar([...destino]);
-      destino.splice(0, destino.length, ...ids);
-      destino.forEach((id) => {
-        const c = carta(ctx.state, id);
-        if (!c) return;
+      destino.reordenar(embaralhar(destino.todosOsIds()));
+      for (const c of destino.percorrer('FUNDO')) {
         limparConcessoes(c);
         reconciliarCartaParaTodos(ctx.clients, c);
-      });
+      }
     }
 
     atualizarContagens(ctx.state, sid);
@@ -1614,12 +1578,12 @@ const INTENT_REORDER: IntentHandler<typeof S.ReorderIntent> = {
   autoriza: 'OWNER_DA_ZONA',
   executa(ctx, { zone, ids }) {
     const sid = ctx.client.sessionId;
-    const lista = ordem(ctx.state, sid, zone);
-    if (!lista) return;
+    const alvo = ZonaDeCartas.de(ctx.state, sid, zone);
+    if (!alvo) return;
 
     // So aceita uma PERMUTACAO do conteudo atual. Um `ids` com carta de fora
     // seria um jeito de mover carta alheia sem passar por CHANGE_ZONE.
-    const atual = new Set(Array.from(lista));
+    const atual = new Set(alvo.todosOsIds());
     if (ids.length !== atual.size || ids.some((id) => !atual.has(id))) {
       ctx.send('error', {
         code: 'INVALID_PAYLOAD',
@@ -1629,7 +1593,7 @@ const INTENT_REORDER: IntentHandler<typeof S.ReorderIntent> = {
       return;
     }
 
-    lista.splice(0, lista.length, ...ids);
+    alvo.reordenar([...ids]);
   },
 };
 
@@ -1644,10 +1608,10 @@ const INTENT_SCRY: IntentHandler<typeof S.ScryIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
     if (!grimorio) return;
 
-    const ids = topoDe(grimorio, Math.min(amount, grimorio.length));
+    const ids = grimorio.idsDoTopo(amount);
     const vistas = concederOlhada(ctx, ids);
 
     ctx.send('scryOpened', { mode: 'SCRY', cards: vistas });
@@ -1660,11 +1624,11 @@ const INTENT_SCRY_COMMIT: IntentHandler<typeof S.ScryCommitIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { toBottom, topOrder }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
     if (!grimorio) return;
 
     const envolvidas = [...toBottom, ...topOrder];
-    const atual = new Set(Array.from(grimorio));
+    const atual = new Set(grimorio.todosOsIds());
     if (envolvidas.some((id) => !atual.has(id))) {
       ctx.send('error', {
         code: 'INVALID_PAYLOAD',
@@ -1677,18 +1641,18 @@ const INTENT_SCRY_COMMIT: IntentHandler<typeof S.ScryCommitIntent> = {
     /**
      * ─── `topOrder` CHEGA NA ORDEM DA TELA E ENTRA INVERTIDO ────────────────
      *
-     * O topo do grimorio e o FIM do array (ver `topoDe`, logo acima). O cliente
-     * manda `topOrder` na ordem em que as cartas aparecem na tela, de cima para
-     * baixo -- `topOrder[0]` e a que o jogador quer comprar PRIMEIRO.
+     * O topo do grimorio e o FIM do array (DOC-032 §2, e e o que
+     * `ZonaDeCartas` encapsula). O cliente manda `topOrder` na ordem em que as
+     * cartas aparecem na tela, de cima para baixo -- `topOrder[0]` e a que o
+     * jogador quer comprar PRIMEIRO.
      *
      * Emendar a lista direto no fim colocava `topOrder[0]` no fundo do bloco e
      * a ULTIMA carta no topo: reordenar fazia exatamente o contrario do pedido.
      * Com scry 1 nao da para notar, porque uma carta sozinha nao tem ordem --
      * o defeito so aparece de scry 2 para cima, onde reordenar e o ponto.
      */
-    const restante = Array.from(grimorio).filter((id) => !envolvidas.includes(id));
-    const nova = [...toBottom, ...restante, ...[...topOrder].reverse()];
-    grimorio.splice(0, grimorio.length, ...nova);
+    const restante = grimorio.todosOsIds().filter((id) => !envolvidas.includes(id));
+    grimorio.reordenar([...toBottom, ...restante, ...[...topOrder].reverse()]);
 
     revogarOlhada(ctx, envolvidas);
     ctx.log(
@@ -1706,10 +1670,10 @@ const INTENT_SURVEIL: IntentHandler<typeof S.SurveilIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
     if (!grimorio) return;
 
-    const ids = topoDe(grimorio, Math.min(amount, grimorio.length));
+    const ids = grimorio.idsDoTopo(amount);
     const vistas = concederOlhada(ctx, ids);
 
     ctx.send('scryOpened', { mode: 'SURVEIL', cards: vistas });
@@ -1722,12 +1686,12 @@ const INTENT_SURVEIL_COMMIT: IntentHandler<typeof S.SurveilCommitIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { toGraveyard, topOrder }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
-    const cemiterio = ordem(ctx.state, sid, 'GRAVEYARD');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
+    const cemiterio = ZonaDeCartas.de(ctx.state, sid, 'GRAVEYARD');
     if (!grimorio || !cemiterio) return;
 
     const envolvidas = [...toGraveyard, ...topOrder];
-    const atual = new Set(Array.from(grimorio));
+    const atual = new Set(grimorio.todosOsIds());
     if (envolvidas.some((id) => !atual.has(id))) {
       ctx.send('error', {
         code: 'INVALID_PAYLOAD',
@@ -1739,13 +1703,13 @@ const INTENT_SURVEIL_COMMIT: IntentHandler<typeof S.SurveilCommitIntent> = {
 
     // Invertido pelo mesmo motivo do scry: topo = fim do array, e `topOrder`
     // chega na ordem da tela. Ver o comentario em INTENT_SCRY_COMMIT.
-    const restante = Array.from(grimorio).filter((id) => !envolvidas.includes(id));
-    grimorio.splice(0, grimorio.length, ...restante, ...[...topOrder].reverse());
+    const restante = grimorio.todosOsIds().filter((id) => !envolvidas.includes(id));
+    grimorio.reordenar([...restante, ...[...topOrder].reverse()]);
 
     for (const id of toGraveyard) {
       const c = carta(ctx.state, id);
       if (!c) continue;
-      cemiterio.push(id);
+      cemiterio.porNoTopo(id);
       aplicarEfeitosDeZona(ctx, c, 'GRAVEYARD');
     }
 
@@ -1766,11 +1730,11 @@ const INTENT_SEARCH_ZONE: IntentHandler<typeof S.SearchZoneIntent> = {
   autoriza: 'OWNER_DA_ZONA',
   executa(ctx, { zone }) {
     const sid = ctx.client.sessionId;
-    const lista = ordem(ctx.state, sid, zone);
-    if (!lista) return;
+    const alvo = ZonaDeCartas.de(ctx.state, sid, zone);
+    if (!alvo) return;
 
     // Busca = olhada sobre a zona INTEIRA. `INTENT_CLOSE_PEEK` revoga.
-    const vistas = concederOlhada(ctx, Array.from(lista));
+    const vistas = concederOlhada(ctx, alvo.todosOsIds());
     ctx.send('revealToOwner', { cards: vistas });
 
     // Log publico: os oponentes precisam saber QUE houve busca (e por que o
@@ -1816,22 +1780,20 @@ const INTENT_REVEAL_ZONE: IntentHandler<typeof S.RevealZoneIntent> = {
   autoriza: 'OWNER_DA_ZONA',
   executa(ctx, { zone, to }) {
     const sid = ctx.client.sessionId;
-    const lista = ordem(ctx.state, sid, zone);
-    if (!lista) return;
+    const alvo = ZonaDeCartas.de(ctx.state, sid, zone);
+    if (!alvo) return;
 
-    for (const id of Array.from(lista)) {
-      const c = carta(ctx.state, id);
-      if (!c) continue;
+    const quantas = alvo.tamanho;
+    for (const c of alvo.percorrer('FUNDO')) {
       c.revealedTo =
-        to === 'ALL' ? 'ALL' : to.reduce((acc, alvo) => concede(acc, alvo), c.revealedTo);
+        to === 'ALL'
+          ? 'ALL'
+          : to.reduce((acc, destinatario) => concede(acc, destinatario), c.revealedTo);
       reconciliarCartaParaTodos(ctx.clients, c);
     }
 
     ctx.log(
-      logSistema(
-        sid,
-        `${nomeDe(ctx.state, sid)} revelou ${nomeDaZona(zone)} (${lista.length} cartas)`,
-      ),
+      logSistema(sid, `${nomeDe(ctx.state, sid)} revelou ${nomeDaZona(zone)} (${quantas} cartas)`),
     );
   },
 };
@@ -1841,18 +1803,17 @@ const INTENT_REVEAL_TOP: IntentHandler<typeof S.RevealTopIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount }) {
     const sid = ctx.client.sessionId;
-    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    const grimorio = ZonaDeCartas.de(ctx.state, sid, 'LIBRARY');
     if (!grimorio) return;
 
-    const ids = topoDe(grimorio, Math.min(amount, grimorio.length));
-    for (const id of ids) {
-      const c = carta(ctx.state, id);
-      if (!c) continue;
+    let reveladas = 0;
+    for (const c of grimorio.percorrer('TOPO', amount)) {
       c.revealedTo = 'ALL';
       reconciliarCartaParaTodos(ctx.clients, c);
+      reveladas += 1;
     }
 
-    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} revelou ${ids.length} carta(s) do topo`));
+    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} revelou ${reveladas} carta(s) do topo`));
   },
 };
 
@@ -2337,20 +2298,17 @@ const INTENT_DISCARD_RANDOM: IntentHandler<typeof S.DiscardRandomIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { amount }) {
     const sid = ctx.client.sessionId;
-    const mao = ordem(ctx.state, sid, 'HAND');
-    const cemiterio = ordem(ctx.state, sid, 'GRAVEYARD');
+    const mao = ZonaDeCartas.de(ctx.state, sid, 'HAND');
+    const cemiterio = ZonaDeCartas.de(ctx.state, sid, 'GRAVEYARD');
     if (!mao || !cemiterio) return;
 
-    const n = Math.min(amount, mao.length);
-    for (let i = 0; i < n; i += 1) {
-      const indice = abaixoDe(mao.length);
-      const id = mao[indice];
-      if (!id) break;
-      mao.splice(indice, 1);
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      cemiterio.push(id);
+    // A unica diferenca para o descarte comum e o SENTIDO da travessia. O
+    // sorteio continua saindo de `services/rng.ts` (RN06), dentro do iterador.
+    let n = 0;
+    for (const c of mao.retirar('ACASO', amount)) {
+      cemiterio.porNoTopo(c.id);
       aplicarEfeitosDeZona(ctx, c, 'GRAVEYARD');
+      n += 1;
     }
 
     atualizarContagens(ctx.state, sid);
@@ -2363,17 +2321,13 @@ const INTENT_DISCARD_ALL: IntentHandler<typeof S.DiscardAllIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx) {
     const sid = ctx.client.sessionId;
-    const mao = ordem(ctx.state, sid, 'HAND');
-    const cemiterio = ordem(ctx.state, sid, 'GRAVEYARD');
+    const mao = ZonaDeCartas.de(ctx.state, sid, 'HAND');
+    const cemiterio = ZonaDeCartas.de(ctx.state, sid, 'GRAVEYARD');
     if (!mao || !cemiterio) return;
 
-    const n = mao.length;
-    while (mao.length > 0) {
-      const id = mao.pop();
-      if (!id) break;
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      cemiterio.push(id);
+    const n = mao.tamanho;
+    for (const c of mao.retirar('TOPO', n)) {
+      cemiterio.porNoTopo(c.id);
       aplicarEfeitosDeZona(ctx, c, 'GRAVEYARD');
     }
 
