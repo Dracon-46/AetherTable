@@ -334,6 +334,17 @@ export default function LoginPage() {
               Aliste-se
             </Link>
           </p>
+
+          {/* A política precisa ser alcançável DA PÁGINA INICIAL, e não só pela
+              URL direta: é o que o console do Google confere ao publicar o app
+              OAuth, e é onde uma pessoa procura antes de entregar o e-mail. */}
+          <p className="text-text-muted/70 mt-3 text-xs">
+            <Link href="/privacidade" className="hover:text-primary transition-colors">
+              Política de Privacidade
+            </Link>
+            <span className="mx-1.5">·</span>
+            <span>Projeto de fã, sem vínculo com a Wizards of the Coast</span>
+          </p>
         </div>
       </div>
     </div>
