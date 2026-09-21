@@ -17,6 +17,18 @@ out/
 .env.*
 !.env.example
 
+# Credenciais baixadas do console de um provedor.
+#
+# O Google entrega o OAuth client como `client_secret_<id>.apps.googleusercontent.com.json`,
+# e o download cai onde o navegador manda — foi parar em `docs/`, que nao e
+# ignorada. Um `git add docs` de rotina publicaria o `client_secret` junto com a
+# documentacao, e limpar segredo que chegou ao remoto e reescrita de historico.
+#
+# O padrao e por NOME e nao por pasta de proposito: o arquivo nao tem lugar fixo,
+# entao ignorar `docs/` nao resolveria o proximo download.
+client_secret*.json
+*.apps.googleusercontent.com.json
+
 # prisma
 apps/backend-core/prisma/migrations/dev.db*
 
