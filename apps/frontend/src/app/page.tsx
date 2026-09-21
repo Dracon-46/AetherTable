@@ -1,13 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { CenaDoDragao, useDragao } from './CenaDoDragao';
 import { useAuthStore } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
+import { api } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
+
+/**
+ * ─── AS FRASES DE ERRO DE OAUTH MORAM AQUI, NÃO NA URL ─────────────────────
+ *
+ * O backend redireciona para `/?erro=<codigo>` com um código de um conjunto
+ * fechado. Ele não manda a mensagem pronta de propósito: desenhar na tela um
+ * texto vindo da querystring é a forma mais simples de transformar a própria
+ * página de login numa página de phishing hospedada no domínio certo ("Sua
+ * conta foi bloqueada, ligue para 0800…"). Com o dicionário aqui, a tela só
+ * sabe escrever o que ela mesma tem.
+ *
+ * Ver `auth/erro-de-oauth.ts` no backend.
+ */
+const MENSAGEM_DE_OAUTH: Record<string, string> = {
+  indisponivel: 'Este provedor não está disponível neste servidor. Entre com e-mail e senha.',
+  sem_email:
+    'O provedor não informou um e-mail utilizável. Verifique a privacidade do e-mail na conta dele e tente de novo.',
+  email_nao_verificado:
+    'O provedor não confirmou que este e-mail é seu. Confirme o endereço na conta do provedor e tente de novo.',
+  email_em_uso: 'Este e-mail já pertence a uma conta do AetherTable. Entre com e-mail e senha.',
+  recusado: 'Você cancelou a autorização no provedor.',
+  falhou: 'Não foi possível concluir o login pelo provedor. Tente de novo.',
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,10 +55,59 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  /**
+   * Quais botões de OAuth desenhar.
+   *
+   * ─── O BOTÃO ERA DESENHADO SEMPRE, E EM PRODUÇÃO NÃO LEVAVA A LUGAR NENHUM ─
+   *
+   * `render.yaml` nunca declarou `GOOGLE_CLIENT_ID` nem `DISCORD_CLIENT_ID`: o
+   * backend subia com credenciais de exemplo e o clique terminava numa página
+   * de erro do próprio Google ("The OAuth client was not found"). O aviso de
+   * "DUMMY KEYS" que existia aqui era condicionado a `NODE_ENV` — ou seja,
+   * sumia exatamente no ambiente onde o problema estava.
+   *
+   * Agora o servidor responde quais provedores ele tem de verdade, e um botão
+   * na tela é a promessa de que aquele caminho funciona.
+   *
+   * `retry: false` e `staleTime: Infinity`: é configuração de servidor, não
+   * muda enquanto a aba estiver aberta, e insistir numa API hibernando só
+   * atrasaria o formulário de senha, que não depende dela.
+   */
+  const { data: provedores } = useQuery({
+    queryKey: ['auth', 'provedores'],
+    queryFn: () => api<Record<string, boolean>>('/auth/provedores', { publica: true }),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  /**
+   * O código de erro que o callback de OAuth deixou na URL.
+   *
+   * Lido de `window.location` e não de `useSearchParams()` pelo motivo
+   * documentado em `OAuthTokenCapture`: o hook obriga a rota a renderizar no
+   * cliente e já quebrou o `next build` deste projeto com "useSearchParams()
+   * should be wrapped in a suspense boundary". Esta é a `/` — a rota que menos
+   * pode sair da pré-renderização.
+   */
+  const [erroDeOAuth, setErroDeOAuth] = useState<string | null>(null);
+
+  useEffect(() => {
+    const codigo = new URLSearchParams(window.location.search).get('erro');
+    if (!codigo) return;
+
+    setErroDeOAuth(MENSAGEM_DE_OAUTH[codigo] ?? MENSAGEM_DE_OAUTH.falhou!);
+    // Tira o `?erro=` da barra de endereço: recarregar a página não deve
+    // ressuscitar um erro que a pessoa já leu.
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setError(null);
+    // Tentar entrar por senha descarta o aviso do provedor: ele já foi lido, e
+    // deixá-lo na tela ao lado de um erro novo confundiria os dois.
+    setErroDeOAuth(null);
     // Entrar É o sopro. No plano gratuito o login pode levar ~50 s acordando o
     // container; a criatura cuspindo é o que preenche essa espera.
     cuspir();
@@ -88,7 +162,7 @@ export default function LoginPage() {
 
       {/* Painel de Login Glassmorphism */}
       <div
-        className={`bg-panel/80 border-panel-border relative z-10 my-auto w-full max-w-md rounded-lg border p-5 shadow-2xl backdrop-blur-md transition-transform duration-300 sm:p-7 ${error ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
+        className={`bg-panel/80 border-panel-border relative z-10 my-auto w-full max-w-md rounded-lg border p-5 shadow-2xl backdrop-blur-md transition-transform duration-300 sm:p-7 ${error || erroDeOAuth ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
       >
         {/* O cabeçalho encolhe em telas baixas: numa janela de 700px a
             saudação custava ~180px que o formulário precisava mais. */}
@@ -106,6 +180,13 @@ export default function LoginPage() {
           <div className="border-warning/40 bg-warning/10 mb-4 flex items-start gap-3 rounded border p-3">
             <AlertCircle className="text-warning mt-0.5 h-5 w-5 flex-shrink-0" />
             <p className="text-warning text-sm">{MENSAGEM_POR_ESTADO.acordando}</p>
+          </div>
+        )}
+
+        {erroDeOAuth && (
+          <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
+            <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
+            <p className="text-danger text-sm">{erroDeOAuth}</p>
           </div>
         )}
 
@@ -137,12 +218,14 @@ export default function LoginPage() {
               <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
                 Senha
               </label>
-              <a
-                href="#"
+              {/* Era `<a href="#">` — DOC-094 §I.8, "não há recuperação de
+                  senha". Agora leva a /senha/esqueci. */}
+              <Link
+                href="/senha/esqueci"
                 className="text-primary hover:text-primary-hover text-xs transition-colors"
               >
                 Esqueceu?
-              </a>
+              </Link>
             </div>
             <div className="relative">
               <input
@@ -191,52 +274,55 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-4 flex items-center justify-between">
-          <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
-          <span className="text-text-muted text-center text-xs uppercase">ou continue com</span>
-          <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
-        </div>
+        {/* ─── SÓ APARECE O QUE FUNCIONA ────────────────────────────────────
+            O bloco inteiro era renderizado sempre, com os dois botões e um
+            aviso de "DUMMY KEYS" condicionado a `NODE_ENV`. Em produção o
+            aviso sumia e os botões ficavam — levando a uma página de erro do
+            próprio provedor, porque `render.yaml` nunca declarou as chaves.
 
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            onClick={() => (window.location.href = `${API_URL}/auth/google`)}
-            className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
-          >
-            <img
-              src="https://www.svgrepo.com/show/475656/google-color.svg"
-              alt="Google"
-              className="h-5 w-5"
-            />
-            Google
-          </button>
-
-          <button
-            onClick={() => (window.location.href = `${API_URL}/auth/discord`)}
-            className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
-          >
-            <img
-              src="https://www.svgrepo.com/show/353655/discord-icon.svg"
-              alt="Discord"
-              className="h-5 w-5"
-            />
-            Discord
-          </button>
-
-          {/* ─── AVISO DE DESENVOLVIMENTO, E SÓ EM DESENVOLVIMENTO ───────────
-              Este banner era renderizado SEMPRE — inclusive em produção, na
-              porta de entrada do produto. A primeira coisa que um visitante
-              lia era que o login não funciona.
-
-              `NODE_ENV` é substituído em tempo de build pelo Next, então em
-              produção o bloco inteiro sai do bundle. */}
-          {process.env.NODE_ENV !== 'production' && (
-            <div className="bg-warning/10 border-warning/30 text-warning mt-2 flex flex-col items-center rounded border p-2 text-center text-[10px]">
-              <AlertCircle className="mb-1 h-4 w-4" />
-              <span>Usando DUMMY KEYS de OAuth (ambiente local).</span>
-              <span>O login retornará erro ao redirecionar para os provedores.</span>
+            Agora o servidor diz o que tem (`GET /auth/provedores`), e um botão
+            aqui é a promessa de que aquele caminho funciona. Sem provedor
+            nenhum, some também o separador: um "ou continue com" seguido de
+            nada é pior que nada. */}
+        {(provedores?.google || provedores?.discord) && (
+          <>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
+              <span className="text-text-muted text-center text-xs uppercase">ou continue com</span>
+              <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
             </div>
-          )}
-        </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              {provedores.google && (
+                <button
+                  onClick={() => (window.location.href = `${API_URL}/auth/google`)}
+                  className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
+                >
+                  <img
+                    src="https://www.svgrepo.com/show/475656/google-color.svg"
+                    alt=""
+                    className="h-5 w-5"
+                  />
+                  Google
+                </button>
+              )}
+
+              {provedores.discord && (
+                <button
+                  onClick={() => (window.location.href = `${API_URL}/auth/discord`)}
+                  className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
+                >
+                  <img
+                    src="https://www.svgrepo.com/show/353655/discord-icon.svg"
+                    alt=""
+                    className="h-5 w-5"
+                  />
+                  Discord
+                </button>
+              )}
+            </div>
+          </>
+        )}
 
         <div className="border-panel-border mt-5 border-t pt-4 text-center">
           <p className="text-text-muted text-sm">

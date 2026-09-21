@@ -110,14 +110,65 @@ sem tráfego. Um atacante pode abrir milhares de conexões inertes. Mitigação:
 
 ### 2.4 Tomada de conta (ATO)
 
-| Vetor                                   | Mitigação                                                             |
-| --------------------------------------- | --------------------------------------------------------------------- |
-| Força bruta de senha                    | 5 tentativas/min por IP; Argon2id torna cada tentativa caro           |
-| _Credential stuffing_                   | Senha verificada contra lista de vazamentos conhecidos                |
-| Enumeração de contas                    | Erros genéricos em login e recuperação — nunca "e-mail não existe"    |
-| Sequestro de fluxo OAuth                | `state` aleatório validado + PKCE                                     |
-| Vinculação indevida de provedor         | Vincular Google/Discord a conta existente exige confirmação explícita |
-| Sessão persistente após comprometimento | Troca de senha invalida todas as sessões (`FR-19`)                    |
+| Vetor                                   | Mitigação                                                                                       |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Força bruta de senha                    | 5 tentativas/min por IP; Argon2id torna cada tentativa caro                                     |
+| _Credential stuffing_                   | Senha verificada contra lista de vazamentos conhecidos — **não implementado**                   |
+| Enumeração de contas                    | Erros genéricos em login e recuperação — nunca "e-mail não existe"                              |
+| Sequestro de fluxo OAuth                | `state` aleatório validado por cookie (_double submit_); **PKCE não implementado** — ver abaixo |
+| **Provedor com e-mail não verificado**  | O vínculo por e-mail exige `email_verified` do provedor; ausência conta como não verificado     |
+| Vinculação indevida de provedor         | Vincular Google/Discord a conta existente exige confirmação explícita — **não implementado**    |
+| Sessão persistente após comprometimento | Troca **e redefinição** de senha invalidam todas as sessões (`FR-19`)                           |
+| **Link de redefinição vazado do banco** | A tabela guarda **SHA-256** do token, nunca o texto                                             |
+| **Reuso do link de redefinição**        | Uso único (`used_at`) + validade de 30 min + cada pedido novo invalida os anteriores            |
+
+#### O `state` estava neste documento e não existia no código
+
+Esta linha dizia "`state` aleatório validado + PKCE". **Nenhum dos dois existia.** Sem a opção `store`
+(ou `state: true`), o `passport-oauth2` instala um `NullStore` e o `state` simplesmente não é
+verificado — `passport-oauth2/lib/strategy.js:113`. É o caso exato que a política de documentação
+descreve: o documento fazia quem auditasse concluir que um controle estava lá.
+
+O ataque é **login CSRF**, e o resultado é contraintuitivo: o atacante inicia o fluxo com a própria
+conta Google, captura o `code` do redirect e faz o navegador da vítima abrir o nosso callback com
+ele. A vítima termina logada **na conta do atacante**, monta decks e entra em mesas ali, e o atacante
+lê tudo quando quiser.
+
+Agora o `state` é gerado por `randomBytes`, guardado num cookie `httpOnly; SameSite=Lax; Path=/api/v1/auth`
+de 10 minutos, e comparado em tempo constante no callback. **Cookie e não sessão de servidor:** a API é
+sem estado por construção (JWT no cabeçalho), e `state: true` exigiria `express-session` — estado
+compartilhado entre nós por causa de um valor que vive 10 minutos.
+
+**PKCE continua fora, por decisão registrada.** Ele protege cliente PÚBLICO (aplicativo nativo, SPA),
+onde o `code` pode ser interceptado e não há segredo para impedir a troca. Aqui o cliente é
+CONFIDENCIAL: a troca acontece no servidor, com `client_secret`, sobre TLS.
+
+#### O vínculo por e-mail é o ponto frágil do OAuth, e ele foi fechado
+
+Quando a identidade do provedor ainda não tem linha em `accounts`, a conta local é encontrada **pelo
+e-mail**. Isso torna a confiança no provedor absoluta naquele instante, e abre a sequência:
+
+1. a vítima tem conta local com `vitima@exemplo.com` e senha própria;
+2. o atacante cria uma conta no provedor declarando **esse mesmo endereço**;
+3. o provedor entrega o perfil com o e-mail **não verificado**;
+4. casamos por e-mail e o atacante entra na conta da vítima.
+
+O Google verifica sempre e informa `email_verified`. **O Discord permite conta com e-mail não
+confirmado** e informa `verified` — o passo 3 é literal ali. A checagem é falha fechada: campo ausente
+conta como não verificado, e a recusa vira `?erro=email_nao_verificado` na tela de entrada.
+
+#### A recuperação de senha não pode virar um verificador de cadastro
+
+`POST /auth/senha/esqueci` responde **`202` com o mesmo corpo** para conta inexistente, banida,
+suspensa e de OAuth. Duas consequências que não são óbvias:
+
+- **Falha de entrega não muda a resposta.** Propagar o erro do provedor de e-mail seria a reabertura
+  do vazamento pela porta dos fundos: e-mail inexistente sairia com `202` e e-mail existente com o
+  provedor fora do ar sairia com `503` — a diferença entre as duas respostas é exatamente a pergunta
+  que a rota existe para não responder. O erro vai para o log.
+- **Configuração ausente, sim.** `RESEND_API_KEY` vazio em produção responde `503` para **todo**
+  e-mail, igualmente, então não distingue conta nenhuma — e precisa ser barulhento, porque o
+  contrário é uma tela dizendo "enviamos o link" sem ter enviado.
 
 **Severidade:** Alta · **Probabilidade:** Média
 

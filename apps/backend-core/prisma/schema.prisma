@@ -181,6 +181,7 @@ model User {
 
   decks        Deck[]
   accounts     Account[]
+  passwordResets PasswordResetToken[]
   preference   UserPreference?
   blocksMade   Block[]           @relation("blocker")
   blocksGot    Block[]           @relation("blocked")
@@ -581,6 +582,47 @@ model RevokedToken {
 
   @@index([expiresAt])
   @@map("revoked_tokens")
+}
+
+/// ─── O LINK DE "ESQUECI MINHA SENHA" ────────────────────────────────────────
+///
+/// A COLUNA GUARDA A HASH, NAO O TOKEN. O texto puro existe em dois lugares e
+/// so dois: na resposta que o gerou (em memoria) e na caixa de entrada da
+/// pessoa. Gravado em claro, um dump do banco — backup exposto, `SELECT` de uma
+/// injecao, painel do Postgres aberto na maquina errada — entregaria uma lista
+/// de links de redefinicao VIVOS das contas mais recentes.
+///
+/// Nao ha sal nem Argon2 aqui de proposito: o segredo tem 256 bits de CSPRNG e
+/// vive 30 minutos, entao nao existe dicionario contra o qual proteger. Ver
+/// `auth/token-de-redefinicao.ts`.
+model PasswordResetToken {
+  /// SHA-256 do token, em hexadecimal. Sempre 64 caracteres.
+  tokenHash String @id @map("token_hash") @db.VarChar(64)
+
+  userId String @map("user_id") @db.Uuid
+
+  /// 30 minutos apos a emissao. Prazo curto limita o estrago de um link
+  /// encaminhado sem querer ou lido numa caixa compartilhada.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+
+  /// USO UNICO. Nulo enquanto o link nao foi aberto.
+  ///
+  /// Sem esta coluna o link continuaria valendo depois da troca — e ele mora
+  /// numa caixa de entrada, que e exatamente de onde um invasor com acesso ao
+  /// e-mail o pegaria DEPOIS de a vitima ja ter redefinido a senha e acreditado
+  /// que resolveu o problema.
+  usedAt DateTime? @map("used_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  /// Cascade: apagar a conta apaga os links dela. Ao contrario de
+  /// `revoked_tokens`, aqui a linha NAO pode sobreviver ao usuario — ela e uma
+  /// chave de entrada, e nao um registro de algo que ja aconteceu.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model CosmeticItem {

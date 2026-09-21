@@ -12,6 +12,7 @@ import { UsersService } from '../users/users.service.js';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { ttlEmSegundos } from './ttl.js';
+import { ErroDeOAuth } from './erro-de-oauth.js';
 
 @Injectable()
 export class AuthService {
@@ -41,6 +42,15 @@ export class AuthService {
     email: string,
     username: string,
     displayName: string,
+    /**
+     * O provedor CONFIRMA que o dono do endereço é quem está entrando?
+     *
+     * Parâmetro obrigatório, e não opcional com padrão `true`: um padrão
+     * permissivo faria uma estratégia futura que esquecesse de informá-lo
+     * herdar silenciosamente o comportamento inseguro. Ver
+     * `emailVerificadoPeloProvedor` em `oauth.types.ts`.
+     */
+    emailVerificado: boolean,
   ) {
     // Busca a conta vinculada
     const account = await this.prisma.account.findUnique({
@@ -67,19 +77,55 @@ export class AuthService {
       return account.user;
     }
 
-    // Se a conta não existe, verifica se o email já está em uso por outra conta
-    let user = await this.prisma.user.findUnique({ where: { email } });
+    /**
+     * ─── DAQUI PARA BAIXO, O E-MAIL É A ÚNICA PROVA DE IDENTIDADE ──────────
+     *
+     * Não há vínculo prévio: a decisão de entrar numa conta existente ou criar
+     * uma nova sai do endereço que o provedor informou. Se ele não garantir que
+     * o endereço é mesmo de quem está entrando, esta função vira um caminho de
+     * tomada de conta — basta declarar o e-mail da vítima num provedor que não
+     * confirme. O Discord permite exatamente isso.
+     */
+    if (!emailVerificado) {
+      throw new ErroDeOAuth(
+        'email_nao_verificado',
+        `${provider} não confirmou a posse do e-mail; vínculo recusado.`,
+      );
+    }
 
-    if (!user) {
-      // Cria o usuário
-      user = await this.prisma.user.create({
+    // Se a conta não existe, verifica se o email já está em uso por outra conta
+    const existente = await this.prisma.user.findUnique({ where: { email } });
+
+    if (existente?.deletedAt) {
+      throw new ForbiddenException('Esta conta foi encerrada.');
+    }
+
+    const user =
+      existente ??
+      (await this.prisma.user.create({
         data: {
           email,
-          username: `${username}_${Math.floor(Math.random() * 1000)}`, // Evita colisão
+          username: await this.usernameLivre(username),
           displayName,
-          // Não possui senha, pois o login é OAuth
+          /**
+           * `emailVerifiedAt` existia no schema e NUNCA era escrito por nada
+           * (DOC-094 §I.8, "não há verificação de e-mail"). Aqui ele tem uma
+           * fonte legítima: o provedor acabou de confirmar a posse do
+           * endereço, que é mais do que o cadastro por senha jamais fez.
+           */
+          emailVerifiedAt: new Date(),
         },
-      });
+      }));
+
+    // Conta que já existia e era só de senha: passa a ter também esta entrada.
+    if (existente) {
+      this.exigirContaLiberada(existente);
+      if (!existente.emailVerifiedAt) {
+        await this.prisma.user.update({
+          where: { id: existente.id },
+          data: { emailVerifiedAt: new Date() },
+        });
+      }
     }
 
     // Vincula a conta OAuth ao usuário
@@ -92,6 +138,45 @@ export class AuthService {
     });
 
     return user;
+  }
+
+  /**
+   * Um `username` que ainda não existe.
+   *
+   * ─── O SUFIXO ALEATÓRIO NÃO RESOLVIA A COLISÃO, SÓ A ADIAVA ───────────────
+   *
+   * Era `${username}_${Math.floor(Math.random() * 1000)}` com o comentário
+   * "Evita colisão" ao lado. Mil valores possíveis: dois `joao` entrando pelo
+   * Google têm ~0,1% de chance de colidir no primeiro par e a certeza de
+   * colidir depois de algumas centenas. E o resultado da colisão é uma violação
+   * de chave única que sobe como **erro 500 no meio do callback do Google** —
+   * para o usuário, "entrar com Google não funciona", sem mais nada.
+   *
+   * Pior, o sufixo era aplicado SEMPRE: quem entrava primeiro com um nome livre
+   * virava `joao_417` sem motivo nenhum.
+   *
+   * Agora o nome desejado é tentado como está, e o sufixo só entra quando
+   * precisa. O laço é limitado porque uma consulta por tentativa sem teto é um
+   * jeito de transformar um nome disputado em varredura de tabela; ao fim dele,
+   * o sufixo longo de CSPRNG não colide na prática.
+   */
+  private async usernameLivre(desejado: string): Promise<string> {
+    const livre = async (nome: string) =>
+      (await this.prisma.user.findUnique({ where: { username: nome }, select: { id: true } })) ===
+      null;
+
+    if (await livre(desejado)) return desejado;
+
+    // 24 é o teto do `username` no cadastro (auth.dto.ts) e no schema (32, mas
+    // o formato público é o do DTO). O corte precisa deixar espaço para o sufixo.
+    const base = desejado.slice(0, 18);
+
+    for (let tentativa = 0; tentativa < 5; tentativa++) {
+      const candidato = `${base}_${randomBytes(2).toString('hex')}`;
+      if (await livre(candidato)) return candidato;
+    }
+
+    return `${base}_${randomBytes(3).toString('hex')}`;
   }
 
   /**
