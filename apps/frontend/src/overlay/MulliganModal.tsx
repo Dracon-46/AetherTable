@@ -22,7 +22,11 @@ import type { Room } from 'colyseus.js';
 import { useGameStore } from '../store/game.store';
 import { Check, Repeat, X } from 'lucide-react';
 import { intents } from '../net/intents';
-import { REGRA_DO_MULLIGAN, type TipoDeMulligan } from '@aethertable/shared-types';
+import {
+  REGRA_DO_MULLIGAN,
+  cartasParaDevolverNoMulligan,
+  type TipoDeMulligan,
+} from '@aethertable/shared-types';
 import { cardImageUrl } from '../canvas/textureCache';
 import type { RoomState } from '../net/schema/RoomState';
 
@@ -110,6 +114,23 @@ export function MulliganModal({ room }: MulliganModalProps) {
 
   const handCards = Object.values(cards).filter((c) => c.ownerId === myId && c.zone === 'HAND');
 
+  /**
+   * O CUSTO SAI DA REGRA DA MESA, não de `mulliganCount` cru.
+   *
+   * O modal cobrava uma carta por mulligan em qualquer tipo, e por isso o
+   * primeiro mulligan de Commander — que a regra dá de graça — já pedia uma
+   * carta ao fundo. Ver `cartasParaDevolverNoMulligan`.
+   *
+   * O teto pela própria mão é o que impede uma tela sem saída: a compra do
+   * mulligan é `min(7, grimório)`, então uma mesa com grimório curto pode
+   * receber menos de sete cartas — e pedir mais cartas do que a mão tem
+   * deixaria "Confirmar" desabilitado para sempre.
+   */
+  const cartasParaDevolver = Math.min(
+    cartasParaDevolverNoMulligan(tipoDeMulligan, mulliganCount),
+    handCards.length,
+  );
+
   // Se já há carta em jogo, a partida começou: nunca reabrir por cima da mesa.
   const partidaEmAndamento = Object.values(cards).some(
     (c) => c.ownerId === myId && (c.zone === 'BATTLEFIELD' || c.zone === 'GRAVEYARD'),
@@ -118,7 +139,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
   if (decidiu || jaDecidiuNoServidor || partidaEmAndamento || handCards.length === 0) return null;
 
   const handleKeep = () => {
-    if (mulliganCount > 0) {
+    if (cartasParaDevolver > 0) {
       setIsSelectingBottom(true);
     } else {
       registrarDecisao();
@@ -133,7 +154,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
   const toggleCardSelection = (cardId: string) => {
     setSelectedCards((atual) => {
       if (atual.includes(cardId)) return atual.filter((id) => id !== cardId);
-      if (atual.length >= mulliganCount) return atual;
+      if (atual.length >= cartasParaDevolver) return atual;
       return [...atual, cardId];
     });
   };
@@ -159,11 +180,13 @@ export function MulliganModal({ room }: MulliganModalProps) {
 
       <div className="mb-6 text-center">
         <h1 className="mb-2 text-3xl font-bold text-white drop-shadow-lg sm:text-5xl">
-          {isSelectingBottom ? 'London Mulligan' : 'Sua Mão Inicial'}
+          {/* Era "London Mulligan" fixo, na mesma mesa de Commander que o
+              parágrafo abaixo já corrigia. O título diz o que a tela FAZ. */}
+          {isSelectingBottom ? 'Devolver ao Fundo' : 'Sua Mão Inicial'}
         </h1>
         <p className="text-text-muted text-sm sm:text-xl">
           {isSelectingBottom
-            ? `Selecione ${mulliganCount} carta(s) para devolver ao fundo do grimório.`
+            ? `Selecione ${cartasParaDevolver} carta(s) para devolver ao fundo do grimório.`
             : 'Você pode manter estas cartas ou realizar um Mulligan.'}
         </p>
         {/* QUAL REGRA ESTÁ VALENDO, numa linha.
@@ -232,11 +255,11 @@ export function MulliganModal({ room }: MulliganModalProps) {
         {isSelectingBottom ? (
           <button
             onClick={handleConfirmBottom}
-            disabled={selectedCards.length !== mulliganCount}
+            disabled={selectedCards.length !== cartasParaDevolver}
             className="bg-primary hover:bg-primary-hover flex items-center gap-3 rounded-xl px-6 py-3 text-base font-bold text-white shadow-[0_0_30px_rgba(59,130,246,0.3)] transition-all active:scale-95 disabled:opacity-50 sm:text-xl"
           >
             <Check className="h-6 w-6" />
-            Confirmar ({selectedCards.length}/{mulliganCount})
+            Confirmar ({selectedCards.length}/{cartasParaDevolver})
           </button>
         ) : (
           <>

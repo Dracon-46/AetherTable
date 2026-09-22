@@ -16,6 +16,7 @@ import {
   CONFIG_DE_SALA_PADRAO,
   LIMITES_DE_SALA,
   acharFormato,
+  cartasParaDevolverNoMulligan,
   ehNomeDeSala,
   formatoTemNivelDePoder,
   nomeDeSalaSugerido,
@@ -150,5 +151,46 @@ describe('rótulos', () => {
     expect(nomeDeSalaSugerido('Gaspare')).toBe('Mesa de Gaspare');
     expect(ehNomeDeSala(nomeDeSalaSugerido('x'.repeat(60)))).toBe(true);
     expect(ehNomeDeSala(nomeDeSalaSugerido(''))).toBe(true);
+  });
+});
+
+/**
+ * O custo do mulligan é decidido no CLIENTE — o servidor devolve a mão,
+ * embaralha e compra sete em todos os tipos. Estes casos existem porque a conta
+ * morava dentro do JSX do modal, sem teste, e cobrava do jogador de Commander o
+ * mulligan que a regra dá de graça.
+ */
+describe('cartasParaDevolverNoMulligan', () => {
+  it('COMMANDER dá o primeiro mulligan de graça', () => {
+    expect(cartasParaDevolverNoMulligan('COMMANDER', 1)).toBe(0);
+    expect(cartasParaDevolverNoMulligan('COMMANDER', 2)).toBe(1);
+    expect(cartasParaDevolverNoMulligan('COMMANDER', 7)).toBe(6);
+  });
+
+  it('LONDON cobra desde o primeiro', () => {
+    expect(cartasParaDevolverNoMulligan('LONDON', 1)).toBe(1);
+    expect(cartasParaDevolverNoMulligan('LONDON', 2)).toBe(2);
+  });
+
+  /**
+   * LIVRE não cobra, e isto não é só coerência com o nome: a janela do LIVRE
+   * não tem teto, então `mulliganCount` passa de sete. Cobrar N cartas de uma
+   * mão de sete deixaria o botão "Confirmar" impossível de satisfazer — o
+   * jogador ficaria preso na tela de devolução.
+   */
+  it('LIVRE não cobra carta nenhuma, em nenhuma contagem', () => {
+    expect(cartasParaDevolverNoMulligan('LIVRE', 1)).toBe(0);
+    expect(cartasParaDevolverNoMulligan('LIVRE', 12)).toBe(0);
+  });
+
+  it('sem mulligan nenhum, ninguém devolve nada', () => {
+    expect(cartasParaDevolverNoMulligan('COMMANDER', 0)).toBe(0);
+    expect(cartasParaDevolverNoMulligan('LONDON', 0)).toBe(0);
+  });
+
+  it('não pede número negativo nem quebrado de cartas', () => {
+    expect(cartasParaDevolverNoMulligan('LONDON', -3)).toBe(0);
+    expect(cartasParaDevolverNoMulligan('LONDON', 2.7)).toBe(2);
+    expect(cartasParaDevolverNoMulligan('COMMANDER', Number.NaN)).toBe(0);
   });
 });
