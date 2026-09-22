@@ -1,5 +1,9 @@
 /**
- * undo.ts — janela de arrependimento de 10 s (DOC-036 item 130, RN: DOC-031).
+ * undo.ts — o MEMENTO do padrao Command: o recorte de estado que um comando
+ * guarda para conseguir se desfazer (DOC-036 item 130, RN: DOC-031).
+ *
+ * Quem decide QUANDO capturar e QUANDO restaurar e `intents/comandos.ts`; aqui
+ * ficam o recorte, a janela e a lista do que nao volta atras.
  *
  * O QUE ESTE MODULO NAO FAZ, E POR QUE
  *
@@ -260,31 +264,3 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_RESPOND_VIEW',
   'INTENT_REVOKE_VIEW',
 ]);
-
-/** Um snapshot por jogador — o ultimo. Undo nao empilha (DOC-036 item 130). */
-export class JornalUndo {
-  private readonly porJogador = new Map<string, Snapshot>();
-
-  registrar(state: RoomState, sid: string, tipo: string): void {
-    if (NAO_REVERSIVEIS.has(tipo)) {
-      // Uma acao irreversivel invalida o passado: desfazer "por cima" dela
-      // restauraria um estado que nao existe mais.
-      this.porJogador.delete(sid);
-      return;
-    }
-    this.porJogador.set(sid, capturar(state, sid, tipo));
-  }
-
-  desfazer(state: RoomState, sid: string, agora = Date.now()): string | null {
-    const snap = this.porJogador.get(sid);
-    if (!snap) return null;
-    this.porJogador.delete(sid);
-    if (agora - snap.em > JANELA_UNDO_MS) return null;
-    restaurar(state, snap);
-    return snap.tipo;
-  }
-
-  esquecer(sid: string): void {
-    this.porJogador.delete(sid);
-  }
-}

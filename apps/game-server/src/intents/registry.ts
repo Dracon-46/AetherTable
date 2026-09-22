@@ -20,7 +20,6 @@ import {
   DERROTA,
   HIDDEN_ZONES,
   REALTIME_LIMITS,
-  zoneOrderKey,
   type IntentType,
   type LogEvent,
   type ServerEventType,
@@ -31,17 +30,9 @@ import { Card } from '../schema/Card';
 import type { RoomState } from '../schema/RoomState';
 import { concede, revoga } from '../schema/visibility';
 import { Arrow } from '../schema/Arrow';
-import {
-  abaixoDe,
-  embaralhar,
-  embaralharMantendoTopo,
-  girarMoeda,
-  rolarDado,
-  sortear,
-} from '../services/rng';
+import { embaralhar, embaralharMantendoTopo, sortear } from '../services/rng';
 import {
   logCompra,
-  logDado,
   nomeDaZona,
   logEmbaralhar,
   logBusca,
@@ -57,7 +48,9 @@ import {
   reconciliarCartaParaTodos,
   reconciliarTudo,
 } from '../services/view-sync';
+import { aplicarEfeitosDeZona, atualizarContagens, carta, nomeDe, ordem } from '../services/mesa';
 import * as S from './schemas';
+import { DescartarAoAcaso, GirarMoeda, RolarDado, SortearCarta, SortearJogador } from './sorteios';
 
 /** O que um handler recebe. Abstrai a Room para o handler ser testavel puro. */
 export interface IntentContext {
@@ -141,21 +134,6 @@ export interface IntentHandler<Schema extends z.ZodTypeAny> {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function carta(state: RoomState, id: string): Card | undefined {
-  return state.cards.get(id);
-}
-
-function ordem(state: RoomState, playerId: string, zone: Zone) {
-  return state.zoneOrder.get(zoneOrderKey(playerId, zone))?.items;
-}
-
-function nomeDe(state: RoomState, sid: string): string {
-  // A plateia entra na busca por causa do CHAT, que e a unica coisa que um
-  // espectador consegue disparar. Sem esta linha o comentario dele chegava
-  // assinado por "Alguem" — e a mesa nao tinha como saber quem falou.
-  return state.players.get(sid)?.name ?? state.espectadores.get(sid)?.name ?? 'Alguem';
-}
 
 /**
  * Barra quem nao e anfitriao, e devolve `true` quando ja respondeu o erro.
@@ -346,89 +324,6 @@ function exigirVez(ctx: IntentContext, intent: string): boolean {
     intent,
   });
   return true;
-}
-
-function atualizarContagens(state: RoomState, playerId: string): void {
-  const player = state.players.get(playerId);
-  if (!player) return;
-  player.handCount = ordem(state, playerId, 'HAND')?.length ?? 0;
-  player.libraryCount = ordem(state, playerId, 'LIBRARY')?.length ?? 0;
-}
-
-/**
- * Efeitos colaterais obrigatorios de toda troca de zona (DOC-032 §2.1).
- * Inclui a limpeza de concessoes — o erro mais facil de cometer neste modelo.
- */
-function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zone): void {
-  limparConcessoes(card);
-
-  /**
-   * REAPLICA A PERMISSAO DE ZONA (ver `Player.sharedZones`).
-   *
-   * `limparConcessoes` acabou de apagar `revealedTo` — o que e correto para uma
-   * concessao sobre AQUELA carta. Mas "deixei fulano ver a minha mao" e uma
-   * concessao sobre a ZONA: sem esta linha, a permissao morria na primeira
-   * compra e o observador ficava vendo versos.
-   */
-  const dono = ctx.state.players.get(card.ownerId);
-  const compartilhada = dono?.sharedZones.get(destino);
-  if (compartilhada) card.revealedTo = compartilhada;
-
-  switch (destino) {
-    case 'HAND':
-    case 'LIBRARY':
-      card.x = 0;
-      card.y = 0;
-      card.zIndex = 0;
-      card.isTapped = false;
-      card.faceDown = false;
-      card.damage = 0;
-      card.counters.clear();
-      break;
-    case 'GRAVEYARD':
-    case 'EXILE':
-    case 'COMMAND':
-      card.isTapped = false;
-      card.damage = 0;
-      card.counters.clear();
-      break;
-    case 'BATTLEFIELD':
-      // Mantem tapped/counters apenas se veio do proprio Battlefield.
-      if (card.zone !== 'BATTLEFIELD') {
-        card.isTapped = false;
-        card.counters.clear();
-      }
-      break;
-    default:
-      break;
-  }
-
-  card.zone = destino;
-  card.lockedBy = '';
-
-  /**
-   * O CONTROLE VOLTA AO DONO AO SAIR DO CAMPO (DOC-052 §2.1).
-   *
-   * `INTENT_SET_CONTROLLER` deixa uma permanente sob controle alheio. Sem este
-   * reset, a carta roubada continuava com `controllerId` do ladrão depois de
-   * morrer: ela ia para o cemitério do DONO (`ownerId` nunca muda) mas
-   * continuava desenhada na faixa do ladrão, e — pior — a autorização
-   * `CONTROLLER` continuava valendo. Na prática, quem roubou uma criatura uma
-   * vez ganhava permissão permanente de mexer numa carta que agora está numa
-   * zona do adversário.
-   *
-   * Controle é um estado do campo de batalha; fora dele não existe.
-   */
-  if (destino !== 'BATTLEFIELD' && card.controllerId !== card.ownerId) {
-    card.controllerId = card.ownerId;
-  }
-
-  // Fichas deixam de existir fora do campo.
-  if (card.isToken && destino !== 'BATTLEFIELD') {
-    ctx.state.cards.delete(card.id);
-  }
-
-  reconciliarCartaParaTodos(ctx.clients, card);
 }
 
 /** Move um id entre as listas de ordem de zona. */
@@ -724,30 +619,20 @@ const INTENT_SET_LIFE: IntentHandler<typeof S.SetLifeIntent> = {
   },
 };
 
-const INTENT_ROLL_DICE: IntentHandler<typeof S.RollDiceIntent> = {
-  schema: S.RollDiceIntent,
-  autoriza: 'QUALQUER_JOGADOR',
-  executa(ctx, { sides }) {
-    const sid = ctx.client.sessionId;
-    const resultado = rolarDado(sides);
-    ctx.broadcast('dice', { actorId: sid, sides, result: resultado });
-    ctx.log(logDado(sid, nomeDe(ctx.state, sid), sides, resultado));
-  },
-};
+/**
+ * ─── A FAMILIA DE SORTEIO MORA EM `sorteios.ts` ─────────────────────────────
+ *
+ * As cinco intencoes ao acaso (dado, moeda, jogador, carta, descarte) sao
+ * subclasses de `AcaoDeSorteio`: o esqueleto — pode? sorteia, aplica, anuncia,
+ * registra — esta na classe-base, e cada uma escreve so os passos que tem.
+ *
+ * A instancia entra na tabela sem adaptador nenhum: `schema`, `autoriza` e
+ * `executa` sao exatamente o que `IntentHandler` pede, e o dispatcher nao
+ * precisa saber que do outro lado ha um metodo-template.
+ */
+const INTENT_ROLL_DICE = new RolarDado();
 
-const INTENT_FLIP_COIN: IntentHandler<typeof S.FlipCoinIntent> = {
-  schema: S.FlipCoinIntent,
-  autoriza: 'QUALQUER_JOGADOR',
-  executa(ctx) {
-    const sid = ctx.client.sessionId;
-    const r = girarMoeda();
-    // O dado transmite um evento efemero; a moeda so escrevia no log. A
-    // assimetria nao era intencional: quem girava a moeda nao via nada
-    // acontecer na mesa, e o resultado se perdia na primeira rolagem de log.
-    ctx.broadcast('coin', { actorId: sid, result: r });
-    ctx.log(criarLog('DICE', sid, `${nomeDe(ctx.state, sid)} girou a moeda: ${r}`));
-  },
-};
+const INTENT_FLIP_COIN = new GirarMoeda();
 
 const INTENT_CHAT: IntentHandler<typeof S.ChatIntent> = {
   schema: S.ChatIntent,
@@ -2332,31 +2217,7 @@ const INTENT_SET_ROOM_CONFIG: IntentHandler<typeof S.SetRoomConfigIntent> = {
 
 // ─── Aleatoriedade (RN06: sempre via services/rng.ts) ────────────────────────
 
-const INTENT_DISCARD_RANDOM: IntentHandler<typeof S.DiscardRandomIntent> = {
-  schema: S.DiscardRandomIntent,
-  autoriza: 'QUALQUER_JOGADOR',
-  executa(ctx, { amount }) {
-    const sid = ctx.client.sessionId;
-    const mao = ordem(ctx.state, sid, 'HAND');
-    const cemiterio = ordem(ctx.state, sid, 'GRAVEYARD');
-    if (!mao || !cemiterio) return;
-
-    const n = Math.min(amount, mao.length);
-    for (let i = 0; i < n; i += 1) {
-      const indice = abaixoDe(mao.length);
-      const id = mao[indice];
-      if (!id) break;
-      mao.splice(indice, 1);
-      const c = carta(ctx.state, id);
-      if (!c) continue;
-      cemiterio.push(id);
-      aplicarEfeitosDeZona(ctx, c, 'GRAVEYARD');
-    }
-
-    atualizarContagens(ctx.state, sid);
-    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} descartou ${n} carta(s) ao acaso`));
-  },
-};
+const INTENT_DISCARD_RANDOM = new DescartarAoAcaso();
 
 const INTENT_DISCARD_ALL: IntentHandler<typeof S.DiscardAllIntent> = {
   schema: S.DiscardAllIntent,
@@ -2382,45 +2243,9 @@ const INTENT_DISCARD_ALL: IntentHandler<typeof S.DiscardAllIntent> = {
   },
 };
 
-const INTENT_RANDOM_PLAYER: IntentHandler<typeof S.RandomPlayerIntent> = {
-  schema: S.RandomPlayerIntent,
-  autoriza: 'QUALQUER_JOGADOR',
-  executa(ctx) {
-    const ids = Array.from(ctx.state.players.keys());
-    const escolhido = sortear(ids);
-    if (!escolhido) return;
-    ctx.log(
-      criarLog(
-        'DICE',
-        ctx.client.sessionId,
-        `Sorteio: ${nomeDe(ctx.state, escolhido)} foi escolhido`,
-      ),
-    );
-  },
-};
+const INTENT_RANDOM_PLAYER = new SortearJogador();
 
-const INTENT_RANDOM_CARD: IntentHandler<typeof S.RandomCardIntent> = {
-  schema: S.RandomCardIntent,
-  autoriza: 'OWNER_DA_ZONA',
-  executa(ctx, { zone }) {
-    const sid = ctx.client.sessionId;
-    const lista = ordem(ctx.state, sid, zone);
-    if (!lista || lista.length === 0) return;
-
-    const id = sortear(Array.from(lista));
-    if (!id) return;
-    const c = carta(ctx.state, id);
-    if (!c) return;
-
-    // A identidade vai SO para o dono. Um broadcast aqui vazaria a mao.
-    c.peekedBy = concede(c.peekedBy, sid);
-    reconciliarCartaParaTodos(ctx.clients, c);
-    ctx.send('revealToOwner', { cards: [{ id: c.id, scryfallId: c.scryfallId }] });
-    ctx.log(
-      criarLog('DICE', sid, `${nomeDe(ctx.state, sid)} sorteou uma carta de ${nomeDaZona(zone)}`),
-    );
-  },
-};
+const INTENT_RANDOM_CARD = new SortearCarta();
 
 // ─── Setas, turno e reserva ──────────────────────────────────────────────────
 
