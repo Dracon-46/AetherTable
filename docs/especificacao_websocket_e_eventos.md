@@ -371,6 +371,21 @@ Ele também grava `turnoIniciadoEm`, junto com `INTENT_PASS_TURN`.
 **`INTENT_KEEP_HAND` só vale em `PLAYING`.** Marcado na sala de espera, o `keptHand` fechava a janela
 de mulligan da partida que ainda ia começar.
 
+#### A plateia tem teto próprio
+
+`maxClients` é assentos + plateia (`MAX_PLAYERS + MAX_ESPECTADORES`), e com a
+mesa ainda sem jogadores a sala aceitava dezoito espectadores. O `onAuth`
+recusa com `ROOM_FULL` o passe de espectador quando já há
+`MAX_ESPECTADORES` (10) assistindo.
+
+#### A votação vencida é encerrada pelo servidor
+
+A Room agenda o fim da votação no prazo (`votacaoExpiraEm`) e limpa os campos.
+Antes ela só era varrida no voto seguinte, e o painel do cliente decidia sumir
+comparando o prazo com o relógio do NAVEGADOR — quem estava com o relógio
+adiantado nunca via a votação. O cliente agora trata "aberta" como
+`votacaoAlvo !== ''`.
+
 #### Espectador não emite intenção
 
 Quem entra com um passe de espectador (claim `spectator` no seat token) é

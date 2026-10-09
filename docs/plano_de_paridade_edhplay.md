@@ -739,6 +739,10 @@ preservada, `ctrl`/`meta` colapsados para funcionar em macOS e Windows,
 perdeu a tecla, validação no servidor contra o catálogo, e 26 testes só da
 gramática.
 
+✅ **Caps Lock corrigido:** a caixa de uma LETRA passou a vir só do Shift. Com o Caps
+Lock ligado, `a` (+1 marcador) chegava como `A` — o atalho de tirar o marcador — e a
+tecla fazia o oposto do que dizia (`normalizarTecla`, em `shared-types/atalhos.ts`).
+
 ⚠️ **E o catálogo tem 13 ações contra ~60.** `net/intents.ts` tem **88
 emissores funcionando** e apenas ~10 têm tecla. Construí o motor e não o
 populei.

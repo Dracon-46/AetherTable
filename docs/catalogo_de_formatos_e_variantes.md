@@ -200,9 +200,19 @@ o tipo fixo em criatura, todo Brawl comandado por planeswalker — legal desde o
   fixa de lendária acusava Murasa Rootgrazer e companhia.
 - A chave `paupercommander` descreve as 99, e o comandante incomum aparece nela como `not_legal` por
   definição. Na linha de comandante esse `not_legal` é ignorado — `banned` continua acusado.
-- Vida **30**, e não os 40 herdados de Commander (regras da pdhhomebase). O limite oficial de **16**
-  de dano de comandante ainda não tem campo no preset: fica registrado só no comentário de
-  `format.ts`.
+- Vida **30**, e não os 40 herdados de Commander (regras da pdhhomebase), e **16** de dano de
+  comandante elimina (`comandante.danoLetal`).
+
+**O dano de comandante letal é do formato** (`RegrasDeComandante.danoLetal`). Era 21 fixo no
+servidor, e a mesa eliminava quem, pelas regras do formato, ainda estava vivo:
+
+| Formato                                | `danoLetal`                        |
+| -------------------------------------- | ---------------------------------- |
+| Commander, Duel Commander, Planechase… | 21                                 |
+| PDH                                    | 16                                 |
+| Brawl, Historic Brawl, Oathbreaker     | `null` — o formato não tem a regra |
+
+O painel de vida usa o mesmo valor para destacar a linha em vermelho.
 
 **Canadian Highlander é mínimo de 100**, não exatamente 100. Herdar o `exato` de `comandante()`
 transformava um deck legal de 101 cartas em `TAMANHO` — um `erro`, dos poucos achados que barram a

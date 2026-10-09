@@ -379,14 +379,14 @@ fazia o dono ler o grimório inteiro, sem uma linha no log. Agora a cláusula s�
 
 ### 3.6 Sequestro de sala
 
-| Ameaça                       | Mitigação                                                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Adivinhar `roomId`           | 6 caracteres de um alfabeto de 32 → ~10⁹ combinações; senha opcional; _rate limit_ na tentativa de ingresso |
-| Reutilizar `seatToken`       | Uso único (`jti`), validade de 1 dia, vinculado ao `roomId`; não vale como sessão da API (§2.2)             |
-| Entrar na sala de voz alheia | JWT do LiveKit com `room` no claim                                                                          |
-| Força bruta de senha de sala | 3 tentativas e espera de 30 s por IP                                                                        |
-| Sala de jogador bloqueado    | Verificação de bloqueio no ingresso (`F36`)                                                                 |
-| Expulso voltar à mesa        | **Conta** (`sub`) bloqueada pela vida da sala, também como espectador (`PLAYER_BLOCKED`)                    |
+| Ameaça                       | Mitigação                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Adivinhar `roomId`           | 6 caracteres de um alfabeto de 32 → ~10⁹ combinações; senha opcional; _rate limit_ na tentativa de ingresso    |
+| Reutilizar `seatToken`       | Uso único (`jti`), validade de 1 dia, vinculado ao `roomId`; não vale como sessão da API (§2.2)                |
+| Entrar na sala de voz alheia | Passe de voz só com o passe da mesa (`X-Passe-De-Mesa`: `sub` e `roomId` conferidos); plateia sem `canPublish` |
+| Força bruta de senha de sala | 3 tentativas e espera de 30 s por IP                                                                           |
+| Sala de jogador bloqueado    | Verificação de bloqueio no ingresso (`F36`)                                                                    |
+| Expulso voltar à mesa        | **Conta** (`sub`) bloqueada pela vida da sala, também como espectador (`PLAYER_BLOCKED`)                       |
 
 **O expulso voltava pelo código da sala.** O bloqueio de quem o anfitrião removia era por
 `sessionId`, e cada entrada pede um seat token novo, com `sessionId` novo. Agora a sala guarda a
@@ -394,6 +394,12 @@ fazia o dono ler o grimório inteiro, sem uma linha no log. Agora a cláusula s�
 sala acabar.
 
 **Severidade:** Média · **Probabilidade:** Baixa
+
+**A voz era de qualquer um que soubesse o código.** O `room` no claim do LiveKit limitava o passe à
+sala, mas o passe saía para QUALQUER conta logada e QUALQUER código — e a vitrine pública lista os
+códigos. Uma conta qualquer entrava no canal de voz de uma mesa alheia, ouvia e falava. Agora o
+`GET /matches/:roomCode/voice-token` exige o passe da mesa como prova de assento (ou de plateia, que
+recebe o passe sem direito de falar).
 
 ### 3.7 Abuso e toxicidade
 

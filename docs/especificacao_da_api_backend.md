@@ -774,6 +774,14 @@ voz está desligada na plataforma: o cliente já trata token ausente como "esta
 mesa não tem voz" e monta a partida sem o LiveKit. Um 403 faria a tela mostrar
 falha de conexão numa mesa perfeitamente jogável.
 
+**Exige o passe da mesa no header `X-Passe-De-Mesa`.** O passe de voz saía
+para qualquer conta e qualquer código, e a vitrine pública LISTA os códigos:
+uma conta qualquer entrava no canal de voz de uma mesa alheia, ouvia e falava.
+O passe da mesa (seat token ou passe de espectador) é verificado com a
+audiência `aethertable-mesa` e precisa ter `sub` = a conta e `roomId` = a
+sala; sem isso a resposta é `{ token: null }`. Passe de espectador recebe
+`canPublish: false` — a plateia ouve e não fala.
+
 ### 5.5 `GET /salas` — **no game-server, não nesta API**
 
 A vitrine de mesas públicas é servida pelo **game-server** (mesmo host e porta
