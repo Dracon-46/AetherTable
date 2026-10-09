@@ -123,6 +123,22 @@ export interface RegrasDeComandante {
   quantidade: { minimo: number; maximo: number };
   /** O que pode ser comandante. Oathbreaker usa planeswalker. */
   tipo: 'creature' | 'planeswalker';
+  /**
+   * Brawl e Historic Brawl aceitam criatura lendária OU planeswalker lendário.
+   *
+   * Sem isto, `tipo: 'creature'` acusava todo deck de Brawl comandado por um
+   * planeswalker — que é legal desde o lançamento do formato — de ter o
+   * comandante errado.
+   */
+  aceitaPlaneswalker: boolean;
+  /**
+   * O comandante precisa ser LENDÁRIO.
+   *
+   * PDH é a exceção: o comandante é qualquer criatura INCOMUM, lendária ou
+   * não. Com a exigência fixa, Murasa Rootgrazer e companhia apareciam como
+   * comandante inválido num formato em que são escolhas comuns.
+   */
+  exigeLendario: boolean;
   /** Oathbreaker: a segunda carta da zona de comando é um feitiço. */
   feiticoAssinatura: boolean;
   /** Avisa quando uma carta sai da identidade de cor do comandante. */
@@ -252,6 +268,8 @@ function comandante(
     comandante: {
       quantidade: { minimo: 1, maximo: 2 },
       tipo: 'creature',
+      aceitaPlaneswalker: false,
+      exigeLendario: true,
       feiticoAssinatura: false,
       exigeIdentidadeDeCor: true,
       taxa: true,
@@ -326,7 +344,12 @@ export const FORMATOS: readonly FormatPreset[] = [
   construido('historic', 'Historic', 'historic'),
   construido('timeless', 'Timeless', 'timeless'),
   construido('alchemy', 'Alchemy', 'alchemy'),
-  construido('explorer', 'Explorer', 'explorer'),
+  // A Scryfall NÃO tem chave `explorer` (conferido na API em out/2026). Com
+  // `'explorer'` aqui, toda carta caía em "sem legalities" e o formato não
+  // acusava nada — nem Sol Ring. Explorer é o Pioneer do Arena: a chave
+  // `pioneer` acerta a banlist e o pool, e só deixa passar carta de Pioneer que
+  // ainda não chegou ao Arena. Por essa aproximação o formato fica em BETA.
+  construido('explorer', 'Explorer', 'pioneer', 'BETA'),
   // Peasant e Artisan não têm chave na Scryfall: o teto de raridade é a regra
   // inteira, e ela é verificável sem banlist.
   construido('peasant', 'Peasant', null, 'BETA', { tetoDeRaridade: 'uncommon' }),
@@ -351,15 +374,24 @@ export const FORMATOS: readonly FormatPreset[] = [
     tamanho: 60,
     vida: 25,
     jogadores: { min: 2, max: 4, padrao: 2 },
-    chaveDeLegalidade: 'brawl',
+    // A Scryfall renomeou as chaves quando o Arena trocou os nomes: o Brawl de
+    // 60 cartas do Standard é `standardbrawl`, e `brawl` passou a ser o pool do
+    // Historic Brawl. Com `'brawl'` aqui, o formato de 60 validava contra o
+    // pool errado e não acusava Thoughtseize, que não existe no Standard.
+    chaveDeLegalidade: 'standardbrawl',
     resumo: '60 cartas singleton do Standard, um comandante, 25 de vida.',
+    comandante: { aceitaPlaneswalker: true },
   }),
   comandante('historic_brawl', 'Historic Brawl', {
     tamanho: 100,
     vida: 25,
     jogadores: { min: 2, max: 4, padrao: 2 },
-    chaveDeLegalidade: 'historicbrawl',
+    // `historicbrawl` não existe na Scryfall: toda carta caía em "sem
+    // legalities" e nenhuma banida era acusada. O pool do Historic Brawl é a
+    // chave `brawl` — ver o comentário do Brawl acima.
+    chaveDeLegalidade: 'brawl',
     resumo: '100 cartas singleton do Historic, um comandante.',
+    comandante: { aceitaPlaneswalker: true },
   }),
   comandante('oathbreaker', 'Oathbreaker', {
     tamanho: 60,
@@ -377,12 +409,17 @@ export const FORMATOS: readonly FormatPreset[] = [
   }),
   comandante('pdh', 'Pauper EDH', {
     tamanho: 100,
-    vida: 40,
+    // Eram 40, herdados de Commander. As regras oficiais (pdhhomebase) são
+    // 30 de vida e 16 de dano de comandante — o preset não tem campo para o
+    // limite de dano de comandante, então os 16 ficam registrados só aqui até
+    // a mesa ganhar essa regra.
+    vida: 30,
     jogadores: { min: 2, max: 6, padrao: 4 },
     chaveDeLegalidade: 'paupercommander',
     resumo: '100 singleton só de comuns; o comandante é uma criatura incomum.',
     deck: { tetoDeRaridade: 'common' },
-    comandante: { raridadeDoComandante: 'uncommon' },
+    // Qualquer criatura incomum, lendária ou não — ver `exigeLendario`.
+    comandante: { raridadeDoComandante: 'uncommon', exigeLendario: false },
   }),
   comandante('tiny_leaders', 'Tiny Leaders', {
     tamanho: 50,
@@ -401,7 +438,10 @@ export const FORMATOS: readonly FormatPreset[] = [
       chaveDeLegalidade: null,
       status: 'BETA',
       resumo: '100 singleton, sem comandante, com lista de pontos.',
-      deck: { listaDePontos: true },
+      // Highlander canadense é MÍNIMO de 100, não exatamente 100. Herdar o
+      // `exato` de `comandante()` transformava um deck legal de 101 cartas em
+      // erro de TAMANHO — que é dos poucos achados que barram a mesa.
+      deck: { listaDePontos: true, exato: null, maximo: null },
     }),
     // Highlander canadense NÃO tem comandante, apesar de ser um singleton de
     // 100. Sem este `null`, o validador exigiria uma carta na zona de comando
@@ -614,6 +654,8 @@ export const FORMATOS: readonly FormatPreset[] = [
     comandante: {
       quantidade: { minimo: 1, maximo: 2 },
       tipo: 'creature',
+      aceitaPlaneswalker: false,
+      exigeLendario: true,
       feiticoAssinatura: false,
       exigeIdentidadeDeCor: true,
       taxa: true,

@@ -50,6 +50,8 @@ export const HANDSHAKE_ERRORS = [
   'ROOM_FULL',
   'ROOM_CLOSED',
   'PLAYER_BLOCKED',
+  /** A mesma conta já tem um assento conectado nesta sala. */
+  'ALREADY_SEATED',
 ] as const;
 export type HandshakeError = (typeof HANDSHAKE_ERRORS)[number];
 
