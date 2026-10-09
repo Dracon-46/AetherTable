@@ -12,7 +12,7 @@ import {
   ParseUUIDPipe,
   NotFoundException,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -27,6 +27,7 @@ import {
 } from './decks.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
+import { SEM_LIMITE_GLOBAL } from '../common/limites.js';
 import { validarDeckParaFormato, type DeckValidavel } from './formato.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
@@ -168,6 +169,17 @@ export class DecksController {
 @ApiTags('Internal')
 @Controller('internal/decks')
 @UseGuards(InternalApiGuard)
+/**
+ * FORA DO RATE LIMIT GLOBAL.
+ *
+ * O balde global é por IP, e todo pedido desta rota vem do MESMO IP — o do nó
+ * do game-server. Uma mesa de oito começando junta são oito decks em segundos;
+ * duas mesas, dezesseis. Passava de 10 em 5 s, voltava 429, e o jogador via
+ * "Seu grimório não pôde ser carregado" com um deck perfeitamente válido. O que
+ * protege esta rota é o segredo do `InternalApiGuard` (comparado em tempo
+ * constante), não a contagem por IP.
+ */
+@SkipThrottle(SEM_LIMITE_GLOBAL)
 export class InternalDecksController {
   constructor(private readonly decksService: DecksService) {}
 

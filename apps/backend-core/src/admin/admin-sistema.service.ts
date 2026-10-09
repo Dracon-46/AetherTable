@@ -343,12 +343,46 @@ export class AdminSistemaService {
     const antes = await this.prisma.cosmeticItem.findUnique({ where: { id } });
     if (!antes) throw new BadRequestException('Cosmético não encontrado.');
 
+    /**
+     * ─── ITEM AUTORAL: O TIER E O NOME TAMBÉM MORAM EM `parametros` ──────────
+     *
+     * O que o cliente desenha e a mesa confere ao equipar é o item de
+     * `parametros` — e ele carrega `tier` e `nome` próprios. Esta rota mudava
+     * só as colunas `minTier` e `name`: o painel mostrava o item como gratuito
+     * enquanto o cadeado continuava fechado (ou o contrário), e a renomeação
+     * nunca chegava aos jogadores. Duas fontes para a mesma regra, divergindo.
+     *
+     * O item é renormalizado com os valores novos, pela mesma função da
+     * criação e da leitura do catálogo. Se ele deixar de ser válido — o nome
+     * do item autoral cabe em 48 caracteres, a coluna em 64 —, a mudança é
+     * recusada: gravar seria fazer o item sumir do catálogo na próxima recarga.
+     */
+    let parametros: Prisma.InputJsonValue | undefined;
+    const atuais: unknown = antes.parametros;
+    const mexeNoItem = dto.nome !== undefined || dto.minTier !== undefined;
+    if (mexeNoItem && atuais && typeof atuais === 'object' && !Array.isArray(atuais)) {
+      const autoral = normalizarCosmeticoAutoral({
+        ...(atuais as Record<string, unknown>),
+        familia: FAMILIA_POR_TIPO[antes.type],
+        ...(dto.nome !== undefined ? { nome: dto.nome } : {}),
+        // A mesma regra de `criarCosmetico`: o tier de equipar sai do `minTier`.
+        ...(dto.minTier !== undefined ? { tier: dto.minTier > 0 ? 'APOIADOR' : 'FREE' } : {}),
+      });
+      if (!autoral) {
+        throw new BadRequestException(
+          'Com esta mudança o item autoral deixaria de ser válido (o nome dele cabe em até 48 caracteres) e sumiria do catálogo dos jogadores.',
+        );
+      }
+      parametros = autoral.item as unknown as Prisma.InputJsonValue;
+    }
+
     const item = await this.prisma.cosmeticItem.update({
       where: { id },
       data: {
         ...(dto.nome !== undefined ? { name: dto.nome } : {}),
         ...(dto.minTier !== undefined ? { minTier: dto.minTier } : {}),
         ...(dto.ativo !== undefined ? { isActive: dto.ativo } : {}),
+        ...(parametros !== undefined ? { parametros } : {}),
       },
     });
 

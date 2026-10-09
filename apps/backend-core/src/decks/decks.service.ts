@@ -1,8 +1,18 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { CardsService } from '../cards/cards.service.js';
-import { BoardType } from '@prisma/client';
-import type { CardIdentifier, ScryfallCard } from '@aethertable/scryfall-client';
+import { BoardType, type DeckCard } from '@prisma/client';
+import type { ScryfallCard } from '@aethertable/scryfall-client';
+import { acharFormato } from '@aethertable/shared-types';
+import {
+  MAXIMO_DE_COPIAS,
+  analisarListaDeImportacao,
+  casarResultados,
+  pedidosAScryfall,
+} from './importacao.js';
+
+/** A mensagem do teto, igual em toda rota que escreve quantidade. */
+const ACIMA_DO_TETO = `Máximo de ${MAXIMO_DE_COPIAS} cópias por carta`;
 
 /**
  * ─── POR QUE ESTE SERVIÇO NÃO FALA MAIS COM A SCRYFALL ─────────────────────
@@ -65,13 +75,31 @@ export class DecksService {
         // Ids REPETIDOS não viram identificadores repetidos: um deck com
         // quatro cópias da mesma impressão pedia a mesma carta quatro vezes e
         // consumia o teto de 75 do lote com duplicatas.
-        const unicos = [...new Set(deck.cards.map((c) => c.scryfallId))];
+        //
+        // Minúsculas dos dois lados: linhas gravadas antes de o DTO normalizar
+        // podem ter o id em maiúsculas, e a Scryfall devolve em minúsculas. Sem
+        // isto a carta não casava, vinha sem nome e com `isBanned: false` — uma
+        // banida em maiúsculas passava pela trava da mesa.
+        const unicos = [...new Set(deck.cards.map((c) => c.scryfallId.toLowerCase()))];
         const resposta = await this.cards.collection(unicos.map((id) => ({ id })));
-        const scryMap = new Map<string, ScryfallCard>(resposta.data.map((d) => [d.id, d]));
+        const scryMap = new Map<string, ScryfallCard>(
+          resposta.data.map((d) => [d.id.toLowerCase(), d]),
+        );
+
+        /**
+         * A CHAVE DE LEGALIDADE DO FORMATO, e não o id do formato.
+         *
+         * Era `legalities[deck.formatId]`. Para Commander e Modern os dois
+         * coincidem, e por isso o defeito não aparecia; para Duel Commander
+         * (`duel`), PDH (`paupercommander`), Historic Brawl (`brawl`) e
+         * Commander 1v1 (`commander`) a chave lida não existia, e NENHUMA
+         * banida era marcada — o deck entrava na mesa com elas.
+         */
+        const chave = acharFormato(deck.formatId).deck.chaveDeLegalidade;
 
         // Injeta dados virtuais para o frontend usar (nome, legalidade, set)
         (deck as { cards: unknown[] }).cards = deck.cards.map((c) => {
-          const extra = scryMap.get(c.scryfallId);
+          const extra = scryMap.get(c.scryfallId.toLowerCase());
           return {
             ...c,
             name: extra ? extra.name : 'Desconhecido',
@@ -80,11 +108,11 @@ export class DecksService {
             // A legalidade era checada SEMPRE contra Commander, mesmo num deck
             // de Modern ou Pauper: cartas legais no formato do deck vinham
             // marcadas como banidas e o `join` bloqueava a entrada na mesa.
-            isBanned: extra
-              ? (extra.legalities as Record<string, string> | undefined)?.[
-                  String(deck.formatId ?? 'commander').toLowerCase()
-                ] === 'banned'
-              : false,
+            // Formato sem chave (freeform, peasant) não tem banlist a consultar.
+            isBanned:
+              extra && chave
+                ? (extra.legalities as Record<string, string> | undefined)?.[chave] === 'banned'
+                : false,
             imageNormal:
               extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
             priceUsd: extra?.prices?.usd || 0,
@@ -124,6 +152,10 @@ export class DecksService {
              */
             rarity: extra?.rarity ?? '',
             legalities: extra?.legalities ?? {},
+            // `undefined` quando a carta não voltou: a estimativa de bracket
+            // conta isso como "sem dados" e não como "não é Game Changer" —
+            // sem a distinção, uma Scryfall fora do ar mostrava "Bracket 1".
+            gameChanger: typeof extra?.game_changer === 'boolean' ? extra.game_changer : undefined,
           };
         });
       } catch (erro) {
@@ -196,17 +228,38 @@ export class DecksService {
     // entre elas — o Neon do plano gratuito autossuspende — apagava a carta e
     // deixava o contador alto. O deck passava a ser recusado na mesa por um
     // número que não corresponde a nada.
-    await this.prisma.$transaction([
-      this.prisma.deckCard.delete({ where: { id: cardId } }),
-      this.prisma.deck.update({
+    //
+    // O decremento usa a quantidade que o `delete` APAGOU, e não a lida acima:
+    // um `+1` de outra aba entre a leitura e a remoção deixava o contador uma
+    // cópia acima do deck real.
+    await this.prisma.$transaction(async (tx) => {
+      const apagada = await tx.deckCard.delete({
+        where: { id: cardId },
+        select: { quantity: true },
+      });
+      await tx.deck.update({
         where: { id: deckId },
-        data: { cardCount: { decrement: card.quantity } },
-      }),
-    ]);
+        data: { cardCount: { decrement: apagada.quantity } },
+      });
+    });
 
     return { success: true };
   }
 
+  /**
+   * ─── QUANTIDADE RELATIVA, NUNCA ABSOLUTA ─────────────────────────────────
+   *
+   * Era `quantity: card.quantity + delta`, com `card` lido ANTES da transação.
+   * Dois cliques de `+1` concorrentes (duas abas, ou o duplo clique que a tela
+   * não segura) liam o mesmo 3 e gravavam os dois 4 — enquanto o contador,
+   * que já era relativo, subia para 5. O deck ficava com `cardCount` acima da
+   * soma real, e a mesa recusava um deck correto.
+   *
+   * Agora a quantidade é escrita com `increment`, e a decisão de apagar ou de
+   * recusar o teto sai do valor que o PRÓPRIO update devolveu: a linha fica
+   * travada até o fim da transação, então o segundo clique enxerga o primeiro.
+   * Não havia teto aqui: `+99` sobre 99 gravava 198.
+   */
   async updateCardQuantity(userId: string, deckId: string, cardId: string, delta: number) {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
@@ -214,24 +267,33 @@ export class DecksService {
     const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
     if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
 
-    const newQuantity = card.quantity + delta;
-    if (newQuantity <= 0) {
-      await this.prisma.$transaction([
-        this.prisma.deckCard.delete({ where: { id: cardId } }),
-        this.prisma.deck.update({
+    if (delta === 0) return { success: true };
+
+    await this.prisma.$transaction(async (tx) => {
+      const linha = await tx.deckCard.update({
+        where: { id: cardId },
+        data: { quantity: { increment: delta } },
+        select: { quantity: true },
+      });
+
+      // Lançar dentro da transação desfaz o incremento acima.
+      if (linha.quantity > MAXIMO_DE_COPIAS) throw new BadRequestException(ACIMA_DO_TETO);
+
+      if (linha.quantity <= 0) {
+        await tx.deckCard.delete({ where: { id: cardId } });
+        // Saem do contador as cópias que a linha tinha ANTES deste delta.
+        await tx.deck.update({
           where: { id: deckId },
-          data: { cardCount: { decrement: card.quantity } },
-        }),
-      ]);
-    } else {
-      await this.prisma.$transaction([
-        this.prisma.deckCard.update({ where: { id: cardId }, data: { quantity: newQuantity } }),
-        this.prisma.deck.update({
-          where: { id: deckId },
-          data: { cardCount: { increment: delta } },
-        }),
-      ]);
-    }
+          data: { cardCount: { decrement: linha.quantity - delta } },
+        });
+        return;
+      }
+
+      await tx.deck.update({
+        where: { id: deckId },
+        data: { cardCount: { increment: delta } },
+      });
+    });
 
     return { success: true };
   }
@@ -246,26 +308,35 @@ export class DecksService {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
-    // Verifica se a carta já existe no deck
-    const existingCard = await this.prisma.deckCard.findFirst({
-      where: { deckId, scryfallId, boardType },
-    });
+    // O DTO já normaliza; repetir aqui protege qualquer outro chamador. Um id
+    // em maiúsculas virava uma segunda linha da mesma carta.
+    const id = scryfallId.toLowerCase();
 
-    const escritaDaCarta = existingCard
-      ? this.prisma.deckCard.update({
-          where: { id: existingCard.id },
-          data: { quantity: existingCard.quantity + quantity },
-        })
-      : this.prisma.deckCard.create({ data: { deckId, scryfallId, quantity, boardType } });
+    /**
+     * `upsert` na chave única, com `increment`.
+     *
+     * Era `findFirst` e depois `update` com `existente.quantity + quantity` —
+     * leitura e escrita separadas. Dois "adicionar" simultâneos liam o mesmo
+     * valor e um dos incrementos sumia (o contador, relativo, contava os dois),
+     * ou os dois tentavam `create` e o segundo estourava a chave única em 500.
+     */
+    await this.prisma.$transaction(async (tx) => {
+      const linha = await tx.deckCard.upsert({
+        where: { deckId_scryfallId_boardType: { deckId, scryfallId: id, boardType } },
+        create: { deckId, scryfallId: id, quantity, boardType },
+        update: { quantity: { increment: quantity } },
+        select: { quantity: true },
+      });
 
-    // Carta e contador na MESMA transação: as duas acontecem, ou nenhuma.
-    await this.prisma.$transaction([
-      escritaDaCarta,
-      this.prisma.deck.update({
+      // O teto do DTO vale por pedido; somado ao que já estava, passava dele.
+      if (linha.quantity > MAXIMO_DE_COPIAS) throw new BadRequestException(ACIMA_DO_TETO);
+
+      // Carta e contador na MESMA transação: as duas acontecem, ou nenhuma.
+      await tx.deck.update({
         where: { id: deckId },
         data: { cardCount: { increment: quantity } },
-      }),
-    ]);
+      });
+    });
 
     return { success: true };
   }
@@ -277,9 +348,9 @@ export class DecksService {
     const card = await this.prisma.deckCard.findFirst({ where: { id: cardId, deckId } });
     if (!card) throw new NotFoundException('Carta não encontrada no deck');
 
-    await this.prisma.deckCard.update({
-      where: { id: cardId },
-      data: { scryfallId: newScryfallId },
+    await this.moverLinha(deckId, card, {
+      scryfallId: newScryfallId.toLowerCase(),
+      boardType: card.boardType,
     });
 
     return { success: true };
@@ -292,12 +363,57 @@ export class DecksService {
     const card = await this.prisma.deckCard.findFirst({ where: { id: cardId, deckId } });
     if (!card) throw new NotFoundException('Carta não encontrada no deck');
 
-    await this.prisma.deckCard.update({
-      where: { id: cardId },
-      data: { boardType },
-    });
+    await this.moverLinha(deckId, card, { scryfallId: card.scryfallId, boardType });
 
     return { success: true };
+  }
+
+  /**
+   * ─── MOVER PARA ONDE A CARTA JÁ ESTÁ É JUNTAR, NÃO ERRO 500 ──────────────
+   *
+   * Trocar o board ou a impressão de uma linha é reescrever dois campos da
+   * chave única `(deckId, scryfallId, boardType)`. Quando o destino já existe —
+   * mover para a reserva uma carta que já tinha cópia lá, trocar para a
+   * impressão que o deck já usava — o `update` batia na chave única e a rota
+   * respondia 500, sem dizer nada a quem clicou.
+   *
+   * O que a pessoa quis é óbvio: as cópias vão para lá. As quantidades são
+   * somadas na linha que já existia e a de origem some. O `cardCount` não muda,
+   * porque o total de cópias é o mesmo.
+   */
+  private async moverLinha(
+    deckId: string,
+    card: DeckCard,
+    para: { scryfallId: string; boardType: BoardType },
+  ): Promise<void> {
+    if (card.scryfallId === para.scryfallId && card.boardType === para.boardType) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const destino = await tx.deckCard.findUnique({
+        where: { deckId_scryfallId_boardType: { deckId, ...para } },
+        select: { id: true },
+      });
+
+      if (!destino) {
+        await tx.deckCard.update({ where: { id: card.id }, data: para });
+        return;
+      }
+
+      const origem = await tx.deckCard.delete({
+        where: { id: card.id },
+        select: { quantity: true },
+      });
+      const juntas = await tx.deckCard.update({
+        where: { id: destino.id },
+        data: { quantity: { increment: origem.quantity } },
+        select: { quantity: true },
+      });
+      if (juntas.quantity > MAXIMO_DE_COPIAS) {
+        throw new BadRequestException(
+          `A carta já está lá, e juntas passariam de ${MAXIMO_DE_COPIAS} cópias.`,
+        );
+      }
+    });
   }
 
   // --- Sistema de Importação ---
@@ -305,138 +421,56 @@ export class DecksService {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
-    const lines = rawText
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    const parsedCards: { quantity: number; name: string; set?: string }[] = [];
+    // O parser e o casamento com a Scryfall vivem em `importacao.ts`, onde
+    // cada regra tem teste — ver o cabeçalho de lá para os defeitos que eles
+    // corrigem (seções ignoradas, linhas repetidas perdidas, marcadores de
+    // exportador, quantidade sem teto).
+    const { linhas, recusadas } = analisarListaDeImportacao(rawText);
 
-    const LINE_REGEX =
-      /^\s*(?<qty>\d+)\s*[xX]?\s+(?<name>[^([#*]+?)\s*(?:\((?<set1>[A-Za-z0-9]{2,5})\)\s*(?<cn>\S+)?)?\s*(?:\[(?<set2>[A-Za-z0-9]{2,5})\])?\s*(?:\*F\*)?\s*(?:#.*)?$/;
-
-    for (const line of lines) {
-      if (
-        line.startsWith('#') ||
-        line.startsWith('//') ||
-        line.toUpperCase().startsWith('SIDEBOARD')
-      )
-        continue;
-
-      const match = line.match(LINE_REGEX);
-      if (match && match.groups) {
-        const qty = parseInt(match.groups['qty'] ?? '1', 10);
-        const name = match.groups['name']!.trim();
-        const set = match.groups['set1'] ?? match.groups['set2'];
-        parsedCards.push({ quantity: qty, name, set });
-      } else {
-        const fbMatch = line.match(/^(\d+)x?\s+(.+)$/);
-        if (fbMatch && fbMatch[1] && fbMatch[2]) {
-          parsedCards.push({ quantity: parseInt(fbMatch[1], 10), name: fbMatch[2].trim() });
-        } else {
-          parsedCards.push({ quantity: 1, name: line.trim() });
-        }
+    if (linhas.length === 0) {
+      if (recusadas.length === 0) {
+        throw new BadRequestException('Nenhuma carta válida encontrada no texto');
       }
+      // Tudo recusado por quantidade: a pessoa precisa ver o porquê, e não um
+      // "nenhuma carta válida" que contradiz o texto que ela colou.
+      return { success: true, imported: 0, notFound: recusadas };
     }
-
-    if (parsedCards.length === 0)
-      throw new BadRequestException('Nenhuma carta válida encontrada no texto');
-
-    const identifiers: CardIdentifier[] = parsedCards.map((c) => {
-      const idObj: CardIdentifier = { name: c.name };
-      if (c.set) idObj.set = c.set.toLowerCase();
-      return idObj;
-    });
-
-    const resolvedCards: {
-      quantity: number;
-      scryfallId: string;
-      name: string;
-      boardType: BoardType;
-    }[] = [];
-    const notFound: string[] = [];
 
     // Um `collection` só: o fatiamento em lotes de 75, o espaçamento entre
     // chamadas e o backoff de 429 vivem no `ScryfallClient` (DOC-035 §3), não
     // aqui. O laço manual duplicava os dois primeiros e não tinha o terceiro.
-    {
-      try {
-        const scryData = await this.cards.collection(identifiers);
-
-        scryData.not_found.forEach((nf) => notFound.push(nf.name ?? nf.set ?? 'desconhecido'));
-
-        {
-          scryData.data.forEach((cardData) => {
-            /**
-             * CASAMENTO DE NOME — o buraco silencioso do import.
-             *
-             * A comparação era só `p.name === cardData.name`. Só que a Scryfall
-             * devolve o nome CANÔNICO, e para carta de dupla face isso é
-             * "Delver of Secrets // Insectile Aberration" — enquanto o jogador
-             * digitou apenas a face da frente, como está impresso na carta e
-             * como todo exportador de deck escreve.
-             *
-             * Sem casar, a carta caía num `if (original)` que simplesmente não
-             * executava: ela não entrava no deck E não entrava em `notFound`.
-             * O import respondia "sucesso", o deck ficava com 97 cartas de 100,
-             * e o jogador só descobria ao ser barrado na criação da mesa — com
-             * uma mensagem que não menciona o import em lugar nenhum.
-             */
-            const alvo = cardData.name.toLowerCase();
-            const frente = alvo.split(' // ')[0]!;
-
-            const original =
-              parsedCards.find((p) => p.name.toLowerCase() === alvo) ??
-              parsedCards.find((p) => p.name.toLowerCase() === frente) ??
-              // Último recurso: o jogador escreveu as duas faces com separador
-              // diferente ("Delver of Secrets / Insectile Aberration").
-              parsedCards.find((p) => p.name.toLowerCase().split(/\s*\/+\s*/)[0] === frente);
-
-            if (original) {
-              resolvedCards.push({
-                quantity: original.quantity,
-                scryfallId: cardData.id,
-                name: cardData.name,
-                boardType: BoardType.MAIN,
-              });
-            } else {
-              // Nunca mais em silêncio: se a Scryfall achou e nós não casamos,
-              // isso é defeito NOSSO e precisa aparecer para quem importou.
-              notFound.push(cardData.name);
-            }
-          });
-        }
-      } catch (erro) {
-        // A causa real ia para o vazio: sem log, uma queda da Scryfall e um
-        // bug de parsing viravam a mesma mensagem genérica.
-        this.logger.error(`Falha ao consultar a Scryfall: ${String(erro)}`);
-        throw new BadRequestException('Falha ao comunicar com a Scryfall');
-      }
+    let encontradas: ScryfallCard[];
+    try {
+      encontradas = (await this.cards.collection(pedidosAScryfall(linhas))).data;
+    } catch (erro) {
+      // A causa real ia para o vazio: sem log, uma queda da Scryfall e um
+      // bug de parsing viravam a mesma mensagem genérica.
+      this.logger.error(`Falha ao consultar a Scryfall: ${String(erro)}`);
+      throw new BadRequestException('Falha ao comunicar com a Scryfall');
     }
 
-    if (resolvedCards.length > 0) {
+    const resultado = casarResultados(linhas, encontradas);
+    const notFound = [...recusadas, ...resultado.recusadas];
+
+    if (resultado.linhasDoDeck.length > 0) {
       await this.prisma.$transaction(async (tx) => {
         await tx.deckCard.deleteMany({ where: { deckId } });
 
-        let totalCount = 0;
-        const insertData = resolvedCards.map((rc) => {
-          totalCount += rc.quantity;
-          return {
-            deckId,
-            scryfallId: rc.scryfallId,
-            quantity: rc.quantity,
-            boardType: rc.boardType,
-          };
+        // As linhas já chegam unidas por impressão + board: duas linhas iguais
+        // no `createMany` batiam na chave única e derrubavam o import com 500.
+        await tx.deckCard.createMany({
+          data: resultado.linhasDoDeck.map((l) => ({ deckId, ...l })),
         });
-
-        await tx.deckCard.createMany({ data: insertData });
 
         await tx.deck.update({
           where: { id: deckId },
-          data: { cardCount: totalCount },
+          data: {
+            cardCount: resultado.linhasDoDeck.reduce((soma, l) => soma + l.quantity, 0),
+          },
         });
       });
     }
 
-    return { success: true, imported: resolvedCards.length, notFound };
+    return { success: true, imported: resultado.importadas, notFound };
   }
 }

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
@@ -12,6 +12,8 @@ import { MatchesModule } from './matches/matches.module.js';
 import { CardsModule } from './cards/cards.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { CosmeticosModule } from './cosmeticos/cosmeticos.module.js';
+import { BALDES_GLOBAIS } from './common/limites.js';
+import { FiltroDeErrosDoPrisma } from './common/filtro-de-erros-do-prisma.js';
 
 /**
  * Root Module of the application.
@@ -55,10 +57,10 @@ import { CosmeticosModule } from './cosmeticos/cosmeticos.module.js';
      * correto. Ao subir para dois ou mais, precisa de storage no Redis, senão
      * cada nó conta seu próprio balde e o limite real vira o dobro, o triplo…
      */
-    ThrottlerModule.forRoot([
-      { name: 'curto', ttl: 5_000, limit: 10 },
-      { name: 'longo', ttl: 60_000, limit: 120 },
-    ]),
+    //
+    // A lista mora em `common/limites.ts` porque as rotas internas precisam
+    // NOMEAR os baldes para sair deles — ver o comentário de lá.
+    ThrottlerModule.forRoot([...BALDES_GLOBAIS]),
 
     // Módulos principais do domínio
     PrismaModule,
@@ -75,6 +77,8 @@ import { CosmeticosModule } from './cosmeticos/cosmeticos.module.js';
     // Global: vale para toda rota, inclusive as que ainda não existem. Ligar o
     // throttler rota a rota garante que a próxima rota criada nasça exposta.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Chave única violada e registro sumido subiam como 500. Ver o filtro.
+    { provide: APP_FILTER, useClass: FiltroDeErrosDoPrisma },
   ],
 })
 export class AppModule {}

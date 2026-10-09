@@ -298,7 +298,11 @@ export class AuthService {
     }
 
     const confere = await argon2.verify(user.passwordHash, senhaAtual);
-    if (!confere) throw new UnauthorizedException('A senha atual não confere.');
+    // 400, e não 401. O `fetcher` do frontend trata TODO 401 como sessão
+    // expirada e faz logout: errar a senha atual nos Ajustes derrubava a
+    // pessoa para o login com "Sua sessão expirou". A sessão está ótima — o
+    // que está errado é um campo do formulário.
+    if (!confere) throw new BadRequestException('A senha atual não confere.');
 
     const hash = await this.hashPassword(novaSenha);
     await this.prisma.user.update({
@@ -340,12 +344,29 @@ export class AuthService {
       );
     }
 
-    // Verifica unicidade
+    // Verifica unicidade.
+    //
+    // O corpo era só `{ error: 'EMAIL_IN_USE' }`, sem `message` — e a tela de
+    // cadastro mostra `message`. A pessoa via "Falha ao registrar" sem saber
+    // se o problema era o e-mail, o nome ou o servidor. O código de máquina
+    // continua no corpo para quem já o lia.
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
-    if (existingEmail) throw new ConflictException({ error: 'EMAIL_IN_USE' });
+    if (existingEmail) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Este e-mail já está cadastrado.',
+        error: 'EMAIL_IN_USE',
+      });
+    }
 
     const existingUsername = await this.prisma.user.findUnique({ where: { username } });
-    if (existingUsername) throw new ConflictException({ error: 'USERNAME_TAKEN' });
+    if (existingUsername) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Este nome de usuário já está em uso.',
+        error: 'USERNAME_TAKEN',
+      });
+    }
 
     const hashedPassword = await this.hashPassword(pass);
 

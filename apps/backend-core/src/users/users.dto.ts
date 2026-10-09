@@ -131,8 +131,21 @@ export const AtualizarPerfilDto = z
      * `temaParaPrisma`, num lugar so.
      */
     tema: z.enum(TEMAS).optional(),
-    /** Nome de exibição é livre, mas limitado — cabe acento e espaço. */
-    displayName: z.string().trim().min(1).max(48).optional(),
+    /**
+     * Nome de exibição é livre, mas limitado — cabe acento e espaço.
+     *
+     * VAZIO É "SEM NOME DE EXIBIÇÃO", não erro. Era `.min(1)`, e a conta
+     * criada sem nome de exibição carrega o campo vazio no formulário de
+     * Perfil e Ajustes, que o reenvia como `''` a cada salvamento: qualquer
+     * mudança — tema, idioma, cosmético — falhava com "Dados inválidos" por
+     * causa de um campo que a pessoa nem tocou. `''`, só espaços e `null`
+     * viram `null`, que é o que a coluna guarda quando não há nome (a mesa
+     * cai no `username`).
+     */
+    displayName: z
+      .union([z.string().trim().max(48), z.null()])
+      .transform((v) => (v ? v : null))
+      .optional(),
     /** Código de idioma curto (`pt-BR`, `en`), não texto livre. */
     language: z
       .string()

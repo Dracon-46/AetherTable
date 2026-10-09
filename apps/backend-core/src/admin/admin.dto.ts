@@ -30,6 +30,19 @@ const Motivo = z.string().trim().min(8, 'Descreva o motivo com pelo menos 8 cara
 
 const Uuid = z.string().uuid();
 
+/**
+ * ─── `z.coerce.boolean()` TRANSFORMAVA "false" EM `true` ─────────────────────
+ *
+ * O coerce é `Boolean(valor)`, e toda string não vazia é verdadeira em
+ * JavaScript. Na querystring tudo chega como string: `?incluirApagados=false`
+ * virava `true` e a busca passava a mostrar as contas banidas — o oposto do
+ * que foi pedido. No corpo, um `"ativo": "false"` ativava o cosmético.
+ *
+ * Aceita o booleano de verdade (corpo JSON) e as duas grafias textuais; o
+ * resto é recusado, em vez de virar `true` por acidente.
+ */
+const Booleano = z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]);
+
 // ─── Usuários ────────────────────────────────────────────────────────────────
 
 export const BuscarUsuariosDto = z.object({
@@ -37,8 +50,8 @@ export const BuscarUsuariosDto = z.object({
   q: z.string().trim().max(120).optional(),
   papel: z.nativeEnum(Role).optional(),
   /** `true` mostra também contas apagadas — o padrão é esconder. */
-  incluirApagados: z.coerce.boolean().optional(),
-  apenasSuspensos: z.coerce.boolean().optional(),
+  incluirApagados: Booleano.optional(),
+  apenasSuspensos: Booleano.optional(),
   limite: z.coerce.number().int().min(1).max(100).default(25),
   cursor: Uuid.optional(),
 });
@@ -77,20 +90,27 @@ export const MudarTierDto = z.object({
 export type MudarTierDto = z.infer<typeof MudarTierDto>;
 
 /**
- * ─── O ADMIN REDEFINE, MAS NAO ESCOLHE ──────────────────────────────────────
+ * ─── O ADMIN REDEFINE — E AGORA PODE ESCOLHER ───────────────────────────────
  *
- * O corpo tem so o motivo: a senha nova e GERADA pelo servidor e devolvida uma
- * unica vez na resposta.
+ * Ate aqui o corpo tinha so o motivo, e a senha era sempre GERADA: deixar o
+ * admin digitar expoe a senha no formulario e no corpo da requisicao, e ele
+ * fica sabendo a credencial de outra pessoa. Os riscos continuam valendo.
  *
- * Deixar o admin digitar a senha seria pior de tres formas ao mesmo tempo:
- * ele escolheria algo fraco e memorizavel para conseguir ditar por telefone;
- * a senha passaria pelo corpo da requisicao, pelo log do proxy e pelo campo do
- * formulario dele; e ele ficaria SABENDO a senha de outra pessoa por tempo
- * indeterminado — que e exatamente o que um reset deve evitar.
+ * A decisao mudou porque o operador precisa disso: a pessoa que perdeu acesso
+ * pede uma senha que ela consiga anotar, e ditar 24 caracteres de base64url por
+ * telefone nao e um procedimento que alguem segue. O que fica de trava:
  *
- * Gerada, ela e forte por construcao, aparece uma vez e some.
+ *   - `novaSenha` e OPCIONAL. Sem ela, o comportamento antigo (gerada, forte,
+ *     mostrada uma vez) continua sendo o padrao;
+ *   - a regra de tamanho e a MESMA do cadastro (8–200): uma regra mais frouxa
+ *     aqui viraria o caminho para burlar a do cadastro;
+ *   - todas as sessoes da conta caem, igual ao reset gerado;
+ *   - a auditoria registra que a senha foi ESCOLHIDA pelo admin — nunca qual.
  */
-export const RedefinirSenhaDto = z.object({ motivo: Motivo });
+export const RedefinirSenhaDto = z.object({
+  motivo: Motivo,
+  novaSenha: z.string().min(8, 'A senha precisa de ao menos 8 caracteres').max(200).optional(),
+});
 export type RedefinirSenhaDto = z.infer<typeof RedefinirSenhaDto>;
 
 /**
@@ -145,7 +165,7 @@ export const CriarCosmeticoDto = z.object({
   tipo: z.nativeEnum(CosmeticType),
   nome: z.string().trim().min(1).max(64),
   minTier: z.coerce.number().int().min(0).max(10).default(0),
-  ativo: z.coerce.boolean().default(true),
+  ativo: Booleano.default(true),
   /**
    * Descrição procedural, quando o item NÃO existe no catálogo em código.
    *
@@ -163,7 +183,7 @@ export type CriarCosmeticoDto = z.infer<typeof CriarCosmeticoDto>;
 export const AtualizarCosmeticoDto = z.object({
   nome: z.string().trim().min(1).max(64).optional(),
   minTier: z.coerce.number().int().min(0).max(10).optional(),
-  ativo: z.coerce.boolean().optional(),
+  ativo: Booleano.optional(),
 });
 export type AtualizarCosmeticoDto = z.infer<typeof AtualizarCosmeticoDto>;
 
@@ -220,7 +240,7 @@ export type CriarDenunciaDto = z.infer<typeof CriarDenunciaDto>;
 // ─── Sistema ─────────────────────────────────────────────────────────────────
 
 export const MudarFlagDto = z.object({
-  ligado: z.coerce.boolean(),
+  ligado: Booleano,
   nota: z.string().trim().max(300).optional(),
 });
 export type MudarFlagDto = z.infer<typeof MudarFlagDto>;

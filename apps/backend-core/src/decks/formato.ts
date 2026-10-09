@@ -2,6 +2,7 @@ import { BadRequestException, Logger } from '@nestjs/common';
 import {
   avaliarLegalidade,
   contarCartas as contarCartasCompartilhado,
+  contarTodasAsLinhas,
   type CartaValidavel,
   type DeckValidavel as DeckValidavelCompartilhado,
 } from '@aethertable/shared-types';
@@ -69,8 +70,11 @@ export function validarDeckParaFormato(deck: DeckValidavel, formatoDaSala?: stri
   // increment/decrement em statements separados da escrita da carta).
   const dessincronizado = resultado.achados.find((a) => a.codigo === 'CONTADOR_DESSINCRONIZADO');
   if (dessincronizado) {
+    // `real` é a soma de TODAS as linhas, como o achado compara. Com
+    // `resultado.total` (só as que jogam), o log mostrava uma diferença que não
+    // era a que disparou o aviso — a reserva aparecia como "escrita perdida".
     logger.warn(
-      `[decks] cardCount dessincronizado: contador=${deck.cardCount}, real=${resultado.total}`,
+      `[decks] cardCount dessincronizado: contador=${deck.cardCount}, real=${contarTodasAsLinhas(deck.cards)}`,
     );
   }
 

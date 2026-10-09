@@ -74,20 +74,28 @@ export class RevogacaoService {
   }
 
   /**
-   * A data antes da qual nenhum token desta conta vale.
+   * O corte de sessão e a situação da conta, numa leitura só.
    *
+   * `tokensValidosApos` é a data antes da qual nenhum token desta conta vale.
    * `null` é o caso comum — a maioria das contas nunca teve corte —, e devolvê-lo
    * sem consultar nada seria a otimização óbvia. Ela não existe porque o valor
    * MUDA no momento em que mais importa: quem acabou de trocar a senha de uma
    * conta invadida precisa que a próxima requisição do invasor já veja o corte,
    * e não um cache de alguns segundos atrás.
+   *
+   * `suspendedUntil` e `deletedAt` vêm na MESMA consulta. Antes só o corte era
+   * lido, e uma conta suspensa ou banida seguia usando o token que já tinha.
+   * `null` na resposta inteira significa que a conta não existe mais.
    */
-  async corteDeSessao(userId: string): Promise<Date | null> {
-    const u = await this.prisma.user.findUnique({
+  async estadoDaConta(userId: string): Promise<{
+    tokensValidosApos: Date | null;
+    suspendedUntil: Date | null;
+    deletedAt: Date | null;
+  } | null> {
+    return this.prisma.user.findUnique({
       where: { id: userId },
-      select: { tokensValidosApos: true },
+      select: { tokensValidosApos: true, suspendedUntil: true, deletedAt: true },
     });
-    return u?.tokensValidosApos ?? null;
   }
 
   /**

@@ -8,6 +8,7 @@ import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { normalizarConfigDeSala, type ConfigDeSala } from '@aethertable/shared-types';
 import type { CriarPartidaDto, ResumoDePartidaDto } from './matches.dto.js';
+import { AUDIENCIA_DA_MESA } from '../auth/passe-de-mesa.js';
 
 @Injectable()
 export class MatchesService {
@@ -116,7 +117,9 @@ export class MatchesService {
   private assinarConfig(roomCode: string, cfg: ConfigDeSala): string {
     return this.jwtService.sign(
       { roomId: roomCode, cfg },
-      { expiresIn: MatchesService.CONFIG_TOKEN_TTL },
+      // Sem audiência, este passe tinha a mesma cara de um access token para
+      // a `JwtStrategy`. Ver `auth/passe-de-mesa.ts`.
+      { expiresIn: MatchesService.CONFIG_TOKEN_TTL, audience: AUDIENCIA_DA_MESA },
     );
   }
 
@@ -195,7 +198,10 @@ export class MatchesService {
         // `RoomState`, e é de lá que o lobby dele a lê.
         ...(cfg ? { cfg } : {}),
       },
-      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
+      // `audience` é o que impede o passe — que viaja na URL da mesa e é
+      // colado no grupo — de valer como sessão da API em nome de quem o gerou.
+      // Ver `auth/passe-de-mesa.ts`.
+      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL, audience: AUDIENCIA_DA_MESA },
     );
 
     return { seatToken, roomCode, config: cfg ?? null };
@@ -295,7 +301,9 @@ export class MatchesService {
         // configura mesa nenhuma.
         spectator: true,
       },
-      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
+      // Mesma audiência do seat token, pelo mesmo motivo: o link de assistir
+      // também é compartilhado, e não pode abrir a conta de quem o gerou.
+      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL, audience: AUDIENCIA_DA_MESA },
     );
 
     return { seatToken, roomCode, spectator: true as const };

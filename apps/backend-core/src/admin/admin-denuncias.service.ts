@@ -217,6 +217,9 @@ export class AdminDenunciasService {
   /** Marca em análise — evita dois moderadores trabalhando o mesmo caso. */
   async assumir(req: RequisicaoAdmin, id: string) {
     const denuncia = await this.exigirAberta(id);
+    // Assumir a própria denúncia é o primeiro passo para engavetá-la: o caso
+    // sai da fila de "abertas" e nenhum outro moderador o pega.
+    exigirQueNaoSejaContraSi(req, denuncia.reported.id);
     await this.prisma.report.update({
       where: { id },
       data: { status: ReportStatus.REVIEWING },
@@ -241,12 +244,18 @@ export class AdminDenunciasService {
   async resolver(req: RequisicaoAdmin, id: string, dto: ResolverDenunciaDto) {
     const denuncia = await this.prisma.report.findUnique({
       where: { id },
-      select: { id: true, status: true, reason: true, reported: { select: { username: true } } },
+      select: {
+        id: true,
+        status: true,
+        reason: true,
+        reported: { select: { id: true, username: true } },
+      },
     });
     if (!denuncia) throw new NotFoundException('Denúncia não encontrada.');
     if (denuncia.status === ReportStatus.RESOLVED || denuncia.status === ReportStatus.DISMISSED) {
       throw new BadRequestException('Esta denúncia já foi encerrada.');
     }
+    exigirQueNaoSejaContraSi(req, denuncia.reported.id);
 
     await this.prisma.report.update({
       where: { id },
@@ -275,12 +284,35 @@ export class AdminDenunciasService {
   private async exigirAberta(id: string) {
     const denuncia = await this.prisma.report.findUnique({
       where: { id },
-      select: { id: true, status: true, reason: true, reported: { select: { username: true } } },
+      select: {
+        id: true,
+        status: true,
+        reason: true,
+        reported: { select: { id: true, username: true } },
+      },
     });
     if (!denuncia) throw new NotFoundException('Denúncia não encontrada.');
     if (denuncia.status !== ReportStatus.OPEN) {
       throw new ForbiddenException('Esta denúncia não está aberta.');
     }
     return denuncia;
+  }
+}
+
+/**
+ * ─── NINGUÉM JULGA A DENÚNCIA CONTRA SI ─────────────────────────────────────
+ *
+ * Nada impedia um moderador de abrir a fila, achar a denúncia feita contra
+ * ELE e encerrá-la como "improcedente". A trilha de auditoria registrava o
+ * ato, mas depois do fato — e a denúncia, que era a única evidência de um
+ * padrão de conduta, saía da fila de abertas. É a mesma trava de
+ * `AdminUsuariosService.exigirAlvo` ("ninguém age sobre a própria conta"),
+ * aplicada aqui.
+ */
+function exigirQueNaoSejaContraSi(req: RequisicaoAdmin, denunciadoId: string): void {
+  if (denunciadoId === req.autor.id) {
+    throw new ForbiddenException(
+      'Esta denúncia é contra você. Outro moderador precisa analisá-la.',
+    );
   }
 }

@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Param, UseGuards, Request, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { MatchesService } from './matches.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
@@ -9,6 +10,7 @@ import {
   RoomCodeParam,
 } from './matches.dto.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
+import { SEM_LIMITE_GLOBAL } from '../common/limites.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
@@ -82,6 +84,10 @@ export class MatchesController {
 @ApiTags('Internal')
 @Controller('internal/matches')
 @UseGuards(InternalApiGuard)
+// Fora do balde global por IP: todas as salas do nó chegam do MESMO endereço,
+// e um 429 aqui era um resumo de partida perdido para sempre — o `onDispose`
+// não tenta de novo. Ver o mesmo pulo em `InternalDecksController`.
+@SkipThrottle(SEM_LIMITE_GLOBAL)
 export class InternalMatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 

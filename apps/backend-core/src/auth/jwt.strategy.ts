@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { RevogacaoService } from './revogacao.service.js';
+import { naoEhSessaoDaApi } from './passe-de-mesa.js';
 
 export interface JwtPayload {
   sub: string; // ID do usuário
@@ -55,6 +56,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     /**
+     * ─── PASSE DE MESA NÃO É SESSÃO ──────────────────────────────────────
+     *
+     * O seat token e o passe de espectador são assinados com o mesmo segredo e
+     * carregam `sub`. Sem esta recusa, o link `/play/CODE?token=...` colado no
+     * grupo dava a quem o abrisse acesso à API inteira como o dono do link —
+     * apagar decks, trocar o perfil, entrar em outras mesas em nome dele. Ver
+     * `passe-de-mesa.ts`.
+     */
+    if (naoEhSessaoDaApi(payload)) {
+      throw new UnauthorizedException('Este token não é uma sessão da API.');
+    }
+
+    /**
      * ─── O LOGOUT PRECISA VALER AQUI ─────────────────────────────────────
      *
      * Sem esta checagem, `POST /auth/logout` grava a revogação e nada a lê: o
@@ -86,10 +100,35 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
      * é do próprio login que acabou de acontecer, e derrubá-lo faria a pessoa
      * não conseguir entrar depois de trocar a senha.
      */
+    const conta = await this.revogacao.estadoDaConta(payload.sub);
+
+    /**
+     * ─── BANIDO OU SUSPENSO NÃO SEGUE COM O TOKEN QUE JÁ TINHA ────────────
+     *
+     * A suspensão e o banimento só eram conferidos no LOGIN. Quem já estava
+     * com um token na mão continuava jogando, criando mesas e editando decks
+     * até ele expirar — a punição valia a partir do dia seguinte. O corte de
+     * sessão gravado por `suspender`/`banir` cobre os tokens antigos; esta
+     * leitura cobre o resto (um token emitido no mesmo segundo do corte passa
+     * pela folga acima) e já vem na mesma consulta, sem custo extra.
+     *
+     * Conta inexistente também cai: depois do expurgo definitivo, um token
+     * órfão seguia aceito e cada rota falhava de um jeito diferente.
+     */
+    if (!conta || conta.deletedAt) {
+      throw new UnauthorizedException('Esta conta foi encerrada.');
+    }
+    if (conta.suspendedUntil && conta.suspendedUntil.getTime() > Date.now()) {
+      throw new UnauthorizedException('Sua conta está suspensa.');
+    }
+
     if (payload.iat) {
-      const corte = await this.revogacao.corteDeSessao(payload.sub);
+      const corte = conta.tokensValidosApos;
       if (corte && payload.iat * 1000 < corte.getTime() - 1000) {
-        throw new UnauthorizedException('Sua senha foi alterada. Entre de novo.');
+        // A mensagem falava só de senha, mas o corte também é gravado pela
+        // moderação e pela redefinição — "senha alterada" confundia quem foi
+        // deslogado por outro motivo.
+        throw new UnauthorizedException('Sua sessão foi encerrada. Entre de novo.');
       }
     }
 
