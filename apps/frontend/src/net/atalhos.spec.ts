@@ -48,6 +48,18 @@ describe('normalizarTecla', () => {
     expect(tecla('P', { shiftKey: true })).not.toBe(tecla('p'));
   });
 
+  /**
+   * CAPS LOCK. A caixa da letra vinha também do Caps Lock: com ele ligado, `a`
+   * (+1 marcador) chegava como `A` — o atalho de TIRAR o marcador. Só o Shift
+   * decide a caixa de uma letra.
+   */
+  it('Caps Lock não troca o atalho: só o Shift decide a caixa da letra', () => {
+    expect(tecla('A')).toBe('a'); // Caps Lock ligado, sem Shift
+    expect(tecla('a', { shiftKey: true })).toBe('A'); // Caps Lock + Shift
+    expect(tecla('Ç')).toBe('ç'); // vale para letra acentuada do ABNT2
+    expect(tecla('+')).toBe('+'); // e não toca no que não é letra
+  });
+
   it('Shift + = chega como + e NÃO ganha prefixo shift', () => {
     // É o caso que quebraria a identidade: 'shift++' contra '+'.
     expect(tecla('+', { shiftKey: true })).toBe('+');

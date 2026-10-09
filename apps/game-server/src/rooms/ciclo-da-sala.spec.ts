@@ -13,6 +13,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'segredo-de-teste-com-16+';
 
 import { ZONES, zoneOrderKey } from '@aethertable/shared-types';
 import type * as ModuloDaSala from './AetherRoom';
+import jwt from 'jsonwebtoken';
+import { Espectador } from '../schema/Espectador';
 import { Player } from '../schema/Player';
 import type { RoomState } from '../schema/RoomState';
 import { Card } from '../schema/Card';
@@ -30,6 +32,9 @@ type Sala = {
   expulsar(sid: string): void;
   provisionarDeck(sid: string, deckId: string): Promise<void>;
   contasBanidas: Set<string>;
+  onAuth(cliente: unknown, opcoes: { seatToken: string }): Promise<unknown>;
+  agendarFimDaVotacao(): void;
+  clock: { setTimeout(cb: () => void, ms: number): { clear(): void } };
 };
 
 function montarSala(assentos: string[]): Sala {
@@ -154,5 +159,40 @@ describe('escolher grimório', () => {
     await emVoo;
 
     expect(Array.from(sala.state.cards.values()).some((c) => c.ownerId === 'b')).toBe(false);
+  });
+});
+
+describe('plateia e votação', () => {
+  /** `maxClients` soma assentos e plateia: sem teto próprio, cabiam 18 espectadores. */
+  it('a plateia tem teto próprio de 10', async () => {
+    const sala = montarSala(['a']);
+    sala.state.roomCode = 'ABC123';
+    for (let i = 0; i < 10; i += 1) {
+      sala.state.espectadores.set(`e${i}`, new Espectador());
+    }
+    const passe = jwt.sign(
+      { sub: 'conta-x', username: 'X', roomId: 'ABC123', spectator: true },
+      process.env.JWT_SECRET!,
+    );
+    await expect(sala.onAuth({}, { seatToken: passe })).rejects.toThrow('ROOM_FULL');
+  });
+
+  /** O painel decidia sumir pelo relógio do navegador; quem fecha agora é o servidor. */
+  it('a votação vencida é encerrada pelo servidor', () => {
+    const sala = montarSala(['a', 'b', 'c']);
+    let disparar: () => void = () => {};
+    sala.clock.setTimeout = (cb) => {
+      disparar = cb;
+      return { clear: () => {} };
+    };
+    sala.state.votacaoAlvo = 'c';
+    sala.state.votacaoAutor = 'a';
+    sala.state.votacaoSim = 'a';
+    sala.state.votacaoExpiraEm = Date.now() - 1;
+
+    sala.agendarFimDaVotacao();
+    disparar();
+
+    expect(sala.state.votacaoAlvo).toBe('');
   });
 });

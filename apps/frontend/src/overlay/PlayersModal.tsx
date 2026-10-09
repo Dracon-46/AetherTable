@@ -37,9 +37,8 @@ export function PlayersModal({ room }: PlayersModalProps) {
   const playersMap = useGameStore((s) => s.players);
   const cards = useGameStore((s) => s.cards);
   const myId = useGameStore((s) => s.mySessionId);
-  const votacaoAlvo = useGameStore((s) => s.config.votacaoAlvo);
-  const votacaoExpiraEm = useGameStore((s) => s.config.votacaoExpiraEm);
-  const votacaoAberta = votacaoAlvo !== '' && votacaoExpiraEm > Date.now();
+  // Aberta é o que o servidor diz — ele encerra no prazo. Ver VotacaoDeRemocao.
+  const votacaoAberta = useGameStore((s) => s.config.votacaoAlvo) !== '';
   const speaking = useVoiceStore((s) => s.speaking);
 
   /**

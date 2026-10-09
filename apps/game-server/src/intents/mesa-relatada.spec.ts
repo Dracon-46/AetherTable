@@ -380,3 +380,29 @@ describe('mover a seleção em lote', () => {
     ).toBe(false);
   });
 });
+
+describe('dano de comandante letal depende do formato', () => {
+  /** Era 21 fixo: o PDH elimina com 16, e Brawl e Oathbreaker não têm a regra. */
+  it('no PDH, 16 de um comandante eliminam', () => {
+    const mesa = montarMesa(['a', 'b', 'c'], 'pdh');
+    jogador(mesa, 'a').life = 99;
+    executar(mesa, 'INTENT_SET_COMMANDER_DAMAGE', 'a', { fromPlayerId: 'b', delta: 16 });
+    expect(jogador(mesa, 'a').eliminationReason).toBe('COMMANDER');
+  });
+
+  it('no Brawl, dano de comandante não elimina — só a vida', () => {
+    const mesa = montarMesa(['a', 'b'], 'brawl');
+    jogador(mesa, 'a').life = 99;
+    executar(mesa, 'INTENT_SET_COMMANDER_DAMAGE', 'a', { fromPlayerId: 'b', delta: 30 });
+    expect(jogador(mesa, 'a').eliminated).toBe(false);
+  });
+
+  it('em Commander continua sendo 21', () => {
+    const mesa = montarMesa(['a', 'b', 'c']);
+    jogador(mesa, 'a').life = 99;
+    executar(mesa, 'INTENT_SET_COMMANDER_DAMAGE', 'a', { fromPlayerId: 'b', delta: 20 });
+    expect(jogador(mesa, 'a').eliminated).toBe(false);
+    executar(mesa, 'INTENT_SET_COMMANDER_DAMAGE', 'a', { fromPlayerId: 'b', delta: 1 });
+    expect(jogador(mesa, 'a').eliminationReason).toBe('COMMANDER');
+  });
+});

@@ -292,7 +292,19 @@ export function normalizarTecla(e: EventoDeTecla): string {
   const nomeada = e.key.length > 1;
   // Tecla nomeada não muda de nome com Shift, então ali o Shift é prefixo.
   // Caractere imprimível já vem deslocado ('P', '+'), e a caixa é preservada.
-  const base = nomeada ? e.key.toLowerCase() : e.key;
+  //
+  // Menos para LETRA: a caixa dela vem também do Caps Lock, e o atalho só pode
+  // depender do Shift. Com o Caps Lock ligado, `a` (+1 marcador) chegava como
+  // `A` — que é o atalho de TIRAR o marcador — e a tecla fazia o oposto do
+  // que dizia, sem nada na tela explicando por quê.
+  const letra = !nomeada && e.key.toLowerCase() !== e.key.toUpperCase();
+  const base = nomeada
+    ? e.key.toLowerCase()
+    : letra
+      ? e.shiftKey
+        ? e.key.toUpperCase()
+        : e.key.toLowerCase()
+      : e.key;
   const partes: string[] = [];
   if (e.ctrlKey || e.metaKey) partes.push('ctrl');
   if (e.altKey) partes.push('alt');

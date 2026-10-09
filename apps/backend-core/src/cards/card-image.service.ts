@@ -68,8 +68,16 @@ export class CardImageService {
   private readonly cache = new Map<string, ImagemDeCarta>();
   private bytesEmCache = 0;
 
-  /** 404 recentes, para não perguntar de novo. */
+  /**
+   * 404 recentes, para não perguntar de novo.
+   *
+   * Com teto: a chave vem da URL (`/cards/img/:id`), qualquer UUID aleatório
+   * vira um 404, e o mapa crescia uma entrada por pedido — centenas por minuto
+   * de um único IP, memória que nunca voltava. Passado o teto, sai o mais
+   * antigo (o `Map` guarda a ordem de inserção).
+   */
   private readonly ausentes = new Map<string, number>();
+  static readonly MAX_AUSENTES = 5_000;
 
   /**
    * Buscas em curso. Sem isto, as trinta Montanhas que chegam no mesmo
@@ -150,6 +158,11 @@ export class CardImageService {
 
       if (resposta.status === 404) {
         this.ausentes.set(chave, Date.now());
+        while (this.ausentes.size > CardImageService.MAX_AUSENTES) {
+          const maisAntiga = this.ausentes.keys().next();
+          if (maisAntiga.done) break;
+          this.ausentes.delete(maisAntiga.value);
+        }
         return null;
       }
 

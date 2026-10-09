@@ -30,7 +30,10 @@ export function VotacaoDeRemocao({ room }: { room: Room<RoomState> }) {
   const myId = useGameStore((s) => s.mySessionId);
   const [agora, setAgora] = useState(() => Date.now());
 
-  const aberta = Boolean(config.votacaoAlvo) && config.votacaoExpiraEm > agora;
+  // Aberta é o que o SERVIDOR diz: ele encerra a votação no prazo. Comparar o
+  // prazo com o relógio deste navegador escondia o painel de quem estava com o
+  // relógio adiantado — e esse jogador nunca via a votação para responder.
+  const aberta = Boolean(config.votacaoAlvo);
 
   // O relógio só anda com votação aberta: um intervalo permanente re-renderiza
   // o painel uma vez por segundo durante a partida inteira, à toa.

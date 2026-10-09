@@ -94,7 +94,10 @@ function PlayerCard({
   const cards = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
   const catalogo = useCardCatalog((s) => s.cartas);
-  const vidaInicial = acharFormato(useGameStore((s) => s.config.gameType)).vidaInicial || 40;
+  const formatoDaMesa = acharFormato(useGameStore((s) => s.config.gameType));
+  const vidaInicial = formatoDaMesa.vidaInicial || 40;
+  // O destaque de "letal" segue o formato: 16 no PDH, nenhum no Brawl.
+  const danoLetal = formatoDaMesa.comandante ? formatoDaMesa.comandante.danoLetal : 21;
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
   const cosmeticos = cosmeticosVisiveis(player, isMe, permitirDeOponentes);
 
@@ -691,7 +694,9 @@ function PlayerCard({
                     )}
                     <span
                       className={`inline-block w-5 text-center ${
-                        dmg >= 21 ? 'text-danger font-bold' : 'text-warning'
+                        danoLetal !== null && dmg >= danoLetal
+                          ? 'text-danger font-bold'
+                          : 'text-warning'
                       }`}
                     >
                       {dmg}

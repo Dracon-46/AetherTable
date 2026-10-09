@@ -222,9 +222,14 @@ function motivoDeDerrota(state: RoomState, playerId: string) {
 
   // Dano de comandante e por ORIGEM: 21 de um mesmo oponente. Somar tudo seria
   // a regra errada — dois comandantes diferentes a 15 nao matam ninguem.
+  //
+  // O limite e do FORMATO (16 no PDH; Brawl e Oathbreaker nao tem a regra). Era
+  // 21 fixo, e a mesa eliminava quem pelas regras do formato estava vivo.
+  const regras = acharFormato(state.gameType).comandante;
+  const letal = regras ? regras.danoLetal : DERROTA.DANO_DE_COMANDANTE_LETAL;
   let deQuem = '';
   p.commanderDamage.forEach((valor, origem) => {
-    if (!deQuem && valor >= DERROTA.DANO_DE_COMANDANTE_LETAL) deQuem = origem;
+    if (!deQuem && letal !== null && valor >= letal) deQuem = origem;
   });
   // A chave pode ser o `Card.id` do comandante (parceiros contam separado):
   // o anuncio de derrota precisa do DONO dele, nao do id da carta.
@@ -288,8 +293,8 @@ function reavaliarEliminacao(ctx: IntentContext, playerId: string): void {
 const FRASE_DE_DERROTA: Record<string, (porQuem: string) => string> = {
   LIFE: () => 'perdeu: a vida chegou a zero',
   POISON: () => `perdeu: ${DERROTA.VENENO_LETAL} marcadores de veneno`,
-  COMMANDER: (porQuem) =>
-    `perdeu: ${DERROTA.DANO_DE_COMANDANTE_LETAL} de dano do comandante de ${porQuem || 'um oponente'}`,
+  // Sem o numero: o limite agora depende do formato.
+  COMMANDER: (porQuem) => `perdeu: dano letal do comandante de ${porQuem || 'um oponente'}`,
   DECKED: () => 'perdeu: tentou comprar de um grimório vazio',
   CONCEDED: () => 'desistiu da partida',
 };

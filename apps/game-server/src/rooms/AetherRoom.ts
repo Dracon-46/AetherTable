@@ -171,6 +171,9 @@ export class AetherRoom extends Room<RoomState> {
   private readonly contasBanidas = new Set<string>();
   /** Descarte agendado da sala vazia — ver `agendarDescarteSeVazia`. */
   private descarteDaSalaVazia: { clear(): void } | null = null;
+  /** Encerramento agendado da votação aberta — ver `agendarFimDaVotacao`. */
+  private fimDaVotacao: { clear(): void } | null = null;
+  private fimDaVotacaoAgendado = 0;
   private proximoAssento = 0;
 
   /**
@@ -262,6 +265,35 @@ export class AetherRoom extends Room<RoomState> {
 
   private salaVazia(): boolean {
     return this.state.players.size === 0 && this.state.espectadores.size === 0;
+  }
+
+  /**
+   * A votação vencida é ENCERRADA pelo servidor, no prazo.
+   *
+   * Antes ela só era varrida no voto seguinte, e o painel decidia sumir
+   * comparando `votacaoExpiraEm` (relógio do servidor) com o relógio do
+   * NAVEGADOR: com o relógio do jogador adiantado um minuto, a votação nunca
+   * aparecia para ele; atrasado, aparecia depois de vencida. Agora a votação
+   * aberta é `votacaoAlvo !== ''`, e quem a fecha é o servidor.
+   */
+  private agendarFimDaVotacao(): void {
+    const { votacaoAlvo, votacaoExpiraEm } = this.state;
+    if (!votacaoAlvo || this.fimDaVotacaoAgendado === votacaoExpiraEm) return;
+    this.fimDaVotacao?.clear();
+    this.fimDaVotacaoAgendado = votacaoExpiraEm;
+    this.fimDaVotacao = this.clock.setTimeout(
+      () => {
+        this.fimDaVotacao = null;
+        this.fimDaVotacaoAgendado = 0;
+        if (this.state.votacaoAlvo && this.state.votacaoExpiraEm <= Date.now()) {
+          this.state.votacaoAlvo = '';
+          this.state.votacaoAutor = '';
+          this.state.votacaoSim = '';
+          this.state.votacaoExpiraEm = 0;
+        }
+      },
+      Math.max(0, votacaoExpiraEm - Date.now()) + 50,
+    );
   }
 
   private cancelarDescarte(): void {
@@ -460,6 +492,12 @@ export class AetherRoom extends Room<RoomState> {
      * quarto jogador.
      */
     if (!claims.spectator && !haAssentoLivre(this.state)) {
+      throw new Error('ROOM_FULL');
+    }
+    // A plateia tem teto próprio. `maxClients` é assentos + plateia somados, e
+    // com a mesa ainda vazia de jogadores a sala aceitava dezoito espectadores
+    // — as vagas de assento viravam lugar na arquibancada.
+    if (claims.spectator && this.state.espectadores.size >= REALTIME_LIMITS.MAX_ESPECTADORES) {
       throw new Error('ROOM_FULL');
     }
 
@@ -796,6 +834,7 @@ export class AetherRoom extends Room<RoomState> {
           this.historico.executar(
             new ComandoDeIntencao(tipo, handler, contexto, parsed.data, this.state),
           );
+          this.agendarFimDaVotacao();
           if (this.state.phase !== faseAntes) {
             this.publicarMetadados();
             if (this.state.phase === 'PLAYING') {

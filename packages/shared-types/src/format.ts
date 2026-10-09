@@ -147,6 +147,14 @@ export interface RegrasDeComandante {
   taxa: boolean;
   /** Teto de raridade do PRÓPRIO comandante (PDH: incomum). */
   raridadeDoComandante: TetoDeRaridade | null;
+  /**
+   * Dano de UM comandante que elimina. `null` = o formato não tem essa regra.
+   *
+   * Era 21 fixo no servidor para todo formato: o PDH elimina com 16, e Brawl,
+   * Historic Brawl e Oathbreaker não eliminam por dano de comandante nenhum —
+   * a mesa tirava da partida quem pelas regras do formato ainda estava vivo.
+   */
+  danoLetal: number | null;
 }
 
 export interface FormatPreset {
@@ -274,6 +282,7 @@ function comandante(
       exigeIdentidadeDeCor: true,
       taxa: true,
       raridadeDoComandante: null,
+      danoLetal: 21,
       ...opcoes.comandante,
     },
     zonas: ZONAS_COMANDANTE,
@@ -380,7 +389,8 @@ export const FORMATOS: readonly FormatPreset[] = [
     // pool errado e não acusava Thoughtseize, que não existe no Standard.
     chaveDeLegalidade: 'standardbrawl',
     resumo: '60 cartas singleton do Standard, um comandante, 25 de vida.',
-    comandante: { aceitaPlaneswalker: true },
+    // Brawl não tem a regra dos 21 de dano de comandante.
+    comandante: { aceitaPlaneswalker: true, danoLetal: null },
   }),
   comandante('historic_brawl', 'Historic Brawl', {
     tamanho: 100,
@@ -391,7 +401,7 @@ export const FORMATOS: readonly FormatPreset[] = [
     // chave `brawl` — ver o comentário do Brawl acima.
     chaveDeLegalidade: 'brawl',
     resumo: '100 cartas singleton do Historic, um comandante.',
-    comandante: { aceitaPlaneswalker: true },
+    comandante: { aceitaPlaneswalker: true, danoLetal: null },
   }),
   comandante('oathbreaker', 'Oathbreaker', {
     tamanho: 60,
@@ -401,25 +411,25 @@ export const FORMATOS: readonly FormatPreset[] = [
     resumo: '60 singleton, um planeswalker e o feitiço-assinatura dele.',
     // Oathbreaker não tem parceiros: é UM planeswalker, e a segunda carta da
     // zona de comando é o feitiço-assinatura, que tem board type próprio.
+    // E não há dano de comandante: o planeswalker não ataca.
     comandante: {
       quantidade: { minimo: 1, maximo: 1 },
       tipo: 'planeswalker',
       feiticoAssinatura: true,
+      danoLetal: null,
     },
   }),
   comandante('pdh', 'Pauper EDH', {
     tamanho: 100,
     // Eram 40, herdados de Commander. As regras oficiais (pdhhomebase) são
-    // 30 de vida e 16 de dano de comandante — o preset não tem campo para o
-    // limite de dano de comandante, então os 16 ficam registrados só aqui até
-    // a mesa ganhar essa regra.
+    // 30 de vida e 16 de dano de comandante — ver `danoLetal` abaixo.
     vida: 30,
     jogadores: { min: 2, max: 6, padrao: 4 },
     chaveDeLegalidade: 'paupercommander',
     resumo: '100 singleton só de comuns; o comandante é uma criatura incomum.',
     deck: { tetoDeRaridade: 'common' },
     // Qualquer criatura incomum, lendária ou não — ver `exigeLendario`.
-    comandante: { raridadeDoComandante: 'uncommon', exigeLendario: false },
+    comandante: { raridadeDoComandante: 'uncommon', exigeLendario: false, danoLetal: 16 },
   }),
   comandante('tiny_leaders', 'Tiny Leaders', {
     tamanho: 50,
@@ -660,6 +670,7 @@ export const FORMATOS: readonly FormatPreset[] = [
       exigeIdentidadeDeCor: true,
       taxa: true,
       raridadeDoComandante: null,
+      danoLetal: 21,
     },
     zonas: ZONAS_COMANDANTE,
     baralhosExtra: ['PLANAR'],

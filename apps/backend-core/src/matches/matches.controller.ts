@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, UseGuards, Request, Get } from '@nestjs/common';
+import { Controller, Post, Body, Param, UseGuards, Request, Get, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { MatchesService } from './matches.service.js';
@@ -64,8 +64,11 @@ export class MatchesController {
   getVoiceToken(
     @Request() req: RequisicaoAutenticada,
     @Param('roomCode', new ZodValidationPipe(RoomCodeParam)) roomCode: string,
+    // O passe da mesa, como prova de que esta conta está NESTA sala. Header, e
+    // não querystring: querystring fica em log de proxy.
+    @Headers('x-passe-de-mesa') passe?: string,
   ) {
-    return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode);
+    return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode, passe);
   }
 }
 
