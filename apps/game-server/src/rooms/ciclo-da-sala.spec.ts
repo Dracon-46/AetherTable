@@ -142,13 +142,11 @@ describe('escolher grimório', () => {
   it('a resposta que chega depois de o jogador sair não cria cartas órfãs', async () => {
     const sala = montarSala(['a', 'b']);
     let liberar: (v: unknown) => void = () => {};
-    jest
-      .spyOn(global, 'fetch')
-      .mockImplementation((() =>
-        new Promise((r) => (liberar = r)).then(() => ({
-          ok: true,
-          json: async () => deck(99),
-        }))) as never);
+    jest.spyOn(global, 'fetch').mockImplementation((() =>
+      new Promise((r) => (liberar = r)).then(() => ({
+        ok: true,
+        json: async () => deck(99),
+      }))) as never);
 
     const emVoo = sala.provisionarDeck('b', '11111111-0000-4000-8000-000000000003');
     sala.removerJogador('b');
