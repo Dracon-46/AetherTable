@@ -148,6 +148,11 @@ export interface ConfigDaMesa {
   cronometroDeTurno: number;
   /** Epoch ms do início do turno atual. 0 = sem cronômetro rodando. */
   turnoIniciadoEm: number;
+  /** Votação de remoção em andamento. `''` = nenhuma. */
+  votacaoAlvo: string;
+  votacaoAutor: string;
+  votacaoSim: string;
+  votacaoExpiraEm: number;
 }
 
 const CONFIG_INICIAL: ConfigDaMesa = {
@@ -163,6 +168,10 @@ const CONFIG_INICIAL: ConfigDaMesa = {
   ordemPelosAssentos: false,
   sideboardPermitido: false,
   cronometroDeTurno: 0,
+  votacaoAlvo: '',
+  votacaoAutor: '',
+  votacaoSim: '',
+  votacaoExpiraEm: 0,
   turnoIniciadoEm: 0,
 };
 

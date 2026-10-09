@@ -6,7 +6,7 @@
  */
 
 import type { Room } from 'colyseus.js';
-import type { SetRoomConfigPayload } from '@aethertable/shared-types';
+import type { PlayerCounter, SetRoomConfigPayload } from '@aethertable/shared-types';
 
 let moveCardLastSent = 0;
 const MOVE_THROTTLE_MS = 50; // 20/s
@@ -42,7 +42,12 @@ export const intents = {
     x?: number,
     y?: number,
     index?: number,
-  ) => sendIntent(room, 'INTENT_CHANGE_ZONE', { entityId, targetZone, x, y, index }),
+    opcoes?: { faceDown?: boolean; controllerId?: string },
+  ) => sendIntent(room, 'INTENT_CHANGE_ZONE', { entityId, targetZone, x, y, index, ...opcoes }),
+
+  /** Uma mensagem para a seleção inteira — N mensagens estouram o limite de 30/s. */
+  batchChangeZone: (room: Room, entityIds: string[], targetZone: string) =>
+    sendIntent(room, 'INTENT_BATCH_CHANGE_ZONE', { entityIds, targetZone }),
 
   bringToFront: (room: Room, entityId: string) =>
     sendIntent(room, 'INTENT_BRING_TO_FRONT', { entityId }),
@@ -227,10 +232,14 @@ export const intents = {
   setLife: (room: Room, delta?: number, absolute?: number) =>
     sendIntent(room, 'INTENT_SET_LIFE', delta !== undefined ? { delta } : { absolute }),
 
-  setCommanderDamage: (room: Room, fromPlayerId: string, delta: number) =>
-    sendIntent(room, 'INTENT_SET_COMMANDER_DAMAGE', { fromPlayerId, delta }),
+  setCommanderDamage: (room: Room, fromPlayerId: string, delta: number, commanderId?: string) =>
+    sendIntent(room, 'INTENT_SET_COMMANDER_DAMAGE', {
+      fromPlayerId,
+      delta,
+      ...(commanderId ? { commanderId } : {}),
+    }),
 
-  addPlayerCounter: (room: Room, name: string, amount: number) =>
+  addPlayerCounter: (room: Room, name: PlayerCounter, amount: number) =>
     sendIntent(room, 'INTENT_ADD_PLAYER_COUNTER', { name, amount }),
 
   setPlayerCounter: (
@@ -333,6 +342,10 @@ export const intents = {
   kickPlayer: (room: Room, playerId: string) =>
     sendIntent(room, 'INTENT_KICK_PLAYER', { playerId }),
 
+  /** Propõe remover alguém, ou vota na votação aberta. */
+  voteKick: (room: Room, playerId: string, aceitar: boolean) =>
+    sendIntent(room, 'INTENT_VOTE_KICK', { playerId, aceitar }),
+
   /** Fecha a própria janela de mulligan. */
   keepHand: (room: Room) => sendIntent(room, 'INTENT_KEEP_HAND'),
 
@@ -348,8 +361,19 @@ export const intents = {
     sendIntent(room, 'INTENT_REVOKE_VIEW', { viewerId, zone }),
 
   /** Manda uma permanente própria para a MESA de outro jogador. */
-  giveCard: (room: Room, entityId: string, targetPlayerId: string) =>
-    sendIntent(room, 'INTENT_GIVE_CARD', { entityId, targetPlayerId }),
+  giveCard: (
+    room: Room,
+    entityId: string,
+    targetPlayerId: string,
+    faceDown?: boolean,
+    posicao?: { x: number; y: number },
+  ) =>
+    sendIntent(room, 'INTENT_GIVE_CARD', {
+      entityId,
+      targetPlayerId,
+      ...(faceDown ? { faceDown } : {}),
+      ...(posicao ?? {}),
+    }),
 
   /** Sai da fase WAITING e começa a partida. Só o anfitrião (assento 0). */
   startMatch: (room: Room) => sendIntent(room, 'INTENT_START_MATCH'),

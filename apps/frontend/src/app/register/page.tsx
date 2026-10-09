@@ -7,6 +7,7 @@ import { CenaDoDragao, useDragao } from '../CenaDoDragao';
 import { useAuthStore } from '../../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
+import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
 
 export default function RegisterPage() {
@@ -53,7 +54,10 @@ export default function RegisterPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Falha ao registrar');
+        // `data.message` de um 400 de validação é só "Dados inválidos." — a
+        // regra que falhou (senha curta, caractere proibido no nome) vem em
+        // `erros[]`. Ver `mensagemDoCorpoDeErro`.
+        throw new Error(mensagemDoCorpoDeErro(data) ?? 'Falha ao registrar');
       }
 
       // Registro bem-sucedido! A API já retorna o token automaticamente

@@ -107,6 +107,32 @@ describe('catálogo de cartas', () => {
     expect(meta?.power).toBe('1');
   });
 
+  it('guarda as fichas que a carta cria, sem a própria carta e sem repetir', async () => {
+    respostas.push({
+      data: [
+        {
+          ...CARTA_NORMAL,
+          id: 'ddd',
+          name: 'Gravecrawler',
+          all_parts: [
+            { id: 'ddd', component: 'combo_piece', name: 'Gravecrawler' },
+            { id: 't1', component: 'token', name: 'Zombie' },
+            { id: 't2', component: 'token', name: 'Zombie' },
+            { id: 't3', component: 'token', name: 'Treasure' },
+          ],
+        },
+      ],
+      not_found: [],
+    });
+    useCardCatalog.getState().hidratar(['ddd']);
+    await esperarFila();
+
+    expect(useCardCatalog.getState().cartas.ddd?.fichas).toEqual([
+      { scryfallId: 't1', name: 'Zombie' },
+      { scryfallId: 't3', name: 'Treasure' },
+    ]);
+  });
+
   it('NÃO marca verso em split (duas faces, uma imagem só)', async () => {
     respostas.push({ data: [CARTA_SPLIT], not_found: [] });
     useCardCatalog.getState().hidratar(['ccc']);

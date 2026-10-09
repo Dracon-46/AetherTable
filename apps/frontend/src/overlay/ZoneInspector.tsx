@@ -237,7 +237,7 @@ export function ZoneInspector({ room }: ZoneInspectorProps) {
                             if (inspectedZone === 'SIDEBOARD') {
                               intents.fetchFromSideboard(room, card.id, 'BATTLEFIELD');
                             } else {
-                              intents.changeZone(room, card.id, 'BATTLEFIELD', 960, 480);
+                              intents.changeZone(room, card.id, 'BATTLEFIELD', 0, 0);
                             }
                             if (inspectedZone !== 'LIBRARY') setInspectedZone(null);
                           }}

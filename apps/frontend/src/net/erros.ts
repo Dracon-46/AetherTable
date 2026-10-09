@@ -48,7 +48,11 @@ const CONEXAO: Record<string, string> = {
     'O passe desta mesa expirou — ele vale um dia a partir do momento em que você pede para entrar. Volte à Taverna e entre de novo.',
   TOKEN_ALREADY_USED:
     'Este passe já foi usado. Ele vale uma entrada só, então recarregar a página ou abrir a mesa em outra aba o consome. Volte à Taverna e entre na sala de novo.',
-  ROOM_FULL: 'A mesa está cheia. Peça a alguém para sair ou crie outra sala.',
+  ROOM_FULL:
+    'A mesa está cheia. O anfitrião pode abrir mais assentos na sala de espera, ou alguém pode sair.',
+  PLAYER_BLOCKED: 'Você foi removido desta mesa e não pode voltar a ela.',
+  ALREADY_SEATED:
+    'Você já está sentado nesta mesa em outra aba ou aparelho. Feche a outra sessão e tente de novo.',
 };
 
 /** Rejeição de intenção → frase. */

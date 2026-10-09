@@ -7,6 +7,12 @@ interface UserData {
   username: string;
   email?: string;
   avatarUrl?: string | null;
+  /**
+   * Já vinha no objeto do login, mas o tipo não o declarava (os Ajustes liam
+   * `(user as any).displayName`) e nenhum salvamento o atualizava: depois de
+   * trocar o apelido, os Ajustes reabriam com o ANTIGO e o reenviavam.
+   */
+  displayName?: string | null;
 }
 
 interface AuthState {

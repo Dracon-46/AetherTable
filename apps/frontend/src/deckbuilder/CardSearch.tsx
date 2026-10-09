@@ -45,11 +45,27 @@ const MIN_LETRAS = 2;
 const DEBOUNCE_MS = 300;
 const MAX_RESULTADOS = 20;
 
+/** Faixa aceita pelo servidor para a quantidade de uma carta. */
+const QTD_MIN = 1;
+const QTD_MAX = 99;
+
+/**
+ * O texto do campo de quantidade convertido no número que vai para a API.
+ *
+ * Só é chamado ao SAIR do campo e ao adicionar — nunca a cada tecla. Ver o
+ * comentário do `<input>` de quantidade.
+ */
+export function quantidadeValida(texto: string | undefined): number {
+  const n = parseInt(texto ?? '', 10);
+  return Number.isFinite(n) ? Math.max(QTD_MIN, Math.min(QTD_MAX, n)) : QTD_MIN;
+}
+
 export function CardSearch({ onAddCard }: CardSearchProps) {
   const [texto, setTexto] = useState('');
   const [termo, setTermo] = useState('');
   const [adicionando, setAdicionando] = useState<string | null>(null);
-  const [quantidades, setQuantidades] = useState<Record<string, number>>({});
+  /** O TEXTO de cada campo, como digitado. Ver o `<input>` de quantidade. */
+  const [quantidades, setQuantidades] = useState<Record<string, string>>({});
 
   // O debounce só decide QUANDO o termo muda; o cache decide se isso vira
   // requisição. Um termo já buscado responde do cache, sem rede.
@@ -79,9 +95,21 @@ export function CardSearch({ onAddCard }: CardSearchProps) {
   const resultados = useMemo(() => (data?.data ?? []).slice(0, MAX_RESULTADOS), [data]);
 
   const adicionar = async (scryfallId: string) => {
+    const quantidade = quantidadeValida(quantidades[scryfallId]);
+    // O campo pode estar vazio ou com "0" se o clique veio sem passar pelo
+    // `blur` (toque direto no botão): mostra o número que de fato foi.
+    setQuantidades((antes) => ({ ...antes, [scryfallId]: String(quantidade) }));
     setAdicionando(scryfallId);
     try {
-      await onAddCard(scryfallId, quantidades[scryfallId] || 1);
+      await onAddCard(scryfallId, quantidade);
+    } catch {
+      /**
+       * Era `try/finally` sem `catch`: a falha do `mutateAsync` subia daqui
+       * para o `void adicionar(...)` do botão e virava rejeição não tratada
+       * ("Uncaught (in promise)" no console, overlay de erro no dev). Quem
+       * avisa a pessoa e desfaz a carta otimista é o `onError` da mutação —
+       * aqui não há mais nada a fazer.
+       */
     } finally {
       setAdicionando(null);
     }
@@ -154,16 +182,26 @@ export function CardSearch({ onAddCard }: CardSearchProps) {
             <div className="flex shrink-0 flex-col items-end gap-1">
               <input
                 type="number"
-                min={1}
-                max={99}
-                value={quantidades[carta.id] || 1}
+                min={QTD_MIN}
+                max={QTD_MAX}
+                /**
+                 * ─── APAGAR E DIGITAR "4" DAVA 14 ──────────────────────────
+                 *
+                 * O valor era prendido em 1..99 a CADA tecla: apagar o "1"
+                 * deixava o campo vazio, `parseInt('')` virava 1 de novo, e o
+                 * "4" digitado em seguida entrava ao lado dele — 14. Agora o
+                 * campo guarda o texto como está e só vira número ao sair dele
+                 * ou ao adicionar. O teto continua: o servidor recusa acima de
+                 * 99, e sem ele a carta aparecia "adicionada" antes da recusa.
+                 */
+                value={quantidades[carta.id] ?? String(QTD_MIN)}
                 onChange={(e) =>
+                  setQuantidades((antes) => ({ ...antes, [carta.id]: e.target.value }))
+                }
+                onBlur={() =>
                   setQuantidades((antes) => ({
                     ...antes,
-                    // `Math.min` no teto: o campo aceitava qualquer número
-                    // digitado e o servidor recusava depois, com a carta já
-                    // "adicionada" na tela.
-                    [carta.id]: Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1)),
+                    [carta.id]: String(quantidadeValida(antes[carta.id])),
                   }))
                 }
                 aria-label={`Quantidade de ${carta.name}`}

@@ -39,7 +39,7 @@ import {
   normalizarTecla,
   type AcaoDeAtalho,
 } from '@aethertable/shared-types';
-import { useGameStore, useUIStore } from '../store/game.store';
+import { useGameStore, useTableStore, useUIStore } from '../store/game.store';
 import { useAtalhos } from '../store/atalhos.store';
 import { PASSO_DO_FATOR } from '../canvas/layout';
 import { intents } from './intents';
@@ -136,6 +136,10 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
 
     const onKey = (e: KeyboardEvent) => {
       if (digitando(e.target)) return;
+      // Com o scry aberto, o overlay barra o mouse mas não o teclado: `d`
+      // comprava e `s` embaralhava por trás do modal, e o scry era cancelado
+      // no servidor por um grimório que o jogador nem viu mudar.
+      if (useTableStore.getState().scry) return;
 
       const acao = acaoDaTecla(atalhos, normalizarTecla(e));
       if (!acao) return;
@@ -325,20 +329,25 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
 
         case 'PARA_MAO':
           e.preventDefault();
-          selecao.forEach((id) => intents.changeZone(room, id, 'HAND'));
+          // Em lote: uma intenção por carta estourava o limite de 30/s.
+          intents.batchChangeZone(room, selecao, 'HAND');
           ui.clearSelection();
           break;
 
         case 'PARA_TOPO_DO_GRIMORIO':
           e.preventDefault();
-          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', 0));
+          // Sem índice = fim do array = TOPO. Era `changeZone(..., 0)`, e o
+          // 0 caía no parâmetro `x`: funcionava por acidente.
+          intents.batchChangeZone(room, selecao, 'LIBRARY');
           ui.clearSelection();
           break;
 
         case 'PARA_FUNDO_DO_GRIMORIO':
           e.preventDefault();
-          // `index` negativo é o fundo no contrato de `INTENT_CHANGE_ZONE`.
-          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', -1));
+          // Índice 0 = FUNDO (o topo é o fim do array). Era `-1` na posição
+          // do `x`: o índice nem chegava, a carta ia para o TOPO — e `-1`
+          // como índice o servidor recusaria de qualquer jeito (`min(0)`).
+          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', undefined, undefined, 0));
           ui.clearSelection();
           break;
 

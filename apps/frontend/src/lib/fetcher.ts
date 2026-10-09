@@ -54,6 +54,56 @@ export function mensagemDaApi(erro: unknown): string {
   return 'Falha de conexão com o servidor.';
 }
 
+/** O nome de um campo dos DTOs como os formulários o mostram. */
+const ROTULO_DO_CAMPO: Record<string, string> = {
+  username: 'Nome de usuário',
+  email: 'E-mail',
+  password: 'Senha',
+  senhaAtual: 'Senha atual',
+  novaSenha: 'Senha nova',
+  displayName: 'Apelido',
+  name: 'Nome',
+  formatId: 'Formato',
+  motivo: 'Justificativa',
+};
+
+/**
+ * A frase a mostrar para um corpo de erro da API, ou `null` se não houver.
+ *
+ * ─── TODO 400 DE VALIDAÇÃO DIZIA SÓ "Dados inválidos." ─────────────────────
+ *
+ * O `ZodValidationPipe` responde `{ message: 'Dados inválidos.', erros:
+ * [{ campo, erro }] }`, e só o `message` era lido. A pessoa que digitava um
+ * nome de usuário com espaço lia "Dados inválidos." — sem saber qual campo,
+ * nem o que havia de errado, embora o servidor tivesse dito as duas coisas.
+ * Agora a primeira falha por campo vence a frase genérica.
+ *
+ * O nome do campo vai junto porque nem toda mensagem do Zod é nossa: as
+ * padrão saem em inglês e sem sujeito ("String must contain at least 1
+ * character(s)"). Vai com o nome que a pessoa vê na tela quando ele é
+ * conhecido, e cru quando não é. `(raiz)` é o erro do objeto inteiro ("Nada
+ * para atualizar") e dispensa o prefixo.
+ */
+export function mensagemDoCorpoDeErro(corpo: unknown): string | null {
+  if (!corpo || typeof corpo !== 'object') return null;
+  const { message, erros } = corpo as {
+    message?: unknown;
+    erros?: Array<{ campo?: unknown; erro?: unknown }>;
+  };
+
+  const primeiro = Array.isArray(erros) ? erros[0] : undefined;
+  if (primeiro && typeof primeiro.erro === 'string' && primeiro.erro) {
+    const campo =
+      typeof primeiro.campo === 'string' && primeiro.campo && primeiro.campo !== '(raiz)'
+        ? `${ROTULO_DO_CAMPO[primeiro.campo] ?? primeiro.campo}: `
+        : '';
+    return `${campo}${primeiro.erro}`;
+  }
+
+  if (Array.isArray(message)) return message.join(' ') || null;
+  return typeof message === 'string' && message ? message : null;
+}
+
 interface OpcoesApi {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
@@ -103,10 +153,7 @@ export async function api<T = unknown>(caminho: string, opcoes: OpcoesApi = {}):
     const retryAfter = Number(res.headers.get('retry-after')) || undefined;
     let mensagem = `A API respondeu ${res.status}.`;
     try {
-      const corpo = (await res.json()) as { message?: string | string[] };
-      if (corpo?.message) {
-        mensagem = Array.isArray(corpo.message) ? corpo.message.join(' ') : corpo.message;
-      }
+      mensagem = mensagemDoCorpoDeErro(await res.json()) ?? mensagem;
     } catch {
       /* corpo vazio ou não-JSON: a mensagem por status já serve */
     }

@@ -25,6 +25,7 @@ import {
   Gift,
   KeyRound,
   Loader2,
+  PackageMinus,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -106,7 +107,7 @@ const TITULOS: Record<Acao, { titulo: string; descricao: string; botao: string; 
     senha: {
       titulo: 'Redefinir a senha',
       descricao:
-        'O servidor GERA uma senha nova e mostra uma única vez — você a repassa à pessoa. Todas as sessões abertas dela caem na hora: se a conta foi invadida, o invasor é expulso junto. Você não vê nem escolhe a senha.',
+        'Digite a senha nova, ou deixe em branco para o servidor GERAR uma forte e mostrá-la uma única vez. Nos dois casos, todas as sessões abertas da pessoa caem na hora: se a conta foi invadida, o invasor é expulso junto. A auditoria registra que a senha foi trocada, nunca qual é.',
       botao: 'Redefinir',
       perigo: true,
     },
@@ -156,8 +157,8 @@ export default function UsuariosPage() {
   const banir = useAcaoDeUsuario<{ motivo: string }>((id) => `/admin/usuarios/${id}/banir`);
   const restaurar = useAcaoDeUsuario<{ motivo: string }>((id) => `/admin/usuarios/${id}/restaurar`);
   const redefinirSenha = useAcaoDeUsuario<
-    { motivo: string },
-    { senhaTemporaria: string; username: string }
+    { motivo: string; novaSenha?: string },
+    { senhaTemporaria: string | null; username: string }
   >((id) => `/admin/usuarios/${id}/redefinir-senha`);
   const excluir = useAcaoDeUsuario<{ motivo: string; confirmacao: string }, { username: string }>(
     (id) => `/admin/usuarios/${id}`,
@@ -216,6 +217,17 @@ export default function UsuariosPage() {
             { valor: 'MOD', rotulo: 'MOD — resolve denúncias e pune' },
             { valor: 'ADMIN', rotulo: 'ADMIN — acesso irrestrito' },
           ],
+        },
+      ];
+    }
+    if (acao === 'senha') {
+      return [
+        {
+          nome: 'novaSenha',
+          rotulo: 'Nova senha (opcional)',
+          tipo: 'senha',
+          valorInicial: '',
+          dica: 'Mínimo de 8 caracteres — a mesma regra do cadastro. Em branco, o servidor gera uma.',
         },
       ];
     }
@@ -301,10 +313,15 @@ export default function UsuariosPage() {
        */
       case 'senha':
         redefinirSenha.mutate(
-          { id: selecionado, corpo: { motivo } },
+          {
+            id: selecionado,
+            corpo: valores.novaSenha ? { motivo, novaSenha: valores.novaSenha } : { motivo },
+          },
           {
             onSuccess: (r) => {
-              setSenhaGerada({ username: r.username, senha: r.senhaTemporaria });
+              // Senha escolhida não volta na resposta: quem a escolheu já a sabe.
+              if (r.senhaTemporaria)
+                setSenhaGerada({ username: r.username, senha: r.senhaTemporaria });
               setAcao(null);
             },
           },
@@ -565,6 +582,15 @@ export default function UsuariosPage() {
                       </button>
                       <button onClick={() => setAcao('conceder')} className={botao}>
                         <Gift className="h-3.5 w-3.5" /> Conceder item
+                      </button>
+                      {/* "Retirar" tinha título, diálogo, mutação e caso no
+                          `confirmar` — e nenhum botão chamava `setAcao('revogar')`.
+                          Um item concedido por engano só saía pelo banco. */}
+                      <button
+                        onClick={() => setAcao('revogar')}
+                        className={`${botao} hover:border-danger hover:text-danger`}
+                      >
+                        <PackageMinus className="h-3.5 w-3.5" /> Retirar item
                       </button>
                       <button onClick={() => setAcao('senha')} className={botao}>
                         <KeyRound className="h-3.5 w-3.5" /> Redefinir senha

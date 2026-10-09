@@ -111,6 +111,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
    */
   const anexosDesativados = useUIStore((s) => s.anexosDesativados);
   const catalogo = useCardCatalog((s) => s.cartas);
+  const toggleModal = useUIStore((s) => s.toggleModal);
 
   const cards = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
@@ -553,7 +554,148 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
       },
     ];
 
+    /** Os outros assentos, em ordem de mesa — alvo de "enviar" e "entregar". */
+    const oponentes = Object.values(players)
+      .filter((p) => p.id !== myId)
+      .sort((a, b) => a.seat - b.seat);
+
+    /**
+     * CRIAR FICHA A PARTIR DA CARTA.
+     *
+     * O gerador de fichas só abria pelo botão da barra de ações, e lá era
+     * preciso BUSCAR o token: quem joga Avenger of Zendikar digitava "plant" a
+     * cada terreno. A Scryfall diz quais fichas cada carta cria (`all_parts`),
+     * e o catálogo já as guarda — o menu oferece essas primeiro, e o gerador
+     * completo fica como "Outra ficha…".
+     *
+     * Para qualquer carta visível, inclusive de oponente: a ficha é criada no
+     * campo de QUEM clicou (Forsaken Monument não, mas Rite of Replication sim).
+     */
+    const relacionadas = (card.scryfallId && catalogo[card.scryfallId]?.fichas) || [];
+    const criarFicha = (f: { scryfallId: string; name: string }) =>
+      intents.createToken(room, { scryfallId: f.scryfallId, name: f.name, x: 0, y: 0 });
+    if (relacionadas.length === 1) {
+      acoes.push({
+        rotulo: `Criar ficha: ${relacionadas[0]!.name}`,
+        icone: <Sparkles className="h-4 w-4" />,
+        onClick: executar(() => criarFicha(relacionadas[0]!)),
+      });
+    } else if (relacionadas.length > 1) {
+      acoes.push({
+        rotulo: 'Criar ficha',
+        icone: <Sparkles className="h-4 w-4" />,
+        itens: [
+          ...relacionadas.map((f) => ({
+            rotulo: f.name,
+            icone: <Sparkles className="h-4 w-4" />,
+            onClick: executar(() => criarFicha(f)),
+          })),
+          {
+            rotulo: 'Outra ficha…',
+            icone: <Search className="h-4 w-4" />,
+            onClick: executar(() => toggleModal('tokens')),
+          },
+        ],
+      });
+    }
+    // Com várias relacionadas, "Outra ficha…" já está no fim do submenu.
+    if (relacionadas.length <= 1) {
+      acoes.push({
+        rotulo: relacionadas.length ? 'Outra ficha…' : 'Criar ficha…',
+        icone: <Search className="h-4 w-4" />,
+        onClick: executar(() => toggleModal('tokens')),
+      });
+    }
+
+    // COPIAR UMA PERMANENTE DO OPONENTE. A ação só aparecia para quem
+    // controlava a carta — e o caso mais comum de cópia em Magic (Clone,
+    // Spark Double) é justamente copiar a criatura de outro jogador.
+    if (!meu && card.zone === 'BATTLEFIELD') {
+      acoes.push({
+        rotulo: 'Clonar para a minha mesa',
+        icone: <Copy className="h-4 w-4" />,
+        onClick: executar(() => intents.copyCard(room, card.id)),
+      });
+    }
+
     if (meu) {
+      /**
+       * ─── DA MÃO, COM A FACE PARA BAIXO OU PARA OUTRO CAMPO ──────────────────
+       *
+       * Morph, manifest e disguise só existiam como "baixe virada para cima e
+       * depois vire" — e entre os dois gestos a carta ficava visível para a
+       * mesa inteira. A face agora vai junto da troca de zona, no mesmo patch.
+       */
+      if (card.zone === 'HAND') {
+        acoes.push(
+          {
+            rotulo: 'Jogar virada para baixo',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() =>
+              intents.changeZone(room, card.id, 'BATTLEFIELD', undefined, undefined, undefined, {
+                faceDown: true,
+              }),
+            ),
+          },
+          {
+            rotulo: 'Exilar virada para baixo',
+            icone: <Ban className="h-4 w-4" />,
+            onClick: executar(() =>
+              intents.changeZone(room, card.id, 'EXILE', undefined, undefined, undefined, {
+                faceDown: true,
+              }),
+            ),
+          },
+        );
+        if (oponentes.length > 0) {
+          acoes.push(
+            {
+              rotulo: 'Jogar no campo de',
+              icone: <Send className="h-4 w-4" />,
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() =>
+                  intents.changeZone(
+                    room,
+                    card.id,
+                    'BATTLEFIELD',
+                    undefined,
+                    undefined,
+                    undefined,
+                    {
+                      controllerId: p.id,
+                    },
+                  ),
+                ),
+              })),
+            },
+            {
+              rotulo: 'Entregar virada para',
+              icone: <Layers className="h-4 w-4" />,
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() =>
+                  intents.changeZone(
+                    room,
+                    card.id,
+                    'BATTLEFIELD',
+                    undefined,
+                    undefined,
+                    undefined,
+                    {
+                      controllerId: p.id,
+                      faceDown: true,
+                    },
+                  ),
+                ),
+              })),
+            },
+          );
+        }
+      }
+
       if (card.zone === 'COMMAND') {
         acoes.push({
           rotulo: 'Conjurar comandante',
@@ -636,7 +778,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
           {
             // Cópia de permanente: sai deslocada da original e entra marcada
             // como `isCopy`, para o jogador saber qual sai da mesa no fim.
-            rotulo: 'Copiar para a mesa',
+            rotulo: 'Clonar (cópia como ficha)',
             icone: <Copy className="h-4 w-4" />,
             onClick: executar(() => intents.copyCard(room, card.id)),
           },
@@ -662,16 +804,31 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
          * Quem controla passa a desenhar a carta na PRÓPRIA faixa: é isso que
          * faz "dar o controle" e "mandar para a mesa dele" serem a mesma coisa.
          */
-        Object.values(players)
-          .filter((p) => p.id !== myId)
-          .sort((a, b) => a.seat - b.seat)
-          .forEach((p) => {
-            acoes.push({
-              rotulo: `Enviar para a mesa de ${p.name}`,
+        // Viraram submenus: uma entrada por oponente na raiz, vezes dois
+        // gestos ("enviar" e "entregar virada"), passava de catorze linhas
+        // numa mesa de oito e empurrava "Para a mão" para fora da tela.
+        if (oponentes.length > 0) {
+          acoes.push(
+            {
+              rotulo: 'Enviar para a mesa de',
               icone: <Send className="h-4 w-4" />,
-              onClick: executar(() => intents.giveCard(room, card.id, p.id)),
-            });
-          });
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() => intents.giveCard(room, card.id, p.id)),
+              })),
+            },
+            {
+              rotulo: 'Entregar virada para',
+              icone: <Layers className="h-4 w-4" />,
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() => intents.giveCard(room, card.id, p.id, true)),
+              })),
+            },
+          );
+        }
       }
 
       acoes.push(
@@ -711,6 +868,19 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
           icone: <Ban className="h-4 w-4" />,
           onClick: executar(() => intents.changeZone(room, card.id, 'EXILE')),
         },
+        ...(card.zone === 'BATTLEFIELD'
+          ? [
+              {
+                rotulo: 'Exilar virada para baixo',
+                icone: <Ban className="h-4 w-4" />,
+                onClick: executar(() =>
+                  intents.changeZone(room, card.id, 'EXILE', undefined, undefined, undefined, {
+                    faceDown: true,
+                  }),
+                ),
+              },
+            ]
+          : []),
         {
           rotulo: 'Topo do grimório',
           icone: <ArrowDownToLine className="h-4 w-4" />,

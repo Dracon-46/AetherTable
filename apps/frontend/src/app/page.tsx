@@ -8,8 +8,9 @@ import { CenaDoDragao, useDragao } from './CenaDoDragao';
 import { useAuthStore } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
-import { api } from '@/lib/fetcher';
+import { api, mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
+import { OAuthTokenCapture } from '../components/OAuthTokenCapture';
 
 /**
  * ─── AS FRASES DE ERRO DE OAUTH MORAM AQUI, NÃO NA URL ─────────────────────
@@ -132,7 +133,9 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Credenciais inválidas');
+        // Um 400 de validação (e-mail malformado) dizia só "Dados inválidos.";
+        // o campo e o motivo vêm em `erros[]`. Ver `mensagemDoCorpoDeErro`.
+        throw new Error(mensagemDoCorpoDeErro(data) ?? 'Credenciais inválidas');
       }
 
       // Sucesso! A API retorna accessToken (camelCase)
@@ -158,6 +161,11 @@ export default function LoginPage() {
    */
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center overflow-y-auto overflow-x-hidden px-3 py-4">
+      {/* Quem volta do OAuth SEM sessão é desviado para cá pelo
+          `ProtectedRoute`, com o `#token=` preservado. A captura só existia no
+          layout do painel — atrás do mesmo porteiro que barrava a entrada —, e
+          o token morria no desvio. */}
+      <OAuthTokenCapture />
       <CenaDoDragao fase={fase} carregar={carregar} relaxar={relaxar} cuspir={cuspir} />
 
       {/* Painel de Login Glassmorphism */}

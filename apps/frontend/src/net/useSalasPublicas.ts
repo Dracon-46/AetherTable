@@ -92,6 +92,7 @@ export interface FiltrosDeSala {
   gameType: string;
   comunicacao: string;
   idioma: string;
+  nivelDePoder: number | null;
 }
 
 export const FILTROS_VAZIOS: FiltrosDeSala = {
@@ -99,6 +100,7 @@ export const FILTROS_VAZIOS: FiltrosDeSala = {
   gameType: '',
   comunicacao: '',
   idioma: '',
+  nivelDePoder: null,
 };
 
 /**
@@ -116,6 +118,7 @@ export function filtrarSalas(salas: SalaPublica[], filtros: FiltrosDeSala): Sala
     if (filtros.gameType && sala.gameType !== filtros.gameType) return false;
     if (filtros.comunicacao && sala.comunicacao !== filtros.comunicacao) return false;
     if (filtros.idioma && sala.idioma !== filtros.idioma) return false;
+    if (filtros.nivelDePoder !== null && sala.nivelDePoder !== filtros.nivelDePoder) return false;
     return true;
   });
 }

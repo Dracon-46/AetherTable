@@ -43,7 +43,12 @@ import {
   ScrollText,
   ShieldAlert,
 } from 'lucide-react';
-import { avaliarLegalidade, descreverTamanho, type Achado } from '@aethertable/shared-types';
+import {
+  avaliarLegalidade,
+  descreverTamanho,
+  rotuloDoBracket,
+  type Achado,
+} from '@aethertable/shared-types';
 import type { DeckCarta } from './useDecks';
 
 /** Símbolo de cada cor, para o selo de identidade. */
@@ -198,6 +203,22 @@ export function PainelDeLegalidade({
           <p className="text-text-faint mb-3 text-xs leading-relaxed">
             <span className="text-text-muted font-semibold">{formato.nome}:</span> {regras}.
           </p>
+
+          {/* O bracket mora aqui também, e não só no chip do cabeçalho: é onde
+              o jogador confere o deck, e "Bracket 3+" sem dizer QUAIS cartas
+              o colocaram lá não dá ao jogador nada para trocar. */}
+          {legal.bracket && !vazio && (
+            <p className="text-text-faint mb-3 text-xs leading-relaxed">
+              <span className="text-text-muted font-semibold">
+                {rotuloDoBracket(legal.bracket)} (estimativa):
+              </span>{' '}
+              {legal.bracket.gameChangers.length === 0
+                ? 'nenhum Game Changer.'
+                : `${legal.bracket.gameChangers.length} Game Changer(s) — ${legal.bracket.gameChangers.join(', ')}.`}{' '}
+              Destruição de terrenos em massa, turnos extras e combos de duas cartas não são
+              verificados.
+            </p>
+          )}
 
           {legal.achados.length === 0 ? (
             <p className="text-success flex items-center gap-2 text-sm">

@@ -25,9 +25,10 @@
  * requisição nenhuma.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ApiError } from '../lib/fetcher';
+import { useAuthStore } from '../store/auth.store';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // `useState` e não um módulo global: no App Router, um QueryClient de módulo
@@ -57,5 +58,42 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   );
 
+  useLimparCacheAoTrocarDeConta(client);
+
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+/**
+ * ─── O CACHE ERA DA ABA, NÃO DA CONTA ──────────────────────────────────────
+ *
+ * As chaves não carregam o usuário (`['decks', 'lista']`, `['admin', 'eu']`),
+ * e nem sair nem entrar tocava no `QueryClient`. Sair da conta A e entrar com
+ * a B na mesma aba mostrava os grimórios de A — e, dentro dos 30 s de
+ * `staleTime`, nem revalidava: a lista de outra pessoa ficava na tela como se
+ * fosse a sua. Com `['admin', 'eu']`, a porta do backoffice de um admin
+ * continuava aberta no menu de quem entrasse depois.
+ *
+ * Pôr o id do usuário em cada chave resolveria só as chaves lembradas; limpar
+ * no ponto em que a identidade muda resolve todas, inclusive as que ainda vão
+ * nascer. A comparação é pelo ID: trocar o nome de usuário no perfil regrava o
+ * `user` do store e não pode esvaziar o cache de quem continua a mesma pessoa.
+ *
+ * Limpa quando uma conta SAI de cena — logout, 401, ou outra conta entrando por
+ * cima (OAuth com sessão aberta). Entrar vindo de "ninguém" não limpa: a saída
+ * já limpou, e o que se acumula sem sessão é público (provedores de login,
+ * catálogo, busca de cartas). Limpar ali derrubava a query ativa da própria
+ * tela de login, que refazia `GET /auth/provedores` e piscava os botões de
+ * OAuth no meio do redirecionamento.
+ */
+function useLimparCacheAoTrocarDeConta(client: QueryClient): void {
+  useEffect(() => {
+    let anterior = useAuthStore.getState().user?.id ?? null;
+    return useAuthStore.subscribe((estado) => {
+      const atual = estado.user?.id ?? null;
+      if (atual === anterior) return;
+      const saiuUmaConta = anterior !== null;
+      anterior = atual;
+      if (saiuUmaConta) client.clear();
+    });
+  }, [client]);
 }

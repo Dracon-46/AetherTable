@@ -194,7 +194,9 @@ export function ActionBar({ room }: ActionBarProps) {
     // Apaga a chave ANTES de fechar: sem isto, voltar para esta mesa na mesma
     // aba tentaria reconectar num assento que acabou de ser abandonado de
     // propósito, e a falha atrasaria a entrada nova com um round-trip inútil.
-    esquecerReconexao(room.roomId);
+    // A chave é guardada pelo CÓDIGO da sala (a rota /play/<código>); `roomId`
+    // é o id interno do Colyseus, e apagar por ele não apagava nada.
+    esquecerReconexao(room.state?.roomCode || room.roomId);
     intents.leave(room);
     room.leave();
     router.push('/dashboard');

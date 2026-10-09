@@ -406,6 +406,25 @@ export function montarGrade(ordem: string[], focoId: string): Mesa {
  * O clamp não é cosmético: sem ele, uma carta arrastada para fora aterrissaria
  * na faixa do vizinho e passaria a parecer dele.
  */
+/**
+ * ─── A POSIÇÃO NO CAMPO É FRAÇÃO, NÃO PIXEL ───────────────────────────────
+ *
+ * `Card.x/y` guardava PIXELS do campo de quem controla a carta, no monitor
+ * dele. Quem olhava a mesma carta num campo de outro tamanho recebia pixels que
+ * não cabiam:
+ *
+ *   - no TRILHO dos oponentes, onde o campo tem uma fração da largura, todo
+ *     valor passava da borda e o clamp empilhava as permanentes do oponente
+ *     numa coluna só — a mesa dele virava um monte;
+ *   - entre dois jogadores com telas diferentes, a carta que um deixou no meio
+ *     aparecia encostada na borda para o outro.
+ *
+ * Agora é a fração do campo (0–1) em cada eixo: o arranjo é o mesmo em qualquer
+ * tela, só a escala muda. (0, 0) continua sendo "sem coordenada — centralize",
+ * e por isso `paraCoordenadaRelativa` nunca devolve 0 exato.
+ */
+export const FRACAO_MINIMA = 0.0001;
+
 export function posicaoNoCampo(faixa: Faixa, x: number, y: number): Ponto {
   const { campo } = faixa;
   // `esquerda` é a origem da célula: 0 no empilhado, o canto da célula na grade.
@@ -438,23 +457,26 @@ export function posicaoNoCampo(faixa: Faixa, x: number, y: number): Ponto {
 
   // Uma carta jogada por INTENT_CHANGE_ZONE sem coordenada chega em (0,0):
   // centraliza em vez de empilhar tudo no canto superior esquerdo.
+  const centro = { x: campoX + campo.largura / 2, y: campoY + campo.altura / 2 };
   const bruta =
-    x === 0 && y === 0
-      ? { x: campoX + campo.largura / 2, y: campoY + campo.altura / 2 }
-      : { x: campoX + x, y: campoY + y };
+    x === 0 && y === 0 ? centro : { x: campoX + x * campo.largura, y: campoY + y * campo.altura };
 
+  // Campo mais estreito que uma carta: o clamp invertia (maxX < minX) e
+  // devolvia `maxX`, que fica FORA do campo. O centro é o único ponto honesto.
   return {
-    x: Math.min(maxX, Math.max(minX, bruta.x)),
-    y: Math.min(maxY, Math.max(minY, bruta.y)),
+    x: maxX < minX ? centro.x : Math.min(maxX, Math.max(minX, bruta.x)),
+    y: maxY < minY ? centro.y : Math.min(maxY, Math.max(minY, bruta.y)),
   };
 }
+
+const fracao = (v: number) => Math.round(Math.min(1, Math.max(FRACAO_MINIMA, v)) * 10_000) / 10_000;
 
 /** Inverso de `posicaoNoCampo`: da tela lógica para o que vai ao servidor. */
 export function paraCoordenadaRelativa(faixa: Faixa, x: number, y: number): Ponto {
   const { campo } = faixa;
   return {
-    x: Math.round(Math.min(campo.largura, Math.max(0, x - faixa.esquerda - campo.x))),
-    y: Math.round(Math.min(campo.altura, Math.max(0, y - faixa.topo - campo.y))),
+    x: fracao((x - faixa.esquerda - campo.x) / Math.max(1, campo.largura)),
+    y: fracao((y - faixa.topo - campo.y) / Math.max(1, campo.altura)),
   };
 }
 
@@ -483,11 +505,17 @@ export const CELULA_DA_GRADE = 0.5;
 
 /** Encaixa uma coordenada RELATIVA (a que vai para o servidor) na grade. */
 export function encaixarNaGrade(faixa: Faixa, p: Ponto): Ponto {
+  const { campo } = faixa;
   const passoX = CARD_W * faixa.escala * CELULA_DA_GRADE;
   const passoY = CARD_H * faixa.escala * CELULA_DA_GRADE;
+  // A grade é em meia CARTA, que é pixel; a coordenada é fração do campo. Vai
+  // para pixel, encaixa, volta. `fracao` tem piso acima de zero: encaixar no
+  // canto dava (0, 0), que significa "centralize", e a carta pulava para o meio.
+  const px = p.x * campo.largura;
+  const py = p.y * campo.altura;
   return {
-    x: Math.round(Math.round(p.x / passoX) * passoX),
-    y: Math.round(Math.round(p.y / passoY) * passoY),
+    x: fracao((Math.round(px / passoX) * passoX) / Math.max(1, campo.largura)),
+    y: fracao((Math.round(py / passoY) * passoY) / Math.max(1, campo.altura)),
   };
 }
 
@@ -578,6 +606,75 @@ export type ZonaDeSoltura = 'COMMAND' | 'LIBRARY' | 'GRAVEYARD' | 'EXILE' | 'BAT
  * (`CARD_W + 14`), então dois destinos nunca disputam o mesmo pixel.
  */
 const TOLERANCIA_DE_SOLTURA = 6;
+
+// ─── Seleção por retângulo ──────────────────────────────────────────────────
+
+export interface Retangulo {
+  x: number;
+  y: number;
+  largura: number;
+  altura: number;
+}
+
+/** O retângulo entre dois cantos, qualquer que seja a direção do arraste. */
+export function retanguloEntre(x0: number, y0: number, x1: number, y1: number): Retangulo {
+  return {
+    x: Math.min(x0, x1),
+    y: Math.min(y0, y1),
+    largura: Math.abs(x1 - x0),
+    altura: Math.abs(y1 - y0),
+  };
+}
+
+/** Uma carta desenhada: CENTRO em (x, y), como o `CardSprite` a posiciona. */
+export interface AreaDeCarta {
+  id: string;
+  x: number;
+  y: number;
+  largura: number;
+  altura: number;
+}
+
+/**
+ * As cartas que o retângulo TOCA — não só as que ele contém inteiras.
+ *
+ * Exigir a carta inteira dentro do laço obrigaria a arrastar até além da borda
+ * da última carta, e numa mesa cheia isso alcança a faixa vizinha. Tocar basta,
+ * que é o que qualquer seleção por laço de editor gráfico faz.
+ */
+export function cartasNoRetangulo(cartas: readonly AreaDeCarta[], r: Retangulo): string[] {
+  return cartas
+    .filter(
+      (c) =>
+        c.x + c.largura / 2 >= r.x &&
+        c.x - c.largura / 2 <= r.x + r.largura &&
+        c.y + c.altura / 2 >= r.y &&
+        c.y - c.altura / 2 <= r.y + r.altura,
+    )
+    .map((c) => c.id);
+}
+
+/**
+ * A faixa sob um ponto da mesa, ou `null` fora de todas.
+ *
+ * O soltar só conhecia a faixa de quem arrastava: `paraCoordenadaRelativa`
+ * prendia o ponto dentro dela, e uma carta largada em cima do campo de outro
+ * jogador voltava para a borda do próprio campo. Jogar uma carta no campo
+ * alheio não tinha gesto nenhum.
+ */
+export function faixaSobPonto(faixas: readonly Faixa[], x: number, y: number): Faixa | null {
+  // A MENOR faixa que contém o ponto, e não a primeira: na mesa focada a faixa
+  // do foco ocupa a largura inteira, por baixo do trilho dos oponentes — e,
+  // sendo a primeira da lista, "a primeira que contém" era sempre ela. Soltar
+  // no trilho caía no próprio campo.
+  let melhor: Faixa | null = null;
+  for (const f of faixas) {
+    const dentro =
+      x >= f.esquerda && x <= f.esquerda + f.largura && y >= f.topo && y <= f.topo + f.altura;
+    if (dentro && (!melhor || f.largura * f.altura < melhor.largura * melhor.altura)) melhor = f;
+  }
+  return melhor;
+}
 
 export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
   /**
@@ -908,7 +1005,10 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
   const { focoId, oponentes = [], trilhoAberto = true, temReserva = true } = opcoes;
 
   const largura = Math.max(480, Math.round(opcoes.largura));
-  const altura = Math.max(420, Math.round(opcoes.altura));
+  // Sem piso: era `Math.max(420, …)`, e num celular deitado (390 px de altura,
+  // 336 úteis) a mesa era montada com 420 e os últimos 84 px — a mão — ficavam
+  // abaixo da tela. O teto de escala já garante um campo jogável.
+  const altura = Math.max(1, Math.round(opcoes.altura));
 
   const escala = escalaDaMesaFocada(altura, opcoes.fatorCarta);
   /**
@@ -952,8 +1052,16 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
    * recupera a largura inteira, que é o comportamento esperado de um painel
    * que se fecha.
    */
-  const trilhoLargura =
-    trilhoAberto && oponentes.length > 0 ? zonaW * TRILHO_EM_CARTAS + FOLGA_TRILHO : 0;
+  const trilhoBruto = zonaW * TRILHO_EM_CARTAS + FOLGA_TRILHO;
+  // O trilho só abre se SOBRAR campo de pelo menos duas cartas. Sem esta conta,
+  // numa janela de 800 px o campo ficava com 61 px — menor que uma carta — e
+  // com 700 px ficava NEGATIVO: o clamp mandava todas as permanentes para
+  // baixo do painel de vida.
+  const cabeTrilho =
+    trilhoAberto &&
+    oponentes.length > 0 &&
+    largura - blocoLargura - trilhoBruto >= CARD_W * escala * 2;
+  const trilhoLargura = cabeTrilho ? trilhoBruto : 0;
 
   // ── Campo de batalha: tudo menos a coluna de zonas, o trilho e a mão ─────
   const campoLargura = largura - blocoLargura - trilhoLargura;
@@ -1046,7 +1154,7 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
   const faixas: Faixa[] = [faixaDoFoco];
 
   // ── Trilho dos oponentes: coluna PRÓPRIA, na borda direita da tela ───────
-  if (trilhoAberto && oponentes.length > 0) {
+  if (cabeTrilho) {
     // `- FOLGA_TRILHO` na largura porque a folga já entrou na reserva acima: o
     // vão fica ENTRE a coluna de zonas e o trilho, não depois dele — grudar o
     // trilho na borda é o ponto, e uma margem à direita o traria de volta para
@@ -1061,9 +1169,14 @@ export function montarMesaFocada(opcoes: OpcoesMesaFocada): Mesa {
     // A escala do trilho vem da CÉLULA dele, não da mesa: é o que faz a mesa do
     // oponente caber "de forma pequena mesmo" sem deformar nada.
     // A miniatura precisa caber um campinho MAIS o bloco de três pilhas.
+    // `CARD_W * 6`: com 4, o bloco de três pilhas comia a célula e sobrava
+    // um campo MENOR que uma carta — nenhuma permanente cabia lado a lado. Seis
+    // dão um campinho de umas três cartas. No divisor da altura entra também a
+    // tira do rótulo (18): sem ela, com sete oponentes, a fileira da reserva
+    // passava da borda da célula.
     const escalaTrilho = Math.min(
-      larguraUtil / (CARD_W * 4),
-      alturaPorOponente / (CARD_H * 3 + (VAO_DO_BLOCO + ROTULO_DA_PILHA) * 2),
+      larguraUtil / (CARD_W * 6),
+      alturaPorOponente / (CARD_H * 3 + (VAO_DO_BLOCO + ROTULO_DA_PILHA) * 2 + 18),
     );
     const cardWt = CARD_W * escalaTrilho;
     const cardHt = CARD_H * escalaTrilho;

@@ -56,6 +56,10 @@ import { Avatar, TituloDeChat } from '../components/Avatar';
 import { useCosmeticos, cosmeticosVisiveis } from '../cosmetics/store';
 import { useCardCatalog } from '../cards/catalog';
 import type { RoomState } from '../net/schema/RoomState';
+import { acharFormato } from '@aethertable/shared-types';
+
+/** `Card.id` é UUID; `sessionId` do Colyseus não. Distingue as chaves do dano. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface LifePanelProps {
   room: Room<RoomState>;
@@ -90,6 +94,7 @@ function PlayerCard({
   const cards = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
   const catalogo = useCardCatalog((s) => s.cartas);
+  const vidaInicial = acharFormato(useGameStore((s) => s.config.gameType)).vidaInicial || 40;
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
   const cosmeticos = cosmeticosVisiveis(player, isMe, permitirDeOponentes);
 
@@ -207,7 +212,77 @@ function PlayerCard({
     return nomes.join(' + ');
   };
 
-  const lifePct = Math.max(0, Math.min(100, (player.life / 40) * 100));
+  /**
+   * Uma linha de dano POR COMANDANTE, não por jogador.
+   *
+   * Era uma linha por oponente, com os nomes dos parceiros juntos ("Tymna +
+   * Thrasios") sobre UM número — e o comentário logo abaixo dizia que eles
+   * "contam separado". Não contavam: o servidor somava os dois na chave do
+   * jogador. Agora a chave é o `Card.id` do comandante.
+   *
+   * O que sobra no mapa sem dono na mesa (alguém saiu da sala) continua
+   * aparecendo: esse dano ainda conta para os 21, e escondê-lo deixava o
+   * jogador eliminado sem nenhuma linha onde corrigir.
+   */
+  const fontesDeDano = (() => {
+    const linhas: {
+      chave: string;
+      deQuem: string;
+      commanderId?: string;
+      rotulo: string;
+      dica: string;
+    }[] = [];
+    const vistas = new Set<string>();
+    for (const opp of opponents) {
+      const comandantes = Object.values(cards).filter((c) => c.isCommander && c.ownerId === opp.id);
+      if (comandantes.length === 0) {
+        vistas.add(opp.id);
+        linhas.push({
+          chave: opp.id,
+          deQuem: opp.id,
+          rotulo: nomeDoComandante(opp.id),
+          dica: `Comandante de ${opp.name}`,
+        });
+        continue;
+      }
+      for (const c of comandantes) {
+        vistas.add(c.id);
+        const nome = (c.scryfallId && catalogo[c.scryfallId]?.name) || `comandante de ${opp.name}`;
+        linhas.push({
+          chave: c.id,
+          deQuem: opp.id,
+          commanderId: c.id,
+          rotulo: nome,
+          dica: `${nome} — comandante de ${opp.name}`,
+        });
+      }
+      // Dano marcado antes de o deck ter comandante identificado.
+      if ((player.commanderDamage?.[opp.id] ?? 0) > 0 && !vistas.has(opp.id)) {
+        vistas.add(opp.id);
+        linhas.push({
+          chave: opp.id,
+          deQuem: opp.id,
+          rotulo: opp.name,
+          dica: `Dano de ${opp.name}`,
+        });
+      }
+    }
+    for (const [chave, valor] of Object.entries(player.commanderDamage ?? {})) {
+      if (vistas.has(chave) || !valor) continue;
+      linhas.push({
+        chave,
+        deQuem: chave,
+        commanderId: UUID.test(chave) ? chave : undefined,
+        rotulo: 'quem saiu da mesa',
+        dica: 'Dano de um jogador que já saiu — ainda conta para os 21.',
+      });
+    }
+    return linhas;
+  })();
+
+  // Sobre a vida INICIAL do formato: com 40 fixo, um jogador de Modern
+  // começava a partida com a barra pela metade.
+  const lifePct = Math.max(0, Math.min(100, (player.life / vidaInicial) * 100));
   const lifeDanger = player.life <= 10;
   const lifeCritical = player.life <= 5;
 
@@ -539,59 +614,77 @@ function PlayerCard({
       )}
 
       {/* Contadores ativos */}
-      {!compacto && (player.poison > 0 || player.energy > 0 || player.experience > 0) && (
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          {player.poison > 0 && (
-            <span className="text-warning flex items-center gap-0.5" title="Veneno">
-              ☠ {player.poison}
-            </span>
-          )}
-          {player.energy > 0 && (
-            <span className="text-primary flex items-center gap-0.5" title="Energia">
-              <Zap className="h-3 w-3" />
-              {player.energy}
-            </span>
-          )}
-          {player.experience > 0 && (
-            <span className="text-text-muted flex items-center gap-0.5" title="Experiência">
-              <Star className="h-3 w-3" />
-              {player.experience}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Radiação e ingresso não tinham selo: só apareciam no menu do próprio
+          jogador, e o resto da mesa nunca via o valor. */}
+      {!compacto &&
+        (player.poison > 0 ||
+          player.energy > 0 ||
+          player.experience > 0 ||
+          player.rad > 0 ||
+          player.ticket > 0) && (
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            {player.poison > 0 && (
+              <span className="text-warning flex items-center gap-0.5" title="Veneno">
+                ☠ {player.poison}
+              </span>
+            )}
+            {player.energy > 0 && (
+              <span className="text-primary flex items-center gap-0.5" title="Energia">
+                <Zap className="h-3 w-3" />
+                {player.energy}
+              </span>
+            )}
+            {player.experience > 0 && (
+              <span className="text-text-muted flex items-center gap-0.5" title="Experiência">
+                <Star className="h-3 w-3" />
+                {player.experience}
+              </span>
+            )}
+            {player.rad > 0 && (
+              <span className="text-success flex items-center gap-0.5" title="Radiação">
+                ☢ {player.rad}
+              </span>
+            )}
+            {player.ticket > 0 && (
+              <span className="text-speaking flex items-center gap-0.5" title="Ingressos">
+                <Ticket className="h-3 w-3" />
+                {player.ticket}
+              </span>
+            )}
+          </div>
+        )}
 
-      {/* Dano de Comandante */}
-      {!compacto && opponents.length > 0 && (
+      {/* Dano de Comandante.
+          No celular só aparecia o cartão compacto, e ele não tinha esta
+          seção: o recurso simplesmente não existia abaixo de `sm`. No
+          compacto, só o PRÓPRIO cartão mostra — é o único em que se marca. */}
+      {(!compacto || isMe) && fontesDeDano.length > 0 && (
         <div className="border-panel-border mt-3 space-y-1 border-t pt-2">
           <span className="text-text-muted flex items-center gap-1 text-[10px] font-bold uppercase">
             <Shield className="h-3 w-3" /> Dano de Comandante
           </span>
           <div className="flex flex-col gap-1">
-            {opponents.map((opp) => {
-              const dmg = player.commanderDamage?.[opp.id] ?? 0;
-              const comandante = nomeDoComandante(opp.id);
+            {fontesDeDano.map((f) => {
+              const dmg = player.commanderDamage?.[f.chave] ?? 0;
               return (
                 <div
-                  key={opp.id}
+                  key={f.chave}
                   className="border-panel-border bg-table-deep/50 flex items-center justify-between gap-2 rounded border px-2 py-1 text-xs"
                 >
-                  {/* O NOME DO COMANDANTE, não o do jogador.
-                      "21 de dano de aether_bruno" não diz nada que a tela já
-                      não mostre; "21 de Krenko, Mob Boss" é a informação que a
-                      mesa usa — ainda mais com parceiros, em que o mesmo
-                      jogador tem dois comandantes que contam separado. */}
-                  <span
-                    className="text-text-faint min-w-0 truncate"
-                    title={`${comandante} — comandante de ${opp.name}`}
-                  >
-                    {comandante}
+                  {/* O NOME DO COMANDANTE, não o do jogador: "21 de Krenko,
+                      Mob Boss" é a informação que a mesa usa. */}
+                  <span className="text-text-faint min-w-0 truncate" title={f.dica}>
+                    {f.rotulo}
                   </span>
                   <div className="flex shrink-0 items-center gap-1 font-mono">
                     {isMe && (
                       <button
-                        onClick={() => intents.setCommanderDamage(room, opp.id, -1)}
+                        onClick={() =>
+                          intents.setCommanderDamage(room, f.deQuem, -1, f.commanderId)
+                        }
                         className="text-danger hover:bg-danger/20 w-4 rounded text-center transition-colors"
+                        aria-label={`Reduzir dano de ${f.rotulo}`}
+                        title="−1 de dano (devolve 1 de vida)"
                       >
                         −
                       </button>
@@ -605,8 +698,10 @@ function PlayerCard({
                     </span>
                     {isMe && (
                       <button
-                        onClick={() => intents.setCommanderDamage(room, opp.id, 1)}
+                        onClick={() => intents.setCommanderDamage(room, f.deQuem, 1, f.commanderId)}
                         className="text-success hover:bg-success/20 w-4 rounded text-center transition-colors"
+                        aria-label={`Aumentar dano de ${f.rotulo}`}
+                        title="+1 de dano (tira 1 de vida)"
                       >
                         +
                       </button>

@@ -67,9 +67,17 @@ export interface CardMeta {
   faces: FaceMeta[];
   setCode: string;
   collectorNumber: string;
+  /**
+   * As fichas que esta carta cria (`all_parts` da Scryfall, `component:
+   * token`). É o que o menu de botão direito oferece como "Criar ficha": o
+   * gerador genérico obrigava a buscar "zombie" a cada Gravecrawler.
+   */
+  fichas: Array<{ scryfallId: string; name: string }>;
 }
 
-const CHAVE_CACHE = 'aether-card-catalog-v1';
+// v2: `fichas` entrou no metadado. Com a chave antiga, as cartas já em cache
+// chegariam sem o campo e nunca mais seriam pedidas de novo.
+const CHAVE_CACHE = 'aether-card-catalog-v2';
 /** Teto do `POST /cards/collection`. */
 const LOTE = 75;
 /** Acima disto o localStorage vira um problema; descartamos os mais antigos. */
@@ -185,7 +193,23 @@ function normalizar(bruto: Record<string, unknown>): CardMeta {
     faces,
     setCode: texto(bruto.set),
     collectorNumber: texto(bruto.collector_number),
+    fichas: fichasDe(bruto, id),
   };
+}
+
+/** Fichas relacionadas, sem a própria carta e sem repetir nome. */
+function fichasDe(bruto: Record<string, unknown>, id: string): CardMeta['fichas'] {
+  if (!Array.isArray(bruto.all_parts)) return [];
+  const vistas = new Set<string>();
+  const saida: CardMeta['fichas'] = [];
+  for (const parte of bruto.all_parts as Array<Record<string, unknown>>) {
+    const pid = texto(parte.id);
+    const nome = texto(parte.name);
+    if (parte.component !== 'token' || !pid || pid === id || vistas.has(nome)) continue;
+    vistas.add(nome);
+    saida.push({ scryfallId: pid, name: nome });
+  }
+  return saida;
 }
 
 function lerCache(): Record<string, CardMeta> {

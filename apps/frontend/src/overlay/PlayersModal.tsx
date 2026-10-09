@@ -37,6 +37,9 @@ export function PlayersModal({ room }: PlayersModalProps) {
   const playersMap = useGameStore((s) => s.players);
   const cards = useGameStore((s) => s.cards);
   const myId = useGameStore((s) => s.mySessionId);
+  const votacaoAlvo = useGameStore((s) => s.config.votacaoAlvo);
+  const votacaoExpiraEm = useGameStore((s) => s.config.votacaoExpiraEm);
+  const votacaoAberta = votacaoAlvo !== '' && votacaoExpiraEm > Date.now();
   const speaking = useVoiceStore((s) => s.speaking);
 
   /**
@@ -247,6 +250,23 @@ export function PlayersModal({ room }: PlayersModalProps) {
                     >
                       <Flag className="h-3.5 w-3.5" />
                       Denunciar
+                    </button>
+
+                    {/* PROPOR REMOÇÃO — a mesa decide, não só o anfitrião.
+                        Para quem não é anfitrião, era a única resposta a uma
+                        conduta além de denunciar, e não existia. */}
+                    <button
+                      onClick={() => intents.voteKick(room, player.id, true)}
+                      disabled={Boolean(votacaoAberta)}
+                      className="border-danger/40 text-danger hover:bg-danger/20 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                      title={
+                        votacaoAberta
+                          ? 'Já há uma votação em andamento'
+                          : `Abre uma votação: se todos os outros jogadores concordarem, ${player.name} sai da mesa e não volta`
+                      }
+                    >
+                      <UserX className="h-3.5 w-3.5" />
+                      Propor remoção
                     </button>
 
                     {souAnfitriao && (

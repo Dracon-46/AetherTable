@@ -46,6 +46,8 @@ interface AparenciaState {
   densidade: Densidade;
   /** Preferir menos movimento, independente do sistema operacional. */
   animacoesReduzidas: boolean;
+  /** Painel de busca/importação do deckbuilder minimizado. */
+  painelDeBuscaRecolhido: boolean;
 
   alternarMenu: () => void;
   setMenuRecolhido: (v: boolean) => void;
@@ -54,6 +56,7 @@ interface AparenciaState {
   setTamanhoDeCarta: (v: TamanhoDeCarta) => void;
   setDensidade: (v: Densidade) => void;
   setAnimacoesReduzidas: (v: boolean) => void;
+  alternarPainelDeBusca: () => void;
 }
 
 export const useAparencia = create<AparenciaState>()(
@@ -65,6 +68,7 @@ export const useAparencia = create<AparenciaState>()(
       tamanhoDeCarta: 'medio',
       densidade: 'confortavel',
       animacoesReduzidas: false,
+      painelDeBuscaRecolhido: false,
 
       alternarMenu: () => set((s) => ({ menuRecolhido: !s.menuRecolhido })),
       setMenuRecolhido: (menuRecolhido) => set({ menuRecolhido }),
@@ -73,6 +77,8 @@ export const useAparencia = create<AparenciaState>()(
       setTamanhoDeCarta: (tamanhoDeCarta) => set({ tamanhoDeCarta }),
       setDensidade: (densidade) => set({ densidade }),
       setAnimacoesReduzidas: (animacoesReduzidas) => set({ animacoesReduzidas }),
+      alternarPainelDeBusca: () =>
+        set((s) => ({ painelDeBuscaRecolhido: !s.painelDeBuscaRecolhido })),
     }),
     {
       name: 'aether-aparencia',

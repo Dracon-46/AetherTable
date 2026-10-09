@@ -23,6 +23,26 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../store/auth.store';
 
+/**
+ * ─── O PORTEIRO JOGAVA FORA O TOKEN DO OAUTH ───────────────────────────────
+ *
+ * O backend conclui o OAuth redirecionando para `/dashboard#token=…`. Quem
+ * chega assim ainda NÃO tem sessão — é justamente o token que vai criá-la —,
+ * então este porteiro mandava para `/` antes de o `OAuthTokenCapture` (que
+ * mora DENTRO dele, no layout do painel) sequer montar. O `replace('/')`
+ * levava junto o fragmento, e o login por Google/Discord terminava na tela de
+ * login, sem erro nenhum, para todo mundo que não estivesse logado — ou seja,
+ * para todo mundo que usa o botão.
+ *
+ * Agora o fragmento viaja com o redirecionamento e a tela de login, que também
+ * monta o `OAuthTokenCapture`, conclui a entrada. Só `#token=` é repassado:
+ * qualquer outro fragmento é da página que ficou para trás.
+ */
+function fragmentoDeOAuth(): string {
+  if (typeof window === 'undefined') return '';
+  return window.location.hash.startsWith('#token=') ? window.location.hash : '';
+}
+
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -53,7 +73,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   useEffect(() => {
     if (!hidratado) return;
-    if (!accessToken) router.replace('/');
+    if (!accessToken) router.replace(`/${fragmentoDeOAuth()}`);
   }, [hidratado, accessToken, router]);
 
   if (!hidratado || !accessToken) {

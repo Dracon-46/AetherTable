@@ -43,6 +43,10 @@ const ROTULO_DE_TIPO: Record<string, string> = {
   PLAYMAT: 'Tapete',
   BORDER: 'Borda de perfil',
   TITLE: 'Título no chat',
+  // `PET` entrou no enum do banco e o catálogo passou a mandá-lo como tipo:
+  // sem rótulo, o seletor mostrava "[PET] Sem mascote" ao lado de "[Título no
+  // chat] Sem título" — e a grade do catálogo, um rótulo em branco.
+  PET: 'Mascote',
 };
 
 export default function CosmeticosPage() {
@@ -75,7 +79,17 @@ export default function CosmeticosPage() {
   const disponiveis = data.catalogo.filter(
     (c) => c.tipo && !jaRegistrados.has(`${c.tipo}:${c.catalogoId}`),
   );
-  const selecionado = disponiveis.find((c) => c.catalogoId === escolhido);
+  /**
+   * ─── O SEGUNDO "nenhum" NÃO PODIA SER ESCOLHIDO ───────────────────────────
+   *
+   * O `value` da opção era só o `catalogoId`, e ele se repete entre tipos —
+   * "nenhum" existe como título E como mascote. As duas opções tinham o mesmo
+   * valor: escolher a segunda selecionava a primeira, e o `find` também
+   * devolvia a primeira. A chave é `tipo:id`, a mesma do `jaRegistrados`.
+   */
+  const chaveDoItem = (c: { tipo?: string | null; catalogoId: string }) =>
+    `${c.tipo}:${c.catalogoId}`;
+  const selecionado = disponiveis.find((c) => chaveDoItem(c) === escolhido);
 
   return (
     <div className="space-y-6">
@@ -120,7 +134,7 @@ export default function CosmeticosPage() {
               >
                 <option value="">— escolha —</option>
                 {disponiveis.map((c) => (
-                  <option key={`${c.tipo}:${c.catalogoId}`} value={c.catalogoId}>
+                  <option key={chaveDoItem(c)} value={chaveDoItem(c)}>
                     [{ROTULO_DE_TIPO[c.tipo!] ?? c.tipo}] {c.nome} ({c.tier})
                   </option>
                 ))}

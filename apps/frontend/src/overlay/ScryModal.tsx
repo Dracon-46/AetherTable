@@ -95,6 +95,10 @@ export function ScryModal({ room }: ScryModalProps) {
     return [...arranjadas, ...scry.cards.filter((c) => !vistos.has(c.id))];
   })();
 
+  const posicaoNoTopo = new Map(
+    emOrdem.filter((c) => destinos[c.id] !== 'FORA').map((c, k) => [c.id, k + 1]),
+  );
+
   const confirmar = () => {
     const fora = emOrdem.filter((c) => destinos[c.id] === 'FORA').map((c) => c.id);
     // A ordem do topo é a ordem em que aparecem na tela, de cima para baixo.
@@ -148,7 +152,7 @@ export function ScryModal({ room }: ScryModalProps) {
                 <div className="flex shrink-0 flex-col gap-1">
                   <button
                     onClick={() => mover(c.id, -1)}
-                    disabled={i === 0 || fora}
+                    disabled={i === 0}
                     className="border-panel-border text-text-muted hover:text-text rounded border p-1 transition-colors disabled:opacity-30"
                     aria-label="Subir"
                   >
@@ -156,7 +160,7 @@ export function ScryModal({ room }: ScryModalProps) {
                   </button>
                   <button
                     onClick={() => mover(c.id, 1)}
-                    disabled={i === emOrdem.length - 1 || fora}
+                    disabled={i === emOrdem.length - 1}
                     className="border-panel-border text-text-muted hover:text-text rounded border p-1 transition-colors disabled:opacity-30"
                     aria-label="Descer"
                   >
@@ -176,7 +180,10 @@ export function ScryModal({ room }: ScryModalProps) {
 
                 <div className="min-w-0 flex-1">
                   <span className="text-text-muted text-xs font-bold uppercase tracking-wider">
-                    {fora ? rotuloFora : `Topo · posição ${i + 1}`}
+                    {/* A posição contava as cartas mandadas para o fundo: no
+                        caso mais comum — scry 2, a primeira para baixo — a que
+                        ficava no topo aparecia como "posição 2". */}
+                    {fora ? rotuloFora : `Topo · posição ${posicaoNoTopo.get(c.id)}`}
                   </span>
                 </div>
 

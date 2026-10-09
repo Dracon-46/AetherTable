@@ -18,6 +18,7 @@
  * envolvê-las em `useMemo` e elas ficam testáveis sem montar React.
  */
 
+import { estimarBracket, rotuloDoBracket } from '@aethertable/shared-types';
 import type { DeckCarta } from './useDecks';
 
 /** Ordem em que os grupos aparecem. O resto vem depois, em ordem alfabética. */
@@ -181,75 +182,64 @@ export function agruparCartas(
 // ─── Bracket de poder ────────────────────────────────────────────────────────
 
 /**
- * Cartas que definem o teto de poder de um deck de Commander.
+ * O chip de bracket do deckbuilder.
  *
- * `Set` e não `Array.some(includes)`: a versão anterior fazia
- * `cEDH.some((x) => nome.includes(x))` para CADA carta — 100 cartas × 16
- * nomes = 1.600 buscas de substring por render, e ela rodava no corpo do
- * componente. Com casamento exato por nome (o que a lista sempre pretendeu),
- * é uma consulta de hash por carta.
+ * A conta saiu daqui. Isto era uma heurística de pontos com duas listas de
+ * nomes escritas à mão — 25 cartas, das quais só 16 eram Game Changers, três
+ * eram banidas e seis nem estavam na lista oficial — e faixas de pontos que não
+ * correspondiam a regra nenhuma: quatro Game Changers davam "Bracket 3", dez
+ * davam "Bracket 1". A estimativa agora é `estimarBracket`, em shared-types,
+ * pela marcação `game_changer` da Scryfall — a mesma que o backend usa.
  *
- * O casamento exato também corrige um falso positivo real: `includes('Sol
- * Ring')` marcava "Sol Ring" e qualquer carta cujo nome o contivesse.
+ * O que fica aqui é só apresentação.
  */
-const CARTAS_CEDH = new Set([
-  'Mana Crypt',
-  "Gaea's Cradle",
-  'Underworld Breach',
-  "Thassa's Oracle",
-  'Demonic Tutor',
-  'Vampiric Tutor',
-  'Force of Will',
-  'Fierce Guardianship',
-  'Jeweled Lotus',
-  'Mox Diamond',
-  'Chrome Mox',
-  'Dockside Extortionist',
-  'Deflecting Swat',
-  'Imperial Seal',
-  'Timetwister',
-  "Lion's Eye Diamond",
-]);
-
-const CARTAS_FORTES = new Set([
-  'Sol Ring',
-  'Mana Vault',
-  'Rhystic Study',
-  'Mystic Remora',
-  'Sylvan Library',
-  'Cyclonic Rift',
-  'Smothering Tithe',
-  "Teferi's Protection",
-  'Craterhoof Behemoth',
-]);
-
 export interface Bracket {
   label: string;
   color: string;
+  /** Tooltip: quais Game Changers, e o que a estimativa NÃO verifica. */
+  dica: string;
 }
 
-/** Estimativa grosseira de poder, pelas cartas de maior impacto presentes. */
-export function calcularBracket(cartas: readonly DeckCarta[] | undefined): Bracket {
-  if (!cartas || cartas.length === 0) {
-    return { label: 'Desconhecido', color: 'text-text-muted' };
+export function calcularBracket(
+  cartas: readonly DeckCarta[] | undefined,
+  formatId?: string | null,
+): Bracket | null {
+  // Carta pendente ainda não tem a marcação: contá-la como "sem dados" faria o
+  // chip piscar "incompleto" a cada carta adicionada.
+  const e = estimarBracket(
+    (cartas ?? []).filter((c) => !c.pendente),
+    formatId,
+  );
+  if (!e) return null;
+
+  const n = e.gameChangers.length;
+  const ressalva =
+    'Estimativa pela lista oficial de Game Changers. Destruição de terrenos em massa, ' +
+    'turnos extras e combos de duas cartas não são verificados — isso fica com a mesa.';
+  const dica = n
+    ? `${n} Game Changer(s): ${e.gameChangers.join(', ')}.
+
+${ressalva}`
+    : `Nenhum Game Changer.
+
+${ressalva}`;
+
+  if (e.semDados > 0 && e.minimo < 4) {
+    return {
+      label: `${rotuloDoBracket(e)} (incompleto)`,
+      color: 'text-text-muted',
+      dica: `${e.semDados} carta(s) sem dados da Scryfall — o bracket pode ser maior.
+
+${dica}`,
+    };
   }
 
-  let pontos = 0;
-  for (const carta of cartas) {
-    const nome = carta.name;
-    if (!nome) continue;
-    // Nome canônico de dupla face vem como "Frente // Verso"; a lista usa a
-    // frente, que é o que aparece em qualquer decklist.
-    const frente = nome.split(' // ')[0]!;
-    if (CARTAS_CEDH.has(nome) || CARTAS_CEDH.has(frente)) pontos += 3;
-    else if (CARTAS_FORTES.has(nome) || CARTAS_FORTES.has(frente)) pontos += 1;
-  }
-
-  if (pontos >= 10) return { label: 'Bracket 5 (cEDH / Máximo)', color: 'text-[#ef4444]' };
-  if (pontos >= 7) return { label: 'Bracket 4 (High Power)', color: 'text-[#f97316]' };
-  if (pontos >= 4) return { label: 'Bracket 3 (Mid-High)', color: 'text-[#eab308]' };
-  if (pontos >= 2) return { label: 'Bracket 2 (Mid Power)', color: 'text-[#84cc16]' };
-  return { label: 'Bracket 1 (Low Power / Casual)', color: 'text-[#22c55e]' };
+  const sufixo = n ? ` · ${n} GC` : '';
+  if (e.minimo === 4)
+    return { label: `${rotuloDoBracket(e)}${sufixo}`, color: 'text-[#f97316]', dica };
+  if (e.minimo === 3)
+    return { label: `${rotuloDoBracket(e)}${sufixo}`, color: 'text-[#eab308]', dica };
+  return { label: rotuloDoBracket(e), color: 'text-[#22c55e]', dica };
 }
 
 /** Soma do preço em USD, formatada. `priceUsd` chega como texto da Scryfall. */

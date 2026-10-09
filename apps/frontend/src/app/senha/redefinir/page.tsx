@@ -27,7 +27,7 @@
  * no próprio fator de autenticação.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
@@ -52,13 +52,27 @@ export default function RedefinirSenhaPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [pronto, setPronto] = useState(false);
 
-  useEffect(() => {
-    const daUrl = new URLSearchParams(window.location.search).get('token');
-    setToken(daUrl && daUrl.length > 0 ? daUrl : null);
+  /**
+   * ─── O STRICTMODE LIA A URL JÁ LIMPA ─────────────────────────────────────
+   *
+   * O efeito lia o token e o apagava da barra de endereço. O StrictMode roda o
+   * efeito DUAS vezes: a segunda leitura encontrava a URL já sem token e
+   * gravava `null` por cima — em desenvolvimento, todo link de e-mail válido
+   * abria em "Link incompleto". O ref guarda o que a PRIMEIRA leitura achou,
+   * e as seguintes repetem esse resultado em vez de olhar a URL de novo.
+   */
+  const lidoDaUrl = useRef<string | null | undefined>(undefined);
 
-    if (daUrl) {
-      window.history.replaceState(null, '', window.location.pathname);
+  useEffect(() => {
+    if (lidoDaUrl.current === undefined) {
+      const daUrl = new URLSearchParams(window.location.search).get('token');
+      lidoDaUrl.current = daUrl && daUrl.length > 0 ? daUrl : null;
+
+      if (daUrl) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
     }
+    setToken(lidoDaUrl.current);
   }, []);
 
   /**

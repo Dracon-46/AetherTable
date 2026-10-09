@@ -135,7 +135,12 @@ export function SorteioOverlay() {
   return (
     // `pointer-events-none`: o sorteio passa por cima da mesa, mas nunca rouba
     // um clique — quem está no meio de um arrasto não pode ser interrompido.
+    // `key={em}`: sem ela, o segundo giro com o primeiro ainda na tela reusava os
+    // MESMOS nós — a classe de animação não mudava, e o CSS não reinicia uma
+    // animação que já terminou. O dado aparecia parado com o número novo, que
+    // é exatamente "a animação não aparece" para quem rola duas vezes seguidas.
     <div
+      key={em}
       className={`pointer-events-none absolute inset-0 z-40 flex items-center justify-center ${
         saindo ? 'animate-sorteio-saida' : 'animate-sorteio-entrada'
       }`}

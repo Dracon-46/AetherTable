@@ -72,7 +72,15 @@ export default function DecksPage() {
   async function criarDeck(e: React.FormEvent) {
     e.preventDefault();
     if (!novoNome.trim()) return;
-    const criado = await criar.mutateAsync({ name: novoNome.trim(), formatId: novoFormato });
+    let criado: DeckResumo;
+    try {
+      criado = await criar.mutateAsync({ name: novoNome.trim(), formatId: novoFormato });
+    } catch {
+      // Sem o `catch`, a recusa (nome inválido, 429, rede) virava rejeição não
+      // tratada no `onSubmit`. A mensagem já aparece pelo `criar.isError`
+      // abaixo do formulário, e o nome digitado fica para a pessoa corrigir.
+      return;
+    }
     setNovoNome('');
     router.push(`/dashboard/decks/${criado.id}`);
   }

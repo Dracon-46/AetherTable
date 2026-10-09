@@ -55,6 +55,8 @@ export interface DeckCarta {
   /** Custo convertido. `null` quando a Scryfall não devolveu (carta ausente). */
   cmc?: number | null;
   manaCost?: string;
+  /** Lista oficial de Game Changers, pela Scryfall. Alimenta o bracket. */
+  gameChanger?: boolean;
   /** Marca uma carta que ainda não voltou do servidor. Some na reconciliação. */
   pendente?: boolean;
 }

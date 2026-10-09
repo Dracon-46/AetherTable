@@ -35,6 +35,7 @@ import { MulliganModal } from '@/overlay/MulliganModal';
 import { CronometroDeTurno } from '@/overlay/CronometroDeTurno';
 import { PlayersModal } from '@/overlay/PlayersModal';
 import { ViewRequestPrompt } from '@/overlay/ViewRequestPrompt';
+import { VotacaoDeRemocao } from '@/overlay/VotacaoDeRemocao';
 import { FimDeJogo } from '@/overlay/FimDeJogo';
 import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { VoiceBridge } from '@/net/voice';
@@ -347,6 +348,7 @@ export default function PlayRoomPage() {
           {/* Pedidos de "me deixa ver sua mão". Fora do wrapper recortado: eles
               chegam a qualquer momento e precisam ficar por cima do HUD. */}
           {!souEspectador && <ViewRequestPrompt room={room} />}
+          {!souEspectador && <VotacaoDeRemocao room={room} />}
           {/* Derrota e vitória. Fora do wrapper recortado: o fim de partida
               ocupa a tela inteira. */}
           <FimDeJogo />

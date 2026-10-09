@@ -279,6 +279,10 @@ export function useRoomSync(room: Room<RoomState> | null) {
         sideboardPermitido: room.state.sideboardPermitido ?? false,
         cronometroDeTurno: room.state.cronometroDeTurno ?? 0,
         turnoIniciadoEm: room.state.turnoIniciadoEm ?? 0,
+        votacaoAlvo: room.state.votacaoAlvo ?? '',
+        votacaoAutor: room.state.votacaoAutor ?? '',
+        votacaoSim: room.state.votacaoSim ?? '',
+        votacaoExpiraEm: room.state.votacaoExpiraEm ?? 0,
       });
     };
 
