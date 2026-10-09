@@ -39,7 +39,12 @@ export function podeVer(card: VisibilityInput, sid: string): boolean {
 
   // 3. Face para baixo: a zona e publica, a identidade nao.
   //    Vale para BATTLEFIELD (morph) e EXILE (foretell / plot).
-  if (card.faceDown) return sid === card.controllerId;
+  //    SO EM ZONA PUBLICA. Antes valia em qualquer zona e vinha antes da
+  //    regra do grimorio: marcar as cartas do proprio grimorio como "viradas"
+  //    (BATCH_UPDATE faceDown) fazia o dono passar a ve-las — o grimorio
+  //    inteiro, sem uma linha no log. Virada no grimorio ou na mao continua
+  //    sendo governada pela regra da zona.
+  if (card.faceDown && PUBLIC_ZONES.has(card.zone as Zone)) return sid === card.controllerId;
 
   // 4. Zonas publicas com a face para cima: todos veem.
   if (PUBLIC_ZONES.has(card.zone as Zone)) return true;

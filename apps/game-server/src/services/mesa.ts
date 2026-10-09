@@ -41,6 +41,26 @@ export function atualizarContagens(state: RoomState, playerId: string): void {
   player.libraryCount = ordem(state, playerId, 'LIBRARY')?.length ?? 0;
 }
 
+/** Apaga as setas que partem de, ou apontam para, uma carta ou um jogador. */
+export function removerSetasDe(state: RoomState, id: string): void {
+  state.arrows.forEach((seta, chave) => {
+    if (seta.fromId === id || seta.toId === id) state.arrows.delete(chave);
+  });
+}
+
+/**
+ * Reaplica a permissao que o DONO deu sobre a zona inteira da carta.
+ *
+ * `limparConcessoes` apaga `revealedTo` — certo para a concessao sobre AQUELA
+ * carta, errado para "deixei fulano ver meu grimorio": embaralhar, mulligan e
+ * mandar ao fundo limpavam a carta e o observador perdia o grimorio que o dono
+ * tinha aberto, embora `sharedZones` continuasse dizendo que sim.
+ */
+export function reaplicarPermissaoDeZona(state: RoomState, card: Card): void {
+  const compartilhada = state.players.get(card.ownerId)?.sharedZones.get(card.zone);
+  if (compartilhada) card.revealedTo = compartilhada;
+}
+
 /**
  * Efeitos colaterais obrigatorios de toda troca de zona (DOC-032 §2.1).
  * Inclui a limpeza de concessoes — o erro mais facil de cometer neste modelo.
@@ -109,9 +129,36 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
     card.controllerId = card.ownerId;
   }
 
+  /**
+   * FORA DO CAMPO, NADA FICA PENDURADO NA CARTA.
+   *
+   * `attachedTo` nunca era limpo: a aura que ia para o cemiterio voltava
+   * "anexada", e o hospedeiro que morria deixava as auras apontando para uma
+   * carta no cemiterio. As setas tambem sobreviviam — a de uma criatura morta
+   * reaparecia quando ela voltava ao campo.
+   */
+  if (destino !== 'BATTLEFIELD') {
+    card.attachedTo = '';
+    ctx.state.cards.forEach((outra) => {
+      if (outra.attachedTo === card.id) outra.attachedTo = '';
+    });
+    removerSetasDe(ctx.state, card.id);
+  }
+
   // Fichas deixam de existir fora do campo.
   if (card.isToken && destino !== 'BATTLEFIELD') {
+    // Quem chama ja empurrou o id na lista de ordem do destino. Apagar so a
+    // carta deixava o id orfao la: o topo do cemiterio e lido da ORDEM, e
+    // depois de uma ficha morrer a pilha mostrava um topo vazio por cima das
+    // cartas de verdade.
+    const lista = ordem(ctx.state, card.ownerId, destino);
+    const i = lista ? lista.indexOf(card.id) : -1;
+    if (lista && i !== -1) lista.splice(i, 1);
     ctx.state.cards.delete(card.id);
+    // Sem reconciliar: tirar do mapa ja some com a carta para todas as views,
+    // e `view.add` numa instancia desanexada LANCA no Colyseus — mover uma
+    // ficha virada para fora do campo respondia INTERNAL e abortava o lote.
+    return;
   }
 
   reconciliarCartaParaTodos(ctx.clients, card);

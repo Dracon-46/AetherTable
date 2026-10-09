@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import {
   REALTIME_LIMITS,
   ZONES,
+  acharFormato,
   normalizarConfigDeSala,
   zoneOrderKey,
   type ConfigDeSala,
@@ -28,6 +29,7 @@ import {
   espectadorBarrado,
   haAssentoLivre,
   verificarAutorizacao,
+  verificarFimDePartida,
   type IntentContext,
   type IntentHandler,
 } from '../intents/registry';
@@ -160,6 +162,15 @@ export class AetherRoom extends Room<RoomState> {
    * reconexao que nao deve acontecer.
    */
   private readonly expulsos = new Set<string>();
+  /**
+   * CONTAS (`sub`) removidas da mesa. `expulsos` guarda sessionIds e é
+   * esvaziado no `onLeave` — e cada entrada pede um seat token novo, com
+   * sessionId novo. O expulso só precisava digitar o código da sala de novo
+   * para voltar a sentar.
+   */
+  private readonly contasBanidas = new Set<string>();
+  /** Descarte agendado da sala vazia — ver `agendarDescarteSeVazia`. */
+  private descarteDaSalaVazia: { clear(): void } | null = null;
   private proximoAssento = 0;
 
   /**
@@ -179,6 +190,14 @@ export class AetherRoom extends Room<RoomState> {
    * jogador — porque tres sairam — foi uma partida de quatro.
    */
   private augeDeJogadores = 0;
+  /** Epoch ms do primeiro START_MATCH. A duração da partida não inclui o lobby. */
+  private inicioDaPartida = 0;
+  /**
+   * Versão do provisionamento de cada jogador. Duas escolhas de grimório em
+   * sequência (setas no `<select>` do lobby) disparam dois `fetch`; sem saber
+   * qual é o último, as duas respostas eram empilhadas no mesmo grimório.
+   */
+  private readonly provisionamento = new Map<string, number>();
 
   override onCreate(options: unknown): void {
     // O zod aqui e a correcao MINIMA do buraco de configuracao: as opcoes vem
@@ -203,6 +222,51 @@ export class AetherRoom extends Room<RoomState> {
     this.registrarIntencoes();
     this.registrarIntencoesComIO();
     salasAtivas.inc();
+
+    // Quem descarta a sala vazia é `agendarDescarteSeVazia`, não o Colyseus.
+    // Agendar já aqui cobre a sala que ninguém chega a ocupar.
+    this.autoDispose = false;
+    this.agendarDescarteSeVazia();
+  }
+
+  /**
+   * ─── A SALA PÚBLICA SUMIA DA VITRINE ───────────────────────────────────────
+   *
+   * Com o `autoDispose` padrão do Colyseus, a sala é destruída no instante em
+   * que o último cliente sai. O criador de uma mesa pública não consegue estar
+   * no lobby e na Taverna na mesma aba: bastava voltar para a lista para ver se
+   * a mesa aparecia, e ela já não existia mais — "as salas que eu crio não
+   * aparecem".
+   *
+   * Agora a sala vazia espera. Pública espera mais, porque é justamente quem
+   * está na vitrine que alguém pode chegar a encontrar; privada espera o
+   * bastante para um F5 ou um "voltar" acidental não custar a mesa e o convite.
+   *
+   * Vazia é sem clientes E sem jogador aguardando reconexão: quem caiu tem o
+   * assento guardado por `RECONNECTION_WINDOW_S`, e descartar a sala antes
+   * disso desfaria a reserva.
+   */
+  private agendarDescarteSeVazia(): void {
+    this.cancelarDescarte();
+    // Pelo ESTADO, e não por `this.clients`: dentro do `onLeave` o cliente que
+    // está saindo pode ainda constar da lista, e a sala que acabou de esvaziar
+    // nunca agendaria o próprio descarte — com o `autoDispose` desligado, ela
+    // ficaria aberta para sempre.
+    if (!this.salaVazia()) return;
+
+    const espera = this.state.visibilidade === 'PUBLICA' ? 180_000 : 30_000;
+    this.descarteDaSalaVazia = this.clock.setTimeout(() => {
+      if (this.salaVazia() && this.clients.length === 0) void this.disconnect();
+    }, espera);
+  }
+
+  private salaVazia(): boolean {
+    return this.state.players.size === 0 && this.state.espectadores.size === 0;
+  }
+
+  private cancelarDescarte(): void {
+    this.descarteDaSalaVazia?.clear();
+    this.descarteDaSalaVazia = null;
   }
 
   /**
@@ -240,9 +304,18 @@ export class AetherRoom extends Room<RoomState> {
      * dois assentos, e o painel mostrava um lugar vazio esperando alguem que
      * nunca vinha.
      */
-    this.maxClients = config.maxClients + REALTIME_LIMITS.MAX_ESPECTADORES;
+    // No TETO, e não nos assentos da config: o anfitrião pode abrir vagas no
+    // lobby (`INTENT_SET_ROOM_CONFIG.maxSeats`), e um `maxClients` preso ao
+    // número da criação recusaria o quinto jogador no matchmaking antes de o
+    // `onAuth` ver o assento novo.
+    this.maxClients = REALTIME_LIMITS.MAX_PLAYERS + REALTIME_LIMITS.MAX_ESPECTADORES;
     this.state.maxSeats = config.maxClients;
     this.state.gameType = config.gameType;
+    // O mulligan nascia 'COMMANDER' em TODA sala: uma mesa de Modern 1v1 dava
+    // o primeiro mulligan de graça, que a regra (103.5c) só concede com zona de
+    // comando / multiplayer. Formato sem comandante começa em London; o
+    // anfitrião continua podendo trocar na sala de espera.
+    this.state.tipoDeMulligan = acharFormato(config.gameType).comandante ? 'COMMANDER' : 'LONDON';
 
     this.state.nome = config.nome;
     this.state.visibilidade = config.visibilidade;
@@ -312,10 +385,11 @@ export class AetherRoom extends Room<RoomState> {
       throw new Error('INVALID_TOKEN');
     }
 
-    if (claims.jti) {
-      if (this.jtisUsados.has(claims.jti)) throw new Error('TOKEN_ALREADY_USED');
-      this.jtisUsados.add(claims.jti);
-    }
+    if (claims.jti && this.jtisUsados.has(claims.jti)) throw new Error('TOKEN_ALREADY_USED');
+
+    // Removido da mesa (pelo anfitrião ou por votação) não volta — nem como
+    // espectador, que veria a mesa de quem acabou de tirá-lo dela.
+    if (claims.sub && this.contasBanidas.has(claims.sub)) throw new Error('PLAYER_BLOCKED');
 
     /**
      * ─── A CONFIGURACAO ASSINADA SOBREPOE A QUE VEIO DO NAVEGADOR ──────────
@@ -343,6 +417,33 @@ export class AetherRoom extends Room<RoomState> {
     }
 
     /**
+     * ─── A MESMA CONTA NÃO SENTA DUAS VEZES ─────────────────────────────────
+     *
+     * Ninguém comparava o `sub` do passe com os jogadores já sentados. Quem
+     * caía e voltava pelo código da sala (aba nova, navegador reaberto — a
+     * chave de reconexão mora no `sessionStorage` e não sobrevive) ganhava um
+     * SEGUNDO assento, e o primeiro ficava ocupando vaga pelos dez minutos da
+     * janela de reconexão. Numa mesa de cinco, era o quinto quem ficava de fora.
+     *
+     * Conectado: recusa — é a mesma pessoa em duas abas. Desconectado: o
+     * assento antigo é liberado agora. A mesa perde as cartas dele, mas é o
+     * mesmo resultado de esperar a janela vencer, sem o fantasma no meio.
+     */
+    if (!claims.spectator && claims.sub) {
+      const mesmo = Array.from(this.state.players.values()).find((p) => p.userId === claims.sub);
+      if (mesmo?.connected) throw new Error('ALREADY_SEATED');
+      if (mesmo) {
+        this.publicarLog(
+          logSistema(
+            mesmo.id,
+            `${mesmo.name} voltou por um passe novo; o assento antigo foi liberado`,
+          ),
+        );
+        this.removerJogador(mesmo.id);
+      }
+    }
+
+    /**
      * ─── A LOTACAO DE JOGADORES E CHECADA AQUI, E SO AQUI ──────────────────
      *
      * Ate o modo espectador existir, quem recusava o jogador excedente era o
@@ -362,6 +463,13 @@ export class AetherRoom extends Room<RoomState> {
       throw new Error('ROOM_FULL');
     }
 
+    // O passe só é CONSUMIDO aqui, depois de a vaga ser confirmada. Antes ele
+    // era marcado logo após a assinatura: o quinto jogador recebia "mesa
+    // cheia", e quando uma vaga abria o mesmo link respondia "token já usado"
+    // — que parecia defeito, e não lotação. Não há `await` entre a checagem e
+    // a marcação, então duas entradas não disputam o mesmo passe.
+    if (claims.jti) this.jtisUsados.add(claims.jti);
+
     return claims;
   }
 
@@ -371,17 +479,24 @@ export class AetherRoom extends Room<RoomState> {
       return;
     }
 
+    this.cancelarDescarte();
+
     const player = new Player();
     player.id = client.sessionId;
     player.userId = auth.sub;
     player.name = auth.username;
+    // Quem chega com a partida andando nasceria com 40 em qualquer formato:
+    // `Player.life` tem 40 fixo no schema.
+    player.life = acharFormato(this.state.gameType).vidaInicial;
     player.seat = this.proximoAssento;
     this.proximoAssento += 1;
 
     this.state.players.set(client.sessionId, player);
-    // Para o resumo pos-partida — ver `contasQueJogaram`.
-    if (auth.sub) this.contasQueJogaram.add(auth.sub);
-    this.augeDeJogadores = Math.max(this.augeDeJogadores, this.state.players.size);
+    // Para o resumo pos-partida — ver `contasQueJogaram`. So com a partida
+    // RODANDO: quem passou pela sala de espera e saiu antes do inicio nao jogou,
+    // e uma mesa publica com entra-e-sai passava de oito participantes — o
+    // backend recusa o resumo acima de MAX_PLAYERS e a partida nao era gravada.
+    if (this.state.phase === 'PLAYING') this.registrarParticipantes();
 
     // Toda zona do jogador nasce com sua lista de ordem.
     for (const zone of ZONES) {
@@ -424,6 +539,7 @@ export class AetherRoom extends Room<RoomState> {
    * tambem nao precisa de `reconciliarTudo`.
    */
   private entrarComoEspectador(client: Client, auth: SeatTokenClaims): void {
+    this.cancelarDescarte();
     const espectador = new Espectador();
     espectador.id = client.sessionId;
     espectador.userId = auth.sub;
@@ -461,6 +577,7 @@ export class AetherRoom extends Room<RoomState> {
         name: espectador?.name ?? '',
       });
       this.publicarMetadados();
+      this.agendarDescarteSeVazia();
       return;
     }
 
@@ -489,6 +606,14 @@ export class AetherRoom extends Room<RoomState> {
 
     try {
       await this.allowReconnection(client, REALTIME_LIMITS.RECONNECTION_WINDOW_S);
+      // A mesma conta pode ter voltado por um passe novo enquanto esta aba
+      // estava fora (`onAuth` libera o assento antigo). A aba antiga que
+      // reconecta depois disso não tem mais assento: ficaria na sala como um
+      // cliente sem jogador, vendo a mesa sem ser plateia nem mesa.
+      if (!this.state.players.has(client.sessionId)) {
+        client.leave(4001);
+        return;
+      }
       if (player) {
         player.connected = true;
         player.disconnectedAt = 0;
@@ -533,11 +658,21 @@ export class AetherRoom extends Room<RoomState> {
    * Falhar aqui NAO pode derrubar nada: a sala ja acabou e nao ha ninguem para
    * avisar. Vira log.
    */
+  private registrarParticipantes(): void {
+    this.state.players.forEach((p) => {
+      if (p.userId) this.contasQueJogaram.add(p.userId);
+    });
+    this.augeDeJogadores = Math.max(this.augeDeJogadores, this.state.players.size);
+  }
+
   private async registrarResumoDaPartida(): Promise<void> {
     if (!this.state.turnoIniciadoEm) return;
     if (this.contasQueJogaram.size === 0) return;
 
-    const duracao = Math.max(0, Math.round((Date.now() - this.state.startedAt) / 1000));
+    // Do START_MATCH, nao da criacao da sala: a duracao incluia o lobby e a
+    // espera de descarte da sala vazia.
+    const inicio = this.inicioDaPartida || this.state.startedAt;
+    const duracao = Math.max(0, Math.round((Date.now() - inicio) / 1000));
 
     try {
       const res = await fetch(`${config.BACKEND_CORE_URL}/api/v1/internal/matches/summary`, {
@@ -550,7 +685,7 @@ export class AetherRoom extends Room<RoomState> {
           roomCode: this.state.roomCode,
           playerCount: this.augeDeJogadores,
           durationSeconds: duracao,
-          participantes: Array.from(this.contasQueJogaram),
+          participantes: Array.from(this.contasQueJogaram).slice(0, REALTIME_LIMITS.MAX_PLAYERS),
         }),
       });
       if (!res.ok) {
@@ -661,7 +796,13 @@ export class AetherRoom extends Room<RoomState> {
           this.historico.executar(
             new ComandoDeIntencao(tipo, handler, contexto, parsed.data, this.state),
           );
-          if (this.state.phase !== faseAntes) this.publicarMetadados();
+          if (this.state.phase !== faseAntes) {
+            this.publicarMetadados();
+            if (this.state.phase === 'PLAYING') {
+              if (!this.inicioDaPartida) this.inicioDaPartida = Date.now();
+              this.registrarParticipantes();
+            }
+          }
 
           /**
            * ─── O TOPO REVELADO SE REAPLICA AQUI, E SO AQUI ────────────────
@@ -709,6 +850,7 @@ export class AetherRoom extends Room<RoomState> {
       log: (entrada) => this.publicarLog(entrada),
       desfazer: () => this.historico.desfazer(client.sessionId),
       expulsar: (sessionId) => this.expulsar(sessionId),
+      aoMudarLotacao: () => this.publicarMetadados(),
     };
   }
 
@@ -726,10 +868,22 @@ export class AetherRoom extends Room<RoomState> {
    */
   private expulsar(sessionId: string): void {
     this.expulsos.add(sessionId);
+    const conta = this.state.players.get(sessionId)?.userId;
+    if (conta) this.contasBanidas.add(conta);
     const client = this.clients.find((c) => c.sessionId === sessionId);
     // 4000+ e a faixa de codigos de aplicacao do WebSocket: o cliente distingue
     // "fui removido" de "a conexao caiu".
-    client?.leave(4001);
+    if (client) {
+      client.leave(4001);
+      return;
+    }
+    // DESCONECTADO: o Colyseus ja tirou o cliente de `this.clients`, entao o
+    // `leave` acima nao tinha em quem agir. O expulso seguia ocupando a vaga
+    // pela janela de reconexao inteira — e a chave de reconexao dele pula o
+    // `onAuth`, entao ele voltava a sentar apesar do bloqueio da conta. Sai
+    // agora; se a aba dele reconectar, `onLeave` a recusa por nao ter assento.
+    this.expulsos.delete(sessionId);
+    this.removerJogador(sessionId);
   }
 
   /**
@@ -769,8 +923,14 @@ export class AetherRoom extends Room<RoomState> {
       }
 
       // Trocar de deck no meio da partida seria trocar de baralho com o jogo em
-      // andamento. So na sala de espera.
-      if (this.state.phase !== 'WAITING') {
+      // andamento. So na sala de espera — com UMA excecao: quem entrou com a
+      // partida rodando e ainda nao tem carta nenhuma. "Entrar" pela lista
+      // publica manda um passe sem deck, e a recusa deixava a pessoa sentada,
+      // sem grimorio, assistindo a mesa para sempre.
+      const semCartas = !Array.from(this.state.cards.values()).some(
+        (c) => c.ownerId === client.sessionId && !c.isToken,
+      );
+      if (this.state.phase !== 'WAITING' && !(this.state.phase === 'PLAYING' && semCartas)) {
         client.send('error', {
           code: 'NOT_AUTHORIZED',
           message: 'O grimório só pode ser escolhido antes de a partida começar.',
@@ -802,7 +962,21 @@ export class AetherRoom extends Room<RoomState> {
 
   private removerJogador(sessionId: string): void {
     const player = this.state.players.get(sessionId);
+    // Idempotente: a conta que volta por passe novo libera o assento antigo no
+    // `onAuth`, e a janela de reconexão dele ainda vence depois e chama isto
+    // de novo — sem a guarda, a mesa anunciaria a saída duas vezes.
+    if (!player) return;
+    const assentoQueSaiu = player.seat;
     this.state.players.delete(sessionId);
+    this.provisionamento.delete(sessionId);
+    // A votacao sobre quem saiu nao tem mais objeto; a de quem propos, sem o
+    // autor na mesa, nao tem mais quem a sustente.
+    if (this.state.votacaoAlvo === sessionId || this.state.votacaoAutor === sessionId) {
+      this.state.votacaoAlvo = '';
+      this.state.votacaoAutor = '';
+      this.state.votacaoSim = '';
+      this.state.votacaoExpiraEm = 0;
+    }
     this.rateLimiter.esquecer(sessionId);
     this.historico.esquecer(sessionId);
 
@@ -811,6 +985,10 @@ export class AetherRoom extends Room<RoomState> {
     }
     this.state.cards.forEach((card, id) => {
       if (card.ownerId === sessionId) this.state.cards.delete(id);
+      // Carta de OUTRO dono sob controle de quem saiu ficava apontando para um
+      // jogador inexistente: ninguém podia movê-la e ela não era desenhada em
+      // faixa nenhuma. O controle volta ao dono.
+      else if (card.controllerId === sessionId) card.controllerId = card.ownerId;
     });
 
     // Reatribui assentos: `proximoAssento` so crescia, entao apos qualquer
@@ -822,14 +1000,49 @@ export class AetherRoom extends Room<RoomState> {
     });
     this.proximoAssento = restantes.length;
 
+    /**
+     * A VEZ NAO PODE FICAR COM QUEM SAIU.
+     *
+     * `activePlayerId` continuava apontando para o jogador removido, e
+     * `exigirVez` recusava todo mundo com NOT_YOUR_TURN — a mesa travava ate
+     * alguem reiniciar a partida. A vez passa para quem herdou o assento (o
+     * proximo na ordem), ou para o primeiro se quem saiu era o ultimo.
+     */
+    if (this.state.activePlayerId === sessionId) {
+      const proximo = restantes[assentoQueSaiu] ?? restantes[0];
+      this.state.activePlayerId = proximo?.id ?? '';
+      this.state.turnoIniciadoEm = proximo ? Date.now() : 0;
+    }
+    if (this.state.jogadorInicial === sessionId) this.state.jogadorInicial = '';
+
     this.broadcast('playerLeft', { playerId: sessionId, name: player?.name ?? '' });
 
     // Uma vaga abriu: a mesa volta para a lista publica com "Entrar" em vez de
     // "Assistir".
     this.publicarMetadados();
 
+    // Setas de quem saiu, ou que apontavam para ele ou para as cartas dele, nao
+    // tem mais ponta: ficavam no estado e reapareciam se o id voltasse a valer.
+    const existe = (id: string) => this.state.cards.has(id) || this.state.players.has(id);
+    this.state.arrows.forEach((seta, chave) => {
+      if (seta.ownerId === sessionId || !existe(seta.fromId) || !existe(seta.toId)) {
+        this.state.arrows.delete(chave);
+      }
+    });
+
     // As cartas do jogador sairam: as views dos demais precisam ser recalculadas.
     reconciliarTudo(this.clients, this.state);
+
+    // O ULTIMO OPONENTE SAIR TAMBEM DECIDE A PARTIDA. So eliminacao chamava a
+    // verificacao: com A vivo, C fora e B saindo da sala, a mesa ficava em
+    // PLAYING para sempre e ninguem era anunciado vencedor.
+    verificarFimDePartida({
+      state: this.state,
+      broadcast: (event, payload) => this.broadcast(event, payload),
+      log: (entrada) => this.publicarLog(entrada),
+    });
+
+    this.agendarDescarteSeVazia();
   }
 
   // ─── Provisionamento de deck ───────────────────────────────────────────────
@@ -855,9 +1068,8 @@ export class AetherRoom extends Room<RoomState> {
       return;
     }
 
-    // Uma segunda escolha substitui a primeira; sem isto os dois decks se
-    // somavam dentro das mesmas listas de zona.
-    this.limparCartasDe(sessionId);
+    const versao = (this.provisionamento.get(sessionId) ?? 0) + 1;
+    this.provisionamento.set(sessionId, versao);
 
     try {
       // A URL vem da config (BACKEND_CORE_URL), nunca hardcoded: era isso que
@@ -908,6 +1120,21 @@ export class AetherRoom extends Room<RoomState> {
       // é erro de tipo. O formato vem de DeckCard (docs/modelo_de_dados.md §3.4).
       const deckReal = (await res.json()) as DeckPayload;
 
+      /**
+       * SO A ULTIMA ESCOLHA VALE, E SO SE A PESSOA AINDA ESTA NA MESA.
+       *
+       * A limpeza do deck anterior acontecia ANTES do `await`: duas escolhas
+       * seguidas limpavam as duas e depois empilhavam as duas respostas — 159
+       * cartas no grimorio. E a resposta que chegava depois de o jogador sair
+       * criava 99 cartas de um dono que nao existe mais.
+       */
+      if (this.provisionamento.get(sessionId) !== versao || !this.state.players.has(sessionId)) {
+        return;
+      }
+      // Uma segunda escolha substitui a primeira; sem isto os dois decks se
+      // somavam dentro das mesmas listas de zona.
+      this.limparCartasDe(sessionId);
+
       const criar = (zone: Zone, dbCard: DeckCardPayload): Card => {
         const c = new Card();
         c.id = randomUUID();
@@ -926,8 +1153,11 @@ export class AetherRoom extends Room<RoomState> {
       // Popula por boardType. Antes o `else` mandava TUDO que nao fosse
       // COMMANDER para o grimorio — inclusive SIDEBOARD e MAYBEBOARD. Quem
       // tivesse reserva cadastrada jogava com um grimorio maior que o deck.
+      // Teto por linha: o backend limita a 99, mas um deck salvo antes do
+      // limite com "2000000000 Forest" travava o processo inteiro do jogo
+      // criando cartas neste laco.
       for (const card of deckReal.cards) {
-        for (let i = 0; i < card.quantity; i++) {
+        for (let i = 0; i < Math.min(card.quantity, 99); i++) {
           switch (card.boardType) {
             case 'COMMANDER':
             case 'SIGNATURE_SPELL': {

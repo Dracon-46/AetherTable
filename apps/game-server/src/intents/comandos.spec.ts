@@ -65,6 +65,32 @@ function comandoQue(state: RoomState, tipo: string, mutacao: () => void) {
 }
 
 describe('HistoricoDeComandos', () => {
+  /**
+   * O CAMINHO DA ROOM. O `INTENT_UNDO` também passa por `executar` — e,
+   * sendo irreversível, apagava o histórico ANTES de o handler procurar nele.
+   * Todo "desfazer" em produção respondia "nada para desfazer"; os outros
+   * testes chamavam `desfazer()` direto e nunca viram.
+   */
+  it('o INTENT_UNDO despachado pelo histórico desfaz a ação anterior', () => {
+    const { state, c } = mesa();
+    const historico = new HistoricoDeComandos();
+    historico.executar(
+      comandoQue(state, 'INTENT_TAP', () => {
+        c.isTapped = true;
+      }),
+    );
+
+    let desfeito: string | null = null;
+    historico.executar(
+      comandoQue(state, 'INTENT_UNDO', () => {
+        desfeito = historico.desfazer('p1');
+      }),
+    );
+
+    expect(desfeito).toBe('INTENT_TAP');
+    expect(c.isTapped).toBe(false);
+  });
+
   it('restaura propriedade de carta alterada', () => {
     const { state, c } = mesa();
     const historico = new HistoricoDeComandos();

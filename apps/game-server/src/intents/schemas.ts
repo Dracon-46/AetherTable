@@ -14,6 +14,7 @@ import {
   COUNTER_NAME_PATTERN,
   CRONOMETROS_DE_TURNO,
   DICE_SIDES,
+  REALTIME_LIMITS,
   TIPOS_DE_MULLIGAN,
   ZONES,
   ehBorderValido,
@@ -52,6 +53,10 @@ export const ChangeZoneIntent = z.object({
   index: z.number().int().min(0).max(1000).optional(),
   x: coord.optional(),
   y: coord.optional(),
+  /** Jogar/exilar com a face para baixo (morph, manifest, disguise, foretell). */
+  faceDown: z.boolean().optional(),
+  /** Entrar no campo sob controle de OUTRO jogador. O dono nunca muda. */
+  controllerId: z.string().min(1).max(64).optional(),
 });
 
 export const DrawIntent = z.object({ amount: z.number().int().min(1).max(100) });
@@ -201,6 +206,7 @@ export const ClearTokensIntent = z.object({}).strict();
 export const SetCommanderDamageIntent = z.object({
   fromPlayerId: z.string().min(1).max(64),
   delta: z.number().int().min(-99).max(99),
+  commanderId: entityId.optional(),
 });
 
 export const AddPlayerCounterIntent = z.object({
@@ -308,14 +314,26 @@ export const SetDamageIntent = z.object({
 
 export const ClearDamageIntent = z.object({}).strict();
 
+/**
+ * Teto UNICO dos lotes. Eram 60 em dois e 100 no terceiro, e com a selecao por
+ * laco um campo de fichas passa de 60 facil: a selecao inteira era recusada com
+ * INVALID_PAYLOAD. 200 cobre qualquer mesa real e continua barato num tick.
+ */
+const MAX_LOTE = 200;
+
+export const BatchChangeZoneIntent = z.object({
+  entityIds: z.array(entityId).min(1).max(MAX_LOTE),
+  targetZone: zona,
+});
+
 export const BatchUpdateIntent = z.object({
-  entityIds: z.array(entityId).min(1).max(60),
+  entityIds: z.array(entityId).min(1).max(MAX_LOTE),
   property: z.enum(['isTapped', 'faceDown', 'rotation', 'phasedOut', 'enteredThisTurn']),
   value: z.union([z.boolean(), z.number()]),
 });
 
 export const BatchCounterIntent = z.object({
-  entityIds: z.array(entityId).min(1).max(60),
+  entityIds: z.array(entityId).min(1).max(MAX_LOTE),
   name: z.string().regex(COUNTER_NAME_PATTERN),
   amount: z.number().int().min(-99).max(99),
 });
@@ -381,6 +399,7 @@ export const SetRoomConfigIntent = z
       .int()
       .refine((v) => (CRONOMETROS_DE_TURNO as readonly number[]).includes(v))
       .optional(),
+    maxSeats: z.number().int().min(1).max(REALTIME_LIMITS.MAX_PLAYERS).optional(),
   })
   .strict();
 
@@ -450,6 +469,10 @@ export const SetReadyIntent = z.object({ ready: z.boolean() }).strict();
 /** `playerId` e o sessionId do Colyseus, nao um uuid. */
 export const KickPlayerIntent = z.object({ playerId: z.string().min(1).max(64) }).strict();
 
+export const VoteKickIntent = z
+  .object({ playerId: z.string().min(1).max(64), aceitar: z.boolean() })
+  .strict();
+
 export const KeepHandIntent = z.object({}).strict();
 
 export const RequestViewIntent = z
@@ -469,7 +492,15 @@ export const RevokeViewIntent = z
   .strict();
 
 export const GiveCardIntent = z
-  .object({ entityId, targetPlayerId: z.string().min(1).max(64) })
+  .object({
+    entityId,
+    targetPlayerId: z.string().min(1).max(64),
+    /** Entrega com a face para baixo: só quem recebe passa a ver. */
+    faceDown: z.boolean().optional(),
+    /** Onde soltar, relativo à faixa de quem recebe. Sem isto, o canto (0, 0). */
+    x: coord.optional(),
+    y: coord.optional(),
+  })
   .strict();
 
 /**

@@ -106,7 +106,18 @@ export class ComandoDeIntencao implements ComandoDeMesa {
    * em `services/undo.ts`, junto da explicacao de cada entrada.
    */
   reversivel(): boolean {
-    return !NAO_REVERSIVEIS.has(this.tipo);
+    if (NAO_REVERSIVEIS.has(this.tipo)) return false;
+    // Tirar carta do GRIMORIO mostra quem ela e. Desfazer a devolvia ao mesmo
+    // lugar ja conhecida — arrastar o topo para a mao e desfazer era uma olhada
+    // gratis. A regra depende da carta, e por isso nao cabe na lista estatica.
+    // Chamado antes de o handler rodar: a carta ainda esta na zona de origem.
+    const ids =
+      this.tipo === 'INTENT_CHANGE_ZONE'
+        ? [(this.dados as { entityId?: string } | null)?.entityId]
+        : this.tipo === 'INTENT_BATCH_CHANGE_ZONE'
+          ? ((this.dados as { entityIds?: string[] } | null)?.entityIds ?? [])
+          : [];
+    return !ids.some((id) => id && this.state.cards.get(id)?.zone === 'LIBRARY');
   }
 
   desfazer(): void {
@@ -134,8 +145,14 @@ export class HistoricoDeComandos {
     if (!comando.reversivel()) {
       // Uma acao irreversivel invalida o passado: desfazer "por cima" dela
       // restauraria um estado que nao existe mais.
-      this.ultimo.delete(comando.autor);
+      //
+      // Executar ANTES de apagar. A ordem era a inversa, e o proprio
+      // `INTENT_UNDO` e irreversivel: o historico do jogador era apagado e so
+      // depois o handler perguntava por ele — todo "desfazer" respondia "nada
+      // para desfazer". Os testes chamavam `desfazer()` direto e nunca passavam
+      // por aqui.
       comando.executar();
+      this.ultimo.delete(comando.autor);
       return;
     }
     comando.executar();

@@ -67,6 +67,8 @@ interface JogadorSnapshot {
   isMonarch: boolean;
   hasInitiative: boolean;
   conceded: boolean;
+  /** Desfazer a compra do grimório vazio não revivia o jogador sem isto. */
+  decked: boolean;
   commanderDamage: Array<[string, number]>;
 }
 
@@ -134,6 +136,7 @@ export function capturar(state: RoomState, sid: string, tipo: string): Snapshot 
         isMonarch: p.isMonarch,
         hasInitiative: p.hasInitiative,
         conceded: p.conceded,
+        decked: p.decked,
         commanderDamage: Array.from(p.commanderDamage.entries()),
       }
     : null;
@@ -176,6 +179,36 @@ export function restaurar(state: RoomState, snap: Snapshot): void {
     lista.splice(0, lista.length, ...ids);
   }
 
+  /**
+   * CARTA DE OUTRO DONO: AS LISTAS DELE TAMBEM.
+   *
+   * O recorte só restaurava as listas de quem desfez. Quem controlava a carta
+   * de outra pessoa e a mandava para o grimório DELA, e depois desfazia, via a
+   * carta voltar ao campo com o id ainda no grimório do dono — a próxima compra
+   * dele puxava a carta do campo alheio para a mão. Restaurar a lista inteira
+   * do dono apagaria o que ELE fez nesses dez segundos; por isso o conserto é
+   * cirúrgico: o id sai de todas as listas do dono e volta só para a da zona
+   * restaurada.
+   */
+  const donosAfetados = new Set<string>();
+  for (const [id, s] of snap.cartas) {
+    const c = state.cards.get(id);
+    if (!c || c.ownerId === snap.sid) continue;
+    for (const zona of ZONES) {
+      const lista = state.zoneOrder.get(zoneOrderKey(c.ownerId, zona))?.items;
+      const i = lista ? lista.indexOf(id) : -1;
+      if (lista && i !== -1) lista.splice(i, 1);
+    }
+    state.zoneOrder.get(zoneOrderKey(c.ownerId, s.zone as Zone))?.items.push(id);
+    donosAfetados.add(c.ownerId);
+  }
+  for (const dono of donosAfetados) {
+    const outro = state.players.get(dono);
+    if (!outro) continue;
+    outro.handCount = state.zoneOrder.get(zoneOrderKey(dono, 'HAND'))?.items.length ?? 0;
+    outro.libraryCount = state.zoneOrder.get(zoneOrderKey(dono, 'LIBRARY'))?.items.length ?? 0;
+  }
+
   const p = state.players.get(snap.sid);
   if (p && snap.jogador) {
     const j = snap.jogador;
@@ -193,6 +226,7 @@ export function restaurar(state: RoomState, snap: Snapshot): void {
     p.isMonarch = j.isMonarch;
     p.hasInitiative = j.hasInitiative;
     p.conceded = j.conceded;
+    p.decked = j.decked;
     p.commanderDamage.clear();
     for (const [de, valor] of j.commanderDamage) p.commanderDamage.set(de, valor);
     p.handCount = state.zoneOrder.get(zoneOrderKey(snap.sid, 'HAND'))?.items.length ?? p.handCount;
@@ -219,6 +253,30 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_CLOSE_PEEK',
   'INTENT_SCRY',
   'INTENT_SURVEIL',
+  // O commit do scry tambem nao volta (DOC-036 §4.2): desfazer devolveria a
+  // ordem antiga sem devolver a sessao, e o jogador ficaria com cartas
+  // reordenadas que ele ja viu e um scry que nao pode mais concluir.
+  'INTENT_SCRY_COMMIT',
+  'INTENT_SURVEIL_COMMIT',
+  // Comprar e moer mostram cartas do grimorio: desfazer as devolvia ao topo na
+  // MESMA ordem, ja conhecidas — uma olhada gratis no topo, contra a regra do
+  // proprio modulo.
+  'INTENT_DRAW',
+  'INTENT_DRAW_UP_TO',
+  'INTENT_MILL',
+  // O recorte e das cartas que o jogador ja POSSUIA: fichas e copias criadas
+  // depois dele nao eram removidas, e o "desfeito" nao mudava nada na mesa.
+  'INTENT_CREATE_TOKEN',
+  'INTENT_COPY_CARD',
+  // Estado da MESA, nao do jogador: desfazer "tomar o Monarca" restaurava so
+  // quem desfez e deixava a mesa sem monarca; desfazer passar o turno
+  // anunciava "desfeito" sem devolver a vez.
+  'INTENT_TOGGLE_DESIGNATION',
+  'INTENT_PASS_TURN',
+  'INTENT_SET_TURN',
+  'INTENT_SET_DAY_NIGHT',
+  // Voto dado e voto dado — e o ultimo voto ja tirou alguem da sala.
+  'INTENT_VOTE_KICK',
   'INTENT_SEARCH_ZONE',
   'INTENT_REVEAL',
   'INTENT_REVEAL_TOP',

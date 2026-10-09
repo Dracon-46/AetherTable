@@ -102,6 +102,7 @@ describe('INTENT_SCRY_COMMIT', () => {
     const state = montarMesa(['ana']);
     const ids = encher(state, 'ana', 'LIBRARY', 8);
     const ctx = contexto(state, 'ana');
+    executar('INTENT_SCRY', ctx, { amount: 3 });
 
     // O topo atual, de cima para baixo: o último do array primeiro.
     const topo3 = [ids[7]!, ids[6]!, ids[5]!];
@@ -123,6 +124,7 @@ describe('INTENT_SCRY_COMMIT', () => {
     const antes = ordemDeCompra(state, 'ana');
 
     const comoVieram = [ids[7]!, ids[6]!, ids[5]!];
+    executar('INTENT_SCRY', contexto(state, 'ana'), { amount: 3 });
     executar('INTENT_SCRY_COMMIT', contexto(state, 'ana'), {
       toBottom: [],
       topOrder: comoVieram,
@@ -135,6 +137,7 @@ describe('INTENT_SCRY_COMMIT', () => {
     const state = montarMesa(['ana']);
     const ids = encher(state, 'ana', 'LIBRARY', 8);
 
+    executar('INTENT_SCRY', contexto(state, 'ana'), { amount: 3 });
     executar('INTENT_SCRY_COMMIT', contexto(state, 'ana'), {
       toBottom: [ids[7]!],
       topOrder: [ids[6]!, ids[5]!],
@@ -153,6 +156,7 @@ describe('INTENT_SCRY_COMMIT', () => {
     const state = montarMesa(['ana']);
     const ids = encher(state, 'ana', 'LIBRARY', 8);
 
+    executar('INTENT_SCRY', contexto(state, 'ana'), { amount: 3 });
     executar('INTENT_SCRY_COMMIT', contexto(state, 'ana'), {
       toBottom: [ids[7]!],
       topOrder: [ids[5]!, ids[6]!],
@@ -175,6 +179,7 @@ describe('INTENT_SCRY_COMMIT', () => {
       recusa = p as { code?: string };
     };
 
+    executar('INTENT_SCRY', ctx, { amount: 1 });
     executar('INTENT_SCRY_COMMIT', ctx, { toBottom: [], topOrder: ['carta-de-outra-mesa'] });
 
     expect(recusa).not.toBeNull();
@@ -191,6 +196,7 @@ describe('INTENT_SURVEIL_COMMIT', () => {
     const ids = encher(state, 'ana', 'LIBRARY', 8);
 
     const escolha = [ids[5]!, ids[6]!, ids[7]!];
+    executar('INTENT_SURVEIL', contexto(state, 'ana'), { amount: 3 });
     executar('INTENT_SURVEIL_COMMIT', contexto(state, 'ana'), {
       toGraveyard: [],
       topOrder: escolha,
@@ -203,6 +209,7 @@ describe('INTENT_SURVEIL_COMMIT', () => {
     const state = montarMesa(['ana']);
     const ids = encher(state, 'ana', 'LIBRARY', 8);
 
+    executar('INTENT_SURVEIL', contexto(state, 'ana'), { amount: 3 });
     executar('INTENT_SURVEIL_COMMIT', contexto(state, 'ana'), {
       toGraveyard: [ids[7]!],
       topOrder: [ids[6]!, ids[5]!],
@@ -212,5 +219,83 @@ describe('INTENT_SURVEIL_COMMIT', () => {
     expect(grimorioDe(state, 'ana')).not.toContain(ids[7]);
     expect(cemiterioDe(state, 'ana')).toContain(ids[7]);
     expect(ordemDeCompra(state, 'ana')[0]).toBe(ids[6]);
+  });
+});
+
+describe('a sessão de scry — o grimório que muda com o modal aberto', () => {
+  /** Contexto que guarda o último erro enviado ao remetente. */
+  function comRecusa(state: RoomState) {
+    const recusas: Array<{ code?: string }> = [];
+    const ctx = contexto(state, 'ana');
+    (ctx as { send: (t: string, p: unknown) => void }).send = (t, p) => {
+      if (t === 'error') recusas.push(p as { code?: string });
+    };
+    return { ctx, recusas };
+  }
+
+  it('comprar no meio cancela o scry e revoga a olhada das que sobraram', () => {
+    const state = montarMesa(['ana']);
+    const ids = encher(state, 'ana', 'LIBRARY', 8);
+    const { ctx, recusas } = comRecusa(state);
+
+    executar('INTENT_SCRY', ctx, { amount: 3 });
+    // A compra tira a carta do topo do grimório.
+    state.zoneOrder.get(zoneOrderKey('ana', 'LIBRARY'))!.items.pop();
+    executar('INTENT_SCRY_COMMIT', ctx, { toBottom: [], topOrder: [ids[7]!, ids[6]!, ids[5]!] });
+
+    expect(recusas.at(-1)?.code).toBe('INVALID_PAYLOAD');
+    // Antes, as duas que sobraram ficavam viradas para a dona até o fim da partida.
+    expect(state.cards.get(ids[6]!)!.peekedBy).toBe('');
+    expect(state.cards.get(ids[5]!)!.peekedBy).toBe('');
+  });
+
+  it('embaralhar no meio cancela o scry: as cartas não voltam para o topo', () => {
+    const state = montarMesa(['ana']);
+    const ids = encher(state, 'ana', 'LIBRARY', 8);
+    const { ctx, recusas } = comRecusa(state);
+
+    executar('INTENT_SCRY', ctx, { amount: 2 });
+    // "Embaralha": o topo passa a ser outra carta.
+    const lista = state.zoneOrder.get(zoneOrderKey('ana', 'LIBRARY'))!.items;
+    lista.splice(0, lista.length, ids[7]!, ids[6]!, ...ids.slice(0, 6));
+    const embaralhado = grimorioDe(state, 'ana');
+
+    executar('INTENT_SCRY_COMMIT', ctx, { toBottom: [], topOrder: [ids[7]!, ids[6]!] });
+
+    expect(recusas.at(-1)?.code).toBe('INVALID_PAYLOAD');
+    expect(grimorioDe(state, 'ana')).toEqual(embaralhado);
+  });
+
+  it('o mesmo id no fundo e no topo é recusado — antes a carta duplicava', () => {
+    const state = montarMesa(['ana']);
+    const ids = encher(state, 'ana', 'LIBRARY', 8);
+    const { ctx, recusas } = comRecusa(state);
+
+    executar('INTENT_SCRY', ctx, { amount: 1 });
+    executar('INTENT_SCRY_COMMIT', ctx, { toBottom: [ids[7]!], topOrder: [ids[7]!] });
+
+    expect(recusas.at(-1)?.code).toBe('INVALID_PAYLOAD');
+    expect(grimorioDe(state, 'ana')).toHaveLength(8);
+  });
+
+  it('commit sem scry aberto é recusado', () => {
+    const state = montarMesa(['ana']);
+    const ids = encher(state, 'ana', 'LIBRARY', 8);
+    const { ctx, recusas } = comRecusa(state);
+
+    executar('INTENT_SCRY_COMMIT', ctx, { toBottom: [], topOrder: [ids[7]!] });
+    expect(recusas).toHaveLength(1);
+  });
+
+  it('várias ao fundo ficam na ordem da tela: a de cima na tela fica acima', () => {
+    const state = montarMesa(['ana']);
+    const ids = encher(state, 'ana', 'LIBRARY', 8);
+    const ctx = contexto(state, 'ana');
+
+    executar('INTENT_SCRY', ctx, { amount: 2 });
+    executar('INTENT_SCRY_COMMIT', ctx, { toBottom: [ids[7]!, ids[6]!], topOrder: [] });
+
+    // As duas últimas a serem compradas, na ordem da tela.
+    expect(ordemDeCompra(state, 'ana').slice(-2)).toEqual([ids[7], ids[6]]);
   });
 });

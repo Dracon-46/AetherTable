@@ -142,4 +142,22 @@ export class RoomState extends Schema {
    * se espectador fosse um `Player` com uma flag.
    */
   @type({ map: Espectador }) espectadores = new MapSchema<Espectador>();
+
+  /**
+   * ─── VOTAÇÃO PARA REMOVER UM JOGADOR ──────────────────────────────────────
+   *
+   * Só o anfitrião removia alguém. Numa mesa em que o problema é o próprio
+   * anfitrião — ou em que ele saiu para o café —, os outros não tinham saída.
+   * Uma votação por vez; `votacaoAlvo === ''` = nenhuma aberta.
+   *
+   * Estado e não mensagem: quem entra ou reconecta no meio precisa ver a
+   * votação que está correndo. No FIM da classe — o schema serializa por
+   * índice.
+   */
+  @type('string') votacaoAlvo = '';
+  @type('string') votacaoAutor = '';
+  /** sessionIds que votaram sim, separados por vírgula (`concede`/`contem`). */
+  @type('string') votacaoSim = '';
+  /** Epoch ms. Passado disso a votação não vale mais. */
+  @type('number') votacaoExpiraEm = 0;
 }
