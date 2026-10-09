@@ -82,26 +82,66 @@ login, decks, salas) usa arquitetura **RESTful** servida por NestJS.
 | `NO_CAPACITY`               | 503  | Nenhum game node com vaga                          |
 | `INTERNAL_ERROR`            | 500  | Falha inesperada; `requestId` para suporte         |
 
+**Erro do Prisma não é 500** (`FiltroDeErrosDoPrisma`, global). Chave única violada (`P2002`) vira
+`409` "Já existe um registro com estes dados." e registro que sumiu entre a leitura e a escrita
+(`P2025`) vira `404` "O registro não existe mais.". Antes os dois subiam como `500`: a tela dizia
+"erro inesperado" para um "já está lá", e o log de erro enchia de ruído. Qualquer outro código do
+Prisma continua `500` — traduzir o que não se entende esconderia um defeito.
+
 ### 1.4 Rate limiting (`NFR-04`)
 
-| Escopo                       | Limite                   | Chave   |
-| ---------------------------- | ------------------------ | ------- |
-| Global                       | 100 req/min              | IP      |
-| `POST /auth/login`           | 5 req/min, 20 req/15 min | IP      |
-| `POST /auth/register`        | 3 req/min, 10 req/hora   | IP      |
-| `POST /auth/senha`           | 2 req/10 s, 5 req/min    | IP      |
-| `POST /auth/senha/esqueci`   | 3 req/min, 10 req/hora   | IP      |
-| `POST /auth/senha/redefinir` | 5 req/min, 20 req/hora   | IP      |
-| `POST /rooms`                | 3 req/hora               | usuário |
-| `POST /decks/import`         | 10 req/min               | usuário |
-| `GET /cards/search`          | 30 req/min               | usuário |
+| Escopo                       | Limite                                            | Chave   |
+| ---------------------------- | ------------------------------------------------- | ------- |
+| Global                       | 10 req/5 s (`curto`) e 120 req/min (`longo`)      | IP      |
+| `/internal/*` (game-server)  | **fora** dos baldes globais (`SEM_LIMITE_GLOBAL`) | —       |
+| `POST /auth/login`           | 5 req/min, 20 req/15 min                          | IP      |
+| `POST /auth/register`        | 3 req/min, 10 req/hora                            | IP      |
+| `POST /auth/senha`           | 2 req/10 s, 5 req/min                             | IP      |
+| `POST /auth/senha/esqueci`   | 3 req/min, 10 req/hora                            | IP      |
+| `POST /auth/senha/redefinir` | 5 req/min, 20 req/hora                            | IP      |
+| `POST /rooms`                | 3 req/hora                                        | usuário |
+| `POST /decks/import`         | 10 req/min                                        | usuário |
+| `GET /cards/search`          | 30 req/min                                        | usuário |
 
 `/auth/senha/esqueci` é o mais apertado dos três de senha por um motivo que não é força bruta: cada
 pedido bem-sucedido dispara um **e-mail para um endereço que quem pede escolhe**. Sem limite, a rota
 é um canhão de spam remetido pelo nosso domínio, e o preço não é a fatura do provedor — é o domínio
 entrar em lista de bloqueio e nenhum e-mail do AetherTable chegar a lugar nenhum depois.
 
+As rotas internas (`GET /internal/decks/:id` e `POST /internal/matches/summary`) saem dos baldes
+porque todo pedido delas vem do **mesmo IP**, o do nó do game-server: uma mesa de oito começando são
+oito decks em segundos, o `429` virava "Seu grimório não pôde ser carregado" com um deck válido, e
+um resumo de partida recusado se perdia (o `onDispose` não tenta de novo). Quem as protege é o
+segredo do `InternalApiGuard`. `@SkipThrottle()` sem argumento só pula o balde `default`, que não
+existe aqui — por isso `common/limites.ts` define os baldes **e** o pulo que nomeia `curto` e
+`longo`, derivado da mesma lista.
+
 Headers em toda resposta: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+
+### 1.5 O que a API aceita como sessão
+
+Assinatura válida não basta. A `JwtStrategy` responde `401` quando:
+
+| Situação                                                                         | Mensagem                                   |
+| -------------------------------------------------------------------------------- | ------------------------------------------ |
+| o token tem `aud`, ou carrega `roomId`, `spectator` ou `cfg` (passe de mesa, §5) | "Este token não é uma sessão da API."      |
+| a conta não existe mais ou tem `deletedAt` (banida, apagada)                     | "Esta conta foi encerrada."                |
+| `suspendedUntil` no futuro                                                       | "Sua conta está suspensa."                 |
+| o `jti` está na denylist (logout, §2.10)                                         | "Sessão encerrada. Entre de novo."         |
+| o `iat` é anterior a `User.tokensValidosApos` (com 1 s de folga)                 | "Sua sessão foi encerrada. Entre de novo." |
+
+**Passe de mesa não é sessão.** O `seatToken`, o passe de espectador e o `configToken` são assinados
+com o mesmo `JWT_SECRET` e carregam `sub`, e a estratégia só conferia o `sub`: o link
+`/play/CODE?token=...` colado no grupo dava a quem o abrisse a API inteira **como o dono do link** —
+apagar decks, trocar o perfil. Os três passes saem agora com `aud: "aethertable-mesa"`
+(`auth/passe-de-mesa.ts`); o access token não tem audiência, então qualquer `aud` é recusado. As
+claims de mesa derrubam também os passes emitidos antes da mudança, que vivem até um dia sem `aud`.
+Um segredo separado foi descartado: exigiria deploy coordenado com o game-server, que verifica o
+passe com `JWT_SECRET` e não confere `aud`.
+
+**Suspensão e banimento valem na próxima requisição**, não no próximo login. Antes só o corte de
+sessão era lido, e quem já tinha token seguia jogando e editando decks até ele expirar. A situação
+da conta vem na **mesma** consulta do corte (`RevogacaoService.estadoDaConta`), sem custo extra.
 
 ---
 
@@ -136,6 +176,10 @@ O _refresh token_ vem em cookie `HttpOnly; Secure; SameSite=Strict; Path=/api/v1
 verificada contra lista de senhas vazadas comuns. Hash **Argon2id**.
 
 **Erros:** `EMAIL_IN_USE`, `USERNAME_TAKEN`, `VALIDATION_FAILED`, `RATE_LIMITED`.
+
+Os dois `409` trazem `message` legível ("Este e-mail já está cadastrado.", "Este nome de usuário já
+está em uso.") ao lado do `error`. O corpo era só `{ error }`, e a tela — que mostra `message` —
+dizia "Falha ao registrar" sem apontar qual campo.
 
 ### 2.2 `POST /auth/login`
 
@@ -219,6 +263,10 @@ quem trocou, no meio de uma partida.
 
 Conta de OAuth não tem senha para conferir e recebe `400` explícito.
 
+**Senha atual errada é `400`, não `401`.** O `fetcher` do frontend trata todo `401` como sessão
+expirada e desloga: errar a senha atual nos Ajustes mandava a pessoa para o login com "Sua sessão
+expirou". A sessão está boa; o que está errado é um campo do formulário.
+
 **Limite:** 2 req/10 s e 5 req/min por IP. A rota diz se a senha atual confere, então é um oráculo de
 senha para quem já tem o token.
 
@@ -268,6 +316,12 @@ Derruba **todas** as sessões da conta. As três causas de recusa — token inex
 vencido — devolvem o **mesmo** `400`: distingui-las contaria a quem tenta se ele acertou um token e
 apenas chegou tarde.
 
+**O consumo é atômico.** Dentro da transação, um `updateMany` marca `usedAt` só se `usedAt` ainda é
+nulo e `expiresAt` não passou; a senha só é trocada se ele contou **uma** linha. Antes o uso único
+era conferido na leitura e a marcação era incondicional: dois pedidos com o mesmo link — dois
+cliques, ou a vítima e o invasor lendo a mesma caixa de entrada — passavam juntos e os dois
+gravavam senha.
+
 **Limite:** 5 req/min e 20 req/hora por IP.
 
 ### 2.9 `POST /auth/refresh` — **não implementado**
@@ -306,6 +360,11 @@ Perfil público: `username`, `displayName`, `avatarUrl`, `stats`, `createdAt`. *
 ### 2.13 `PATCH /users/me`
 
 Campos aceitos: `displayName`, `avatarUrl`.
+
+`displayName` aceita até 48 caracteres, e `""`, só espaços ou `null` gravam `null` — "sem nome de
+exibição", e a mesa cai no `username`. Era `min(1)`: a conta sem nome de exibição reenviava `""` a
+cada salvamento de Perfil e Ajustes, e qualquer mudança (tema, idioma, cosmético) falhava com "Dados
+inválidos" por um campo que a pessoa nem tocou.
 
 ### 2.14 As preferências viajam no `GET /users/me` e no `PATCH /users/me`
 
@@ -452,8 +511,8 @@ Acesso: dono sempre; terceiros apenas se `isPublic = true`. Caso contrário `404
 **Processamento** (detalhado em `DOC-035` §4):
 
 1. Valida tamanho (≤ 64 KB, ≤ 1.000 linhas).
-2. _Parsing_ linha a linha com detecção de seção e marcador `#!Commander`.
-3. Agrupa por nome, somando quantidades.
+2. _Parsing_ linha a linha com detecção de seção e de marcadores de exportador (abaixo).
+3. Agrupa por **impressão + board**, somando quantidades.
 4. Consulta `card_cache`; o que faltar vai a `POST /cards/collection` da Scryfall em lotes de **75**.
 5. Grava as cartas novas no `card_cache`.
 6. Persiste **apenas** `scryfall_id`, `quantity`, `is_commander`, `board_type` (`FR-04`).
@@ -478,9 +537,27 @@ para pré-visualizar antes de salvar.
 
 **Erros:** `PAYLOAD_TOO_LARGE`, `VALIDATION_FAILED`, `CARD_PROVIDER_UNAVAILABLE`, `RATE_LIMITED`.
 
+> **No código** a rota é `POST /decks/:id/import`, corpo `{ "decklist": "..." }` (até 20.000
+> caracteres), e substitui as cartas do deck. Responde `{ success, imported, notFound }`, onde
+> `notFound` traz as cartas não achadas **e** as linhas recusadas, com o motivo.
+
+O _parser_ (`decks/importacao.ts`) corrige quatro defeitos que conviviam no serviço:
+
+| Regra                    | O que faz                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cabeçalho muda de seção  | `Deck`/`Main`, `Sideboard`/`Side`, `Companion` (vai para a reserva), `Commander`, `Maybeboard`/`Maybe`/`Considering`; aceita `SIDEBOARD:`, `// Sideboard`, `Sideboard (15)`. O `About` do MTGA é ignorado. Antes, a reserva entrava no MAIN e "Commander" ia à Scryfall como nome de carta |
+| Marcadores de exportador | `*F*` e `*CMDR*` (este vai para COMMANDER), etiquetas `^...^` e categorias `[Ramp,Artifact]` do Archidekt saem do nome; `[Commander]`, `[Sideboard]`, `[Maybeboard]` e `{noDeck}` escolhem o board. `[C21]` sozinho continua sendo coleção                                                 |
+| Nome repetido            | "4 Forest (ZNR)" + "6 Forest (M21)" mantém as duas quantidades — antes virava 4 + 4. Linhas da mesma impressão no mesmo board são somadas, em vez de baterem na chave única do `createMany` (500)                                                                                          |
+| Teto de 99 cópias        | Linha fora de 1–99 é recusada; duas linhas que somam mais de 99 também. "2000000000 Forest" era gravado e travava o game-server ao criar as cartas                                                                                                                                         |
+
 ### 3.4 `POST /decks`
 
 Cria deck vazio ou com cartas já resolvidas (`{ scryfallId, quantity, boardType, isCommander }`).
+
+No código o corpo é `{ name?, formatId? }`. `formatId` é validado contra o **catálogo de formatos**
+(`formatoExiste`, de `@aethertable/shared-types`) e responde `400` "Formato desconhecido." fora
+dele. A regex anterior (`^[a-z0-9-]+$`) recusava os ids com sublinhado — `duel_commander`,
+`commander_1v1`, `historic_brawl`, `tiny_leaders` — e deixava passar qualquer id inventado.
 
 ### 3.5 `PUT /decks/:id`
 
@@ -510,6 +587,37 @@ Query `format=text` (padrão) ou `json`. Em `text`, retorna `text/plain`:
 Commander
 1 Atraxa, Praetors' Voice (2xm) 190
 ```
+
+### 3.10 Cartas de um deck
+
+| Rota                                        | Corpo                                   |
+| ------------------------------------------- | --------------------------------------- |
+| `POST /decks/:id/cards`                     | `{ scryfallId, quantity?, boardType? }` |
+| `PATCH /decks/:id/cards/:cardId/quantity`   | `{ delta }` (−99 a 99)                  |
+| `PATCH /decks/:id/cards/:cardId/printing`   | `{ scryfallId }`                        |
+| `PATCH /decks/:id/cards/:cardId/board-type` | `{ boardType }`                         |
+| `DELETE /decks/:id/cards/:cardId`           | —                                       |
+
+**`scryfallId` é gravado em minúsculas.** UUID não diferencia caixa, mas a chave única e a
+hidratação diferenciam: um id em maiúsculas virava uma segunda linha da mesma carta e, na
+hidratação, não casava com o id da Scryfall — a carta vinha sem nome e com `isBanned: false`, um
+jeito de entrar na mesa com carta banida. A leitura também compara em minúsculas, para as linhas
+gravadas antes.
+
+**Teto de 99 cópias por carta em todo caminho de escrita** — adicionar, mudar quantidade, juntar e
+importar. Acima dele a rota responde `400` "Máximo de 99 cópias por carta" e nada é gravado. O
+schema documenta `1..99`, mas nenhuma migração criou o `CHECK`: quem segura o teto é o código.
+
+**Quantidade e `cardCount` mudam por incremento relativo, na mesma transação.** Adicionar é `upsert`
+com `increment`; mudar quantidade é `increment: delta`, e a decisão de apagar (≤ 0) ou recusar (> 99)
+sai do valor que o próprio `update` devolveu; remover decrementa a quantidade que o `delete`
+apagou. Antes, dois `+1` concorrentes liam o mesmo 3 e gravavam 4 enquanto o contador subia para 5 —
+e a mesa recusava um deck correto.
+
+**Mover para onde a carta já está junta as cópias.** Trocar o board ou a impressão para uma
+combinação que o deck já tem soma as quantidades na linha existente e apaga a de origem
+(`cardCount` não muda). Se juntas passarem de 99, `400` "A carta já está lá, e juntas passariam de
+99 cópias.". Antes o `update` batia na chave única e respondia `500`.
 
 ---
 
@@ -633,6 +741,9 @@ URL da mesa, e é essa URL que as pessoas mandam no grupo e reabrem depois do
 jantar. Isso **não** o torna reutilizável — o `jti` continua sendo consumido na
 primeira entrada (`FR-20`); o que muda é até quando a primeira entrada é aceita.
 
+Por viajar na URL, ele sai com `aud: "aethertable-mesa"` — assim como o `configToken` e o passe de
+espectador — e a API o recusa como sessão (§1.5).
+
 **Erros:** `DECK_NOT_FOUND`, `VALIDATION_FAILED` (deck irregular para o formato,
 com o motivo no corpo).
 
@@ -718,6 +829,46 @@ uma plataforma vazia.
 | `POST /moderation/reports`            | `{ "username", "reason", "details", "roomCode" }` |
 
 `reason` ∈ {`HARASSMENT`, `CHEATING`, `SPAM`, `HATE_SPEECH`, `OTHER`}.
+
+### 6.1 `POST /admin/usuarios/:id/redefinir-senha`
+
+Só administrador (o resto do painel está em `DOC-061`).
+
+```json
+{ "motivo": "ao menos 8 caracteres", "novaSenha": "opcional, 8–200 caracteres" }
+```
+
+| `novaSenha` | Resposta                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| ausente     | `{ senhaTemporaria, username }` — gerada pelo servidor (18 bytes de CSPRNG em base64url), mostrada **uma única vez** |
+| presente    | `{ senhaTemporaria: null, username }` — quem escolheu já a conhece, e devolvê-la só a faria passar por mais um log   |
+
+Nos dois casos **todas** as sessões da conta caem (`User.tokensValidosApos`), e a auditoria
+(`USER_PASSWORD_RESET`) registra `metadata.escolhidaPeloAdmin: boolean` — **nunca** a senha. A regra
+de tamanho é a **mesma** do cadastro: uma regra mais frouxa aqui viraria o caminho para burlar a de lá.
+
+> **Decisão revertida.** A decisão anterior era "o admin redefine, mas não escolhe": o corpo só tinha
+> o `motivo`, porque deixar o admin digitar expõe a senha no formulário e no corpo da requisição, e
+> ele fica sabendo a credencial de outra pessoa. Os riscos continuam valendo
+> ([plano_de_seguranca_e_ameacas_threat_model.md](plano_de_seguranca_e_ameacas_threat_model.md)); a
+> decisão mudou **a pedido do operador** — quem perdeu o acesso pede uma senha que consiga anotar, e
+> ditar 24 caracteres de base64url por telefone não é procedimento que alguém siga. Por isso
+> `novaSenha` é opcional e o padrão continua sendo a senha gerada.
+
+### 6.2 Travas do painel administrativo
+
+| Onde                                                                | Comportamento                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /admin/usuarios/:id/suspender` e `/banir`                     | Gravam `tokensValidosApos` junto de `suspendedUntil`/`deletedAt`: as sessões abertas caem na hora (§1.5). Antes a punição só valia no próximo login                                                                              |
+| `ADMIN_EMAILS` (no boot)                                            | Só promove conta com `emailVerifiedAt` — hoje gravado pelo login com Google ou Discord. Sem ele, loga o motivo e o que fazer (entrar uma vez pelo provedor com esse e-mail e reiniciar). Quem já é `ADMIN` não é tocado          |
+| `PATCH /admin/cosmeticos/:id`                                       | Mudar `nome` ou `minTier` de item autoral reescreve também `parametros` (`nome`, `tier`). Antes o painel mostrava o item gratuito com o cadeado fechado na mesa. Se o item deixar de ser válido (nome autoral cabe em 48), `400` |
+| `POST /admin/denuncias/:id/assumir` e `/resolver`                   | `403` "Esta denúncia é contra você. Outro moderador precisa analisá-la." quando o denunciado é quem age — antes um moderador podia arquivar a denúncia contra ele mesmo                                                          |
+| Auditoria (`ip`)                                                    | Vem de `req.ip` (`trust proxy: 1`), não do primeiro endereço de `X-Forwarded-For`: o proxy do Render acrescenta ao cabeçalho que recebe, e o próprio admin investigado escrevia o "IP de origem"                                 |
+| Booleanos (`incluirApagados`, `apenasSuspensos`, `ativo`, `ligado`) | Aceitam `true`/`false` ou as strings `"true"`/`"false"`; o resto é `400`. `z.coerce.boolean()` transformava `"false"` em `true`                                                                                                  |
+
+A promoção por `ADMIN_EMAILS` exige e-mail confirmado porque o cadastro por senha não confirma o
+endereço, e os e-mails de `ADMIN_EMAILS` não são segredo: quem se cadastrasse antes do dono com
+aquele endereço viraria `ADMIN` no próximo boot. A condição vai também no `WHERE` do `updateMany`.
 
 ---
 

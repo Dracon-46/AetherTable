@@ -24,9 +24,9 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 ## 2. Cobertura
 
-- Contrato (`IntentPayloadMap`): **96** intenções
-- Implementadas no servidor: **90**
-- Emitidas pelo cliente: **90**
+- Contrato (`IntentPayloadMap`): **98** intenções
+- Implementadas no servidor: **92**
+- Emitidas pelo cliente: **92**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -38,6 +38,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_ADD_PLAYER_COUNTER`   |    ✅    |   ✅    |
 | `INTENT_ARROW`                |    ✅    |   ✅    |
 | `INTENT_ATTACH`               |    ✅    |   ✅    |
+| `INTENT_BATCH_CHANGE_ZONE`    |    ✅    |   ✅    |
 | `INTENT_BATCH_COUNTER`        |    ✅    |   ✅    |
 | `INTENT_BATCH_UPDATE`         |    ✅    |   ✅    |
 | `INTENT_BRING_TO_FRONT`       |    ✅    |   ✅    |
@@ -129,6 +130,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_UNTAP_ALL`            |    ✅    |   ✅    |
 | `INTENT_UPDATE_PROPERTY`      |    ✅    |   ✅    |
 | `INTENT_VENTURE`              |    —     |    —    |
+| `INTENT_VOTE_KICK`            |    ✅    |   ✅    |
 
 ## 4. Pendências declaradas
 

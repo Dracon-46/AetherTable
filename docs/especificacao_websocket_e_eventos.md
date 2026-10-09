@@ -56,18 +56,24 @@ wss://game-node-02.aethertable.app
 | 5. Sincronizar   | O cliente recebe o **estado completo** filtrado, depois só deltas                                               |
 
 **Rejeições possíveis no handshake:** `INVALID_TOKEN`, `TOKEN_EXPIRED`, `TOKEN_ALREADY_USED`,
-`ROOM_FULL`, `ROOM_CLOSED`, `PLAYER_BLOCKED`.
+`ROOM_FULL`, `ROOM_CLOSED`, `PLAYER_BLOCKED`, `ALREADY_SEATED`.
+
+| Código               | Quando                                                                                                                                                                                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PLAYER_BLOCKED`     | A **conta** (`sub`) foi removida da mesa — pelo anfitrião ou por votação (`INTENT_VOTE_KICK`) — e não volta pelo resto da vida da sala, nem como espectador. Antes o bloqueio era por `sessionId`, e um seat token novo pelo código da sala sentava o expulso de novo |
+| `ALREADY_SEATED`     | A mesma conta já está sentada **e conectada** (duas abas). Se o assento antigo estiver desconectado, ele é liberado e a entrada segue: antes a conta ganhava um segundo assento, e o fantasma do primeiro ocupava a vaga até a janela de reconexão vencer             |
+| `TOKEN_ALREADY_USED` | O `jti` só é **consumido depois** de a vaga ser confirmada. Antes ele era marcado logo após a assinatura: quem levava `ROOM_FULL` e tentava de novo quando abria vaga recebia "token já usado" — que parecia defeito, e não lotação                                   |
 
 ### 2.2 Parâmetros de conexão
 
-| Parâmetro                  | Valor                                                                     |
-| -------------------------- | ------------------------------------------------------------------------- |
-| Protocolo                  | `wss://` — TLS 1.3, sem _fallback_ para `ws://` em produção               |
-| Heartbeat                  | `ping`/`pong` a cada **15 s**; sem `pong` por **45 s** encerra a conexão  |
-| Reconexão                  | `allowReconnection(client, 90)` — janela de **90 s** (`RN10`)             |
-| Limite de taxa             | **30 intenções/s** por cliente; excedente descartado com evento `warning` |
-| Tamanho máximo de mensagem | 4 KB — intenções são pequenas por natureza                                |
-| Compressão                 | Desabilitada — o payload já é binário compacto                            |
+| Parâmetro                  | Valor                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| Protocolo                  | `wss://` — TLS 1.3, sem _fallback_ para `ws://` em produção                       |
+| Heartbeat                  | `ping`/`pong` a cada **15 s**; sem `pong` por **45 s** encerra a conexão          |
+| Reconexão                  | `allowReconnection(client, RECONNECTION_WINDOW_S)` — janela de **600 s** (`RN10`) |
+| Limite de taxa             | **30 intenções/s** por cliente; excedente descartado com evento `warning`         |
+| Tamanho máximo de mensagem | 4 KB — intenções são pequenas por natureza                                        |
+| Compressão                 | Desabilitada — o payload já é binário compacto                                    |
 
 ---
 
@@ -86,7 +92,7 @@ Todas as intenções são validadas com Zod antes de qualquer efeito (`FR-11`). 
 | Família               | Prefixo                                                                                                                                                                                                                         | Nº aprox. | Detalhe           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----------------- |
 | Movimento e posição   | `INTENT_GRAB`, `_MOVE_CARD`, `_RELEASE`, `_BRING_TO_FRONT`                                                                                                                                                                      | 4         | §3.1              |
-| Zona e grimório       | `INTENT_CHANGE_ZONE`, `_DRAW`, `_MILL`, `_SHUFFLE`, `_REORDER`, `_MULLIGAN`, `_RETURN_ZONE`, `_MOVE_TOP_TO_BOTTOM`, `_DRAW_UP_TO`                                                                                               | 9         | §3.2              |
+| Zona e grimório       | `INTENT_CHANGE_ZONE`, `_BATCH_CHANGE_ZONE`, `_DRAW`, `_MILL`, `_SHUFFLE`, `_REORDER`, `_MULLIGAN`, `_RETURN_ZONE`, `_MOVE_TOP_TO_BOTTOM`, `_DRAW_UP_TO`                                                                         | 10        | §3.2              |
 | **Visibilidade**      | `INTENT_PEEK`, `_SCRY`, `_SCRY_COMMIT`, `_SURVEIL`, `_SURVEIL_COMMIT`, `_REVEAL`, `_REVEAL_ZONE`, `_REVEAL_TOP`, `_UNREVEAL`, `_SEARCH_ZONE`, `_CLOSE_PEEK`, `_SET_ZONE_VISIBILITY`, `_SET_TOP_REVEALED`                        | **13**    | **§3.2.1 — novo** |
 | Propriedades de carta | `INTENT_TAP`, `_UNTAP_ALL`, `_TAP_ALL`, `_UPDATE_PROPERTY`, `_TRANSFORM`, `_MELD`, `_ATTACH`, `_DETACH`, `_GROUP`, `_SET_PT`, `_SET_DAMAGE`, `_CLEAR_DAMAGE`, `_SET_NOTE`, `_SET_HIGHLIGHT`, `_SET_CONTROLLER`, `_BATCH_UPDATE` | 16        | §3.3              |
 | Contadores            | `INTENT_ADD_COUNTER`, `_SET_COUNTER`, `_CLEAR_COUNTERS`, `_ADD_PLAYER_COUNTER`, `_BATCH_COUNTER`                                                                                                                                | 5         | §3.3.1            |
@@ -120,19 +126,55 @@ Todas as intenções são validadas com Zod antes de qualquer efeito (`FR-11`). 
 
 O cliente aplica _throttle_ de **20 mensagens/s** durante o arraste e usa predição otimista local.
 
+**`x`/`y` no campo são fração (0–1) do campo de quem controla, não pixel**, e `(0, 0)` significa "sem
+coordenada — centralize" (o cliente nunca envia 0 exato; o mínimo é `0.0001`). O modelo e o porquê
+estão em `DOC-032` §3.
+
 ### 3.2 Mudança de zona
 
-| Intenção                    | Payload                                                 | Efeito                                                                                                                      |
-| --------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `INTENT_CHANGE_ZONE`        | `{ entityId, targetZone, index?, x?, y? }`              | Remove da zona atual, injeta na nova, **recalcula visibilidade**                                                            |
-| `INTENT_DRAW`               | `{ amount }` (1–100)                                    | Move `amount` cartas do topo da `LIBRARY` para a `HAND` do remetente                                                        |
-| `INTENT_MILL`               | `{ amount, target: "GRAVEYARD" \| "EXILE", faceDown? }` | Move do topo da `LIBRARY` para a zona indicada; `faceDown` só vale no exílio (no cemitério a carta é pública por definição) |
-| `INTENT_MOVE_TOP_TO_BOTTOM` | `{ amount }`                                            | Move as N do topo para o fundo da `LIBRARY`                                                                                 |
-| `INTENT_SHUFFLE_ZONE`       | `{ targetZone: "LIBRARY", keepTop? }`                   | Fisher-Yates com CSPRNG (`RN06`)                                                                                            |
-| `INTENT_MULLIGAN`           | `{}`                                                    | Devolve a mão, embaralha, serve 7; incrementa o contador de mulligans                                                       |
-| `INTENT_DRAW_UP_TO`         | `{ target }`                                            | Compra até ter `target` cartas na mão                                                                                       |
-| `INTENT_RETURN_ZONE`        | `{ from, to, shuffle }`                                 | Devolve uma zona inteira (ex.: cemitério → grimório)                                                                        |
-| `INTENT_REORDER`            | `{ zone, ids[] }`                                       | Reordena uma zona ordenada                                                                                                  |
+| Intenção                    | Payload                                                              | Efeito                                                                                                                      |
+| --------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `INTENT_CHANGE_ZONE`        | `{ entityId, targetZone, index?, x?, y?, faceDown?, controllerId? }` | Remove da zona atual, injeta na nova, **recalcula visibilidade**. Ver as notas abaixo da tabela                             |
+| `INTENT_BATCH_CHANGE_ZONE`  | `{ entityIds[], targetZone }` (1–200)                                | A seleção inteira numa mensagem, pelo mesmo caminho do `CHANGE_ZONE` (ver abaixo)                                           |
+| `INTENT_DRAW`               | `{ amount }` (1–100)                                                 | Move `amount` cartas do topo da `LIBRARY` para a `HAND` do remetente                                                        |
+| `INTENT_MILL`               | `{ amount, target: "GRAVEYARD" \| "EXILE", faceDown? }`              | Move do topo da `LIBRARY` para a zona indicada; `faceDown` só vale no exílio (no cemitério a carta é pública por definição) |
+| `INTENT_MOVE_TOP_TO_BOTTOM` | `{ amount }`                                                         | Move as N do topo para o fundo da `LIBRARY`                                                                                 |
+| `INTENT_SHUFFLE_ZONE`       | `{ targetZone: "LIBRARY", keepTop? }`                                | Fisher-Yates com CSPRNG (`RN06`)                                                                                            |
+| `INTENT_MULLIGAN`           | `{}`                                                                 | Devolve a mão, embaralha, serve 7; incrementa o contador de mulligans                                                       |
+| `INTENT_DRAW_UP_TO`         | `{ target }`                                                         | Compra até ter `target` cartas na mão                                                                                       |
+| `INTENT_RETURN_ZONE`        | `{ from, to, shuffle }`                                              | Devolve uma zona inteira (ex.: cemitério → grimório)                                                                        |
+| `INTENT_REORDER`            | `{ zone, ids[] }`                                                    | Reordena uma zona ordenada. `ids` tem de ser uma permutação **sem repetição** do conteúdo atual (ver abaixo)                |
+
+**Notas de `INTENT_CHANGE_ZONE`:**
+
+- **`faceDown`** só vale para `BATTLEFIELD` e `EXILE`, e é aplicado **antes** dos efeitos de zona,
+  para a carta já chegar escondida no mesmo patch da troca. Antes não existia: o morph era baixado com
+  a face para cima e virado depois, e no intervalo entre as duas intenções a identidade já tinha
+  chegado em todos os clientes.
+- **`controllerId`** só vale para `BATTLEFIELD`: a carta entra sob controle de outro assento (o
+  `ownerId` nunca muda). Também é aplicado antes dos efeitos de zona, para que uma carta virada passe
+  a ser vista por quem a recebeu.
+- Ao ir para `GRAVEYARD` ou `COMMAND`, a carta **vira para cima**: um cemitério com carta virada
+  escondia para sempre uma informação pública.
+- Tirar carta do **`LIBRARY`** é **irreversível** para o desfazer — ela já foi vista (`DOC-032`
+  §3.2).
+
+**`INTENT_BATCH_CHANGE_ZONE`** existe porque a barra de seleção mandava um `CHANGE_ZONE` por carta, e
+o limite de 30 intenções/s (§2.2) descartava o excedente em silêncio: 40 fichas para o cemitério
+depois de um _board wipe_ moviam 30. As duas intenções passam pelo **mesmo** helper (`trocarDeZona`),
+para não divergirem em face, controle e ordem. A autorização é **por carta** — só as que têm
+`controllerId === remetente` se movem; o resto da seleção é ignorado, como no `BATCH_UPDATE`. O log é
+**uma linha só**, com contagem e destino, nunca nomes ("moveu N carta(s) para o cemitério",
+`ZONE_CHANGE_HIDDEN`): a seleção pode conter carta virada.
+
+**Os três lotes têm o mesmo teto, `MAX_LOTE = 200`** (`BATCH_UPDATE`, `BATCH_COUNTER`,
+`BATCH_CHANGE_ZONE`). Eram 60, 60 e 100, e a seleção por laço passa de 60 fácil num campo de fichas:
+a seleção inteira era recusada com `INVALID_PAYLOAD`.
+
+**`INTENT_REORDER` e `INTENT_SET_TURN_ORDER` recusam ids repetidos.** A checagem era só de contagem:
+`[A, A, B]` sobre `[A, B, C]` passava no reorder — C sumia da ordem continuando na zona, e A era
+comprado duas vezes —, e `['p1', 'p2', 'p2']` dava o mesmo assento a dois jogadores, inclusive dois
+anfitriões.
 
 ### 3.2.1 Intenções de visibilidade — a família mais sensível
 
@@ -143,9 +185,9 @@ delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
 | ---------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------- |
 | `INTENT_PEEK`                | `{ zone, amount, from?: "TOP"\|"BOTTOM" }` | `peekedBy += sid` nas N cartas                                                                                   | "olhou as N do topo"                                                      | `_CLOSE_PEEK` · 120 s · troca de zona |
 | `INTENT_CLOSE_PEEK`          | `{}`                                       | **Revoga** `peekedBy` do remetente                                                                               | —                                                                         | —                                     |
-| `INTENT_SCRY`                | `{ amount }`                               | `peekedBy` + cria `peekBuffer`                                                                                   | "fez scry N"                                                              | `_SCRY_COMMIT` · 120 s                |
-| `INTENT_SCRY_COMMIT`         | `{ toBottom: id[], topOrder: id[] }`       | Aplica e **revoga**                                                                                              | "colocou N no fundo" _(contagem, não identidade)_                         | —                                     |
-| `INTENT_SURVEIL`             | `{ amount }`                               | `peekedBy` + `peekBuffer`                                                                                        | "fez surveil N"                                                           | `_SURVEIL_COMMIT` · 120 s             |
+| `INTENT_SCRY`                | `{ amount }`                               | `peekedBy` + abre a **sessão de scry** com os ids exatos mostrados (invariante 9)                                | "fez scry N"                                                              | `_SCRY_COMMIT` · 120 s                |
+| `INTENT_SCRY_COMMIT`         | `{ toBottom: id[], topOrder: id[] }`       | Aplica e **revoga**. As duas listas na ordem da tela (a primeira de `toBottom` é a mais alta do bloco do fundo)  | "colocou N no fundo" _(contagem, não identidade)_                         | —                                     |
+| `INTENT_SURVEIL`             | `{ amount }`                               | `peekedBy` + abre a sessão de surveil                                                                            | "fez surveil N"                                                           | `_SURVEIL_COMMIT` · 120 s             |
 | `INTENT_SURVEIL_COMMIT`      | `{ toGraveyard: id[], topOrder: id[] }`    | Aplica e **revoga**                                                                                              | "moveu N ao cemitério"                                                    | —                                     |
 | `INTENT_SEARCH_ZONE`         | `{ zone, filter? }`                        | `peekedBy` na zona **inteira**                                                                                   | "está procurando no grimório"                                             | `_CLOSE_PEEK` · 120 s                 |
 | `INTENT_REVEAL`              | `{ ids[], to: "ALL" \| sid[] }`            | `revealedTo`                                                                                                     | "revelou N carta(s)" + nomes se `ALL`                                     | `_UNREVEAL` · troca de zona           |
@@ -178,57 +220,94 @@ delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
    ligado e nada revelado. Ele só sai cedo se a carta do topo **ainda estiver** com
    `revealedTo = "ALL"` — o que o torna auto-corretivo depois de qualquer handler que limpe
    concessões.
+9. **O commit do scry/surveil só vale contra a sessão que o abriu.** `_SCRY` e `_SURVEIL` guardam,
+   por jogador, os ids exatos mostrados. O commit só é aplicado se o payload for uma **permutação
+   exata** desses ids (sem repetição) **e** eles ainda forem o topo do grimório; senão o scry é
+   cancelado, as olhadas revogadas e o remetente recebe `INVALID_PAYLOAD`. Antes o commit só
+   perguntava "estas cartas estão no meu grimório?": comprar no meio recusava o commit e deixava
+   `peekedBy` nas outras cartas para sempre; embaralhar no meio devolvia as cartas do scry ao topo;
+   e o mesmo id em `toBottom` e `topOrder` duplicava a carta. Grimório vazio responde com erro, em vez
+   de abrir um "Scry 0". Os dois commits são **irreversíveis** (`NAO_REVERSIVEIS` em
+   `services/undo.ts`): desfazer devolveria a ordem antiga sem devolver a sessão.
 
 ### 3.3 Propriedades de carta
 
-| Intenção                 | Payload                            | Efeito                                                                                                                                                                                                      |
-| ------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INTENT_TAP`             | `{ entityId, isTapped }`           | Define `isTapped`                                                                                                                                                                                           |
-| `INTENT_UPDATE_PROPERTY` | `{ entityId, property, value }`    | `property` ∈ {`isTapped`, `faceDown`, `rotation`}                                                                                                                                                           |
-| `INTENT_ADD_COUNTER`     | `{ entityId, name, amount }`       | `name` é **string livre** validada por `^[a-z0-9_+\-]{1,24}$` — Magic tem 100+ tipos nomeados de contador e um enum quebra a cada coleção (`DOC-036` §5.1). `amount` pode ser negativo; total fixado em ≥ 0 |
-| `INTENT_SET_CONTROLLER`  | `{ entityId, controllerId }`       | Transferência explícita de controle (`RN08`)                                                                                                                                                                |
-| `INTENT_BATCH_UPDATE`    | `{ entityIds[], property, value }` | Uma mensagem para seleção múltipla (`F25`) — evita estourar o limite de 30/s                                                                                                                                |
-| `INTENT_UNTAP_ALL`       | `{}`                               | Desvira todas as cartas próprias no `BATTLEFIELD` (`F30`)                                                                                                                                                   |
+| Intenção                 | Payload                                           | Efeito                                                                                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `INTENT_TAP`             | `{ entityId, isTapped }`                          | Define `isTapped`                                                                                                                                                                                                        |
+| `INTENT_UPDATE_PROPERTY` | `{ entityId, property, value }`                   | `property` ∈ {`isTapped`, `faceDown`, `rotation`}. `faceDown` é **ignorado** fora de `BATTLEFIELD`/`EXILE` (`DOC-032` §3.0.1, cláusula 3)                                                                                |
+| `INTENT_ADD_COUNTER`     | `{ entityId, name, amount }`                      | `name` é **string livre** validada por `^[a-z0-9_+\-]{1,24}$` — Magic tem 100+ tipos nomeados de contador e um enum quebra a cada coleção (`DOC-036` §5.1). `amount` pode ser negativo; total fixado em ≥ 0              |
+| `INTENT_SET_CONTROLLER`  | `{ entityId, controllerId }`                      | Transferência explícita de controle (`RN08`)                                                                                                                                                                             |
+| `INTENT_GIVE_CARD`       | `{ entityId, targetPlayerId, faceDown?, x?, y? }` | Entrega uma permanente do campo. `faceDown`: entregue virada, só quem recebe a vê. `x`/`y` relativos à faixa de quem recebe (arraste até a faixa do oponente). Limpa o _lock_ — a carta chegava travada até o TTL vencer |
+| `INTENT_BATCH_UPDATE`    | `{ entityIds[], property, value }` (1–200)        | Uma mensagem para seleção múltipla (`F25`) — evita estourar o limite de 30/s. `faceDown` só vale em `BATTLEFIELD`/`EXILE`, como acima                                                                                    |
+| `INTENT_UNTAP_ALL`       | `{}`                                              | Desvira todas as cartas próprias no `BATTLEFIELD` (`F30`)                                                                                                                                                                |
 
 ### 3.4 Estado do jogador
 
-| Intenção                      | Payload                       | Efeito                                                      |
-| ----------------------------- | ----------------------------- | ----------------------------------------------------------- |
-| `INTENT_SET_LIFE`             | `{ delta }` ou `{ absolute }` | Ajusta vida; log "vida 40 → 37"                             |
-| `INTENT_SET_COMMANDER_DAMAGE` | `{ fromPlayerId, delta }`     | Atualiza a matriz de dano de comandante                     |
-| `INTENT_SET_PLAYER_COUNTER`   | `{ type, delta }`             | `type` ∈ {`POISON`, `ENERGY`, `EXPERIENCE`}                 |
-| `INTENT_TOGGLE_DESIGNATION`   | `{ type }`                    | `type` ∈ {`MONARCH`, `INITIATIVE`} — transfere ao remetente |
-| `INTENT_SET_COMMANDER_TAX`    | `{ delta }`                   | Ajusta o +2 cumulativo                                      |
+| Intenção                      | Payload                                 | Efeito                                                                             |
+| ----------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------- |
+| `INTENT_SET_LIFE`             | `{ delta }` ou `{ absolute }`           | Ajusta vida; log "vida 40 → 37"                                                    |
+| `INTENT_SET_COMMANDER_DAMAGE` | `{ fromPlayerId, delta, commanderId? }` | Atualiza a matriz de dano de comandante **e a vida** pelo mesmo delta (ver abaixo) |
+| `INTENT_SET_PLAYER_COUNTER`   | `{ type, delta }`                       | `type` ∈ {`POISON`, `ENERGY`, `EXPERIENCE`, `RAD`, `TICKET`}                       |
+| `INTENT_TOGGLE_DESIGNATION`   | `{ type }`                              | `type` ∈ {`MONARCH`, `INITIATIVE`} — transfere ao remetente                        |
+| `INTENT_SET_COMMANDER_TAX`    | `{ delta }`                             | Ajusta o +2 cumulativo                                                             |
+
+**`INTENT_SET_COMMANDER_DAMAGE`:**
+
+- A chave em `Player.commanderDamage` é o **`Card.id` do comandante** quando `commanderId` vem e a
+  carta é comandante de `fromPlayerId`; senão, `fromPlayerId`. Com parceiros a chave era uma só, e
+  11 de Tymna + 10 de Thrasios somavam 21 e eliminavam — a regra 903.10a conta cada comandante
+  separado.
+- O dano **também muda a vida** pelo mesmo delta (regra 120.3). Antes o contador só mexia nos 21: o
+  jogador marcava +5 e continuava com 40. No mesmo handler, para o desfazer e o "−" corrigirem as
+  duas coisas juntas.
+- Dano de quem **já saiu da sala** ainda pode ser corrigido. A checagem exigia o jogador presente, e
+  21 de alguém que foi embora deixava o alvo eliminado para sempre.
 
 ### 3.5 Objetos criados
 
-| Intenção               | Payload                                                             | Efeito                                      |
-| ---------------------- | ------------------------------------------------------------------- | ------------------------------------------- |
-| `INTENT_CREATE_TOKEN`  | `{ scryfallId?, name?, power?, toughness?, colors?, amount, x, y }` | Cria fichas com `isToken = true`            |
-| `INTENT_COPY_CARD`     | `{ entityId }`                                                      | Duplica como novo objeto marcado como cópia |
-| `INTENT_DESTROY_TOKEN` | `{ entityId }`                                                      | Remove ficha                                |
-| `INTENT_CLEAR_TOKENS`  | `{}`                                                                | Remove todas as fichas próprias             |
+| Intenção               | Payload                                                             | Efeito                                                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INTENT_CREATE_TOKEN`  | `{ scryfallId?, name?, power?, toughness?, colors?, amount, x, y }` | Cria fichas com `isToken = true`; `power`/`toughness` viram P/T sobreposto (`hasPtOverride`) — antes eram descartados. A partir da 2ª ficha, escadeia **+0,03** por ficha (partindo do centro se `x = y = 0`) |
+| `INTENT_COPY_CARD`     | `{ entityId }`                                                      | Duplica como **ficha do remetente** marcada como cópia (ver abaixo)                                                                                                                                           |
+| `INTENT_DESTROY_TOKEN` | `{ entityId }`                                                      | Remove ficha                                                                                                                                                                                                  |
+| `INTENT_CLEAR_TOKENS`  | `{}`                                                                | Remove todas as fichas próprias                                                                                                                                                                               |
+
+**`INTENT_COPY_CARD`** só copia carta em **zona pública** que o remetente **pode ver** (`podeVer`), e
+a cópia é sempre `isToken = true` com `ownerId = controllerId = remetente`, deslocada **+0,03** do
+original (do centro, se ele não tinha coordenada). Só `podeVer` não bastava: uma carta da mão
+revelada só para quem copiava virava, pela cópia, uma ficha de face para cima diante da mesa toda. Antes ela herdava o dono e o
+`isToken` do original: a cópia de uma carta real era uma carta real do oponente, e ao morrer caía no
+cemitério dele como uma segunda via. E como a cópia levava `scryfallId` e `faceDown` do original com o
+remetente como controlador, copiar o morph do oponente era um jeito de ver o que ele era. A cópia de
+carta virada agora é o que a regra diz (708.2): uma 2/2 virada, sem identidade.
 
 ### 3.6 Aleatoriedade e comunicação
 
-| Intenção              | Payload                                | Efeito                                                                                                                                 |
-| --------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `INTENT_ROLL_DICE`    | `{ sides }` — ∈ {2,4,6,8,10,12,20,100} | Sorteio no servidor; resultado no log e em evento de animação                                                                          |
-| `INTENT_FLIP_COIN`    | `{}`                                   | Cara ou coroa no servidor                                                                                                              |
-| `INTENT_CHAT`         | `{ text }` — máx. 500 caracteres       | Mensagem sanitizada, publicada a todos                                                                                                 |
-| `INTENT_PING`         | `{ x, y, targetId? }`                  | Marcador visual efêmero (`F13`)                                                                                                        |
-| `INTENT_ARROW`        | `{ fromId, toId, color? }`             | **Seta de alvo** persistente — é como se diz "isto ataca aquilo" sem motor de regras (`DOC-036` §11.1)                                 |
-| `INTENT_CLEAR_ARROWS` | `{ scope: "MINE" \| "COMBAT" }`        | Limpa setas; as de combate são limpas ao passar o turno                                                                                |
-| `INTENT_PASS_TURN`    | `{}`                                   | Avança o marcador visual de turno e limpa setas de combate                                                                             |
-| `INTENT_UNDO`         | `{}`                                   | Desfaz a **última** ação própria, janela de 10 s. **Não desfaz** ação aleatória nem revelação — seria nova tentativa (`DOC-036` §11.3) |
-| `INTENT_SET_TURN`     | `{ turn?, phase? }`                    | Marcador **puramente visual** de turno (`F29`)                                                                                         |
+| Intenção              | Payload                                | Efeito                                                                                                                                                         |
+| --------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INTENT_ROLL_DICE`    | `{ sides }` — ∈ {2,4,6,8,10,12,20,100} | Sorteio no servidor; resultado no log e em evento de animação                                                                                                  |
+| `INTENT_FLIP_COIN`    | `{}`                                   | Cara ou coroa no servidor                                                                                                                                      |
+| `INTENT_CHAT`         | `{ text }` — máx. 500 caracteres       | Mensagem sanitizada, publicada a todos                                                                                                                         |
+| `INTENT_PING`         | `{ x, y, targetId? }`                  | Marcador visual efêmero (`F13`)                                                                                                                                |
+| `INTENT_ARROW`        | `{ fromId, toId, color? }`             | **Seta de alvo** persistente — é como se diz "isto ataca aquilo" sem motor de regras (`DOC-036` §11.1)                                                         |
+| `INTENT_CLEAR_ARROWS` | `{ scope: "MINE" \| "COMBAT" }`        | Limpa setas; as de combate são limpas ao passar o turno                                                                                                        |
+| `INTENT_PASS_TURN`    | `{}`                                   | Avança o marcador visual de turno e limpa setas de combate; **pula eliminados** (ver abaixo)                                                                   |
+| `INTENT_UNDO`         | `{}`                                   | Desfaz a **última** ação própria, janela de 10 s. **Não desfaz** ação aleatória, revelação, compra, ficha, estado da mesa… — lista e motivos em `DOC-032` §3.2 |
+| `INTENT_SET_TURN`     | `{ turn?, phase? }`                    | Marcador **puramente visual** de turno (`F29`)                                                                                                                 |
+
+**`INTENT_PASS_TURN` pula quem já está fora.** A vez ia para o próximo assento mesmo eliminado — e
+quem perdeu costuma sair da tela ou só assistir: a mesa inteira esperava alguém que não ia mais
+jogar. Se todos os outros estiverem eliminados, a vez anda normalmente. A rodada (`turn`) sobe quando
+a ordem **dá a volta** — inclusive quando o pulo de um eliminado passa por cima do assento 0, caso
+em que a regra antiga ("o próximo é o assento 0") nunca contava a rodada.
 
 ### 3.7 Ciclo de partida
 
-| Intenção             | Payload | Efeito                                                                                         |
-| -------------------- | ------- | ---------------------------------------------------------------------------------------------- |
-| `INTENT_RESET_MATCH` | `{}`    | Devolve tudo à `LIBRARY`, embaralha, zera contadores. Requer confirmação de todos os presentes |
-| `INTENT_LEAVE`       | `{}`    | Saída deliberada — libera a vaga sem aguardar a janela de reconexão                            |
+| Intenção             | Payload | Efeito                                                                                                     |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `INTENT_RESET_MATCH` | `{}`    | Reinicia a **mesa** inteira, não só os contadores (`DOC-032` §6). Requer confirmação de todos os presentes |
+| `INTENT_LEAVE`       | `{}`    | Saída deliberada — libera a vaga sem aguardar a janela de reconexão                                        |
 
 #### `INTENT_SET_ROOM_CONFIG` — as regras que a mesa combina
 
@@ -239,6 +318,7 @@ delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
   ordemPelosAssentos?: boolean; // true = o assento 0 começa, sem sorteio
   sideboardPermitido?: boolean;
   cronometroDeTurno?: number;   // 0 | 60 | 120 | 180 | 300, em segundos
+  maxSeats?: number;            // 1..MAX_PLAYERS, preso à faixa `jogadores` do formato
 }
 ```
 
@@ -250,13 +330,27 @@ metade enquanto os patches chegam.
 | Regra                                              | Rejeição          |
 | -------------------------------------------------- | ----------------- |
 | Só o anfitrião (assento 0), via `exigirAnfitriao`  | `NOT_HOST`        |
-| Só em `phase === 'WAITING'`                        | `CONFIG_LOCKED`   |
+| Só em `phase === 'WAITING'` (exceto `maxSeats`)    | `CONFIG_LOCKED`   |
 | `jogadorInicial` tem de existir em `state.players` | `INVALID_PAYLOAD` |
 | `cronometroDeTurno` só da lista fechada            | recusado pelo zod |
+| `maxSeats` abaixo dos jogadores já sentados        | `INVALID_PAYLOAD` |
 
 `CONFIG_LOCKED` existe porque trocar o tipo de mulligan com a partida em
 andamento muda a regra no meio do jogo — sobre decisões que os outros já
 tomaram com base no combinado anterior.
+
+**`maxSeats` é o único campo aceito com a partida em `PLAYING`**: abrir uma
+vaga para quem chegou atrasado não muda nada do que já foi jogado. O valor é
+preso à faixa `jogadores` do formato e nunca fica abaixo de quem já está
+sentado (fechar assento ocupado seria expulsar, que é outra ação). Ao mudar, a
+sala republica o metadado da lista pública. Antes `maxSeats` era gravado uma
+vez, na criação, e o formulário nasce em 4: o quinto jogador levava
+`ROOM_FULL` e a única saída era fechar a mesa e criar outra.
+
+**O `tipoDeMulligan` padrão é do formato:** `COMMANDER` quando o formato tem zona de comando,
+`LONDON` nos outros. Ele nascia `COMMANDER` em toda sala, e uma mesa de Modern 1v1 dava o primeiro
+mulligan de graça — que a regra 103.5c só concede com zona de comando. O anfitrião continua podendo
+trocar na sala de espera.
 
 A lista de cronômetros é fechada em vez de um inteiro com faixa: um campo
 aberto convida ao `1`, e um cronômetro de um segundo transforma o aviso — a
@@ -274,6 +368,9 @@ dele em todas as partidas. Agora, nesta ordem:
 
 Ele também grava `turnoIniciadoEm`, junto com `INTENT_PASS_TURN`.
 
+**`INTENT_KEEP_HAND` só vale em `PLAYING`.** Marcado na sala de espera, o `keptHand` fechava a janela
+de mulligan da partida que ainda ia começar.
+
 #### Espectador não emite intenção
 
 Quem entra com um passe de espectador (claim `spectator` no seat token) é
@@ -285,6 +382,37 @@ para `QUALQUER_JOGADOR`, sem checar se o remetente é mesmo um jogador — o nom
 da regra sempre foi uma promessa que ninguém verificava, e não precisava ser
 verificada enquanto todo mundo na sala tinha assento.
 
+#### `INTENT_VOTE_KICK` — remover por votação
+
+```ts
+// autorização QUALQUER_JOGADOR · irreversível (NAO_REVERSIVEIS em services/undo.ts)
+interface VoteKickPayload {
+  playerId: string; // sessionId do alvo
+  aceitar: boolean;
+}
+```
+
+Só o anfitrião removia alguém (`INTENT_KICK_PLAYER`). Numa mesa em que o
+problema é o próprio anfitrião — ou em que ele saiu para o café —, os outros
+não tinham saída.
+
+| Regra                                                                    | Por quê                                                                      |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| A primeira chamada abre a votação e vale como o "sim" de quem propôs     | Propor e votar sim são o mesmo gesto                                         |
+| Prazo de **60 s**; uma votação por vez                                   | Votação esquecida aberta seria uma ameaça pendurada sobre a mesa             |
+| Votam os jogadores **conectados**, menos o alvo                          | Exigir o voto de quem caiu travaria justamente a mesa que está se desfazendo |
+| Um "não" encerra                                                         | "Todos concordam" sem virar maioria                                          |
+| O alvo não vota                                                          | O voto dele é sempre "não" — contá-lo seria dar veto ao próprio alvo         |
+| Todos os votantes disseram "sim" → o alvo sai pelo mesmo caminho do kick | E a **conta** fica bloqueada na sala (`PLAYER_BLOCKED`, §2.1)                |
+
+O estado da votação vive no `RoomState` (`votacaoAlvo`, `votacaoAutor`,
+`votacaoSim`, `votacaoExpiraEm` — `DOC-032` §3), e não numa mensagem: quem
+reconecta no meio precisa ver a votação que está correndo.
+
+**Decisão registrada:** numa mesa de dois, o único votante é quem propôs, e a
+votação passa na hora. É a leitura literal de "todos os outros concordam", e é
+o mesmo que a mesa de dois já podia fazer saindo da sala.
+
 ### 3.7.1 Intenções restantes por família
 
 Completam o contrato para as 131 ações de `DOC-036`. Agrupadas por família para leitura; a
@@ -292,20 +420,24 @@ implementação segue o mesmo `registry.ts`.
 
 **Propriedades de carta**
 
-| Intenção               | Payload                             | Efeito                                               |
-| ---------------------- | ----------------------------------- | ---------------------------------------------------- |
-| `INTENT_TAP_ALL`       | `{}`                                | Vira todas as cartas próprias no `BATTLEFIELD`       |
-| `INTENT_TRANSFORM`     | `{ entityId }`                      | Alterna `isFlipped` — mostra a outra face de uma DFC |
-| `INTENT_MELD`          | `{ ids: [a, b], resultScryfallId }` | Remove as duas e cria o objeto fundido               |
-| `INTENT_ATTACH`        | `{ childId, parentId }`             | Define `attachedTo`; o grupo se move junto           |
-| `INTENT_DETACH`        | `{ childId }`                       | Limpa `attachedTo`                                   |
-| `INTENT_GROUP`         | `{ ids[] }`                         | Pilha visual                                         |
-| `INTENT_SET_PT`        | `{ entityId, power, toughness }`    | P/T sobreposto (fichas e cópias)                     |
-| `INTENT_SET_DAMAGE`    | `{ entityId, amount }`              | Dano marcado, distinto de `-1/-1`                    |
-| `INTENT_CLEAR_DAMAGE`  | `{}`                                | Limpa dano de todas as próprias (fim de turno)       |
-| `INTENT_SET_NOTE`      | `{ entityId, text }`                | Anotação livre, ≤ 120 caracteres, sanitizada         |
-| `INTENT_SET_HIGHLIGHT` | `{ entityId, color }`               | Cor de destaque, `^[a-z]{3,12}$`                     |
-| `INTENT_SET_COMMANDER` | `{ entityId }`                      | Marca a carta como comandante                        |
+| Intenção               | Payload                             | Efeito                                                      |
+| ---------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| `INTENT_TAP_ALL`       | `{}`                                | Vira todas as cartas próprias no `BATTLEFIELD`              |
+| `INTENT_TRANSFORM`     | `{ entityId }`                      | Alterna `isFlipped` — mostra a outra face de uma DFC        |
+| `INTENT_MELD`          | `{ ids: [a, b], resultScryfallId }` | Remove as duas e cria o objeto fundido                      |
+| `INTENT_ATTACH`        | `{ childId, parentId }`             | Define `attachedTo`; o grupo se move junto                  |
+| `INTENT_DETACH`        | `{ childId }`                       | Limpa `attachedTo`. Só quem controla `childId` (ver abaixo) |
+| `INTENT_GROUP`         | `{ ids[] }`                         | Pilha visual                                                |
+| `INTENT_SET_PT`        | `{ entityId, power, toughness }`    | P/T sobreposto (fichas e cópias)                            |
+| `INTENT_SET_DAMAGE`    | `{ entityId, amount }`              | Dano marcado, distinto de `-1/-1`                           |
+| `INTENT_CLEAR_DAMAGE`  | `{}`                                | Limpa dano de todas as próprias (fim de turno)              |
+| `INTENT_SET_NOTE`      | `{ entityId, text }`                | Anotação livre, ≤ 120 caracteres, sanitizada                |
+| `INTENT_SET_HIGHLIGHT` | `{ entityId, color }`               | Cor de destaque, `^[a-z]{3,12}$`                            |
+| `INTENT_SET_COMMANDER` | `{ entityId }`                      | Marca a carta como comandante                               |
+
+**`INTENT_DETACH` é `QUALQUER_JOGADOR` + checagem de controle no handler**, como o `INTENT_ATTACH`.
+Com `'CONTROLLER'` o autorizador lia `payload.entityId`, mas o payload é `{ childId }`: todo
+desanexar voltava `ENTITY_NOT_FOUND` e a aura continuava presa.
 
 **Contadores**
 
@@ -313,8 +445,17 @@ implementação segue o mesmo `registry.ts`.
 | --------------------------- | ------------------------------- | --------------------------------------------------------------------------- |
 | `INTENT_SET_COUNTER`        | `{ entityId, name, value }`     | Valor absoluto; remove a chave se 0                                         |
 | `INTENT_CLEAR_COUNTERS`     | `{ entityId }`                  | Limpa o mapa `counters`                                                     |
-| `INTENT_ADD_PLAYER_COUNTER` | `{ name, amount }`              | Contador **no jogador** — `poison`, `energy`, `experience`, `rad`, `ticket` |
-| `INTENT_BATCH_COUNTER`      | `{ entityIds[], name, amount }` | Lote, um só _patch_                                                         |
+| `INTENT_ADD_PLAYER_COUNTER` | `{ name, amount }`              | Contador **no jogador** — `POISON`, `ENERGY`, `EXPERIENCE`, `RAD`, `TICKET` |
+| `INTENT_BATCH_COUNTER`      | `{ entityIds[], name, amount }` | Lote (1–200), um só _patch_. Remove a chave ao chegar a **≤ 0**             |
+
+`name` é `PlayerCounter`, **em maiúsculas**: esta linha mostrava `poison`, `energy`…, que o zod
+recusa. `INTENT_ADD_PLAYER_COUNTER` e `INTENT_SET_PLAYER_COUNTER` passam pelo **mesmo** helper, e os
+dois registram log. Eram dois `switch` escritos à mão que divergiram: o `ADD` — o que a interface
+chama — mandava `RAD` e `TICKET` para um `default: return`, e Radiação e Ingresso não respondiam ao
+clique, sem erro e sem log.
+
+O `INTENT_BATCH_COUNTER` removia o marcador só em `=== 0`: Shift+A ("tirar um +1/+1") numa carta sem
+marcador gravava `-1`. Agora é `<= 0`, como no `INTENT_ADD_COUNTER`.
 
 **Jogador e designações** — todos marcadores visuais, sem efeito imposto (`RN01`)
 
@@ -325,7 +466,7 @@ implementação segue o mesmo `registry.ts`.
 | `INTENT_SET_SPEED`         | `{ value: 0..4 }`                          | _Start your engines!_                                    |
 | `INTENT_VENTURE`           | `{ dungeon, room }`                        | Avança na masmorra                                       |
 | `INTENT_SET_MAX_HAND_SIZE` | `{ value }`                                | Tamanho máximo de mão                                    |
-| `INTENT_SET_TURN_ORDER`    | `{ order: sid[] }`                         | Define a ordem de turno                                  |
+| `INTENT_SET_TURN_ORDER`    | `{ order: sid[] }`                         | Define a ordem de turno; recusa ids repetidos (§3.2)     |
 | `INTENT_CONCEDE`           | `{}`                                       | Marca o jogador como eliminado; **não** o remove da sala |
 
 **Objetos criados**
@@ -575,7 +716,7 @@ Expostas em `/metrics` (`NFR-11`):
 - [ ] _Rate limit_ de 30 intenções/s por cliente.
 - [ ] `patchRate` em 50 ms.
 - [ ] Heartbeat 15 s / timeout 45 s.
-- [ ] `allowReconnection` de 90 s.
+- [ ] `allowReconnection` de 600 s (`REALTIME_LIMITS.RECONNECTION_WINDOW_S`).
 - [ ] `@filter` em **todo** campo sensível de `Card`.
 - [ ] `revealToOwner` usa `client.send()`, nunca `broadcast`.
 - [ ] Log com variante `_HIDDEN` para ação em zona oculta.

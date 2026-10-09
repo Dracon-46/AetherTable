@@ -230,7 +230,7 @@ da interface. Hoje é um controle que mente.
 | `roomCode` de 6 hex sem verificar colisão, sem registro no banco                                                                                       | `matches.service.ts:createMatch`           | duas mesas podem receber o mesmo código; a sala não existe até alguém conectar                                                      |
 | Throttler global com estado **em memória**                                                                                                             | `app.module.ts:57`                         | não funciona com mais de um nó (documentado no próprio comentário)                                                                  |
 | Sem job de expurgo LGPD dos 30 dias                                                                                                                    | nenhum cron/scheduler no repo              | `User.deletedAt` acumula para sempre                                                                                                |
-| `Block` no schema com **zero uso**                                                                                                                     | `schema.prisma:320`                        | `PLAYER_BLOCKED` nunca é lançado; não há bloquear jogador                                                                           |
+| `Block` no schema com **zero uso**                                                                                                                     | `schema.prisma:320`                        | não há bloquear jogador; `PLAYER_BLOCKED` só é lançado pelo bloqueio de conta **na sala** (II.20), não por `Block`                  |
 | `CardCache` (tabela) nunca lida nem escrita                                                                                                            | `schema.prisma:293`                        | o cache real é LRU em RAM; a tabela é peso morto                                                                                    |
 | ~~`emailVerifiedAt` nunca escrito nem verificado~~ ✅                                                                                                  | `auth.service.ts`                          | **resolvido:** escrito no login por OAuth, e o vínculo por e-mail passou a exigir e-mail verificado pelo provedor                   |
 | ~~"Esqueceu?" é `<a href="#">`~~ ✅                                                                                                                    | `app/senha/esqueci`                        | **resolvido:** recuperação de senha por e-mail, token de uso único de 30 min                                                        |
@@ -485,12 +485,13 @@ artes) dentro do editor, além da importação em massa.
 ### II.6 Decks — legalidade e bracket · 🟢 na legalidade, 🟡 no bracket
 
 **Legalidade — o AetherTable está muito à frente.** `packages/shared-types/src/legalidade.ts:avaliarLegalidade`
-produz **17 códigos de achado** com gravidade (`CONTADOR_DESSINCRONIZADO`,
+produz **18 códigos de achado** com gravidade (`CONTADOR_DESSINCRONIZADO`,
 `TAMANHO`, `SINGLETON`, `COPIAS`, `BANIDA`, `RESTRITA`, `FORA_DO_FORMATO`,
 `RARIDADE`, `VALOR_DE_MANA`, `RESERVA`, `LISTA_DE_PONTOS`, `SEM_COMANDANTE`,
 `COMANDANTES_DEMAIS`, `TIPO_DE_COMANDANTE`, `RARIDADE_DO_COMANDANTE`,
-`IDENTIDADE_DE_COR`, `SEM_FEITICO_ASSINATURA`), distingue **erro que bloqueia a
-mesa** de **aviso**, roda no cliente e no servidor a partir da mesma função, tem
+`IDENTIDADE_DE_COR`, `SEM_FEITICO_ASSINATURA`, `BRACKET_ACIMA_DA_MESA`),
+distingue **erro que bloqueia a mesa** de **aviso**, roda no cliente e no
+servidor a partir da mesma função, tem
 ~45 testes, e marca a carta banida na própria linha (`line-through` + badge). O
 EDHPlay mostra "Válido" ou não. **Não regrida isso.**
 
@@ -512,6 +513,13 @@ critérios oficiais dos brackets 1–5. Enquanto isso não existir, **a interfac
 deve chamar o valor de "estimativa", não de "bracket"**, e a fatia 3 já registra
 que o nível de poder da sala é _declarado_. Um número que se parece com o
 bracket oficial e não é gera discussão na mesa.
+
+~~Trocar as 25 constantes pela lista oficial de Game Changers.~~ ✅ **feito.**
+`estimarBracket` (`shared-types/src/bracket.ts`) conta a marcação `game_changer`
+da Scryfall e devolve uma **estimativa** (1–2, 3+, 4–5); deck acima do nível
+declarado da sala recebe o aviso `BRACKET_ACIMA_DA_MESA`. Os critérios que não
+são objetivos (terrenos em massa, turnos extras, combos) continuam com a mesa —
+ver [catálogo de formatos §4.1](catalogo_de_formatos_e_variantes.md).
 
 ### II.7 Decks — importar / exportar · 🔴 no exportar
 
@@ -627,6 +635,12 @@ alvo, pings, interpolação de movimento com `prefers-reduced-motion`.
 como linha até o pai, as **setas de alvo persistentes com âncora em jogador**, e
 os **pings posicionais**. Nada disso existe no EDHPlay.
 
+✅ **Corrigidos:** a posição no campo virou **fração do campo do controlador**, não
+pixel do monitor dele (no trilho as permanentes alheias se empilhavam numa coluna),
+o trilho só aparece com campo de ≥2 cartas e soltar na faixa do oponente o acerta.
+✅ **Seleção por laço** (arrastar na mesa vazia; Shift soma), com a barra de seleção
+em intenções de lote ([catálogo de ações](catalogo_de_acoes_da_mesa.md)).
+
 Dois furos:
 
 - ⚠️ **`montarMesa` e `montarGrade` são dois layouts completos e inacessíveis.**
@@ -700,6 +714,11 @@ Faltas:
   `max-h-[60dvh]`, o menu de uma permanente já rola. Submenu para `Mover para →`,
   `Contadores →` e `Enviar para →` é o conserto — o último especialmente, porque
   hoje cada oponente é uma linha no nível raiz.
+  ~~`Enviar para →` em submenu.~~ ✅ **feito:** `Enviar para a mesa de →`,
+  `Entregar virada para →` e `Jogar no campo de →` são submenus por oponente, e
+  a mão ganhou `Jogar/Exilar virada para baixo`
+  ([catálogo de ações §4.2](catalogo_de_acoes_da_mesa.md)). `Mover para →` e
+  `Contadores →` continuam planos.
 - 🔴 **Carta em cemitério, exílio, reserva e grimório não tem menu de contexto.**
   A única superfície delas é o `ZoneInspector`. No EDHPlay o botão direito
   funciona em qualquer carta visível.
@@ -884,6 +903,12 @@ o AetherTable não tem — hoje só o anfitrião expulsa, o que significa que nu
 mesa de quatro o anfitrião é juiz único. Uma votação (`INTENT_VOTE_KICK`) com
 maioria simples, além do poder do anfitrião, é barata e resolve o caso do
 anfitrião ausente ou ele próprio sendo o problema.
+
+~~Votação de expulsão.~~ ✅ **feito:** `INTENT_VOTE_KICK`, com unanimidade dos
+outros jogadores conectados em vez de maioria (um "não" encerra), e a **conta**
+de quem sai — por votação ou pelo anfitrião — fica bloqueada na sala
+(`PLAYER_BLOCKED`); antes um passe novo pelo código da sala a sentava de novo.
+Ver `DOC-031` §3.7.
 
 ### II.21 Ajuda e FAQ · 🔴
 
