@@ -180,6 +180,7 @@ model User {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   decks        Deck[]
+  deckLikes    DeckLike[]
   accounts     Account[]
   passwordResets PasswordResetToken[]
   preference   UserPreference?
@@ -310,15 +311,38 @@ model Deck {
   /// transacao que altera as cartas.
   cardCount     Int      @default(0) @map("card_count")
   colorIdentity String[] @default([]) @map("color_identity")
+  /// DESNORMALIZADO, como `cardCount`: o Explorar ordena por "mais curtidos" e
+  /// contar `deck_likes` por deck a cada página seria um GROUP BY por visita.
+  /// Atualizado na MESMA transação que cria ou apaga a curtida.
+  likeCount     Int      @default(0) @map("like_count")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   cards DeckCard[]
+  likes DeckLike[]
 
   @@index([userId, updatedAt(sort: Desc)])
   @@index([isPublic])
+  @@index([isPublic, likeCount(sort: Desc)])
   @@map("decks")
+}
+
+/// Curtida num deck PÚBLICO (DOC-094 II.8). Uma por conta e deck: a chave
+/// composta é o que impede curtir duas vezes, e não um "já curtiu?" no código.
+/// Some junto com o deck ou com a conta (CASCADE): não é estatística que
+/// precise sobreviver a ninguém.
+model DeckLike {
+  deckId    String   @map("deck_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([deckId, userId])
+  @@index([userId])
+  @@map("deck_likes")
 }
 
 /// Exatamente o que FR-04 exige: apenas scryfall_id, quantity, is_commander e

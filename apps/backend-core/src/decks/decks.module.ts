@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DecksController, InternalDecksController } from './decks.controller.js';
 import { DecksService } from './decks.service.js';
+import { ExplorarController } from './explorar.controller.js';
+import { ExplorarService } from './explorar.service.js';
 import { CardsModule } from '../cards/cards.module.js';
 
 /**
@@ -10,8 +12,8 @@ import { CardsModule } from '../cards/cards.module.js';
  */
 @Module({
   imports: [CardsModule],
-  controllers: [DecksController, InternalDecksController],
-  providers: [DecksService],
+  controllers: [DecksController, InternalDecksController, ExplorarController],
+  providers: [DecksService, ExplorarService],
   exports: [DecksService],
 })
 export class DecksModule {}

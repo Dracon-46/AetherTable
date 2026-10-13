@@ -8,15 +8,41 @@
 
 ## Estado de execução
 
-| Fase                                 | Situação         | Onde                                                |
-| ------------------------------------ | ---------------- | --------------------------------------------------- |
-| **A** — Furos e segurança            | ✅ **concluída** | `feature/fase-a-furos-e-seguranca`, 5 commits       |
-| **B** — Barreira de entrada          | pendente         | —                                                   |
-| **C** — Deckbuilder                  | pendente         | —                                                   |
-| **D** — Salas (18, 19, 21)           | ✅ **concluída** | fatia 3a, 3b e modo espectador (v0.2.0)             |
-| **D** — item 20 ("voltar à partida") | pendente         | —                                                   |
-| **E** — Mesa                         | pendente         | —                                                   |
-| **F** — Social e i18n                | pendente         | **decidido:** i18n completo, não remoção do seletor |
+| Fase                                 | Situação         | Onde                                                 |
+| ------------------------------------ | ---------------- | ---------------------------------------------------- |
+| **A** — Furos e segurança            | ✅ **concluída** | `feature/fase-a-furos-e-seguranca`, 5 commits        |
+| **B** — Barreira de entrada          | pendente         | —                                                    |
+| **C** — Deckbuilder                  | pendente         | —                                                    |
+| **D** — Salas (18, 19, 21)           | ✅ **concluída** | fatia 3a, 3b e modo espectador (v0.2.0)              |
+| **D** — item 20 ("voltar à partida") | pendente         | —                                                    |
+| **E** — Mesa                         | ✅ **concluída** | `feature/recursos-da-mesa` (13/10/2026)              |
+| **F** — Social e i18n                | em parte         | Explorar + curtidas ✅; i18n e comentários pendentes |
+
+### O que a Fase E entregou (13/10/2026), conferido na mesa do EDHPlay
+
+Levantamento feito numa sala PRIVADA do EDHPlay, sem entrar em sala de ninguém.
+Da lista de 20 recursos da mesa deles, 16 existem agora igual ou melhor aqui:
+
+- olhada de X do topo/fundo com painel (o `peek` era gravado e nunca lido),
+  reordenação e ordem aleatória (`INTENT_ARRANGE_PEEKED`);
+- reações 👍 🤔 😮 😢 😂 🤝 (`INTENT_REACTION`, teclas 7–0), rastreador de mana
+  (`Player.manaPool`, tecla M), dados em quantidade e de 2 a 1000 lados;
+- submenus de marcadores e P/R (com P/R exato), "para o grimório" com fundo e
+  posição X, menu do campo vazio completo, foco de jogador nas teclas 1–6;
+- fichas: quantidade, personalizada, recentes e do deck inteiro; marca
+  FICHA/CÓPIA na carta;
+- a pilha (`STACK`): conjurar pela pilha, cópia na pilha, resolver;
+- prévia ao lado da carta, efeitos sonoros, tremor na entrada do comandante,
+  "ver a mesa" no mulligan, abas do log por assunto.
+
+Ficam parciais: seta a partir da mão, log em janela separada, placas de nome e
+a contagem regressiva do mulligan (esta, por decisão: RN01).
+
+Fora da mesa, na mesma branch: lista de decks com comandante, cores, favorito,
+clonar e filtros; editor com exportar, testar (mesa solo), público, descrição,
+ordenação e reserva; excluir a própria conta; Explorar com curtidas e cópia.
+**Histórico de partidas continua pendente de decisão**: contraria a RN12 como
+está escrita.
 
 ### O que a Fase A entregou, e o que ela corrigiu na própria auditoria
 
