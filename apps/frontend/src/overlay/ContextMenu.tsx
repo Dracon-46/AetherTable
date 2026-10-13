@@ -814,11 +814,20 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
     // controlava a carta — e o caso mais comum de cópia em Magic (Clone,
     // Spark Double) é justamente copiar a criatura de outro jogador.
     if (!meu && card.zone === 'BATTLEFIELD') {
-      acoes.push({
-        rotulo: 'Clonar para a minha mesa',
-        icone: <Copy className="h-4 w-4" />,
-        onClick: executar(() => intents.copyCard(room, card.id)),
-      });
+      acoes.push(
+        {
+          rotulo: 'Clonar para a minha mesa',
+          icone: <Copy className="h-4 w-4" />,
+          onClick: executar(() => intents.copyCard(room, card.id)),
+        },
+        {
+          // A habilidade copiada (Strionic Resonator) ou a cópia de uma
+          // permanente alheia que vai para a pilha antes de resolver.
+          rotulo: 'Criar cópia na pilha',
+          icone: <Layers className="h-4 w-4" />,
+          onClick: executar(() => intents.copyCard(room, card.id, 'STACK')),
+        },
+      );
     }
 
     if (meu) {
@@ -831,6 +840,17 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
        */
       if (card.zone === 'HAND') {
         acoes.push(
+          {
+            /**
+             * CONJURAR PELA PILHA. Jogar direto no campo pula o momento em que
+             * a mesa responde — e "eu conjuro isto, alguém responde?" é a
+             * conversa mais comum de uma partida. A carta fica na pilha, à
+             * vista de todos, até quem a controla resolvê-la.
+             */
+            rotulo: 'Conjurar (pôr na pilha)',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.changeZone(room, card.id, 'STACK')),
+          },
           {
             rotulo: 'Jogar virada para baixo',
             icone: <Layers className="h-4 w-4" />,
@@ -900,11 +920,20 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
       }
 
       if (card.zone === 'COMMAND') {
-        acoes.push({
-          rotulo: 'Conjurar comandante',
-          icone: <Sparkles className="h-4 w-4" />,
-          onClick: executar(() => intents.castCommander(room, card.id)),
-        });
+        acoes.push(
+          {
+            rotulo: 'Conjurar comandante',
+            icone: <Sparkles className="h-4 w-4" />,
+            onClick: executar(() => intents.castCommander(room, card.id)),
+          },
+          {
+            // O imposto conta na SAÍDA da zona de comando — para a pilha ou
+            // direto para o campo —, e não de novo quando a pilha resolve.
+            rotulo: 'Conjurar pela pilha',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.changeZone(room, card.id, 'STACK')),
+          },
+        );
       }
       if (card.zone === 'BATTLEFIELD') {
         acoes.push(
@@ -979,6 +1008,13 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             rotulo: 'Clonar (cópia como ficha)',
             icone: <Copy className="h-4 w-4" />,
             onClick: executar(() => intents.copyCard(room, card.id)),
+          },
+          {
+            // Uma habilidade ativada ou desencadeada desta permanente, para a
+            // mesa ver o que está esperando para resolver.
+            rotulo: 'Criar cópia na pilha',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.copyCard(room, card.id, 'STACK')),
           },
           {
             rotulo: 'Apontar seta para…',

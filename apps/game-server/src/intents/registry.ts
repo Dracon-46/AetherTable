@@ -57,6 +57,7 @@ import {
   nomeDe,
   ordem,
   reaplicarPermissaoDeZona,
+  topoDaPilha,
 } from '../services/mesa';
 import * as S from './schemas';
 import { DescartarAoAcaso, GirarMoeda, RolarDado, SortearCarta, SortearJogador } from './sorteios';
@@ -489,7 +490,13 @@ function trocarDeZona(ctx: IntentContext, c: Card, targetZone: Zone, opcoes: Opc
   // comandante" (INTENT_CAST_COMMANDER) somava o imposto — e arrastar é o
   // gesto que quase todo mundo usa. O imposto ficava em zero a partida toda.
   // Vai para o DONO: é dele o comandante e a conta do imposto.
-  if (origem === 'COMMAND' && targetZone === 'BATTLEFIELD' && c.isCommander) {
+  // Conjurar PELA PILHA também conta, e só na saída do comando: a pilha
+  // resolvendo para o campo (origem STACK) não cobra o imposto outra vez.
+  if (
+    origem === 'COMMAND' &&
+    (targetZone === 'BATTLEFIELD' || targetZone === 'STACK') &&
+    c.isCommander
+  ) {
     const dono = ctx.state.players.get(c.ownerId);
     if (dono) dono.commanderTax = Math.min(99, dono.commanderTax + 2);
   }
@@ -965,7 +972,7 @@ const INTENT_CREATE_TOKEN: IntentHandler<typeof S.CreateTokenIntent> = {
 const INTENT_COPY_CARD: IntentHandler<typeof S.CopyCardIntent> = {
   schema: S.CopyCardIntent,
   autoriza: 'QUALQUER_JOGADOR',
-  executa(ctx, { entityId }) {
+  executa(ctx, { entityId, destino = 'BATTLEFIELD' }) {
     const original = carta(ctx.state, entityId);
     if (!original) return;
     const sid = ctx.client.sessionId;
@@ -1012,10 +1019,27 @@ const INTENT_COPY_CARD: IntentHandler<typeof S.CopyCardIntent> = {
       card.isFlipped = original.isFlipped;
     }
 
+    // Na pilha, a cópia entra no TOPO da pilha da mesa e sem posição de campo.
+    if (destino === 'STACK') {
+      card.zone = 'STACK';
+      card.x = 0;
+      card.y = 0;
+      card.rotation = 0;
+      card.zIndex = topoDaPilha(ctx.state) + 1;
+      ordem(ctx.state, sid, 'STACK')?.push(card.id);
+    }
+
     ctx.state.cards.set(card.id, card);
     reconciliarCartaParaTodos(ctx.clients, card);
 
-    ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} criou uma cópia de carta na mesa.`));
+    ctx.log(
+      logSistema(
+        sid,
+        destino === 'STACK'
+          ? `${nomeDe(ctx.state, sid)} pôs uma cópia na pilha.`
+          : `${nomeDe(ctx.state, sid)} criou uma cópia de carta na mesa.`,
+      ),
+    );
   },
 };
 

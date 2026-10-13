@@ -42,6 +42,7 @@ import { FimDeJogo } from '@/overlay/FimDeJogo';
 import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { ReacoesOverlay } from '@/overlay/ReacoesOverlay';
 import { ManaTracker } from '@/overlay/ManaTracker';
+import { PilhaPanel } from '@/overlay/PilhaPanel';
 import { VoiceBridge } from '@/net/voice';
 import { ToastHost } from '@/components/Toast';
 import { mensagemDeConexao } from '@/net/erros';
@@ -336,6 +337,9 @@ export default function PlayRoomPage() {
           </div>
           <ChatLog room={room} />
           {!souEspectador && <ManaTracker room={room} />}
+          {/* A pilha é pública: a plateia vê o que espera para resolver, mas
+              sem botão nenhum. */}
+          <PilhaPanel room={room} espectador={souEspectador} />
           {!souEspectador && <ActionBar room={room} />}
           {!souEspectador && <SelectionBar room={room} />}
           <CardHoverPreview />

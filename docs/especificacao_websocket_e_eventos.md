@@ -270,7 +270,7 @@ delas move carta de zona; elas alteram apenas `peekedBy` / `revealedTo`.
 | Intenção               | Payload                                                             | Efeito                                                                                                                                                                                                        |
 | ---------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `INTENT_CREATE_TOKEN`  | `{ scryfallId?, name?, power?, toughness?, colors?, amount, x, y }` | Cria fichas com `isToken = true`; `power`/`toughness` viram P/T sobreposto (`hasPtOverride`) — antes eram descartados. A partir da 2ª ficha, escadeia **+0,03** por ficha (partindo do centro se `x = y = 0`) |
-| `INTENT_COPY_CARD`     | `{ entityId }`                                                      | Duplica como **ficha do remetente** marcada como cópia (ver abaixo)                                                                                                                                           |
+| `INTENT_COPY_CARD`     | `{ entityId, destino?: "BATTLEFIELD"                                | "STACK" }`                                                                                                                                                                                                    | Duplica como **ficha do remetente** marcada como cópia (ver abaixo). Com `destino: "STACK"`, a cópia entra no **topo da pilha** (Twincast, habilidade copiada) |
 | `INTENT_DESTROY_TOKEN` | `{ entityId }`                                                      | Remove ficha                                                                                                                                                                                                  |
 | `INTENT_CLEAR_TOKENS`  | `{}`                                                                | Remove todas as fichas próprias                                                                                                                                                                               |
 
@@ -282,6 +282,12 @@ revelada só para quem copiava virava, pela cópia, uma ficha de face para cima 
 cemitério dele como uma segunda via. E como a cópia levava `scryfallId` e `faceDown` do original com o
 remetente como controlador, copiar o morph do oponente era um jeito de ver o que ele era. A cópia de
 carta virada agora é o que a regra diz (708.2): uma 2/2 virada, sem identidade.
+
+**A pilha (`STACK`)** é zona pública com ordem **da mesa**, não de cada dono: ao entrar, a carta
+recebe `zIndex` = topo da pilha + 1, e o cliente lê a pilha do maior `zIndex` para o menor. Resolver é
+mover a carta (`INTENT_CHANGE_ZONE`) para onde ela vai — não há motor de regras (`RN01`). Ficha
+deixa de existir fora do campo **exceto na pilha**: a cópia de uma mágica vive nela e some ao sair
+(707.10). Conjurar o comandante pela pilha cobra o imposto na saída da zona de comando, uma vez só.
 
 ### 3.6 Aleatoriedade e comunicação
 

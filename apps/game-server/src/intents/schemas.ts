@@ -118,7 +118,14 @@ export const UpdatePropertyIntent = z.object({
   value: z.union([z.boolean(), z.number()]),
 });
 
-export const CopyCardIntent = z.object({ entityId: z.string().uuid() });
+/**
+ * `destino: 'STACK'` é "criar cópia na pilha": Twincast, Strionic Resonator,
+ * a habilidade copiada. Sem ele, a cópia nasce no campo, como sempre.
+ */
+export const CopyCardIntent = z.object({
+  entityId: z.string().uuid(),
+  destino: z.enum(['BATTLEFIELD', 'STACK']).default('BATTLEFIELD'),
+});
 
 export const AddCounterIntent = z.object({
   entityId,

@@ -339,6 +339,8 @@ export interface CreateTokenPayload {
 }
 export interface CopyCardPayload {
   entityId: string;
+  /** `STACK` = "criar cópia na pilha". Padrão: no campo. */
+  destino?: 'BATTLEFIELD' | 'STACK';
 }
 export interface DestroyTokenPayload {
   entityId: string;

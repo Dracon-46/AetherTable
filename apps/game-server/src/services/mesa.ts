@@ -27,6 +27,15 @@ export function ordem(state: RoomState, playerId: string, zone: Zone) {
   return state.zoneOrder.get(zoneOrderKey(playerId, zone))?.items;
 }
 
+/** O maior `zIndex` entre as cartas na pilha — o topo dela. 0 com a pilha vazia. */
+export function topoDaPilha(state: RoomState): number {
+  let topo = 0;
+  state.cards.forEach((c) => {
+    if (c.zone === 'STACK' && c.zIndex > topo) topo = c.zIndex;
+  });
+  return topo;
+}
+
 export function nomeDe(state: RoomState, sid: string): string {
   // A plateia entra na busca por causa do CHAT, que e a unica coisa que um
   // espectador consegue disparar. Sem esta linha o comentario dele chegava
@@ -98,6 +107,21 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
       card.damage = 0;
       card.counters.clear();
       break;
+    /**
+     * ─── A PILHA: PÚBLICA, E EM ORDEM ENTRE TODOS OS JOGADORES ──────────────
+     *
+     * A zona existia no contrato e nada a usava. A ordem da pilha é da MESA,
+     * não de cada jogador — a mágica do oponente em resposta à sua fica por
+     * cima —, então ela não sai das listas de `zoneOrder` (uma por dono): sai
+     * do `zIndex`, que vira "a próxima posição no topo da pilha inteira".
+     * Sem motor de regras (RN01), resolver é mover a carta para onde ela vai.
+     */
+    case 'STACK':
+      card.isTapped = false;
+      card.damage = 0;
+      card.counters.clear();
+      card.zIndex = topoDaPilha(ctx.state) + 1;
+      break;
     case 'BATTLEFIELD':
       // Mantem tapped/counters apenas se veio do proprio Battlefield.
       if (card.zone !== 'BATTLEFIELD') {
@@ -145,8 +169,10 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
     removerSetasDe(ctx.state, card.id);
   }
 
-  // Fichas deixam de existir fora do campo.
-  if (card.isToken && destino !== 'BATTLEFIELD') {
+  // Fichas deixam de existir fora do campo. A pilha é a exceção: a cópia de
+  // uma mágica é uma ficha que VIVE na pilha, e deixa de existir quando sai
+  // dela (707.10) — que é exatamente esta mesma regra, aplicada na saída.
+  if (card.isToken && destino !== 'BATTLEFIELD' && destino !== 'STACK') {
     // Quem chama ja empurrou o id na lista de ordem do destino. Apagar so a
     // carta deixava o id orfao la: o topo do cemiterio e lido da ORDEM, e
     // depois de uma ficha morrer a pilha mostrava um topo vazio por cima das

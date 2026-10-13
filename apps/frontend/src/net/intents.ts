@@ -232,7 +232,8 @@ export const intents = {
   // Cópia de permanente (Kiki-Jiki, clones, "copie a magia"). O handler já
   // existia no servidor desde a rodada 2, mas nenhuma tela emitia a intenção:
   // era a única ação implementada e inalcançável do catálogo.
-  copyCard: (room: Room, entityId: string) => sendIntent(room, 'INTENT_COPY_CARD', { entityId }),
+  copyCard: (room: Room, entityId: string, destino: 'BATTLEFIELD' | 'STACK' = 'BATTLEFIELD') =>
+    sendIntent(room, 'INTENT_COPY_CARD', { entityId, destino }),
 
   clearTokens: (room: Room) => sendIntent(room, 'INTENT_CLEAR_TOKENS'),
 
