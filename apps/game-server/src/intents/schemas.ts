@@ -87,6 +87,17 @@ export const PeekIntent = z.object({
 
 export const ClosePeekIntent = z.object({}).strict();
 
+/**
+ * Rearruma cartas que o remetente está olhando. `ids` vem na ordem da tela a
+ * partir da ponta escolhida. 100 é o teto de `PeekIntent.amount`: não dá para
+ * olhar mais que isso de uma vez, logo não há o que rearrumar além disso.
+ */
+export const ArrangePeekedIntent = z.object({
+  ids: z.array(entityId).min(1).max(100),
+  destino: z.enum(['TOP', 'BOTTOM']),
+  aleatorio: z.boolean().default(false),
+});
+
 export const RevealIntent = z.object({
   ids: z.array(entityId).min(1).max(100),
   to: z.union([z.literal('ALL'), z.array(z.string().min(1)).min(1).max(7)]),

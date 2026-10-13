@@ -196,7 +196,11 @@ export class SortearCarta extends AcaoDeSorteio<typeof S.RandomCardIntent, strin
   protected override anunciar(ctx: IntentContext, _p: { zone: Zone }, id: string): void {
     const c = carta(ctx.state, id);
     if (!c) return;
-    ctx.send('revealToOwner', { cards: [{ id: c.id, scryfallId: c.scryfallId }] });
+    ctx.send('revealToOwner', {
+      cards: [{ id: c.id, scryfallId: c.scryfallId }],
+      motivo: 'RANDOM',
+      zone: c.zone,
+    });
   }
 
   protected override narrar(ctx: IntentContext, { zone }: { zone: Zone }): LogEvent {

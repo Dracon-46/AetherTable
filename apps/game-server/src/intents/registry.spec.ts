@@ -34,6 +34,7 @@ const OBRIGATORIAS: IntentType[] = [
   // visibilidade
   'INTENT_PEEK',
   'INTENT_CLOSE_PEEK',
+  'INTENT_ARRANGE_PEEKED',
   'INTENT_SCRY',
   'INTENT_SCRY_COMMIT',
   'INTENT_SURVEIL',

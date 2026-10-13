@@ -23,6 +23,7 @@ import { CameraControls } from '@/overlay/CameraControls';
 import { ExibicaoControls } from '@/overlay/ExibicaoControls';
 import { ContextMenu } from '@/overlay/ContextMenu';
 import { ScryModal } from '@/overlay/ScryModal';
+import { OlhadaPanel } from '@/overlay/OlhadaPanel';
 import { TableMenu } from '@/overlay/TableMenu';
 import { SelectionBar } from '@/overlay/SelectionBar';
 import { CardHoverPreview } from '@/overlay/CardHoverPreview';
@@ -350,6 +351,7 @@ export default function PlayRoomPage() {
               <ZoneInspector room={room} />
               <ContextMenu room={room} setModoAnexar={setModoAnexar} />
               <ScryModal room={room} />
+              <OlhadaPanel room={room} />
               <CardEditor room={room} />
               <PlayersModal room={room} />
             </>

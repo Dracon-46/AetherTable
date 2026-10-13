@@ -251,6 +251,9 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_DISCARD_RANDOM',
   'INTENT_PEEK',
   'INTENT_CLOSE_PEEK',
+  // Mesma razão do commit do scry: reordenar o que se viu (ou embaralhar o
+  // bloco) não volta sem devolver a olhada, e a ordem aleatória não se desfaz.
+  'INTENT_ARRANGE_PEEKED',
   'INTENT_SCRY',
   'INTENT_SURVEIL',
   // O commit do scry tambem nao volta (DOC-036 §4.2): desfazer devolveria a

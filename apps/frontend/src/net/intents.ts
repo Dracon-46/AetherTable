@@ -64,6 +64,10 @@ export const intents = {
 
   closePeek: (room: Room) => sendIntent(room, 'INTENT_CLOSE_PEEK'),
 
+  /** Rearruma cartas que estou olhando. `ids[0]` é a ponta (topo ou fundo). */
+  arrangePeeked: (room: Room, ids: string[], destino: 'TOP' | 'BOTTOM', aleatorio = false) =>
+    sendIntent(room, 'INTENT_ARRANGE_PEEKED', { ids, destino, aleatorio }),
+
   mill: (
     room: Room,
     amount: number,

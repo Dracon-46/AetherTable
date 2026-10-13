@@ -97,6 +97,12 @@ export interface PeekPayload {
   from?: 'TOP' | 'BOTTOM';
 }
 export type ClosePeekPayload = Record<string, never>;
+/** Ver `ArrangePeekedIntent` no game-server. `ids[0]` é a ponta (topo ou fundo). */
+export interface ArrangePeekedPayload {
+  ids: string[];
+  destino: 'TOP' | 'BOTTOM';
+  aleatorio?: boolean;
+}
 export interface ScryPayload {
   amount: number;
 }
@@ -554,6 +560,7 @@ export interface IntentPayloadMap {
   // visibilidade
   INTENT_PEEK: PeekPayload;
   INTENT_CLOSE_PEEK: ClosePeekPayload;
+  INTENT_ARRANGE_PEEKED: ArrangePeekedPayload;
   INTENT_SCRY: ScryPayload;
   INTENT_SCRY_COMMIT: ScryCommitPayload;
   INTENT_SURVEIL: SurveilPayload;

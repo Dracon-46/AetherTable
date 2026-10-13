@@ -754,6 +754,21 @@ export interface PingVisual {
   em: number;
 }
 
+/**
+ * Uma olhada aberta: o que o servidor liberou só para mim, e por quê.
+ *
+ * Era uma lista solta de cartas, gravada por `revealToOwner` e lida por
+ * NINGUÉM — "olhar X do topo" e "olhar o fundo" não mostravam nada. Com o
+ * motivo e a ponta, o painel de olhada sabe o que oferecer: reordenar só faz
+ * sentido numa olhada do grimório; numa carta sorteada, só mover.
+ */
+export interface Olhada {
+  cards: CartaRevelada[];
+  motivo: 'PEEK' | 'RANDOM';
+  zone: string;
+  from: 'TOP' | 'BOTTOM';
+}
+
 export interface SessaoScry {
   mode: 'SCRY' | 'SURVEIL';
   cards: CartaRevelada[];
@@ -783,8 +798,8 @@ interface TableState {
   /** Último dado ou moeda, para o destaque visual na mesa. */
   ultimoSorteio: Sorteio | null;
   pings: PingVisual[];
-  /** Buffer de olhada/busca: o que o servidor liberou só para mim. */
-  peek: CartaRevelada[];
+  /** A olhada aberta no painel. A busca (tutor) usa o inspetor de zona. */
+  peek: Olhada | null;
   scry: SessaoScry | null;
   /** Pedidos recebidos, na ordem de chegada. */
   pedidosDeVista: PedidoDeVista[];
@@ -795,7 +810,7 @@ interface TableState {
   limparSorteio: () => void;
   addPing: (p: Omit<PingVisual, 'id' | 'em'>) => void;
   expirarPings: () => void;
-  setPeek: (cards: CartaRevelada[]) => void;
+  setPeek: (olhada: Olhada | null) => void;
   abrirScry: (s: SessaoScry) => void;
   fecharScry: () => void;
   addPedidoDeVista: (p: Omit<PedidoDeVista, 'em'>) => void;
@@ -806,7 +821,7 @@ interface TableState {
 export const useTableStore = create<TableState>((set) => ({
   ultimoSorteio: null,
   pings: [],
-  peek: [],
+  peek: null,
   scry: null,
   pedidosDeVista: [],
 
@@ -843,5 +858,5 @@ export const useTableStore = create<TableState>((set) => ({
         (x) => !(x.requesterId === requesterId && x.zone === zone),
       ),
     })),
-  reset: () => set({ ultimoSorteio: null, pings: [], peek: [], scry: null, pedidosDeVista: [] }),
+  reset: () => set({ ultimoSorteio: null, pings: [], peek: null, scry: null, pedidosDeVista: [] }),
 }));

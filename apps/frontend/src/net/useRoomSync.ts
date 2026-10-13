@@ -7,6 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { getStateCallbacks, type Room } from 'colyseus.js';
+import type { RevealToOwnerEvent } from '@aethertable/shared-types';
 import {
   useGameStore,
   useTableStore,
@@ -353,12 +354,21 @@ export function useRoomSync(room: Room<RoomState> | null) {
       useTableStore.getState().addPing(payload);
     });
 
-    room.onMessage(
-      'revealToOwner',
-      (payload: { cards: Array<{ id: string; scryfallId: string }> }) => {
-        useTableStore.getState().setPeek(payload.cards ?? []);
-      },
-    );
+    /**
+     * A busca (tutor) também chega aqui, e é mostrada pelo inspetor de zona —
+     * abrir o painel de olhada junto duplicaria a tela. Só a olhada e o
+     * sorteio de carta abrem o painel.
+     */
+    room.onMessage('revealToOwner', (payload: RevealToOwnerEvent) => {
+      if (payload.motivo !== 'PEEK' && payload.motivo !== 'RANDOM') return;
+      if (!payload.cards?.length) return;
+      useTableStore.getState().setPeek({
+        cards: payload.cards,
+        motivo: payload.motivo,
+        zone: payload.zone ?? 'LIBRARY',
+        from: payload.from ?? 'TOP',
+      });
+    });
 
     room.onMessage(
       'scryOpened',

@@ -657,7 +657,12 @@ const INTENT_PEEK: IntentHandler<typeof S.PeekIntent> = {
     }
 
     // SO ao dono. Um broadcast aqui vazaria o topo do grimorio para a mesa.
-    ctx.send('revealToOwner', { cards: vistas });
+    //
+    // `motivo` e `from` existem porque o mesmo evento serve a busca (tutor) e
+    // ao sorteio de carta: o cliente guardava tudo num `peek` que tela nenhuma
+    // lia, e "olhar X do topo" nao mostrava nada. O painel de olhada so abre
+    // para `PEEK` — abrir tambem na busca duplicaria o inspetor de zona.
+    ctx.send('revealToOwner', { cards: vistas, motivo: 'PEEK', zone, from: from ?? 'TOP' });
 
     // Log publico com CONTAGEM, nunca identidade: os oponentes sabem QUE houve
     // uma olhada, sem saber o que foi visto. E isso que torna o historico da
@@ -678,6 +683,74 @@ const INTENT_CLOSE_PEEK: IntentHandler<typeof S.ClosePeekIntent> = {
       c.peekedBy = novo;
       reconciliarCartaParaTodos(ctx.clients, c);
     });
+  },
+};
+
+/**
+ * ─── REARRUMAR AS CARTAS OLHADAS ─────────────────────────────────────────────
+ *
+ * "Olhar X do topo" mostrava as cartas e não deixava fazer nada com elas além
+ * de mover uma a uma para outra zona. Reordenar o topo, devolver em ordem
+ * aleatória ou mandar o bloco para o fundo — o que Sensei's Divining Top,
+ * Brainstone e companhia pedem — não tinha caminho.
+ *
+ * `INTENT_CHANGE_ZONE` de grimório para grimório NÃO serve: toda troca de zona
+ * zera `peekedBy` (RN13), e a carta sumiria do painel no meio da arrumação.
+ *
+ * As regras que tornam isto seguro:
+ *
+ *   - só entra carta do PRÓPRIO grimório que o remetente está olhando agora
+ *     (`peekedBy` contém o sid). É o que impede usar a intenção para mexer às
+ *     cegas no grimório — e para reordenar o que ninguém viu;
+ *   - `ids` chega na ordem da TELA a partir da ponta: no topo, `ids[0]` é a
+ *     próxima compra; no fundo, `ids[0]` é a carta de baixo de todas;
+ *   - com `aleatorio`, a ordem sai do CSPRNG (RN06) e a olhada é REVOGADA —
+ *     manter `peekedBy` deixaria o cliente casar posição com identidade, e
+ *     "ordem aleatória" viraria "ordem que eu sei".
+ */
+const INTENT_ARRANGE_PEEKED: IntentHandler<typeof S.ArrangePeekedIntent> = {
+  schema: S.ArrangePeekedIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx, { ids, destino, aleatorio }) {
+    const sid = ctx.client.sessionId;
+    const grimorio = ordem(ctx.state, sid, 'LIBRARY');
+    if (!grimorio) return;
+
+    const unicos = [...new Set(ids)];
+    const noGrimorio = new Set(Array.from(grimorio));
+    const validas = unicos.every((id) => {
+      const c = carta(ctx.state, id);
+      return !!c && c.ownerId === sid && noGrimorio.has(id) && contem(c.peekedBy, sid);
+    });
+    if (!validas) {
+      ctx.send('error', {
+        code: 'INVALID_PAYLOAD',
+        message: 'Só dá para rearrumar cartas do seu grimório que você está olhando.',
+        intent: 'INTENT_ARRANGE_PEEKED',
+      });
+      return;
+    }
+
+    const arranjo = aleatorio ? embaralhar([...unicos]) : unicos;
+    const restante = Array.from(grimorio).filter((id) => !unicos.includes(id));
+    // Topo = FIM do array; fundo = INÍCIO. Ver `topoDe`.
+    const nova =
+      destino === 'TOP' ? [...restante, ...[...arranjo].reverse()] : [...arranjo, ...restante];
+    grimorio.splice(0, grimorio.length, ...nova);
+
+    if (aleatorio) revogarOlhada(ctx, unicos);
+
+    const nome = nomeDe(ctx.state, sid);
+    const onde = destino === 'TOP' ? 'no topo' : 'no fundo';
+    ctx.log(
+      criarLog(
+        'PEEK',
+        sid,
+        aleatorio
+          ? `${nome} colocou ${unicos.length} carta(s) ${onde} do grimório em ordem aleatória`
+          : `${nome} reordenou ${unicos.length} carta(s) ${onde} do grimório`,
+      ),
+    );
   },
 };
 
@@ -2085,7 +2158,7 @@ const INTENT_SEARCH_ZONE: IntentHandler<typeof S.SearchZoneIntent> = {
 
     // Busca = olhada sobre a zona INTEIRA. `INTENT_CLOSE_PEEK` revoga.
     const vistas = concederOlhada(ctx, Array.from(lista));
-    ctx.send('revealToOwner', { cards: vistas });
+    ctx.send('revealToOwner', { cards: vistas, motivo: 'SEARCH', zone });
 
     // Log publico: os oponentes precisam saber QUE houve busca (e por que o
     // grimorio sera embaralhado depois), sem saber o que foi procurado.
@@ -3257,6 +3330,7 @@ export const REGISTRY = {
   INTENT_SHUFFLE,
   INTENT_PEEK,
   INTENT_CLOSE_PEEK,
+  INTENT_ARRANGE_PEEKED,
   INTENT_TAP,
   INTENT_UNTAP_ALL,
   INTENT_UPDATE_PROPERTY,
