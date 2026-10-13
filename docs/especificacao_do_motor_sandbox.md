@@ -292,6 +292,7 @@ export class RoomState extends Schema {
   @type('string') votacaoAutor = ''; // sessionId de quem propôs
   @type('string') votacaoSim = ''; // sessionIds que votaram sim, separados por vírgula
   @type('number') votacaoExpiraEm = 0; // epoch ms
+  @type('number') vidaInicial = 0; // vida combinada no lobby; 0 = a do formato
 
   // marcadores visuais: dayNight, turnPhase, arrows
 }
@@ -636,6 +637,11 @@ antes do limite do backend com "2000000000 Forest" travava o processo do jogo ne
 sala (`NFR-07`) e dos 300–400 sprites de `NFR-01`.
 
 ### 6.2 Sala vazia e saída de jogador
+
+**Sobrou um jogador numa partida que começou com dois ou mais: ele venceu.** `verificarFimDePartida`
+exige dois jogadores na mesa (senão a mesa solo terminaria no primeiro clique), e num 1v1 o oponente
+fechar a aba deixava a partida aberta para sempre. `removerJogador` anuncia o vencedor quando sobra
+um e o auge da partida (`augeDeJogadores`) foi de dois ou mais.
 
 O `autoDispose` do Colyseus está **desligado**. Com ele, a sala morria no instante em que o último
 cliente saía — e o criador de uma mesa pública não consegue estar no lobby e na lista na mesma aba:

@@ -103,6 +103,25 @@ describe('quem sai da sala', () => {
   });
 });
 
+describe('um contra um', () => {
+  /** O oponente fechar a aba deixava a partida aberta para sempre, sem vencedor. */
+  it('o único oponente saindo dá a vitória a quem ficou', () => {
+    const sala = montarSala(['a', 'b']);
+    (sala as unknown as { augeDeJogadores: number }).augeDeJogadores = 2;
+    sala.state.phase = 'PLAYING';
+    sala.removerJogador('b');
+    expect(sala.state.phase).toBe('CLOSING');
+  });
+
+  it('a mesa solo não termina sozinha', () => {
+    const sala = montarSala(['a']);
+    (sala as unknown as { augeDeJogadores: number }).augeDeJogadores = 1;
+    sala.state.phase = 'PLAYING';
+    sala.removerJogador('fantasma');
+    expect(sala.state.phase).toBe('PLAYING');
+  });
+});
+
 describe('remover alguém desconectado', () => {
   /**
    * O Colyseus já tirou o cliente de `this.clients`: o `leave` não tinha em

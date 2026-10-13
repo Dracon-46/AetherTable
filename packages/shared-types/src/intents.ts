@@ -313,6 +313,8 @@ export interface SetRoomConfigPayload {
    * partida em andamento: abrir uma vaga não desfaz escolha de ninguém.
    */
   maxSeats?: number;
+  /** Vida inicial da mesa (1–999); `0` volta à do formato. Só na sala de espera. */
+  vidaInicial?: number;
 }
 /** Marca o jogador como eliminado. NAO o remove da sala (RN01). */
 export type ConcedePayload = Record<string, never>;

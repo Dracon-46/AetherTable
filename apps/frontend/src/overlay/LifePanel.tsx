@@ -95,7 +95,9 @@ function PlayerCard({
   const players = useGameStore((s) => s.players);
   const catalogo = useCardCatalog((s) => s.cartas);
   const formatoDaMesa = acharFormato(useGameStore((s) => s.config.gameType));
-  const vidaInicial = formatoDaMesa.vidaInicial || 40;
+  const vidaCombinada = useGameStore((s) => s.config.vidaInicial);
+  // A combinada no lobby vence a do formato — mesma regra de `vidaInicialDaMesa`.
+  const vidaInicial = vidaCombinada > 0 ? vidaCombinada : formatoDaMesa.vidaInicial || 40;
   // O destaque de "letal" segue o formato: 16 no PDH, nenhum no Brawl.
   const danoLetal = formatoDaMesa.comandante ? formatoDaMesa.comandante.danoLetal : 21;
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);

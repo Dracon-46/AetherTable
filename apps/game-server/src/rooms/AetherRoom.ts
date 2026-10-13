@@ -30,6 +30,7 @@ import {
   haAssentoLivre,
   verificarAutorizacao,
   verificarFimDePartida,
+  vidaInicialDaMesa,
   type IntentContext,
   type IntentHandler,
 } from '../intents/registry';
@@ -37,7 +38,13 @@ import { embaralhar } from '../services/rng';
 import { ComandoDeIntencao, HistoricoDeComandos } from '../intents/comandos';
 import { logSistema } from '../services/log';
 import { reconciliarClient, reconciliarTudo } from '../services/view-sync';
-import { intentsRecebidas, intentsRejeitadas, salasAtivas } from '../metrics';
+import {
+  conexoesAtivas,
+  intentsRecebidas,
+  intentsRejeitadas,
+  reconexoes,
+  salasAtivas,
+} from '../metrics';
 
 /** Aceita a forma canonica de uuid v1-v5; e o formato do id no Postgres. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -512,6 +519,11 @@ export class AetherRoom extends Room<RoomState> {
   }
 
   override onJoin(client: Client, options: JoinOptions, auth: SeatTokenClaims): void {
+    // `ws_connections_active` e `ws_reconnections_total` eram expostas em
+    // /metrics e NUNCA atualizadas: o painel mostrava zero jogadores conectados
+    // com a mesa cheia. Cada cliente que entra (jogador ou plateia) conta um;
+    // cada `onLeave` desconta.
+    conexoesAtivas.inc();
     if (auth.spectator) {
       this.entrarComoEspectador(client, auth);
       return;
@@ -525,7 +537,7 @@ export class AetherRoom extends Room<RoomState> {
     player.name = auth.username;
     // Quem chega com a partida andando nasceria com 40 em qualquer formato:
     // `Player.life` tem 40 fixo no schema.
-    player.life = acharFormato(this.state.gameType).vidaInicial;
+    player.life = vidaInicialDaMesa(this.state);
     player.seat = this.proximoAssento;
     this.proximoAssento += 1;
 
@@ -598,6 +610,7 @@ export class AetherRoom extends Room<RoomState> {
   }
 
   override async onLeave(client: Client, consented: boolean): Promise<void> {
+    conexoesAtivas.dec();
     /**
      * Espectador sai NA HORA, sem janela de reconexao.
      *
@@ -644,14 +657,17 @@ export class AetherRoom extends Room<RoomState> {
 
     try {
       await this.allowReconnection(client, REALTIME_LIMITS.RECONNECTION_WINDOW_S);
+      conexoesAtivas.inc();
       // A mesma conta pode ter voltado por um passe novo enquanto esta aba
       // estava fora (`onAuth` libera o assento antigo). A aba antiga que
       // reconecta depois disso não tem mais assento: ficaria na sala como um
       // cliente sem jogador, vendo a mesa sem ser plateia nem mesa.
       if (!this.state.players.has(client.sessionId)) {
+        reconexoes.inc({ result: 'sem-assento' });
         client.leave(4001);
         return;
       }
+      reconexoes.inc({ result: 'ok' });
       if (player) {
         player.connected = true;
         player.disconnectedAt = 0;
@@ -660,6 +676,7 @@ export class AetherRoom extends Room<RoomState> {
       reconciliarClient(client, this.state);
       this.broadcast('playerReconnected', { playerId: client.sessionId });
     } catch {
+      reconexoes.inc({ result: 'expirou' });
       this.removerJogador(client.sessionId);
     }
   }
@@ -1080,6 +1097,26 @@ export class AetherRoom extends Room<RoomState> {
       broadcast: (event, payload) => this.broadcast(event, payload),
       log: (entrada) => this.publicarLog(entrada),
     });
+
+    /**
+     * SOBROU UM JOGADOR: ELE VENCEU.
+     *
+     * `verificarFimDePartida` exige dois jogadores na mesa — e precisa exigir,
+     * senão a mesa de teste solo terminaria no primeiro clique. Mas numa partida
+     * que COMEÇOU com dois ou mais, ficar sozinho porque o último oponente saiu
+     * é vitória: num 1v1, o oponente fechar a aba deixava a partida aberta para
+     * sempre, sem vencedor nenhum anunciado.
+     */
+    if (
+      this.state.phase === 'PLAYING' &&
+      this.state.players.size === 1 &&
+      this.augeDeJogadores >= 2
+    ) {
+      const vencedor = Array.from(this.state.players.values())[0]!;
+      this.state.phase = 'CLOSING';
+      this.broadcast('matchEnded', { winnerId: vencedor.id, winnerName: vencedor.name });
+      this.publicarLog(logSistema(vencedor.id, `${vencedor.name} venceu a partida`));
+    }
 
     this.agendarDescarteSeVazia();
   }

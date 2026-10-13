@@ -305,6 +305,11 @@ const FRASE_DE_DERROTA: Record<string, (porQuem: string) => string> = {
  * So anuncia com DOIS OU MAIS jogadores na mesa: numa sala de um, "voce venceu"
  * assim que a fase vira PLAYING seria absurdo.
  */
+/** A vida inicial da mesa: a combinada no lobby, ou a do formato. */
+export function vidaInicialDaMesa(state: RoomState): number {
+  return state.vidaInicial > 0 ? state.vidaInicial : acharFormato(state.gameType).vidaInicial;
+}
+
 export function verificarFimDePartida(
   ctx: Pick<IntentContext, 'state' | 'broadcast' | 'log'>,
 ): void {
@@ -478,6 +483,15 @@ function trocarDeZona(ctx: IntentContext, c: Card, targetZone: Zone, opcoes: Opc
   if (targetZone === 'BATTLEFIELD') {
     if (x !== undefined) c.x = x;
     if (y !== undefined) c.y = y;
+  }
+
+  // ARRASTAR O COMANDANTE PARA O CAMPO E CONJURA-LO. Só o botão "Conjurar
+  // comandante" (INTENT_CAST_COMMANDER) somava o imposto — e arrastar é o
+  // gesto que quase todo mundo usa. O imposto ficava em zero a partida toda.
+  // Vai para o DONO: é dele o comandante e a conta do imposto.
+  if (origem === 'COMMAND' && targetZone === 'BATTLEFIELD' && c.isCommander) {
+    const dono = ctx.state.players.get(c.ownerId);
+    if (dono) dono.commanderTax = Math.min(99, dono.commanderTax + 2);
   }
 
   atualizarContagens(ctx.state, c.ownerId);
@@ -734,9 +748,11 @@ const INTENT_SET_LIFE: IntentHandler<typeof S.SetLifeIntent> = {
     const p = ctx.state.players.get(sid);
     if (!p) return;
     const antes = p.life;
-    // Vida <= 0 NAO elimina ninguem (RN01).
-    // A vida pode passar de zero: e a leitura da regra, nao um clamp cosmetico.
-    p.life = 'delta' in payload ? antes + payload.delta : payload.absolute;
+    // A vida pode passar de zero: e a leitura da regra, nao um clamp cosmetico
+    // (quem chega a zero e eliminado em `reavaliarEliminacao`, e volta se a
+    // vida subir). O teto existe so para o numero caber no campo de edicao.
+    const bruta = 'delta' in payload ? antes + payload.delta : payload.absolute;
+    p.life = Math.max(-99_999, Math.min(99_999, bruta));
     ctx.log(logVida(sid, nomeDe(ctx.state, sid), antes, p.life));
     reavaliarEliminacao(ctx, sid);
   },
@@ -1445,7 +1461,7 @@ const INTENT_RESET_MATCH: IntentHandler<typeof S.ResetMatchIntent> = {
     ctx.state.turn = 1;
     ctx.state.activePlayerId = '';
 
-    const vidaInicial = acharFormato(ctx.state.gameType).vidaInicial;
+    const vidaInicial = vidaInicialDaMesa(ctx.state);
     ctx.state.players.forEach((p) => {
       p.life = vidaInicial;
       p.poison = 0;
@@ -1606,7 +1622,7 @@ const INTENT_START_MATCH: IntentHandler<typeof S.StartMatchIntent> = {
      * Oathbreaker e Brawl comecavam com a vida de Commander. O catalogo de
      * formatos sempre teve `vidaInicial`; ninguem no servidor lia.
      */
-    const vidaInicial = acharFormato(ctx.state.gameType).vidaInicial;
+    const vidaInicial = vidaInicialDaMesa(ctx.state);
     ctx.state.players.forEach((p) => {
       p.life = vidaInicial;
     });
@@ -2620,6 +2636,17 @@ const INTENT_SET_ROOM_CONFIG: IntentHandler<typeof S.SetRoomConfigIntent> = {
       ctx.state.tipoDeMulligan = payload.tipoDeMulligan;
     }
 
+    if (payload.vidaInicial !== undefined) {
+      ctx.state.vidaInicial = payload.vidaInicial;
+      // Na sala de espera a vida de cada um JA mostra o combinado: o lobby e
+      // o painel leem `Player.life`, e quem entrou antes do ajuste continuaria
+      // exibindo a vida antiga ate o inicio.
+      const vida = vidaInicialDaMesa(ctx.state);
+      ctx.state.players.forEach((p) => {
+        p.life = vida;
+      });
+    }
+
     if (payload.jogadorInicial !== undefined) {
       // '' = sortear. Qualquer outro valor precisa ser alguem que esta na mesa
       // AGORA: sem esta checagem, a partida comecaria apontando para um assento
@@ -2937,7 +2964,7 @@ const INTENT_KICK_PLAYER: IntentHandler<typeof S.KickPlayerIntent> = {
 };
 
 /** Quanto tempo uma votacao fica aberta. */
-export const VOTACAO_DURA_MS = 60_000;
+const VOTACAO_DURA_MS = 60_000;
 
 function encerrarVotacao(state: RoomState): void {
   state.votacaoAlvo = '';
@@ -3315,8 +3342,6 @@ export const REGISTRY = {
   INTENT_GIVE_CARD,
 } satisfies Partial<Record<IntentType, IntentHandler<z.ZodTypeAny>>>;
 
-export type IntentImplementada = keyof typeof REGISTRY;
-
 /**
  * O que do catalogo (DOC-036) segue fora do REGISTRY, e por que.
  *
@@ -3333,8 +3358,6 @@ export const INTENCOES_PENDENTES: ReadonlyArray<{ intent: IntentType; motivo: st
   { intent: 'INTENT_PLANESWALK', motivo: 'V2 — Planechase: deck de planos' },
   { intent: 'INTENT_DRAW_SCHEME', motivo: 'V2 — Archenemy: deck de esquemas' },
 ];
-
-export const INTENCOES_IMPLEMENTADAS = Object.keys(REGISTRY) as IntentImplementada[];
 
 /**
  * Autorizacao. Descarta com `NOT_AUTHORIZED` quando o remetente nao tem direito.

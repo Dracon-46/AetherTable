@@ -133,7 +133,10 @@ export const CreateTokenIntent = z.object({
 
 export const SetLifeIntent = z.union([
   z.object({ delta: z.number().int().min(-999).max(999) }),
-  z.object({ absolute: z.number().int().min(-999).max(999) }),
+  // Teto maior que o do delta: a vida passa de 999 somando cliques (vínculo
+  // vital, Aetherflux), e com o teto antigo o valor DIGITADO por cima dela era
+  // recusado — o jogador não conseguia corrigir a própria vida.
+  z.object({ absolute: z.number().int().min(-99_999).max(99_999) }),
 ]);
 
 // ─── Aleatoriedade e comunicacao ─────────────────────────────────────────────
@@ -400,6 +403,7 @@ export const SetRoomConfigIntent = z
       .refine((v) => (CRONOMETROS_DE_TURNO as readonly number[]).includes(v))
       .optional(),
     maxSeats: z.number().int().min(1).max(REALTIME_LIMITS.MAX_PLAYERS).optional(),
+    vidaInicial: z.number().int().min(0).max(999).optional(),
   })
   .strict();
 
@@ -454,15 +458,6 @@ export const SetCosmeticsIntent = z
 
 /** Zonas cujo conteudo pode ser PEDIDO a outro jogador (RN13). */
 const zonaPedivel = z.enum(['HAND', 'LIBRARY', 'GRAVEYARD', 'EXILE']);
-
-/**
- * O deck e escolhido DENTRO da sala de espera.
- *
- * `deckId` e um uuid porque e o formato do id no Postgres (DOC-030): validar
- * aqui evita que uma string arbitraria vire uma chamada HTTP interna com path
- * controlado pelo cliente.
- */
-export const SetDeckIntent = z.object({ deckId: z.string().uuid() }).strict();
 
 export const SetReadyIntent = z.object({ ready: z.boolean() }).strict();
 

@@ -67,6 +67,9 @@ import { API_URL } from '@/lib/api';
 import type { RoomState } from '../net/schema/RoomState';
 import { esquecerReconexao } from '@/net/reconexao';
 
+/** Vidas que a mesa pode combinar além da do formato. */
+const VIDAS_INICIAIS = [10, 20, 25, 30, 40, 50, 60, 100] as const;
+
 interface RoomLobbyProps {
   room: Room<RoomState>;
   /** Lugares contratados na criação da sala (vem da querystring). */
@@ -381,6 +384,30 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
                 </p>
               </div>
 
+              {/* VIDA INICIAL. A mesa livre prometia "vida configurável" no
+                  resumo do formato e não havia onde configurar; nenhuma mesa
+                  jogava regra da casa. "Do formato" segue o catálogo. */}
+              <div>
+                <label className="text-text-muted mb-1.5 block text-xs font-medium">
+                  Vida inicial
+                </label>
+                <select
+                  value={config.vidaInicial}
+                  aria-label="Vida inicial"
+                  onChange={(e) => ajustarRegra({ vidaInicial: Number(e.target.value) })}
+                  className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-3 py-2 text-sm focus:outline-none"
+                >
+                  <option value={0}>Do formato ({acharFormato(formato).vidaInicial})</option>
+                  {VIDAS_INICIAIS.filter((v) => v !== acharFormato(formato).vidaInicial).map(
+                    (v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+
               <div>
                 <label className="text-text-muted mb-1.5 block text-xs font-medium">
                   Tipo de mulligan
@@ -486,6 +513,13 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
           ) : (
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               {[
+                {
+                  rotulo: 'Vida inicial',
+                  valor:
+                    config.vidaInicial > 0
+                      ? `${config.vidaInicial} (combinada pela mesa)`
+                      : `${acharFormato(formato).vidaInicial} (do formato)`,
+                },
                 {
                   rotulo: 'Mulligan',
                   valor: REGRA_DO_MULLIGAN[config.tipoDeMulligan as TipoDeMulligan],

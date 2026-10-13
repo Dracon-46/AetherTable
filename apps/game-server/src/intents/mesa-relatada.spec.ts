@@ -406,3 +406,61 @@ describe('dano de comandante letal depende do formato', () => {
     expect(jogador(mesa, 'a').eliminationReason).toBe('COMMANDER');
   });
 });
+
+describe('vida inicial combinada pela mesa', () => {
+  /** A mesa livre prometia "vida configurável" e não havia onde configurar. */
+  it('o anfitrião combina a vida na sala de espera e todos já veem', () => {
+    const mesa = montarMesa(['a', 'b'], 'freeform');
+    mesa.state.phase = 'WAITING';
+    executar(mesa, 'INTENT_SET_ROOM_CONFIG', 'a', { vidaInicial: 30 });
+    expect(mesa.state.vidaInicial).toBe(30);
+    expect([jogador(mesa, 'a').life, jogador(mesa, 'b').life]).toEqual([30, 30]);
+  });
+
+  it('reiniciar usa a vida combinada; 0 volta à do formato', () => {
+    const mesa = montarMesa(['a', 'b'], 'commander');
+    mesa.state.vidaInicial = 30;
+    executar(mesa, 'INTENT_RESET_MATCH', 'a', {});
+    expect(jogador(mesa, 'a').life).toBe(30);
+
+    executar(mesa, 'INTENT_SET_ROOM_CONFIG', 'a', { vidaInicial: 0 });
+    expect(jogador(mesa, 'a').life).toBe(40);
+  });
+
+  it('com a partida andando a vida combinada não muda — a regra já foi jogada', () => {
+    const mesa = montarMesa(['a', 'b'], 'commander');
+    executar(mesa, 'INTENT_SET_ROOM_CONFIG', 'a', { vidaInicial: 20 });
+    expect(mesa.state.vidaInicial).toBe(0);
+    expect(jogador(mesa, 'a').life).toBe(40);
+  });
+
+  /** Somando cliques a vida passava de 999, e digitar por cima era recusado. */
+  it('vida acima de 999 pode ser digitada', async () => {
+    const { SetLifeIntent } = await import('./schemas');
+    expect(SetLifeIntent.safeParse({ absolute: 1500 }).success).toBe(true);
+    const mesa = montarMesa(['a', 'b']);
+    executar(mesa, 'INTENT_SET_LIFE', 'a', { absolute: 1500 });
+    expect(jogador(mesa, 'a').life).toBe(1500);
+  });
+});
+
+describe('imposto de comandante ao arrastar', () => {
+  /** Só o botão "Conjurar comandante" somava; arrastar deixava o imposto em zero. */
+  it('arrastar o comandante da zona de comando para o campo soma 2 ao imposto do dono', () => {
+    const mesa = montarMesa(['a', 'b']);
+    const cmd = poe(mesa, 'dddddddd-0000-4000-8000-000000000001', 'a', 'COMMAND', {
+      isCommander: true,
+    });
+    executar(mesa, 'INTENT_CHANGE_ZONE', 'a', { entityId: cmd.id, targetZone: 'BATTLEFIELD' });
+    expect(jogador(mesa, 'a').commanderTax).toBe(2);
+  });
+
+  it('carta comum saindo do comando (ou o comandante indo para a mão) não soma', () => {
+    const mesa = montarMesa(['a']);
+    const cmd = poe(mesa, 'dddddddd-0000-4000-8000-000000000002', 'a', 'COMMAND', {
+      isCommander: true,
+    });
+    executar(mesa, 'INTENT_CHANGE_ZONE', 'a', { entityId: cmd.id, targetZone: 'HAND' });
+    expect(jogador(mesa, 'a').commanderTax).toBe(0);
+  });
+});

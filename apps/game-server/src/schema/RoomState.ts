@@ -160,4 +160,13 @@ export class RoomState extends Schema {
   @type('string') votacaoSim = '';
   /** Epoch ms. Passado disso a votação não vale mais. */
   @type('number') votacaoExpiraEm = 0;
+
+  /**
+   * Vida inicial combinada pela mesa. `0` = a do formato.
+   *
+   * A mesa livre prometia "vida configurável" no próprio resumo do formato e não
+   * havia onde configurar; nenhuma mesa conseguia jogar regra da casa (Commander
+   * a 30, duelo a 30). No FIM da classe — o schema serializa por índice.
+   */
+  @type('number') vidaInicial = 0;
 }

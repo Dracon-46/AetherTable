@@ -29,6 +29,8 @@ import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ApiError } from '../lib/fetcher';
 import { useAuthStore } from '../store/auth.store';
+import { useCosmeticos } from '../cosmetics/store';
+import { useAtalhos } from '../store/atalhos.store';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // `useState` e não um módulo global: no App Router, um QueryClient de módulo
@@ -93,7 +95,13 @@ function useLimparCacheAoTrocarDeConta(client: QueryClient): void {
       if (atual === anterior) return;
       const saiuUmaConta = anterior !== null;
       anterior = atual;
-      if (saiuUmaConta) client.clear();
+      if (saiuUmaConta) {
+        client.clear();
+        // Cosméticos e atalhos moram no localStorage do navegador; sem isto a
+        // conta seguinte herdava os da anterior.
+        useCosmeticos.getState().esquecerConta();
+        useAtalhos.getState().esquecerConta();
+      }
     });
   }, [client]);
 }

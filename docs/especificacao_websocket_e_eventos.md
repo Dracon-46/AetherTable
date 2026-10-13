@@ -319,8 +319,18 @@ em que a regra antiga ("o próximo é o assento 0") nunca contava a rodada.
   sideboardPermitido?: boolean;
   cronometroDeTurno?: number;   // 0 | 60 | 120 | 180 | 300, em segundos
   maxSeats?: number;            // 1..MAX_PLAYERS, preso à faixa `jogadores` do formato
+  vidaInicial?: number;         // 1..999; 0 volta à do formato. Só na sala de espera
 }
 ```
+
+**Vida inicial combinada.** A mesa livre prometia "vida configurável" no resumo do
+formato e não havia onde configurar; nenhuma mesa jogava regra da casa. Gravar
+`vidaInicial` na sala de espera já atualiza a vida de todos os sentados (o lobby
+mostra `Player.life`), e START_MATCH, RESET_MATCH e quem entra no meio usam
+`vidaInicialDaMesa(state)` — a combinada, ou a do formato quando é 0.
+
+`INTENT_SET_LIFE { absolute }` aceita até ±99.999 (era ±999): somando cliques a vida
+passava de 999, e o valor digitado por cima era recusado.
 
 **Uma intenção para os cinco controles, e não cinco.** As opções são um
 formulário do anfitrião, preenchido de uma vez: cinco intenções seriam cinco
@@ -508,6 +518,10 @@ marcador gravava `-1`. Agora é `<= 0`, como no `INTENT_ADD_COUNTER`.
 | `INTENT_CAST_COMMANDER`       | `{ entityId }`       | `COMMAND` → `BATTLEFIELD` e **incrementa `commanderTax` em 2**                      |
 | `INTENT_FETCH_FROM_SIDEBOARD` | `{ scryfallId, to }` | Puxa do sideboard durante a partida — atende _Wish_, _Learn_, _Karn_ (`DOC-037` §8) |
 | `INTENT_SHUFFLE`              | `{ zone, keepTop? }` | Alias canônico de `INTENT_SHUFFLE_ZONE`                                             |
+
+**Arrastar também conjura.** `INTENT_CHANGE_ZONE` (e o lote) de `COMMAND` para `BATTLEFIELD` com
+uma carta `isCommander` soma 2 ao `commanderTax` do DONO, como o botão. Só o botão somava, e arrastar
+é o gesto que quase todo mundo usa — o imposto ficava em zero a partida inteira.
 
 > **Nota de nomenclatura:** `INTENT_SHUFFLE` e `INTENT_SHUFFLE_ZONE` são o **mesmo** comando.
 > Padronize em `INTENT_SHUFFLE` no `registry.ts` e mantenha o outro apenas como alias de

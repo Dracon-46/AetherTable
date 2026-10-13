@@ -44,4 +44,5 @@ export class RoomState extends Schema {
   @type('string') public votacaoAutor!: string;
   @type('string') public votacaoSim!: string;
   @type('number') public votacaoExpiraEm!: number;
+  @type('number') public vidaInicial!: number;
 }

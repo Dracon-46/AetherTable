@@ -153,6 +153,8 @@ export interface ConfigDaMesa {
   votacaoAutor: string;
   votacaoSim: string;
   votacaoExpiraEm: number;
+  /** Vida inicial combinada no lobby. `0` = a do formato. */
+  vidaInicial: number;
 }
 
 const CONFIG_INICIAL: ConfigDaMesa = {
@@ -172,6 +174,7 @@ const CONFIG_INICIAL: ConfigDaMesa = {
   votacaoAutor: '',
   votacaoSim: '',
   votacaoExpiraEm: 0,
+  vidaInicial: 0,
   turnoIniciadoEm: 0,
 };
 
