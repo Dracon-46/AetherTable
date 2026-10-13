@@ -34,7 +34,6 @@ import { useEffect } from 'react';
 import type { Room } from 'colyseus.js';
 import {
   ACOES_DE_ATALHO,
-  TECLA_NAO_ATRIBUIDA,
   acaoDaTecla,
   normalizarTecla,
   type AcaoDeAtalho,
@@ -449,5 +448,3 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
     return () => window.removeEventListener('keydown', onKey);
   }, [room, ativo, atalhos]);
 }
-
-export { TECLA_NAO_ATRIBUIDA };

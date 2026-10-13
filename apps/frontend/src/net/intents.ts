@@ -11,7 +11,7 @@ import type { PlayerCounter, SetRoomConfigPayload } from '@aethertable/shared-ty
 let moveCardLastSent = 0;
 const MOVE_THROTTLE_MS = 50; // 20/s
 
-export function sendIntent(room: Room, type: string, payload?: object) {
+function sendIntent(room: Room, type: string, payload?: object) {
   room.send(type, payload ?? {});
 }
 

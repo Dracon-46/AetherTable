@@ -8,7 +8,7 @@
  * Requisitos: RN02, RN13, FR-06, ADR-004.
  */
 
-import { HIDDEN_ZONES, PUBLIC_ZONES, type Zone } from '@aethertable/shared-types';
+import { PUBLIC_ZONES, type Zone } from '@aethertable/shared-types';
 
 /** O minimo que `podeVer` precisa saber. Mantem a funcao testavel sem o Schema. */
 export interface VisibilityInput {
@@ -107,9 +107,4 @@ export function revoga(lista: string, sid: string): string {
     .split(',')
     .filter((entrada) => entrada !== sid)
     .join(',');
-}
-
-/** A zona esconde a identidade da carta por padrao? */
-export function zonaEOculta(zone: string): boolean {
-  return HIDDEN_ZONES.has(zone as Zone);
 }

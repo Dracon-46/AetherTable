@@ -122,10 +122,6 @@ export function logBusca(actorId: string, nome: string, zona: string): LogEvent 
   return criarLog('SEARCH', actorId, `${nome} está procurando em ${nomeDaZona(zona)}`);
 }
 
-export function logMoer(actorId: string, nome: string, amount: number): LogEvent {
-  return criarLog('MILL', actorId, `${nome} moveu ${amount} cartas do grimório para o cemitério`);
-}
-
 export function logVida(actorId: string, nome: string, antes: number, depois: number): LogEvent {
   return criarLog('LIFE', actorId, `${nome}: vida ${antes} → ${depois}`);
 }

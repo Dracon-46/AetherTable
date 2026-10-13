@@ -3,6 +3,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 import reactHooks from 'eslint-plugin-react-hooks';
+import nextPlugin from '@next/eslint-plugin-next';
 
 export default tseslint.config(
   {
@@ -115,6 +116,27 @@ export default tseslint.config(
     rules: {
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+    },
+  },
+  {
+    // O PLUGIN DO NEXT NUNCA TINHA RODADO.
+    //
+    // O frontend usava `next lint`, que procura o plugin do Next na config — e
+    // esta config nunca o carregou: o `next lint` avisava "The Next.js plugin was
+    // not detected" e seguia só com as regras genéricas. As regras do Next
+    // (`<img>` sem otimização, `<a>` para rota interna, scripts síncronos,
+    // Core Web Vitals) não eram verificadas em lugar nenhum. E o `next lint`
+    // está deprecado: sai no Next 16. O frontend passou para a CLI do ESLint, com
+    // o plugin declarado aqui.
+    files: ['apps/frontend/**/*.{ts,tsx}'],
+    plugins: { '@next/next': nextPlugin },
+    settings: { next: { rootDir: 'apps/frontend/' } },
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs['core-web-vitals'].rules,
+      // Regra do roteador `pages/`. O projeto é App Router: sem a pasta, a regra
+      // só emitia "Pages directory cannot be found" a cada execução.
+      '@next/next/no-html-link-for-pages': 'off',
     },
   },
   {

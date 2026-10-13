@@ -34,7 +34,7 @@ import { PrismaService } from '../common/prisma/prisma.service.js';
  *     já estivesse com token na mão seguiria administrando.
  */
 
-export const CHAVE_DE_PAPEIS = 'aether:papeis';
+const CHAVE_DE_PAPEIS = 'aether:papeis';
 
 /**
  * Papel mínimo da rota. Sem o decorador, a rota exige ADMIN — o padrão SEGURO

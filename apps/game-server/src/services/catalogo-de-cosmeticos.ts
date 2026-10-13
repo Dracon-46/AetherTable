@@ -67,7 +67,7 @@ interface RespostaDoCatalogo {
  * Busca e aplica. Devolve quantos itens entraram, ou `null` se nada mudou ou
  * a busca falhou — o chamador só usa isso para o log.
  */
-export async function sincronizarCatalogo(): Promise<number | null> {
+async function sincronizarCatalogo(): Promise<number | null> {
   try {
     const controle = new AbortController();
     // Sem timeout, uma API Core pendurada seguraria este fetch indefinidamente
@@ -141,12 +141,4 @@ export function iniciarSincronizacaoDoCatalogo(): void {
   };
 
   void tique();
-}
-
-/** Só para teste: desliga o ciclo e esquece o que foi aplicado. */
-export function pararSincronizacaoDoCatalogo(): void {
-  if (timer) clearTimeout(timer);
-  timer = null;
-  versaoAplicada = -1;
-  jaSincronizou = false;
 }

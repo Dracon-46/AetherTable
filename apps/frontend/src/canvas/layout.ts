@@ -51,7 +51,7 @@
  * carta nenhuma.
  */
 
-export const LOGICAL_W = 1920;
+const LOGICAL_W = 1920;
 
 /**
  * Largura lógica em telas estreitas.
@@ -61,13 +61,13 @@ export const LOGICAL_W = 1920;
  * precisam caber lado a lado para o jogo funcionar (~6) — e daí sai a largura.
  * O que sobra vira rolagem vertical, não miniatura.
  */
-export const LOGICAL_W_ESTREITO = 900;
+const LOGICAL_W_ESTREITO = 900;
 
 export const CARD_W = 120;
 export const CARD_H = Math.round(CARD_W * 1.396);
 
 /** Altura da faixa de mão na base da mesa. */
-export const HAND_H = CARD_H + 32;
+const HAND_H = CARD_H + 32;
 
 /**
  * Respiro entre duas faixas.
@@ -90,7 +90,7 @@ export const ESPACO_ENTRE_FAIXAS = 18;
  * são desenhadas a 62%. Sobrava quase metade da faixa de espaço vazio, quatro
  * vezes na tela, empurrando a faixa em foco para caber no que restava.
  */
-export const FAIXA_H = Math.round(CARD_H * 0.62) + 52;
+const FAIXA_H = Math.round(CARD_H * 0.62) + 52;
 
 /**
  * A faixa em foco: onde o jogo realmente acontece.
@@ -104,10 +104,10 @@ export const FAIXA_H = Math.round(CARD_H * 0.62) + 52;
  * O custo é a faixa dos oponentes ficar menor — que é exatamente a troca certa:
  * a mesa deles é consulta, a minha é trabalho.
  */
-export const FAIXA_FOCO_H = CARD_H * 4 + 96;
+const FAIXA_FOCO_H = CARD_H * 4 + 96;
 
 /** Quanto uma faixa fora de foco encolhe. */
-export const ESCALA_FORA_DE_FOCO = 0.62;
+const ESCALA_FORA_DE_FOCO = 0.62;
 /**
  * Escala das cartas de uma faixa. Exportada porque o GameBoard precisa da
  * MESMA conta: com o número solto nos dois lados, mover uma âncora aqui
@@ -122,7 +122,7 @@ export const escalaDaFaixa = (emFoco: boolean) => (emFoco ? 1 : ESCALA_FORA_DE_F
 const MARGEM_BASE = 20;
 
 /** Reservado à direita de cada faixa para a zona de comando. */
-export const LARGURA_COMANDO = CARD_W + 48;
+const LARGURA_COMANDO = CARD_W + 48;
 /**
  * Reservado à esquerda para as pilhas.
  *
@@ -130,8 +130,8 @@ export const LARGURA_COMANDO = CARD_W + 48;
  * cemitério, exílio e reserva. Em tela estreita elas passam a ocupar uma grade
  * 2x2, que custa metade da largura pelo dobro da altura.
  */
-export const LARGURA_PILHAS = 4 * (CARD_W + 14) + 24;
-export const LARGURA_PILHAS_GRADE = 2 * (CARD_W + 14) + 24;
+const LARGURA_PILHAS = 4 * (CARD_W + 14) + 24;
+const LARGURA_PILHAS_GRADE = 2 * (CARD_W + 14) + 24;
 
 export interface Ponto {
   x: number;
@@ -298,7 +298,7 @@ export function montarMesa(ordem: string[], focoId: string, opcoes: OpcoesMesa =
 }
 
 /** Respiro entre as células da grade e entre elas e a borda da mesa. */
-export const ESPACO_DA_GRADE = 16;
+const ESPACO_DA_GRADE = 16;
 
 /**
  * Quantas colunas para N jogadores.
@@ -423,7 +423,7 @@ export function montarGrade(ordem: string[], focoId: string): Mesa {
  * tela, só a escala muda. (0, 0) continua sendo "sem coordenada — centralize",
  * e por isso `paraCoordenadaRelativa` nunca devolve 0 exato.
  */
-export const FRACAO_MINIMA = 0.0001;
+const FRACAO_MINIMA = 0.0001;
 
 export function posicaoNoCampo(faixa: Faixa, x: number, y: number): Ponto {
   const { campo } = faixa;
@@ -859,7 +859,7 @@ export function escalasDaMesaFocada(
 }
 
 /** Só a escala com que a mesa vai de fato ser desenhada. */
-export function escalaDaMesaFocada(altura: number, fator: number = FATOR_CARTA_PADRAO): number {
+function escalaDaMesaFocada(altura: number, fator: number = FATOR_CARTA_PADRAO): number {
   return escalasDaMesaFocada(altura, fator).efetiva;
 }
 

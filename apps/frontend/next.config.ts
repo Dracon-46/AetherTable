@@ -3,7 +3,7 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   reactStrictMode: true,
   // Pacotes do workspace consumidos como TS-fonte precisam ser transpilados.
-  transpilePackages: ['@aethertable/ui', '@aethertable/shared-types'],
+  transpilePackages: ['@aethertable/shared-types'],
   images: {
     // Continuamos sem HOSPEDAR arte de carta: o backend só reencaminha o que a
     // CDN da Scryfall serve (`GET /api/v1/cards/img/:id`), porque o navegador do

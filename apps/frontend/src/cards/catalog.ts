@@ -356,16 +356,3 @@ export function useHidratarCartas(ids: Array<string | undefined | null>): void {
     if (chave) hidratar(chave.split(','));
   }, [chave, hidratar]);
 }
-
-/** Nome exibível, com recuo honesto quando ainda não chegou. */
-export function nomeDaCarta(meta: CardMeta | null | undefined, faceIndex = 0): string {
-  if (!meta) return 'Carta';
-  return meta.faces[faceIndex]?.name ?? meta.name;
-}
-
-/** P/T impresso da face visível — só para criaturas. */
-export function ptImpresso(meta: CardMeta | null, faceIndex = 0): string | null {
-  const face = meta?.faces[faceIndex];
-  if (!face?.power || !face?.toughness) return null;
-  return `${face.power}/${face.toughness}`;
-}

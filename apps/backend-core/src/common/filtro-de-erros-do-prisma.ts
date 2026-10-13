@@ -45,9 +45,7 @@ export class FiltroDeErrosDoPrisma extends BaseExceptionFilter {
 }
 
 /** A exceção HTTP equivalente, ou `null` quando o código não tem tradução segura. */
-export function traduzirErroDoPrisma(
-  erro: Prisma.PrismaClientKnownRequestError,
-): HttpException | null {
+function traduzirErroDoPrisma(erro: Prisma.PrismaClientKnownRequestError): HttpException | null {
   switch (erro.code) {
     case 'P2002':
       return new ConflictException('Já existe um registro com estes dados.');

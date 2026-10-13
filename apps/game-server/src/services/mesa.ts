@@ -42,7 +42,7 @@ export function atualizarContagens(state: RoomState, playerId: string): void {
 }
 
 /** Apaga as setas que partem de, ou apontam para, uma carta ou um jogador. */
-export function removerSetasDe(state: RoomState, id: string): void {
+function removerSetasDe(state: RoomState, id: string): void {
   state.arrows.forEach((seta, chave) => {
     if (seta.fromId === id || seta.toId === id) state.arrows.delete(chave);
   });

@@ -1,7 +1,6 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import {
   avaliarLegalidade,
-  contarCartas as contarCartasCompartilhado,
   contarTodasAsLinhas,
   type CartaValidavel,
   type DeckValidavel as DeckValidavelCompartilhado,
@@ -52,9 +51,6 @@ const logger = new Logger('formato');
 export type CartaDoDeck = CartaValidavel;
 export type DeckValidavel = DeckValidavelCompartilhado;
 
-/** Soma as cartas contáveis (main + comando + feitiço-assinatura). */
-export const contarCartas = contarCartasCompartilhado;
-
 /**
  * Recusa o deck que não pode entrar numa mesa deste formato.
  *
@@ -83,12 +79,3 @@ export function validarDeckParaFormato(deck: DeckValidavel, formatoDaSala?: stri
     throw new BadRequestException(erros.map((e) => e.mensagem).join(' '));
   }
 }
-
-/**
- * A avaliação completa, para quem quer os avisos e não só o bloqueio.
- *
- * Reexportado daqui para os serviços do backend não precisarem saber que a
- * regra mora em `shared-types` — e para o dia em que uma regra precisar de
- * dado que só o banco tem, o ponto de costura já existir.
- */
-export { avaliarLegalidade };

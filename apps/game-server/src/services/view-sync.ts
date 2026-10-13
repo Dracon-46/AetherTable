@@ -19,7 +19,7 @@ import { podeVer } from '../schema/visibility';
  */
 
 /** Garante que o cliente tem uma StateView. Sem ela, ele veria tudo. */
-export function garantirView(client: Client): StateView {
+function garantirView(client: Client): StateView {
   if (!client.view) {
     client.view = new StateView();
   }
@@ -27,7 +27,7 @@ export function garantirView(client: Client): StateView {
 }
 
 /** Reconcilia a inscricao de UMA carta para UM cliente. */
-export function reconciliarCarta(client: Client, card: Card): void {
+function reconciliarCarta(client: Client, card: Card): void {
   const view = garantirView(client);
   const permitido = podeVer(card, client.sessionId);
   const inscrito = view.has(card);

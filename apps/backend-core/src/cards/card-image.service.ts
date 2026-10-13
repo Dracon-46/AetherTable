@@ -24,8 +24,8 @@ import { Injectable, Logger } from '@nestjs/common';
 /** Ids da Scryfall são UUID v4. Qualquer outra coisa não vira URL. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const QUALIDADES = ['small', 'normal', 'large', 'art_crop'] as const;
-export const FACES = ['front', 'back'] as const;
+const QUALIDADES = ['small', 'normal', 'large', 'art_crop'] as const;
+const FACES = ['front', 'back'] as const;
 
 export type Qualidade = (typeof QUALIDADES)[number];
 export type Face = (typeof FACES)[number];
