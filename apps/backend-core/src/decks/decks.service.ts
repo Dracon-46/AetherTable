@@ -158,6 +158,14 @@ export class DecksService {
             gameChanger: typeof extra?.game_changer === 'boolean' ? extra.game_changer : undefined,
           };
         });
+        await this.sincronizarResumo(
+          deck,
+          deck.cards as unknown as Array<{
+            scryfallId: string;
+            boardType: BoardType;
+            colorIdentity?: string[];
+          }>,
+        );
       } catch (erro) {
         // A hidratação é enriquecimento: se a Scryfall cair, o deck ainda
         // precisa ser devolvido — só sem nome, set e legalidade.
@@ -207,14 +215,120 @@ export class DecksService {
     return { success: true };
   }
 
-  async updateDeck(userId: string, deckId: string, name: string) {
+  async updateDeck(
+    userId: string,
+    deckId: string,
+    dados: { name?: string; description?: string; isFavorite?: boolean; isPublic?: boolean },
+  ) {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
+    // Só o que veio: um `undefined` mandado ao Prisma é ignorado, mas deixar a
+    // lista explícita impede que um campo novo do DTO vire escrita sem querer.
+    const { name, description, isFavorite, isPublic } = dados;
     return this.prisma.deck.update({
       where: { id: deckId },
-      data: { name },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(isFavorite !== undefined ? { isFavorite } : {}),
+        ...(isPublic !== undefined ? { isPublic } : {}),
+      },
     });
+  }
+
+  /**
+   * ─── CLONAR UM DECK ──────────────────────────────────────────────────────
+   *
+   * Testar uma variação ("e se eu tirar o pacote de ramp?") exigia exportar,
+   * criar um deck novo e importar — e a importação refaz a busca de cada
+   * carta. Clonar copia as linhas como estão, impressão por impressão, numa
+   * transação só: ou o deck novo nasce inteiro, ou não nasce.
+   *
+   * O clone nasce PRIVADO e fora dos favoritos: é um rascunho, não uma
+   * segunda publicação do original.
+   */
+  async clonarDeck(userId: string, deckId: string) {
+    const original = await this.prisma.deck.findFirst({
+      where: { id: deckId, userId },
+      include: { cards: true },
+    });
+    if (!original) throw new NotFoundException('Deck não encontrado');
+
+    const nome = `${original.name} (cópia)`.slice(0, 80);
+    return this.prisma.$transaction(async (tx) => {
+      const novo = await tx.deck.create({
+        data: {
+          userId,
+          name: nome,
+          description: original.description,
+          formatId: original.formatId,
+          commanderId: original.commanderId,
+          partnerId: original.partnerId,
+          colorIdentity: original.colorIdentity,
+          cardCount: original.cardCount,
+        },
+      });
+      if (original.cards.length > 0) {
+        await tx.deckCard.createMany({
+          data: original.cards.map((c) => ({
+            deckId: novo.id,
+            scryfallId: c.scryfallId,
+            quantity: c.quantity,
+            boardType: c.boardType,
+          })),
+        });
+      }
+      return novo;
+    });
+  }
+
+  /**
+   * ─── COMANDANTE E IDENTIDADE DE COR, GRAVADOS AO ABRIR ───────────────────
+   *
+   * `commanderId`, `partnerId` e `colorIdentity` existiam na tabela e nunca
+   * eram escritos (DOC-094 II.3): a lista de decks não tinha como mostrar o
+   * comandante nem as cores sem abrir cada deck. Calcular a cada mutação
+   * custaria uma consulta à Scryfall por clique de quantidade; aqui a
+   * hidratação JÁ aconteceu, então o resumo sai de graça — e quem edita um
+   * deck o abre, então ele nunca fica muito tempo defasado.
+   *
+   * Só grava quando mudou: `updatedAt` é `@updatedAt`, e regravar o mesmo
+   * valor reordenaria a lista de decks a cada visualização.
+   */
+  private async sincronizarResumo(
+    deck: {
+      id: string;
+      commanderId: string | null;
+      partnerId: string | null;
+      colorIdentity: string[];
+    },
+    cartas: Array<{ scryfallId: string; boardType: BoardType; colorIdentity?: string[] }>,
+  ): Promise<void> {
+    const comandantes = cartas.filter((c) => c.boardType === BoardType.COMMANDER);
+    const commanderId = comandantes[0]?.scryfallId.toLowerCase() ?? null;
+    const partnerId = comandantes[1]?.scryfallId.toLowerCase() ?? null;
+    // Sem comandante (Modern, Pauper…), a identidade é a do deck inteiro.
+    const fonte = comandantes.length > 0 ? comandantes : cartas;
+    const cores = new Set(fonte.flatMap((c) => c.colorIdentity ?? []));
+    const colorIdentity = ['W', 'U', 'B', 'R', 'G'].filter((c) => cores.has(c));
+
+    const igual =
+      deck.commanderId === commanderId &&
+      deck.partnerId === partnerId &&
+      deck.colorIdentity.join('') === colorIdentity.join('');
+    if (igual) return;
+
+    try {
+      await this.prisma.deck.update({
+        where: { id: deck.id },
+        data: { commanderId, partnerId, colorIdentity },
+      });
+    } catch (erro) {
+      // Resumo é conveniência da lista: falhar aqui não pode derrubar a
+      // abertura do deck.
+      this.logger.warn(`Resumo do deck ${deck.id} não foi gravado: ${String(erro)}`);
+    }
   }
 
   async removeCard(userId: string, deckId: string, cardId: string) {

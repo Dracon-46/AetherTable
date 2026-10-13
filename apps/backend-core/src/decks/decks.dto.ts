@@ -72,9 +72,22 @@ export const CriarDeckDto = z.object({
 });
 export type CriarDeckDto = z.infer<typeof CriarDeckDto>;
 
-export const AtualizarDeckDto = z.object({
-  name: z.string().trim().min(1).max(80),
-});
+/**
+ * Atualização PARCIAL do deck: cada campo é opcional, e um corpo vazio é
+ * recusado. Era só `name` — e `description`, `isFavorite` e `isPublic`
+ * existiam na tabela sem nenhum caminho para serem escritos.
+ */
+export const AtualizarDeckDto = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(2000).optional(),
+    isFavorite: z.boolean().optional(),
+    isPublic: z.boolean().optional(),
+  })
+  .strict()
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
+    message: 'Nada para atualizar',
+  });
 export type AtualizarDeckDto = z.infer<typeof AtualizarDeckDto>;
 
 export const ImportarDeckDto = z.object({

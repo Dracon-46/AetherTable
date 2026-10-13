@@ -48,10 +48,40 @@ const ORDEM_DOS_GRUPOS = [
   'Vermelho',
   'Verde',
   'Incolor',
+  // Por raridade, da mais rara para a mais comum.
+  'Mítica',
+  'Rara',
+  'Incomum',
+  'Comum',
+  'Especial',
   // Terreno fecha os três cortes: é o rodapé natural de uma decklist.
   'Terrenos',
   'Outros',
+  // A reserva NÃO é parte do deck que vai à mesa, então fica depois de tudo,
+  // em qualquer critério.
+  'Reserva',
 ];
+
+/**
+ * A reserva vira grupo próprio em QUALQUER critério.
+ *
+ * Mandar uma carta para a reserva só mudava o `boardType`: na lista ela
+ * continuava agrupada com as criaturas do deck principal, e a conta de "quantas
+ * criaturas eu tenho" incluía as que nem vão para a mesa.
+ */
+const naReserva = (carta: DeckCarta) => carta.boardType === 'SIDEBOARD';
+
+const NOME_DA_RARIDADE: Record<string, string> = {
+  mythic: 'Mítica',
+  rare: 'Rara',
+  uncommon: 'Incomum',
+  common: 'Comum',
+};
+
+function grupoPorRaridade(carta: DeckCarta): string {
+  if (carta.boardType === 'COMMANDER') return 'Comandante';
+  return NOME_DA_RARIDADE[carta.rarity ?? ''] ?? 'Especial';
+}
 
 /** Rótulo do grupo por linha de tipo. */
 function grupoPorTipo(carta: DeckCarta): string {
@@ -116,7 +146,41 @@ function grupoPorCmc(carta: DeckCarta): string {
   return `Custo ${cmc}`;
 }
 
-export type Criterio = 'tipo' | 'cor' | 'cmc' | 'nenhum';
+export type Criterio = 'tipo' | 'cor' | 'cmc' | 'raridade' | 'nenhum';
+
+/**
+ * ─── ORDENAR É OUTRA PERGUNTA QUE AGRUPAR ──────────────────────────────────
+ *
+ * A ordem era fixa (comandante, depois alfabética). Agrupar por tipo e querer
+ * ver a curva dentro de cada grupo, ou achar as cartas mais caras para trocar
+ * por versões baratas, pedia exportar a lista para outro site.
+ */
+export type Ordenacao = 'nome' | 'cmc' | 'preco' | 'tipo' | 'raridade' | 'cor';
+
+const PESO_DA_RARIDADE: Record<string, number> = { mythic: 0, rare: 1, uncommon: 2, common: 3 };
+
+const preco = (c: DeckCarta) => parseFloat(String(c.priceUsd ?? 0)) || 0;
+
+function chaveDeOrdem(ordem: Ordenacao): (a: DeckCarta, b: DeckCarta) => number {
+  switch (ordem) {
+    case 'cmc':
+      return (a, b) => (a.cmc ?? 99) - (b.cmc ?? 99);
+    case 'preco':
+      // Mais cara primeiro: é a pergunta "onde está o dinheiro deste deck".
+      return (a, b) => preco(b) - preco(a);
+    case 'tipo':
+      return (a, b) => grupoPorTipo(a).localeCompare(grupoPorTipo(b), 'pt-BR');
+    case 'raridade':
+      return (a, b) =>
+        (PESO_DA_RARIDADE[a.rarity ?? ''] ?? 4) - (PESO_DA_RARIDADE[b.rarity ?? ''] ?? 4);
+    case 'cor':
+      return (a, b) =>
+        (a.colorIdentity ?? []).length - (b.colorIdentity ?? []).length ||
+        grupoPorCor(a).localeCompare(grupoPorCor(b), 'pt-BR');
+    default:
+      return () => 0;
+  }
+}
 
 /**
  * Ordena para exibição SEM mutar a entrada.
@@ -125,12 +189,18 @@ export type Criterio = 'tipo' | 'cor' | 'cmc' | 'nenhum';
  * qualquer outra), depois alfabético. `localeCompare` e não `<`: sem ele,
  * "Ãgua" cai depois de "Zumbi".
  */
-export function ordenarParaExibir(cartas: readonly DeckCarta[]): DeckCarta[] {
+export function ordenarParaExibir(
+  cartas: readonly DeckCarta[],
+  ordem: Ordenacao = 'nome',
+): DeckCarta[] {
+  const porChave = chaveDeOrdem(ordem);
   return [...cartas].sort((a, b) => {
     const comandanteA = a.boardType === 'COMMANDER' ? 0 : 1;
     const comandanteB = b.boardType === 'COMMANDER' ? 0 : 1;
     if (comandanteA !== comandanteB) return comandanteA - comandanteB;
-    return (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR');
+    // O nome desempata qualquer critério: duas cartas de custo 3 saem em
+    // ordem alfabética, e não na ordem em que o servidor as mandou.
+    return porChave(a, b) || (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR');
   });
 }
 
@@ -138,23 +208,34 @@ export function ordenarParaExibir(cartas: readonly DeckCarta[]): DeckCarta[] {
 export function agruparCartas(
   cartas: readonly DeckCarta[],
   criterio: Criterio,
-): Array<{ nome: string; cartas: DeckCarta[]; total: number }> {
-  const ordenadas = ordenarParaExibir(cartas);
+  ordem: Ordenacao = 'nome',
+): Array<{ nome: string; cartas: DeckCarta[]; total: number; preco: number }> {
+  const ordenadas = ordenarParaExibir(cartas, ordem);
+  const somar = (lista: DeckCarta[]) => ({
+    total: lista.reduce((t, c) => t + c.quantity, 0),
+    preco: lista.reduce((t, c) => t + preco(c) * c.quantity, 0),
+  });
 
   if (criterio === 'nenhum') {
-    return ordenadas.length
-      ? [
-          {
-            nome: 'Todas as Cartas',
-            cartas: ordenadas,
-            total: ordenadas.reduce((t, c) => t + c.quantity, 0),
-          },
-        ]
-      : [];
+    const principal = ordenadas.filter((c) => !naReserva(c));
+    const reserva = ordenadas.filter(naReserva);
+    return [
+      ...(principal.length
+        ? [{ nome: 'Todas as Cartas', cartas: principal, ...somar(principal) }]
+        : []),
+      ...(reserva.length ? [{ nome: 'Reserva', cartas: reserva, ...somar(reserva) }] : []),
+    ];
   }
 
-  const rotular =
-    criterio === 'cor' ? grupoPorCor : criterio === 'cmc' ? grupoPorCmc : grupoPorTipo;
+  const porCriterio =
+    criterio === 'cor'
+      ? grupoPorCor
+      : criterio === 'cmc'
+        ? grupoPorCmc
+        : criterio === 'raridade'
+          ? grupoPorRaridade
+          : grupoPorTipo;
+  const rotular = (c: DeckCarta) => (naReserva(c) ? 'Reserva' : porCriterio(c));
 
   const grupos = new Map<string, DeckCarta[]>();
   for (const carta of ordenadas) {
@@ -172,11 +253,7 @@ export function agruparCartas(
 
   return [...grupos.entries()]
     .sort(([a], [b]) => indice(a) - indice(b) || a.localeCompare(b, 'pt-BR'))
-    .map(([nome, lista]) => ({
-      nome,
-      cartas: lista,
-      total: lista.reduce((t, c) => t + c.quantity, 0),
-    }));
+    .map(([nome, lista]) => ({ nome, cartas: lista, ...somar(lista) }));
 }
 
 // ─── Bracket de poder ────────────────────────────────────────────────────────
@@ -248,4 +325,41 @@ export function precoTotal(cartas: readonly DeckCarta[] | undefined): string {
   let total = 0;
   for (const c of cartas) total += (parseFloat(String(c.priceUsd ?? 0)) || 0) * c.quantity;
   return total.toFixed(2);
+}
+
+// ─── Exportar ────────────────────────────────────────────────────────────────
+
+/**
+ * ─── A LISTA SAI EM TEXTO QUE OS OUTROS SITES LEEM ─────────────────────────
+ *
+ * Não existia exportar (DOC-094 I.7): o deck entrava pelo importador e não
+ * saía mais, a não ser copiando carta por carta. O formato é o que Moxfield,
+ * Archidekt, MTGO e o nosso próprio importador entendem — "N Nome" — com as
+ * seções de comandante e reserva separadas por linha em branco, que é como
+ * todos eles distinguem as duas.
+ *
+ * `comEdicao` acrescenta "(SET)": mantém a impressão escolhida ao levar o
+ * deck para outro lugar. Sem o número de colecionador, o Arena pode escolher
+ * outra arte da mesma coleção — ele não vem na resposta que o editor tem.
+ */
+export function exportarLista(
+  cartas: readonly DeckCarta[],
+  opcoes: { comEdicao?: boolean } = {},
+): string {
+  const linha = (c: DeckCarta) =>
+    `${c.quantity} ${c.name ?? 'Desconhecido'}${
+      opcoes.comEdicao && c.set && c.set !== '???' ? ` (${c.set})` : ''
+    }`;
+  const ordenadas = ordenarParaExibir(cartas);
+  const secoes = [
+    { titulo: 'Commander', cartas: ordenadas.filter((c) => c.boardType === 'COMMANDER') },
+    { titulo: 'Deck', cartas: ordenadas.filter((c) => c.boardType === 'MAIN') },
+    { titulo: 'Sideboard', cartas: ordenadas.filter((c) => c.boardType === 'SIDEBOARD') },
+  ].filter((sec) => sec.cartas.length > 0);
+  // Só o deck principal dispensa cabeçalho: uma lista sem comandante nem
+  // reserva sai como a lista pura, que é o que todo importador espera.
+  if (secoes.length === 1 && secoes[0]!.titulo === 'Deck') {
+    return secoes[0]!.cartas.map(linha).join('\n');
+  }
+  return secoes.map((sec) => [sec.titulo, ...sec.cartas.map(linha)].join('\n')).join('\n\n');
 }

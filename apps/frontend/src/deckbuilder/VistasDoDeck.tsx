@@ -26,6 +26,7 @@
 
 import React from 'react';
 import {
+  ArrowLeftRight,
   Crown,
   Trash2,
   Plus as PlusIcon,
@@ -42,6 +43,38 @@ export interface AcoesDeCarta {
   onRemover: ((cardId: string) => void) | null;
   onAlternarComandante: ((cardId: string, boardType: string) => void) | null;
   onTrocarArte: ((carta: DeckCarta) => void) | null;
+  /**
+   * Entre o deck principal e a reserva. O backend sempre aceitou qualquer
+   * `boardType`; a tela só sabia alternar comandante, e a reserva só se
+   * preenchia pela importação.
+   */
+  onAlternarReserva?: ((cardId: string, boardType: string) => void) | null;
+}
+
+/** O botão de reserva, igual nas três vistas — muda só o tamanho. */
+function BotaoDeReserva({
+  carta,
+  acoes,
+  className,
+  tamanho = 'h-3.5 w-3.5',
+}: {
+  carta: DeckCarta;
+  acoes: AcoesDeCarta;
+  className: string;
+  tamanho?: string;
+}) {
+  if (!acoes.onAlternarReserva || carta.boardType === 'COMMANDER') return null;
+  const naReserva = carta.boardType === 'SIDEBOARD';
+  return (
+    <button
+      onClick={() => acoes.onAlternarReserva?.(carta.id, carta.boardType)}
+      className={`${className} ${naReserva ? 'text-warning' : ''}`}
+      title={naReserva ? 'Voltar para o deck principal' : 'Mandar para a reserva'}
+      aria-label={naReserva ? 'Voltar para o deck principal' : 'Mandar para a reserva'}
+    >
+      <ArrowLeftRight className={tamanho} />
+    </button>
+  );
 }
 
 /** `true` quando a carta ainda não tem id do servidor — nenhum botão funciona. */
@@ -118,6 +151,11 @@ export const LinhaDeCarta = React.memo(function LinhaDeCarta({
             >
               <Crown className="h-3.5 w-3.5" />
             </button>
+            <BotaoDeReserva
+              carta={carta}
+              acoes={acoes}
+              className="text-text-muted hover:text-primary hover:bg-primary/10 p-1.5 transition-colors"
+            />
             <span className="bg-panel-border mx-0.5 h-4 w-px" />
             <button
               onClick={() => acoes.onMudarQuantidade?.(carta.id, -1)}
@@ -229,6 +267,12 @@ export const LinhaCompacta = React.memo(function LinhaCompacta({
           >
             <Crown className="h-3 w-3" />
           </button>
+          <BotaoDeReserva
+            carta={carta}
+            acoes={acoes}
+            className="text-text-muted hover:text-primary px-1"
+            tamanho="h-3 w-3"
+          />
           <button
             onClick={() => acoes.onRemover?.(carta.id)}
             className="text-text-muted hover:text-danger px-1"
@@ -353,6 +397,12 @@ export const ArteDeCarta = React.memo(function ArteDeCarta({
           >
             <Crown className="h-3 w-3" /> {comandante ? 'Despromover' : 'Comandante'}
           </button>
+          <BotaoDeReserva
+            carta={carta}
+            acoes={acoes}
+            className="rounded bg-black/80 px-2 py-1.5 text-white shadow-lg transition-colors hover:bg-black"
+            tamanho="h-3 w-3"
+          />
           <div className="flex items-center gap-2">
             <button
               onClick={() => acoes.onRemover?.(carta.id)}

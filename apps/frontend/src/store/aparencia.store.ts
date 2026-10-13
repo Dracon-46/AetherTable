@@ -29,7 +29,10 @@ import { armazenamentoSeguro } from './storage';
 export type VisaoDeDeck = 'lista' | 'galeria' | 'compacta';
 
 /** Por qual critério as cartas são agrupadas. */
-export type AgrupamentoDeDeck = 'tipo' | 'cor' | 'cmc' | 'nenhum';
+export type AgrupamentoDeDeck = 'tipo' | 'cor' | 'cmc' | 'raridade' | 'nenhum';
+
+/** Em que ordem as cartas aparecem dentro de cada grupo. */
+export type OrdenacaoDeDeck = 'nome' | 'cmc' | 'preco' | 'tipo' | 'raridade' | 'cor';
 
 /** Tamanho das artes na galeria. Vira número de colunas na grade. */
 export type TamanhoDeCarta = 'pequeno' | 'medio' | 'grande';
@@ -42,6 +45,7 @@ interface AparenciaState {
   menuRecolhido: boolean;
   visaoDeDeck: VisaoDeDeck;
   agrupamentoDeDeck: AgrupamentoDeDeck;
+  ordenacaoDeDeck: OrdenacaoDeDeck;
   tamanhoDeCarta: TamanhoDeCarta;
   densidade: Densidade;
   /** Preferir menos movimento, independente do sistema operacional. */
@@ -53,6 +57,7 @@ interface AparenciaState {
   setMenuRecolhido: (v: boolean) => void;
   setVisaoDeDeck: (v: VisaoDeDeck) => void;
   setAgrupamentoDeDeck: (v: AgrupamentoDeDeck) => void;
+  setOrdenacaoDeDeck: (v: OrdenacaoDeDeck) => void;
   setTamanhoDeCarta: (v: TamanhoDeCarta) => void;
   setDensidade: (v: Densidade) => void;
   setAnimacoesReduzidas: (v: boolean) => void;
@@ -65,6 +70,7 @@ export const useAparencia = create<AparenciaState>()(
       menuRecolhido: false,
       visaoDeDeck: 'lista',
       agrupamentoDeDeck: 'tipo',
+      ordenacaoDeDeck: 'nome',
       tamanhoDeCarta: 'medio',
       densidade: 'confortavel',
       animacoesReduzidas: false,
@@ -74,6 +80,7 @@ export const useAparencia = create<AparenciaState>()(
       setMenuRecolhido: (menuRecolhido) => set({ menuRecolhido }),
       setVisaoDeDeck: (visaoDeDeck) => set({ visaoDeDeck }),
       setAgrupamentoDeDeck: (agrupamentoDeDeck) => set({ agrupamentoDeDeck }),
+      setOrdenacaoDeDeck: (ordenacaoDeDeck) => set({ ordenacaoDeDeck }),
       setTamanhoDeCarta: (tamanhoDeCarta) => set({ tamanhoDeCarta }),
       setDensidade: (densidade) => set({ densidade }),
       setAnimacoesReduzidas: (animacoesReduzidas) => set({ animacoesReduzidas }),

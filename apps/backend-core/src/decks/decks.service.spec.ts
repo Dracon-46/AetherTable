@@ -42,9 +42,17 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
   const deck = {
     id: DECK,
     userId: USUARIO,
+    name: 'Dinossauros',
+    description: null as string | null,
     formatId,
+    commanderId: null as string | null,
+    partnerId: null as string | null,
+    colorIdentity: [] as string[],
+    isFavorite: false,
+    isPublic: false,
     cardCount: inicial.reduce((s, l) => s + l.quantity, 0),
   };
+  const criados: Array<Record<string, unknown>> = [];
   let sequencia = 0;
 
   const porChave = (w: { deckId: string; scryfallId: string; boardType: BoardType }) =>
@@ -67,14 +75,26 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
         ...(args?.include?.cards ? { cards: [...linhas.values()].map((l) => ({ ...l })) } : {}),
       })),
       update: jest.fn(
-        async ({ data }: { data: { cardCount: number | Record<string, number> } }) => {
-          const c = data.cardCount;
+        async ({
+          data,
+        }: {
+          data: { cardCount?: number | Record<string, number> } & Record<string, unknown>;
+        }) => {
+          const { cardCount: c, ...resto } = data;
+          // Campos que não são o contador (nome, favorito, resumo) entram como
+          // vieram — é o que o Prisma faz com um valor absoluto.
+          Object.assign(deck, resto);
           if (typeof c === 'number') deck.cardCount = c;
-          else if (c['increment'] !== undefined) deck.cardCount += c['increment'];
-          else if (c['decrement'] !== undefined) deck.cardCount -= c['decrement'];
+          else if (c?.['increment'] !== undefined) deck.cardCount += c['increment'];
+          else if (c?.['decrement'] !== undefined) deck.cardCount -= c['decrement'];
           return { ...deck };
         },
       ),
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const novo = { id: `deck-novo-${criados.length + 1}`, ...data };
+        criados.push(novo);
+        return { ...novo };
+      }),
     },
     deckCard: {
       findUnique: jest.fn(
@@ -172,6 +192,7 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
   return {
     prisma,
     deck,
+    criados,
     linhas: () => [...linhas.values()],
     soma: () => [...linhas.values()].reduce((s, l) => s + l.quantity, 0),
   };
@@ -505,5 +526,61 @@ describe('DecksService — importação de lista', () => {
 
     expect(banco.linhas()).toEqual([]);
     expect(r.notFound[0]).toMatch(/fora de 1–99/);
+  });
+});
+
+describe('DecksService — clonar, atualizar em parte e o resumo da lista', () => {
+  it('clonar copia cada linha com a mesma impressão e o mesmo contador, num deck privado', async () => {
+    const banco = bancoFalso([
+      { id: 'l1', scryfallId: 'sf-cmd', quantity: 1, boardType: BoardType.COMMANDER },
+      { id: 'l2', scryfallId: 'sf-a', quantity: 1, boardType: BoardType.MAIN },
+      { id: 'l3', scryfallId: 'sf-b', quantity: 4, boardType: BoardType.SIDEBOARD },
+    ]);
+    const { svc } = montar(banco);
+
+    const novo = (await svc.clonarDeck(USUARIO, DECK)) as { id: string; name: string };
+
+    expect(novo.name).toBe('Dinossauros (cópia)');
+    expect(banco.criados[0]).toMatchObject({ cardCount: 6 });
+    expect(banco.criados[0]).not.toHaveProperty('isPublic', true);
+    const copiadas = banco.linhas().filter((l) => l.deckId === novo.id);
+    expect(copiadas.map((l) => [l.scryfallId, l.quantity, l.boardType]).sort()).toEqual(
+      [
+        ['sf-a', 1, BoardType.MAIN],
+        ['sf-b', 4, BoardType.SIDEBOARD],
+        ['sf-cmd', 1, BoardType.COMMANDER],
+      ].sort(),
+    );
+  });
+
+  it('atualizar só o favorito não mexe no nome', async () => {
+    const banco = bancoFalso();
+    const { svc } = montar(banco);
+
+    await svc.updateDeck(USUARIO, DECK, { isFavorite: true });
+
+    expect(banco.deck.isFavorite).toBe(true);
+    expect(banco.deck.name).toBe('Dinossauros');
+  });
+
+  it('abrir o deck grava comandante e identidade de cor — e só quando mudou', async () => {
+    const banco = bancoFalso([
+      { id: 'l1', scryfallId: 'sf-cmd', quantity: 1, boardType: BoardType.COMMANDER },
+      { id: 'l2', scryfallId: 'sf-a', quantity: 1, boardType: BoardType.MAIN },
+    ]);
+    const { svc } = montar(banco, [
+      { id: 'sf-cmd', name: 'Pantlaza', set: 'lcc', color_identity: ['G', 'R', 'W'] },
+      { id: 'sf-a', name: 'Forest', set: 'lcc', color_identity: ['G'] },
+    ]);
+
+    await svc.getDeckById(USUARIO, DECK);
+    expect(banco.deck.commanderId).toBe('sf-cmd');
+    // Na ordem WUBRG, não na ordem em que a Scryfall mandou.
+    expect(banco.deck.colorIdentity).toEqual(['W', 'R', 'G']);
+
+    banco.prisma.deck.update.mockClear();
+    await svc.getDeckById(USUARIO, DECK);
+    // `updatedAt` é @updatedAt: regravar o mesmo resumo reordenaria a lista.
+    expect(banco.prisma.deck.update).not.toHaveBeenCalled();
   });
 });

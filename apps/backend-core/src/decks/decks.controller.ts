@@ -106,7 +106,13 @@ export class DecksController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(AtualizarDeckDto)) dto: AtualizarDeckDto,
   ) {
-    return this.decksService.updateDeck(req.user.sub, id, dto.name);
+    return this.decksService.updateDeck(req.user.sub, id, dto);
+  }
+
+  @Post(':id/clone')
+  @ApiOperation({ summary: 'Copia o deck, carta por carta, num deck novo e privado' })
+  clonarDeck(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
+    return this.decksService.clonarDeck(req.user.sub, id);
   }
 
   @Delete(':id/cards/:cardId')

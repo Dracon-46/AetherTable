@@ -57,6 +57,8 @@ export interface DeckCarta {
   manaCost?: string;
   /** Lista oficial de Game Changers, pela Scryfall. Alimenta o bracket. */
   gameChanger?: boolean;
+  /** `mythic`, `rare`, `uncommon`, `common`… — já vinha da hidratação do backend. */
+  rarity?: string;
   /** Marca uma carta que ainda não voltou do servidor. Some na reconciliação. */
   pendente?: boolean;
 }
@@ -68,6 +70,13 @@ export interface DeckResumo {
   cardCount: number;
   createdAt: string;
   updatedAt: string;
+  description?: string | null;
+  isFavorite?: boolean;
+  isPublic?: boolean;
+  /** Gravados pelo backend ao abrir o deck — ver `sincronizarResumo`. */
+  commanderId?: string | null;
+  partnerId?: string | null;
+  colorIdentity?: string[];
 }
 
 export interface DeckCompleto extends DeckResumo {
@@ -243,6 +252,33 @@ export function useAlternarComandante(deckId: string) {
 }
 
 /**
+ * Move uma carta entre o deck principal e a reserva.
+ *
+ * Destino EXPLÍCITO, e não "alternar": dois cliques rápidos com alternância
+ * leem o mesmo estado e mandam o mesmo destino duas vezes — com o destino
+ * dito, o segundo clique é idempotente.
+ */
+export function useMudarBoard(deckId: string) {
+  const { desfazer, reconciliar } = useFerramentas(deckId);
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ cardId, para }: { cardId: string; para: 'MAIN' | 'SIDEBOARD' }) =>
+      api(`/decks/${deckId}/cards/${cardId}/board-type`, {
+        method: 'PATCH',
+        body: { boardType: para },
+      }),
+    onMutate: ({ cardId, para }) =>
+      escreverOtimista(qc, deckId, (deck) => ({
+        ...deck,
+        cards: deck.cards.map((c) => (c.id === cardId ? { ...c, boardType: para } : c)),
+      })),
+    onError: (erro, _vars, contexto) => desfazer(contexto, erro),
+    onSettled: reconciliar,
+  });
+}
+
+/**
  * Adiciona uma carta pela busca.
  *
  * A carta entra na tela como PENDENTE — com o nome que a busca já conhece —
@@ -343,6 +379,63 @@ export function useCriarDeck() {
       );
       void qc.invalidateQueries({ queryKey: chavesDeDeck.lista() });
     },
+  });
+}
+
+/** O que dá para mudar no deck sem tocar nas cartas. */
+export type AlteracaoDeDeck = Partial<
+  Pick<DeckResumo, 'name' | 'isFavorite' | 'isPublic'> & { description: string }
+>;
+
+/**
+ * Nome, descrição, favorito e público, num PATCH parcial.
+ *
+ * Otimista na lista E no deck aberto: favoritar na lista e entrar no deck em
+ * seguida não pode mostrar a estrela apagada até o servidor responder.
+ */
+export function useAtualizarDeck() {
+  const qc = useQueryClient();
+  const avisar = useToast((s) => s.mostrar);
+  return useMutation({
+    mutationFn: ({ deckId, dados }: { deckId: string; dados: AlteracaoDeDeck }) =>
+      api<DeckResumo>(`/decks/${deckId}`, { method: 'PATCH', body: dados }),
+    onMutate: async ({ deckId, dados }) => {
+      const chave = chavesDeDeck.lista();
+      await qc.cancelQueries({ queryKey: chave });
+      const anterior = qc.getQueryData<DeckResumo[]>(chave);
+      qc.setQueryData<DeckResumo[]>(chave, (lista) =>
+        lista?.map((d) => (d.id === deckId ? { ...d, ...dados } : d)),
+      );
+      qc.setQueryData<DeckCompleto>(chavesDeDeck.um(deckId), (deck) =>
+        deck ? { ...deck, ...dados } : deck,
+      );
+      return { anterior };
+    },
+    onError: (erro, _vars, contexto) => {
+      if (contexto?.anterior) qc.setQueryData(chavesDeDeck.lista(), contexto.anterior);
+      avisar(mensagemDaApi(erro), 'erro');
+    },
+    onSettled: (_d, _e, { deckId }) => {
+      void qc.invalidateQueries({ queryKey: chavesDeDeck.lista() });
+      void qc.invalidateQueries({ queryKey: chavesDeDeck.um(deckId) });
+    },
+  });
+}
+
+/** Copia o deck inteiro num deck novo (privado). */
+export function useClonarDeck() {
+  const qc = useQueryClient();
+  const avisar = useToast((s) => s.mostrar);
+  return useMutation({
+    mutationFn: (deckId: string) => api<DeckResumo>(`/decks/${deckId}/clone`, { method: 'POST' }),
+    onSuccess: (novo) => {
+      qc.setQueryData<DeckResumo[]>(chavesDeDeck.lista(), (lista) =>
+        lista ? [novo, ...lista] : [novo],
+      );
+      void qc.invalidateQueries({ queryKey: chavesDeDeck.lista() });
+      avisar(`Clonado como "${novo.name}".`, 'sucesso');
+    },
+    onError: (erro) => avisar(mensagemDaApi(erro), 'erro'),
   });
 }
 
