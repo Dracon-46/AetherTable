@@ -531,6 +531,16 @@ interface UIState {
   /** Rastreador de mana (pool W/U/B/R/G/C) aberto na tela. Tecla M. */
   manaAberto: boolean;
   /**
+   * A prévia da carta segue o cursor e muda de lado na metade da tela, em vez
+   * de ficar fixa no canto inferior direito. Ligada, ela aparece também em
+   * tela pequena — o canto fixo só existia de `lg` para cima.
+   */
+  previaAoLado: boolean;
+  /** Sons curtos para dado, moeda, reação e "é a sua vez". Desligado por padrão. */
+  efeitosSonoros: boolean;
+  /** A tela treme quando um comandante entra no campo. Desligado por padrão. */
+  tremorDoComandante: boolean;
+  /**
    * ─── ESCALA REAL DA MESA, PARA O PAINEL NÃO MENTIR ───────────────────────
    *
    * `fatorCarta` é o que o jogador PEDIU; a janela tem a última palavra (ver
@@ -574,6 +584,9 @@ interface UIState {
   setAnexosDesativados: (v: boolean) => void;
   setCustoDeManaNaMao: (v: boolean) => void;
   setManaAberto: (v: boolean) => void;
+  setPreviaAoLado: (v: boolean) => void;
+  setEfeitosSonoros: (v: boolean) => void;
+  setTremorDoComandante: (v: boolean) => void;
   /** Chamado pelo `GameBoard` a cada remontagem da geometria. */
   registrarEscalaDaMesa: (efetiva: number, pedida: number) => void;
 }
@@ -613,6 +626,9 @@ export const useUIStore = create<UIState>()(
       anexosDesativados: false,
       custoDeManaNaMao: false,
       manaAberto: false,
+      previaAoLado: false,
+      efeitosSonoros: false,
+      tremorDoComandante: false,
       escalaDaMesa: 1,
       escalaPedida: 1,
 
@@ -690,6 +706,9 @@ export const useUIStore = create<UIState>()(
       setAnexosDesativados: (anexosDesativados) => set({ anexosDesativados }),
       setCustoDeManaNaMao: (custoDeManaNaMao) => set({ custoDeManaNaMao }),
       setManaAberto: (manaAberto) => set({ manaAberto }),
+      setPreviaAoLado: (previaAoLado) => set({ previaAoLado }),
+      setEfeitosSonoros: (efeitosSonoros) => set({ efeitosSonoros }),
+      setTremorDoComandante: (tremorDoComandante) => set({ tremorDoComandante }),
       registrarEscalaDaMesa: (escalaDaMesa, escalaPedida) =>
         // Guarda só quando muda de verdade: o `GameBoard` remonta a geometria
         // a cada redimensionamento, e um `set` idêntico aqui viraria uma
@@ -734,6 +753,9 @@ export const useUIStore = create<UIState>()(
         anexosDesativados: s.anexosDesativados,
         custoDeManaNaMao: s.custoDeManaNaMao,
         manaAberto: s.manaAberto,
+        previaAoLado: s.previaAoLado,
+        efeitosSonoros: s.efeitosSonoros,
+        tremorDoComandante: s.tremorDoComandante,
       }),
     },
   ),

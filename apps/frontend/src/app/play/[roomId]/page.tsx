@@ -29,6 +29,7 @@ import { SelectionBar } from '@/overlay/SelectionBar';
 import { CardHoverPreview } from '@/overlay/CardHoverPreview';
 import { CardEditor } from '@/overlay/CardEditor';
 import { useAtalhosDaMesa } from '@/net/atalhos';
+import { useEfeitosDaMesa } from '@/net/efeitos';
 import { useCosmeticos } from '@/cosmetics/store';
 import { useHidratarPreferencias } from '@/store/useHidratarPreferencias';
 import { RoomLobby } from '@/overlay/RoomLobby';
@@ -95,6 +96,7 @@ export default function PlayRoomPage() {
   // Teclado da mesa. Só depois de a partida começar: na sala de espera as
   // teclas pertencem ao lobby.
   useAtalhosDaMesa(room, phase !== 'WAITING' && !souEspectador);
+  useEfeitosDaMesa();
 
   // Anuncia os cosméticos equipados assim que a sala aceita a conexão. Eles
   // vivem no cliente (localStorage) porque a mesa não pode esperar um

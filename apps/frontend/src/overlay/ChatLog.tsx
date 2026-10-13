@@ -13,7 +13,16 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Minimize2, ChevronDown } from 'lucide-react';
+import {
+  BookOpen,
+  ChevronDown,
+  Dices,
+  Heart,
+  Layers,
+  List,
+  MessageSquare,
+  Minimize2,
+} from 'lucide-react';
 import type { Room } from 'colyseus.js';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { useCardCatalog } from '../cards/catalog';
@@ -41,6 +50,42 @@ const LOG_TYPE_COLORS: Record<string, string> = {
   CHAT: 'text-text',
 };
 
+/**
+ * ─── FILTRO POR ASSUNTO, NÃO SÓ "AÇÃO OU CHAT" ──────────────────────────────
+ *
+ * Cada entrada do log já carrega o tipo, e as abas só sabiam separar chat do
+ * resto. "Quanto de vida eu perdi?" e "quem embaralhou?" eram perguntas que se
+ * respondiam rolando o log inteiro. As abas usam ícone porque o painel tem
+ * 14rem: seis rótulos escritos não cabem.
+ */
+type Filtro = 'ALL' | 'CHAT' | 'CARTAS' | 'GRIMORIO' | 'VIDA' | 'DADOS';
+
+const TIPOS_DO_FILTRO: Record<Exclude<Filtro, 'ALL'>, ReadonlySet<string>> = {
+  CHAT: new Set(['CHAT']),
+  CARTAS: new Set([
+    'PLAY',
+    'ZONE_CHANGE',
+    'ZONE_CHANGE_HIDDEN',
+    'DISCARD',
+    'TAP',
+    'UNTAP',
+    'COUNTER',
+    'TOKEN',
+  ]),
+  GRIMORIO: new Set(['DRAW', 'MILL', 'SHUFFLE', 'PEEK', 'SEARCH']),
+  VIDA: new Set(['LIFE', 'CMD_DAMAGE']),
+  DADOS: new Set(['DICE']),
+};
+
+const ABAS: Array<{ id: Filtro; rotulo: string; Icone: typeof List }> = [
+  { id: 'ALL', rotulo: 'Tudo', Icone: List },
+  { id: 'CHAT', rotulo: 'Chat', Icone: MessageSquare },
+  { id: 'CARTAS', rotulo: 'Cartas', Icone: Layers },
+  { id: 'GRIMORIO', rotulo: 'Grimório', Icone: BookOpen },
+  { id: 'VIDA', rotulo: 'Vida', Icone: Heart },
+  { id: 'DADOS', rotulo: 'Dados e moedas', Icone: Dices },
+];
+
 interface ChatLogProps {
   room: Room<RoomState>;
 }
@@ -62,7 +107,7 @@ export function ChatLog({ room }: ChatLogProps) {
   const setAberto = useUIStore((s) => s.setLogAberto);
   const collapsed = !aberto;
   const [chatInput, setChatInput] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'CHAT' | 'ACTION'>('ALL');
+  const [filter, setFilter] = useState<Filtro>('ALL');
   const scrollRef = useRef<HTMLDivElement>(null);
   const catalogo = useCardCatalog((s) => s.cartas);
   const permitirDeOponentes = useCosmeticos((s) => s.cosmeticosDeOponentes);
@@ -99,11 +144,7 @@ export function ChatLog({ room }: ChatLogProps) {
   const nomeDaCarta = (entry: { scryfallId?: string }) =>
     (entry.scryfallId && catalogo[entry.scryfallId]?.name) || 'uma carta';
 
-  const filtered = log.filter((e) => {
-    if (filter === 'CHAT') return e.type === 'CHAT';
-    if (filter === 'ACTION') return e.type !== 'CHAT';
-    return true;
-  });
+  const filtered = filter === 'ALL' ? log : log.filter((e) => TIPOS_DO_FILTRO[filter].has(e.type));
 
   const handleSendChat = () => {
     const text = chatInput.trim();
@@ -162,17 +203,20 @@ export function ChatLog({ room }: ChatLogProps) {
       {!collapsed && (
         <>
           <div className="border-panel-border bg-panel/90 pointer-events-auto flex border-x backdrop-blur">
-            {(['ALL', 'ACTION', 'CHAT'] as const).map((f) => (
+            {ABAS.map(({ id, rotulo, Icone }) => (
               <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`flex-1 py-1 text-[10px] font-bold uppercase transition-colors ${
-                  filter === f
+                key={id}
+                onClick={() => setFilter(id)}
+                title={rotulo}
+                aria-label={rotulo}
+                aria-pressed={filter === id}
+                className={`flex flex-1 items-center justify-center py-1.5 transition-colors ${
+                  filter === id
                     ? 'border-primary text-primary border-b'
                     : 'text-text-faint hover:text-text-muted'
                 }`}
               >
-                {f === 'ALL' ? 'Todos' : f === 'ACTION' ? 'Ações' : 'Chat'}
+                <Icone className="h-3.5 w-3.5" />
               </button>
             ))}
           </div>

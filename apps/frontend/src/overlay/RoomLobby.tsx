@@ -66,6 +66,7 @@ import { intents } from '../net/intents';
 import { API_URL } from '@/lib/api';
 import type { RoomState } from '../net/schema/RoomState';
 import { esquecerReconexao } from '@/net/reconexao';
+import { lembrarDeckDaSala } from '@/cards/deck-da-sala';
 
 /** Vidas que a mesa pode combinar além da do formato. */
 const VIDAS_INICIAIS = [10, 20, 25, 30, 40, 50, 60, 100] as const;
@@ -183,6 +184,8 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   const escolherDeck = (id: string) => {
     setDeckEscolhido(id);
     intents.setDeck(room, id);
+    // O criador de fichas lê daqui para oferecer as fichas do deck inteiro.
+    lembrarDeckDaSala(codigo, id);
   };
 
   /**

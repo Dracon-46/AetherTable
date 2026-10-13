@@ -360,6 +360,45 @@
   }
 }
 
+/*
+ * ── Tremor da entrada do comandante ─────────────────────────────────────────
+ *
+ * Preferência "Tremor na entrada do comandante" (desligada por padrão). O
+ * bloco de `prefers-reduced-motion` no fim do arquivo zera a animação para
+ * quem pediu menos movimento, então a preferência nunca passa por cima disso.
+ */
+@keyframes terremoto {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  12% {
+    transform: translate(-8px, 3px);
+  }
+  24% {
+    transform: translate(7px, -4px);
+  }
+  36% {
+    transform: translate(-6px, -2px);
+  }
+  48% {
+    transform: translate(5px, 3px);
+  }
+  60% {
+    transform: translate(-3px, 2px);
+  }
+  72% {
+    transform: translate(3px, -1px);
+  }
+  86% {
+    transform: translate(-1px, 0);
+  }
+}
+
+.animate-terremoto {
+  animation: terremoto 0.7s ease-out 1;
+}
+
 .animate-fire-breathe {
   animation: fire-breathe 2s ease-out forwards;
 }

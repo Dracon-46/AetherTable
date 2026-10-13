@@ -41,6 +41,7 @@ import {
   useSalasPublicas,
   type FiltrosDeSala,
 } from '@/net/useSalasPublicas';
+import { lembrarDeckDaSala } from '@/cards/deck-da-sala';
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
@@ -203,6 +204,7 @@ export default function DashboardPage() {
         },
       });
 
+      if (selectedDeckId) lembrarDeckDaSala(code, selectedDeckId);
       let destino = `/play/${code}?token=${passe.seatToken}`;
       if (modalAction === 'CREATE') {
         // A querystring continua levando o essencial porque o `onCreate` roda
