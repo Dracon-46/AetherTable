@@ -5,32 +5,48 @@
 # push ou pull request. Os defeitos encontrados na auditoria de 31/08 eram
 # todos detectáveis por máquina:
 #
-#   - `next build` quebrado (useSearchParams sem Suspense) → passo `build`;
-#   - mirror de schema Colyseus fora de sincronia → passo `schema:check`;
+#   - `next build` quebrado (useSearchParams sem Suspense) → job `build-e2e`;
+#   - mirror de schema Colyseus fora de sincronia → `schema:check`;
 #   - hooks condicionais derrubando a mesa → `lint` (react-hooks/rules-of-hooks);
 #   - intenções que o cliente emitia e o servidor não conhecia → `test`.
 #
-# Cada passo abaixo corresponde a uma classe de bug que chegou ao usuário.
+# ─── POR QUE TRÊS JOBS, E NÃO UM ────────────────────────────────────────────
+#
+# Era um job só, em fila: um lint quebrado escondia o resultado dos testes, e um
+# teste do backend falhando só aparecia depois de 15 minutos de passos que nada
+# tinham a ver com ele. Agora:
+#
+#   qualidade  — o que é barato e pega muita coisa (formatação, schema,
+#                paridade de intenções, lint, typecheck);
+#   testes     — um job POR APP, em paralelo: a falha diz de qual app é, e um
+#                app não espera o outro;
+#   build-e2e  — o build de produção e as telas públicas no Chromium.
+#
+# Os três rodam ao mesmo tempo; o PR só fica verde com os três.
 # ─────────────────────────────────────────────────────────────────────────────
 name: CI
 
 on:
   push:
     # `develop` entra junto com `main` porque as duas sao eternas e as duas
-    # precisam estar sempre verdes: uma `develop` quebrada bloqueia todo mundo,
-    # nao so quem quebrou. `release/*` e `hotfix/*` entram porque e la que a
-    # estabilizacao acontece — descobrir no merge para a `main` e tarde.
-    branches: [main, develop, 'release/**', 'hotfix/**']
+    # precisam estar sempre verdes. `release/*` e `hotfix/*` porque e la que a
+    # estabilizacao acontece. `feature/*` e `fix/*` porque uma branch de
+    # trabalho so era verificada quando virava PR — e subir para ver o CI antes
+    # de abrir o PR era impossivel.
+    branches: [main, develop, 'release/**', 'hotfix/**', 'feature/**', 'fix/**']
   pull_request:
+  # Botão "Run workflow" na aba Actions, para rodar sob demanda.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verificar:
+  qualidade:
+    name: Qualidade (formatação, schema, lint, tipos)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +87,7 @@ jobs:
       - name: Compilar pacotes compartilhados
         # O frontend e o game-server importam `@aethertable/shared-types` pelo
         # `dist`. Sem este passo, typecheck e testes falham por módulo ausente.
-        run: pnpm --filter @aethertable/shared-types build
+        run: pnpm --filter @aethertable/shared-types --filter @aethertable/scryfall-client build
 
       - name: Mirror de schema Colyseus em sincronia
         # Falha se apps/frontend/src/net/schema divergir do game-server. Esta é
@@ -98,8 +114,67 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Testes
-        run: pnpm test
+  testes:
+    name: Testes — ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Um app vermelho não cancela os outros: o relatório completo de uma vez
+      # é o que poupa a segunda volta de push.
+      fail-fast: false
+      matrix:
+        app: [backend-core, game-server, frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Gerar o Prisma Client
+        if: matrix.app == 'backend-core'
+        run: pnpm --filter backend-core exec prisma generate
+
+      - name: Compilar pacotes compartilhados
+        run: pnpm --filter @aethertable/shared-types --filter @aethertable/scryfall-client build
+
+      - name: Jest
+        # `--ci` faz snapshot ausente falhar em vez de ser gravado. Dois
+        # workers: o runner tem 4 núcleos e o jsdom do frontend é pesado — com
+        # o padrão, os workers disputavam memória e o jest morria sem relatório.
+        run: pnpm --filter ${{ matrix.app }} test -- --ci --maxWorkers=2
+
+  build-e2e:
+    name: Build e E2E das telas públicas
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Gerar o Prisma Client
+        run: pnpm --filter backend-core exec prisma generate
 
       - name: Build
         run: pnpm build
