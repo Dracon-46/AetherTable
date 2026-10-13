@@ -23,6 +23,7 @@ import {
   RedefinirComTokenDto,
   RegisterDto,
   TrocarSenhaDto,
+  ExcluirContaDto,
 } from './auth.dto.js';
 import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -175,6 +176,21 @@ export class AuthController {
   @ApiOperation({ summary: 'Troca a senha da própria conta e derruba as outras sessões' })
   async trocarSenha(@Req() req: RequisicaoAutenticada, @Body() dto: TrocarSenhaDto) {
     return this.authService.trocarSenha(req.user.sub, dto.senhaAtual, dto.novaSenha);
+  }
+
+  /**
+   * Excluir a própria conta. Mesmo limite apertado da troca de senha, e pelo
+   * mesmo motivo: a rota confere a senha, então é um oráculo para quem tem o
+   * token.
+   */
+  @Post('excluir-conta')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ curto: { limit: 2, ttl: 10_000 }, longo: { limit: 5, ttl: 60_000 } })
+  @UsePipes(new ZodValidationPipe(ExcluirContaDto))
+  @ApiOperation({ summary: 'Desativa a própria conta e derruba todas as sessões' })
+  async excluirConta(@Req() req: RequisicaoAutenticada, @Body() dto: ExcluirContaDto) {
+    await this.authService.excluirConta(req.user.sub, dto.confirmacao, dto.senha);
   }
 
   // ── Recuperação de senha ───────────────────────────────────────────────────

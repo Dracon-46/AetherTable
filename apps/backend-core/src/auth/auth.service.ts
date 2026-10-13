@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
@@ -325,6 +326,55 @@ export class AuthService {
     );
 
     return { accessToken, expiresIn: this.ttlSegundos };
+  }
+
+  /**
+   * ─── EXCLUIR A PRÓPRIA CONTA ─────────────────────────────────────────────
+   *
+   * `UsersService.softDelete` existia sem rota nenhuma (DOC-094 II.16): a única
+   * forma de sair do produto era pedir a um administrador. A LGPD dá ao titular
+   * o direito de pedir a eliminação, e o caminho precisa estar ao alcance dele.
+   *
+   * É o mesmo soft delete do banimento: a conta some de todo lugar na hora
+   * (login, perfil público, busca — todos filtram `deletedAt: null`) e TODAS as
+   * sessões caem (`tokensValidosApos`), inclusive a de quem pediu. O expurgo
+   * físico segue o fluxo de 30 dias do backoffice (§7.1); prometer aqui um
+   * apagamento automático seria mentir, porque o projeto não tem agendador.
+   *
+   * O último administrador não se exclui: sem administrador, o painel só volta
+   * por acesso direto ao banco — a mesma trava do banimento.
+   */
+  async excluirConta(userId: string, confirmacao: string, senha?: string): Promise<void> {
+    const user = await this.usersService.findForAuthById(userId);
+    if (!user) throw new NotFoundException('Conta não encontrada.');
+
+    if (confirmacao.trim() !== user.username) {
+      throw new BadRequestException(
+        `Para confirmar, digite o seu nome de usuário exato: ${user.username}.`,
+      );
+    }
+    if (user.passwordHash) {
+      // 400 e não 401, como na troca de senha: o `fetcher` trata todo 401
+      // como sessão expirada e deslogaria a pessoa por um campo errado.
+      const confere = senha ? await argon2.verify(user.passwordHash, senha) : false;
+      if (!confere) throw new BadRequestException('A senha não confere.');
+    }
+    if (user.role === 'ADMIN') {
+      const outros = await this.prisma.user.count({
+        where: { role: 'ADMIN', deletedAt: null, id: { not: user.id } },
+      });
+      if (outros === 0) {
+        throw new ForbiddenException(
+          'Você é o último administrador ativo. Promova outra conta antes de excluir a sua.',
+        );
+      }
+    }
+
+    const agora = new Date();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { deletedAt: agora, tokensValidosApos: agora },
+    });
   }
 
   async register(email: string, username: string, pass: string) {

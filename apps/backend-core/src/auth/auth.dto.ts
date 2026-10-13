@@ -57,6 +57,18 @@ export const TrocarSenhaDto = z
 export type TrocarSenhaDto = z.infer<typeof TrocarSenhaDto>;
 
 /**
+ * Excluir a própria conta. `confirmacao` é o nome de usuário digitado — o mesmo
+ * gesto que o backoffice exige para o expurgo, pelo mesmo motivo: o erro não
+ * tem volta pela interface. `senha` é obrigatória para quem TEM senha; conta
+ * de Google/Discord não tem o que conferir, e a confirmação basta.
+ */
+export const ExcluirContaDto = z.object({
+  confirmacao: z.string().trim().min(1, 'Digite o seu nome de usuário').max(40),
+  senha: z.string().max(200).optional(),
+});
+export type ExcluirContaDto = z.infer<typeof ExcluirContaDto>;
+
+/**
  * Pedir o link de redefinição.
  *
  * Só o e-mail. Não há campo de "confirme que é você" nem captcha, e a proteção

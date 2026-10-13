@@ -1,0 +1,140 @@
+'use client';
+
+/**
+ * ExcluirConta.tsx — sair do produto sem pedir a ninguém.
+ *
+ * O backend sabia desativar uma conta (`UsersService.softDelete`) e nenhuma
+ * rota o chamava: a única forma de ir embora era pedir a um administrador. A
+ * LGPD dá ao titular o direito de pedir a eliminação, e o caminho tem de estar
+ * ao alcance dele — na tela de ajustes, não num e-mail para o suporte.
+ *
+ * ─── O QUE A TELA PROMETE, E O QUE NÃO PROMETE ─────────────────────────────
+ *
+ * A conta some na hora (login, perfil, decks) e todas as sessões caem. O
+ * apagamento definitivo dos dados segue o fluxo de 30 dias do backoffice. Não
+ * existe agendador que faça isso sozinho, e por isso a tela não diz "seus dados
+ * serão apagados automaticamente".
+ */
+
+import { useState } from 'react';
+import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import { api, mensagemDaApi } from '@/lib/fetcher';
+import { useAuthStore } from '@/store/auth.store';
+
+const ENTRADA =
+  'bg-table-deep border-panel-border text-text focus:border-danger w-full rounded-md border px-4 py-3 transition-colors focus:outline-none';
+
+export function ExcluirConta() {
+  const username = useAuthStore((s) => s.user?.username ?? '');
+  const logout = useAuthStore((s) => s.logout);
+
+  const [aberto, setAberto] = useState(false);
+  const [confirmacao, setConfirmacao] = useState('');
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  // Conferir o nome aqui também: o botão só acende com o nome exato, e a
+  // pessoa vê na hora que digitou errado em vez de esperar o servidor.
+  const podeEnviar = Boolean(username) && confirmacao.trim() === username && !enviando;
+
+  async function excluir(e: React.FormEvent) {
+    e.preventDefault();
+    if (!podeEnviar) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      await api('/auth/excluir-conta', {
+        method: 'POST',
+        body: { confirmacao: confirmacao.trim(), ...(senha ? { senha } : {}) },
+      });
+      // O servidor já derrubou as sessões; limpar o token local evita uma
+      // última chamada autenticada recusada com "sessão expirada".
+      logout();
+      window.location.href = '/?conta=excluida';
+    } catch (falha) {
+      setErro(mensagemDaApi(falha));
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <section className="border-danger/40 bg-danger/5 mt-8 rounded-xl border p-6 shadow-lg">
+      <h2 className="text-danger mb-2 flex items-center gap-2 text-lg font-bold">
+        <AlertTriangle className="h-5 w-5" />
+        Excluir minha conta
+      </h2>
+      <p className="text-text-muted mb-4 text-sm leading-relaxed">
+        A conta é desativada na hora: você sai de todas as sessões, e o seu perfil e os seus decks
+        deixam de aparecer para qualquer pessoa. O apagamento definitivo dos dados segue a política
+        de retenção de 30 dias. Isto não se desfaz pela tela.
+      </p>
+
+      {!aberto ? (
+        <button
+          onClick={() => setAberto(true)}
+          className="border-danger/60 text-danger hover:bg-danger flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-bold transition-colors hover:text-white"
+        >
+          <Trash2 className="h-4 w-4" />
+          Quero excluir minha conta
+        </button>
+      ) : (
+        <form onSubmit={excluir} className="flex max-w-md flex-col gap-3">
+          <label className="text-text text-sm">
+            Para confirmar, digite o seu nome de usuário:{' '}
+            <span className="font-mono font-bold">{username}</span>
+            <input
+              value={confirmacao}
+              onChange={(e) => setConfirmacao(e.target.value)}
+              autoComplete="off"
+              className={`${ENTRADA} mt-1.5`}
+              aria-label="Nome de usuário, para confirmar"
+            />
+          </label>
+          <label className="text-text text-sm">
+            Senha
+            <input
+              type="password"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              autoComplete="current-password"
+              className={`${ENTRADA} mt-1.5`}
+            />
+            <span className="text-text-faint mt-1 block text-xs">
+              Quem entra com Google ou Discord não tem senha: deixe em branco.
+            </span>
+          </label>
+
+          {erro && <p className="text-danger text-sm">{erro}</p>}
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={!podeEnviar}
+              className="bg-danger hover:bg-danger-hover flex items-center gap-2 rounded-md px-4 py-2 text-sm font-bold text-white transition-colors disabled:opacity-40"
+            >
+              {enviando ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Excluir minha conta
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAberto(false);
+                setConfirmacao('');
+                setSenha('');
+                setErro(null);
+              }}
+              className="text-text-muted hover:text-text rounded-md px-4 py-2 text-sm"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
