@@ -26,6 +26,10 @@ jest.mock('../../../deckbuilder/useDecks', () => ({
   useListaDeDecks: () => ({ data: [], isPending: false, isError: false, error: null }),
   useCriarDeck: () => ({ mutateAsync, isPending: false, isError: false, error: null }),
   useApagarDeck: () => ({ mutate: jest.fn() }),
+  // Favoritar/renomear e clonar entraram no cartão do deck; o teste não usa,
+  // mas a página os chama no render.
+  useAtualizarDeck: () => ({ mutate: jest.fn() }),
+  useClonarDeck: () => ({ mutate: jest.fn() }),
 }));
 
 it('a recusa ao criar não vira rejeição não tratada nem navegação', async () => {
