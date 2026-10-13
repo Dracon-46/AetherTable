@@ -153,6 +153,14 @@ export class AetherRoom extends Room<RoomState> {
     REALTIME_LIMITS.SORTEIO_JANELA_MS,
   );
   /**
+   * Reação é a mesma família (um gesto que só gera broadcast), mas com cota
+   * própria: dividir a dos sorteios faria um "👍" impedir a próxima rolagem.
+   */
+  private readonly limitadorDeReacao = new RateLimiter(
+    REALTIME_LIMITS.MAX_REACOES_POR_JANELA,
+    REALTIME_LIMITS.REACAO_JANELA_MS,
+  );
+  /**
    * Os comandos ja executados, um por jogador (DOC-036 item 130).
    *
    * Antes era um jornal de snapshots, e a Room precisava lembrar de capturar
@@ -780,6 +788,13 @@ export class AetherRoom extends Room<RoomState> {
             code: 'RATE_LIMITED',
             message: `Calma com os sorteios: até ${REALTIME_LIMITS.MAX_SORTEIOS_POR_JANELA} a cada ${Math.round(REALTIME_LIMITS.SORTEIO_JANELA_MS / 1000)} s.`,
           });
+          return;
+        }
+
+        // Reação: freio próprio. Recusa calada — avisar a cada balão a mais
+        // seria mais ruído que o próprio excesso.
+        if (tipo === 'INTENT_REACTION' && !this.limitadorDeReacao.permitir(client.sessionId)) {
+          intentsRejeitadas.inc({ reason: 'too_many_reactions' });
           return;
         }
 

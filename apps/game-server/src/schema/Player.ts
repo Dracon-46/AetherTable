@@ -190,4 +190,19 @@ export class Player extends Schema {
    * identidade da carta (DOC-032 §3.1).
    */
   @type('string') topoReveladoId = '';
+
+  /**
+   * ─── RASTREADOR DE MANA (POOL W/U/B/R/G/C) ────────────────────────────────
+   *
+   * Era o único item do HUD do EDHPlay sem equivalente aqui (DOC-094 II.12).
+   * Sem motor de regras (RN01), o pool é um CONTADOR, não mana de verdade: o
+   * servidor não o consome ao conjurar e não o esvazia ao mudar de etapa — quem
+   * joga marca e limpa. Fica no estado (e não só na tela de quem marcou)
+   * porque é informação pública: a mesa precisa ver que você está com seis
+   * vermelhos flutuando antes do Fireball.
+   *
+   * Mapa e não seis campos: chaves fixas, mas uma assinatura só no cliente. NO
+   * FIM da classe, como todo campo novo (o schema serializa por índice).
+   */
+  @type({ map: 'number' }) manaPool = new MapSchema<number>();
 }

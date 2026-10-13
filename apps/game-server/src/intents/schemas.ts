@@ -12,8 +12,9 @@
 import { z } from 'zod';
 import {
   COUNTER_NAME_PATTERN,
+  CORES_DE_MANA,
   CRONOMETROS_DE_TURNO,
-  DICE_SIDES,
+  REACOES,
   REALTIME_LIMITS,
   TIPOS_DE_MULLIGAN,
   ZONES,
@@ -152,17 +153,32 @@ export const SetLifeIntent = z.union([
 
 // ─── Aleatoriedade e comunicacao ─────────────────────────────────────────────
 
+/**
+ * ─── DADO DE QUALQUER TAMANHO, E VÁRIOS DE UMA VEZ ─────────────────────────
+ *
+ * Só aceitava os oito tamanhos de `DICE_SIDES`, um por vez. Magic pede mais:
+ * Delina rola d6 por criatura, Ancient Copper Dragon rola d20, e muita mesa
+ * caseira usa d3 ou d30. Rolar cinco d6 virava cinco cliques e cinco linhas
+ * de log. `DICE_SIDES` continua como os ATALHOS da interface; o servidor
+ * aceita de 2 a 1000 lados e até 20 dados por pedido.
+ */
 export const RollDiceIntent = z.object({
-  sides: z.union(
-    DICE_SIDES.map((s) => z.literal(s)) as unknown as [
-      z.ZodLiteral<number>,
-      z.ZodLiteral<number>,
-      ...z.ZodLiteral<number>[],
-    ],
-  ),
+  sides: z.number().int().min(2).max(1000),
+  amount: z.number().int().min(1).max(20).default(1),
 });
 
 export const FlipCoinIntent = z.object({}).strict();
+
+export const ReactionIntent = z.object({ tipo: z.enum(REACOES) });
+
+export const ManaPoolIntent = z.discriminatedUnion('acao', [
+  z.object({
+    acao: z.literal('AJUSTAR'),
+    cor: z.enum(CORES_DE_MANA),
+    delta: z.number().int().min(-99).max(99),
+  }),
+  z.object({ acao: z.literal('LIMPAR') }),
+]);
 
 export const ChatIntent = z.object({ text: z.string().min(1).max(500) });
 

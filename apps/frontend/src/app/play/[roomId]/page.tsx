@@ -39,6 +39,8 @@ import { ViewRequestPrompt } from '@/overlay/ViewRequestPrompt';
 import { VotacaoDeRemocao } from '@/overlay/VotacaoDeRemocao';
 import { FimDeJogo } from '@/overlay/FimDeJogo';
 import { SorteioOverlay } from '@/overlay/SorteioOverlay';
+import { ReacoesOverlay } from '@/overlay/ReacoesOverlay';
+import { ManaTracker } from '@/overlay/ManaTracker';
 import { VoiceBridge } from '@/net/voice';
 import { ToastHost } from '@/components/Toast';
 import { mensagemDeConexao } from '@/net/erros';
@@ -331,6 +333,7 @@ export default function PlayRoomPage() {
             <LifePanel room={room} />
           </div>
           <ChatLog room={room} />
+          {!souEspectador && <ManaTracker room={room} />}
           {!souEspectador && <ActionBar room={room} />}
           {!souEspectador && <SelectionBar room={room} />}
           <CardHoverPreview />
@@ -366,6 +369,7 @@ export default function PlayRoomPage() {
           {/* Espectador nao tem mao inicial para decidir. */}
           {!souEspectador && <MulliganModal room={room} />}
           <SorteioOverlay />
+          <ReacoesOverlay />
         </>
       )}
 

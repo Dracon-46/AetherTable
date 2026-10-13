@@ -21,7 +21,13 @@ import {
   ChevronRight,
   Copy,
   Dices,
+  Coins,
   Crosshair,
+  Droplets,
+  Smile,
+  ChevronsRight,
+  Minus,
+  Plus,
   Eye,
   FlipHorizontal,
   Hand,
@@ -44,6 +50,7 @@ import { useGameStore, useUIStore } from '../store/game.store';
 import { useCardCatalog } from '../cards/catalog';
 import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
+import { LISTA_DE_REACOES } from './reacoes';
 
 interface ContextMenuProps {
   room: Room<RoomState>;
@@ -90,6 +97,15 @@ interface Acao {
     max: number;
     executar: (n: number) => void;
   };
+  /**
+   * Pede DOIS números (poder e resistência). O servidor sempre aceitou P/R
+   * exato (`INTENT_SET_PT`), e a interface só sabia somar de um em um: virar
+   * uma criatura em 7/7 eram doze cliques.
+   */
+  pr?: {
+    padrao: [number, number];
+    executar: (p: number, r: number) => void;
+  };
 }
 
 export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
@@ -132,6 +148,9 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   /** Ação esperando um número. `null` = ninguém. */
   const [pedindo, setPedindo] = useState<Acao | null>(null);
   const [qtd, setQtd] = useState(1);
+  const [pr, setPr] = useState<[number, number]>([0, 0]);
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
+  const setManaAberto = useUIStore((s) => s.setManaAberto);
 
   /**
    * Fechar o menu ou trocar de alvo volta para a raiz.
@@ -180,6 +199,114 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   const executar = (fn: () => void) => () => {
     fn();
     fechar();
+  };
+
+  /** Quantas cartas há no grimório do dono — para "posição X a partir do topo". */
+  const tamanhoDoGrimorio = (dono: string) => players[dono]?.libraryCount ?? 0;
+
+  /**
+   * ─── MARCADORES: OS GESTOS QUE ANTES PEDIAM O EDITOR ─────────────────────
+   *
+   * Proliferate, Doubling Season e Vorinclex pedem "mais um em todos" e "o
+   * dobro em todos" — no editor isso era um clique por tipo de marcador. Os
+   * gestos em lote só aparecem quando a carta tem marcador: numa carta limpa
+   * eles não fariam nada.
+   */
+  const menuDeMarcadores = (card: (typeof cards)[string]): Acao[] => {
+    const existentes = Object.entries(card.counters ?? {}).filter(([, v]) => v > 0);
+    const emTodos = (fn: (valor: number) => number) =>
+      executar(() =>
+        existentes.forEach(([nome, v]) => intents.addCounter(room, card.id, nome, fn(v))),
+      );
+    return [
+      {
+        rotulo: 'Marcador +1/+1',
+        icone: <Plus className="h-4 w-4" />,
+        onClick: executar(() => intents.addCounter(room, card.id, '+1/+1', 1)),
+      },
+      {
+        rotulo: 'Marcador −1/−1',
+        icone: <Minus className="h-4 w-4" />,
+        onClick: executar(() => intents.addCounter(room, card.id, '-1/-1', 1)),
+      },
+      {
+        rotulo: 'Outro marcador…',
+        icone: <Sparkles className="h-4 w-4" />,
+        onClick: executar(() => setEditingCard(card.id)),
+      },
+      ...(existentes.length > 0
+        ? [
+            {
+              rotulo: 'Mais um em todos (proliferar)',
+              icone: <Plus className="h-4 w-4" />,
+              onClick: emTodos(() => 1),
+            },
+            {
+              rotulo: 'Menos um em todos',
+              icone: <Minus className="h-4 w-4" />,
+              onClick: emTodos(() => -1),
+            },
+            {
+              rotulo: 'Dobrar todos',
+              icone: <Layers className="h-4 w-4" />,
+              onClick: emTodos((v) => v),
+            },
+            {
+              rotulo: 'Limpar marcadores',
+              icone: <Trash2 className="h-4 w-4" />,
+              perigo: true,
+              onClick: executar(() => intents.clearCounters(room, card.id)),
+            },
+          ]
+        : []),
+    ];
+  };
+
+  /**
+   * P/R atual: o sobreposto, se houver; senão o impresso da face visível.
+   * "*" e campo vazio valem 0 — é o que a carta vale na mesa sem efeito.
+   */
+  const prAtual = (card: (typeof cards)[string]): [number, number] => {
+    if (card.hasPtOverride) return [card.powerOverride, card.toughnessOverride];
+    const meta = card.scryfallId ? catalogo[card.scryfallId] : undefined;
+    const face = meta?.faces[card.isFlipped ? 1 : 0] ?? meta?.faces[0];
+    return [
+      Number(face?.power ?? meta?.power ?? 0) || 0,
+      Number(face?.toughness ?? meta?.toughness ?? 0) || 0,
+    ];
+  };
+
+  const menuDePr = (card: (typeof cards)[string]): Acao[] => {
+    const [p, r] = prAtual(card);
+    const ajustar = (dp: number, dr: number) =>
+      executar(() => intents.setPt(room, card.id, p + dp, r + dr, true));
+    return [
+      {
+        rotulo: `Definir P/R… (agora ${p}/${r})`,
+        icone: <Swords className="h-4 w-4" />,
+        pr: {
+          padrao: [p, r],
+          executar: (np, nr) => intents.setPt(room, card.id, np, nr, true),
+        },
+      },
+      { rotulo: '+1 de poder', icone: <Plus className="h-4 w-4" />, onClick: ajustar(1, 0) },
+      { rotulo: '−1 de poder', icone: <Minus className="h-4 w-4" />, onClick: ajustar(-1, 0) },
+      { rotulo: '+1 de resistência', icone: <Plus className="h-4 w-4" />, onClick: ajustar(0, 1) },
+      {
+        rotulo: '−1 de resistência',
+        icone: <Minus className="h-4 w-4" />,
+        onClick: ajustar(0, -1),
+      },
+      ...(card.hasPtOverride
+        ? [
+            {
+              rotulo: 'Voltar ao P/R impresso',
+              icone: <RotateCcw className="h-4 w-4" />,
+              onClick: executar(() => intents.setPt(room, card.id, 0, 0, false)),
+            },
+          ]
+        : []),
+    ];
   };
 
   let titulo = 'Mesa';
@@ -458,7 +585,83 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
     ];
   } else if (alvo === 'zone') {
     titulo = 'Mesa';
+    /**
+     * ─── O CAMPO VAZIO TAMBÉM É ONDE A MESA "FAZ COISAS" ─────────────────────
+     *
+     * Passar o turno, criar ficha, rolar dado e reagir viviam só na barra de
+     * ações — que nasce recolhida. Quem joga com o mouse na mesa abria o menu
+     * do campo e não achava nada disso. Passar o turno só aparece na sua vez:
+     * fora dela o servidor recusa, e um item que sempre falha é pior que item
+     * nenhum.
+     */
+    const minhaVez = !activePlayerId || activePlayerId === myId;
     acoes = [
+      ...(minhaVez
+        ? [
+            {
+              rotulo: 'Passar o turno',
+              icone: <ChevronsRight className="h-4 w-4" />,
+              onClick: executar(() => intents.passTurn(room)),
+            },
+          ]
+        : []),
+      {
+        rotulo: 'Criar ficha…',
+        icone: <Sparkles className="h-4 w-4" />,
+        onClick: executar(() => toggleModal('tokens')),
+      },
+      {
+        rotulo: 'Rolar dado',
+        icone: <Dices className="h-4 w-4" />,
+        itens: [
+          ...[6, 20].map((lados) => ({
+            rotulo: `D${lados}`,
+            icone: <Dices className="h-4 w-4" />,
+            onClick: executar(() => intents.rollDice(room, lados)),
+          })),
+          {
+            rotulo: 'Vários D6…',
+            icone: <Dices className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantos D6 rolar de uma vez',
+              padrao: 2,
+              min: 1,
+              max: 20,
+              executar: (n: number) => intents.rollDice(room, 6, n),
+            },
+          },
+          {
+            rotulo: 'Outro dado (DX)…',
+            icone: <Dices className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantos lados tem o dado',
+              padrao: 10,
+              min: 2,
+              max: 1000,
+              executar: (n: number) => intents.rollDice(room, n),
+            },
+          },
+        ],
+      },
+      {
+        rotulo: 'Virar moeda',
+        icone: <Coins className="h-4 w-4" />,
+        onClick: executar(() => intents.flipCoin(room)),
+      },
+      {
+        rotulo: 'Reagir',
+        icone: <Smile className="h-4 w-4" />,
+        itens: LISTA_DE_REACOES.map((r) => ({
+          rotulo: `${r.emoji}  ${r.rotulo}`,
+          icone: <Smile className="h-4 w-4" />,
+          onClick: executar(() => intents.react(room, r.tipo)),
+        })),
+      },
+      {
+        rotulo: 'Rastreador de mana',
+        icone: <Droplets className="h-4 w-4" />,
+        onClick: executar(() => setManaAberto(true)),
+      },
       /**
        * COMPRAR ABRE O MENU DA MESA.
        *
@@ -716,19 +919,14 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             onClick: executar(() => intents.setFaceDown(room, card.id, !card.faceDown)),
           },
           {
-            rotulo: '+1/+1',
+            rotulo: 'Marcadores',
             icone: <Sparkles className="h-4 w-4" />,
-            onClick: executar(() => intents.addCounter(room, card.id, '+1/+1', 1)),
+            itens: menuDeMarcadores(card),
           },
           {
-            rotulo: '−1/−1',
-            icone: <Sparkles className="h-4 w-4" />,
-            onClick: executar(() => intents.addCounter(room, card.id, '-1/-1', 1)),
-          },
-          {
-            rotulo: 'Limpar marcadores',
-            icone: <Trash2 className="h-4 w-4" />,
-            onClick: executar(() => intents.clearCounters(room, card.id)),
+            rotulo: 'Poder / resistência',
+            icone: <Swords className="h-4 w-4" />,
+            itens: menuDePr(card),
           },
           {
             rotulo: 'Trazer para frente',
@@ -882,9 +1080,47 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             ]
           : []),
         {
-          rotulo: 'Topo do grimório',
+          // "Topo" era a única entrada para o grimório: o fundo só existia como
+          // atalho de teclado sem tecla de fábrica, e "terceira a partir do
+          // topo" (Hinder, Spin into Myth, Brainstorm ao contrário) não existia.
+          rotulo: 'Para o grimório',
           icone: <ArrowDownToLine className="h-4 w-4" />,
-          onClick: executar(() => intents.changeZone(room, card.id, 'LIBRARY')),
+          itens: [
+            {
+              rotulo: 'Topo do grimório',
+              icone: <ArrowUpDown className="h-4 w-4" />,
+              onClick: executar(() => intents.changeZone(room, card.id, 'LIBRARY')),
+            },
+            {
+              rotulo: 'Fundo do grimório',
+              icone: <ArrowDownToLine className="h-4 w-4" />,
+              // Índice 0 = fundo; o topo é o FIM do array.
+              onClick: executar(() =>
+                intents.changeZone(room, card.id, 'LIBRARY', undefined, undefined, 0),
+              ),
+            },
+            {
+              rotulo: 'Na posição X a partir do topo…',
+              icone: <Layers className="h-4 w-4" />,
+              quantidade: {
+                rotulo: 'Posição a partir do topo (1 = no topo)',
+                padrao: 2,
+                min: 1,
+                max: tamanhoDoGrimorio(card.ownerId) + 1,
+                // Com N cartas, a posição X do topo é o índice N − (X − 1): o
+                // topo é o fim do array, e inserir em N empilha no topo.
+                executar: (x: number) =>
+                  intents.changeZone(
+                    room,
+                    card.id,
+                    'LIBRARY',
+                    undefined,
+                    undefined,
+                    Math.max(0, tamanhoDoGrimorio(card.ownerId) - (x - 1)),
+                  ),
+              },
+            },
+          ],
         },
       );
 
@@ -917,6 +1153,11 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   };
 
   const abrir = (a: Acao) => {
+    if (a.pr) {
+      setPr(a.pr.padrao);
+      setPedindo(a);
+      return;
+    }
     if (a.quantidade) {
       setQtd(a.quantidade.padrao);
       setPedindo(a);
@@ -950,7 +1191,51 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
         </div>
       )}
 
-      {pedindo?.quantidade ? (
+      {pedindo?.pr ? (
+        <form
+          className="flex flex-col gap-2 p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            // Os limites do schema (`SetPtIntent`): fora deles o servidor recusa.
+            const limitar = (n: number) => Math.max(-99, Math.min(99, Math.round(n) || 0));
+            pedindo.pr!.executar(limitar(pr[0]), limitar(pr[1]));
+            fechar();
+          }}
+        >
+          <label className="text-text-faint text-[10px] leading-snug">Poder / resistência</label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              autoFocus
+              min={-99}
+              max={99}
+              value={pr[0]}
+              onChange={(e) => setPr([Number(e.target.value), pr[1]])}
+              onFocus={(e) => e.target.select()}
+              aria-label="Poder"
+              className="border-panel-border bg-table-deep text-text focus:border-primary w-full rounded-md border px-2 py-1.5 text-center text-sm focus:outline-none"
+            />
+            <span className="text-text-muted">/</span>
+            <input
+              type="number"
+              min={-99}
+              max={99}
+              value={pr[1]}
+              onChange={(e) => setPr([pr[0], Number(e.target.value)])}
+              onFocus={(e) => e.target.select()}
+              aria-label="Resistência"
+              className="border-panel-border bg-table-deep text-text focus:border-primary w-full rounded-md border px-2 py-1.5 text-center text-sm focus:outline-none"
+            />
+            <button
+              type="submit"
+              aria-label="Confirmar"
+              className="bg-primary hover:bg-primary-hover flex shrink-0 items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold text-white transition-colors"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </form>
+      ) : pedindo?.quantidade ? (
         <form
           className="flex flex-col gap-2 p-3"
           onSubmit={(e) => {
@@ -1000,7 +1285,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               <span className="min-w-0 flex-1 truncate">{a.rotulo}</span>
               {/* A seta diz que o item ABRE algo em vez de agir. Sem ela, o
                   jogador clica esperando a ação e recebe outra lista. */}
-              {(a.itens || a.quantidade) && (
+              {(a.itens || a.quantidade || a.pr) && (
                 <ChevronRight className="text-text-faint h-3.5 w-3.5 shrink-0" />
               )}
             </button>

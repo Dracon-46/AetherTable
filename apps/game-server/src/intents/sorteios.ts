@@ -102,28 +102,39 @@ export abstract class AcaoDeSorteio<
 
 // ─── Dado ────────────────────────────────────────────────────────────────────
 
-export class RolarDado extends AcaoDeSorteio<typeof S.RollDiceIntent, number> {
+type PedidoDeDado = { sides: number; amount?: number };
+
+export class RolarDado extends AcaoDeSorteio<typeof S.RollDiceIntent, number[]> {
   readonly schema = S.RollDiceIntent;
 
-  protected override sortear(_ctx: IntentContext, { sides }: { sides: number }): number {
-    return rolarDado(sides);
+  /** Um sorteio independente por dado — nunca "sortear o total". */
+  protected override sortear(_ctx: IntentContext, { sides, amount = 1 }: PedidoDeDado): number[] {
+    return Array.from({ length: amount }, () => rolarDado(sides));
   }
 
   protected override anunciar(
     ctx: IntentContext,
-    { sides }: { sides: number },
-    resultado: number,
+    { sides }: PedidoDeDado,
+    resultados: number[],
   ): void {
-    ctx.broadcast('dice', { actorId: ctx.client.sessionId, sides, result: resultado });
+    // `result` continua sendo um número (o total) para quem já desenhava o
+    // evento antigo; a lista vem ao lado.
+    ctx.broadcast('dice', {
+      actorId: ctx.client.sessionId,
+      sides,
+      amount: resultados.length,
+      results: resultados,
+      result: resultados.reduce((a, b) => a + b, 0),
+    });
   }
 
   protected override narrar(
     ctx: IntentContext,
-    { sides }: { sides: number },
-    resultado: number,
+    { sides }: PedidoDeDado,
+    resultados: number[],
   ): LogEvent {
     const sid = ctx.client.sessionId;
-    return logDado(sid, nomeDe(ctx.state, sid), sides, resultado);
+    return logDado(sid, nomeDe(ctx.state, sid), sides, resultados);
   }
 }
 

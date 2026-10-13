@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { getStateCallbacks, type Room } from 'colyseus.js';
-import type { RevealToOwnerEvent } from '@aethertable/shared-types';
+import type { DiceEvent, ReactionEvent, RevealToOwnerEvent } from '@aethertable/shared-types';
 import {
   useGameStore,
   useTableStore,
@@ -118,6 +118,7 @@ function snapPlayer(p: Player): PlayerData {
     eliminationReason: p.eliminationReason ?? '',
     decked: p.decked ?? false,
     topoRevelado: p.topoRevelado ?? false,
+    manaPool: Object.fromEntries(p.manaPool?.entries?.() ?? []),
   };
 }
 
@@ -226,6 +227,11 @@ export function useRoomSync(room: Room<RoomState> | null) {
       $(player).sharedZones.onAdd(reSnap);
       $(player).sharedZones.onChange(reSnap);
       $(player).sharedZones.onRemove(reSnap);
+      // Mapa aninhado como os dois acima: sem isto o pool mudava no servidor
+      // e o rastreador continuava mostrando o valor antigo.
+      $(player).manaPool.onAdd(reSnap);
+      $(player).manaPool.onChange(reSnap);
+      $(player).manaPool.onRemove(reSnap);
       reSnap();
     });
 
@@ -342,8 +348,13 @@ export function useRoomSync(room: Room<RoomState> | null) {
     // Sem estes handlers, olhar o topo do grimório não mostrava nada, o ping
     // não aparecia na mesa e o dado só existia como texto no log.
 
-    room.onMessage('dice', (payload: { actorId: string; sides: number; result: number }) => {
+    room.onMessage('dice', (payload: DiceEvent) => {
       useTableStore.getState().setDado(payload);
+    });
+
+    room.onMessage('reaction', (payload: ReactionEvent) => {
+      if (!payload?.actorId) return;
+      useTableStore.getState().addReacao(payload);
     });
 
     room.onMessage('coin', (payload: { actorId: string; result: 'CARA' | 'COROA' }) => {

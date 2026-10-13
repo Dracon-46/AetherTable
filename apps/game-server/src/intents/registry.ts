@@ -865,6 +865,45 @@ const INTENT_CHAT: IntentHandler<typeof S.ChatIntent> = {
   },
 };
 
+/**
+ * ─── REAÇÃO: UM BALÃO, E MAIS NADA ──────────────────────────────────────────
+ *
+ * A mesa só tinha o chat para "boa jogada" e "e agora?", e digitar no meio de
+ * uma decisão alheia é o que ninguém faz. A reação é o gesto de um clique (ou
+ * uma tecla, de 7 a 0) — e por ser gesto, não é jogada: não muda estado, não
+ * entra no log, não se desfaz. O freio fica na sala (`limitadorDeReacao`).
+ */
+const INTENT_REACTION: IntentHandler<typeof S.ReactionIntent> = {
+  schema: S.ReactionIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx, { tipo }) {
+    ctx.broadcast('reaction', { actorId: ctx.client.sessionId, tipo });
+  },
+};
+
+/**
+ * O pool é do REMETENTE e de mais ninguém: não há alvo no payload, e por isso
+ * não há como mexer no pool de outro jogador. Sem log — marcar mana é
+ * contabilidade de quem joga, e uma linha por clique afogaria o histórico.
+ */
+const INTENT_MANA_POOL: IntentHandler<typeof S.ManaPoolIntent> = {
+  schema: S.ManaPoolIntent,
+  autoriza: 'QUALQUER_JOGADOR',
+  executa(ctx, payload) {
+    const p = ctx.state.players.get(ctx.client.sessionId);
+    if (!p) return;
+    if (payload.acao === 'LIMPAR') {
+      p.manaPool.clear();
+      return;
+    }
+    const novo = Math.max(0, Math.min(99, (p.manaPool.get(payload.cor) ?? 0) + payload.delta));
+    // Zero sai do mapa: um pool "vazio" com seis zeros ocuparia o painel
+    // inteiro de quem olha, e "vazio" e "zerado" são a mesma coisa aqui.
+    if (novo === 0) p.manaPool.delete(payload.cor);
+    else p.manaPool.set(payload.cor, novo);
+  },
+};
+
 const INTENT_PING: IntentHandler<typeof S.PingIntent> = {
   schema: S.PingIntent,
   autoriza: 'QUALQUER_JOGADOR',
@@ -3340,6 +3379,8 @@ export const REGISTRY = {
   INTENT_FLIP_COIN,
   INTENT_CHAT,
   INTENT_PING,
+  INTENT_REACTION,
+  INTENT_MANA_POOL,
   INTENT_COPY_CARD,
   INTENT_MULLIGAN,
   INTENT_BRING_TO_FRONT,

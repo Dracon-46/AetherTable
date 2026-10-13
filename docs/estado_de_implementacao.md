@@ -24,9 +24,9 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 ## 2. Cobertura
 
-- Contrato (`IntentPayloadMap`): **99** intenções
-- Implementadas no servidor: **93**
-- Emitidas pelo cliente: **93**
+- Contrato (`IntentPayloadMap`): **101** intenções
+- Implementadas no servidor: **95**
+- Emitidas pelo cliente: **95**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -70,6 +70,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_KEEP_HAND`            |    ✅    |   ✅    |
 | `INTENT_KICK_PLAYER`          |    ✅    |   ✅    |
 | `INTENT_LEAVE`                |    ✅    |   ✅    |
+| `INTENT_MANA_POOL`            |    ✅    |   ✅    |
 | `INTENT_MELD`                 |    —     |    —    |
 | `INTENT_MILL`                 |    ✅    |   ✅    |
 | `INTENT_MOVE_CARD`            |    ✅    |   ✅    |
@@ -81,6 +82,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_PLANESWALK`           |    —     |    —    |
 | `INTENT_RANDOM_CARD`          |    ✅    |   ✅    |
 | `INTENT_RANDOM_PLAYER`        |    ✅    |   ✅    |
+| `INTENT_REACTION`             |    ✅    |   ✅    |
 | `INTENT_RELEASE`              |    ✅    |   ✅    |
 | `INTENT_REORDER`              |    ✅    |   ✅    |
 | `INTENT_REQUEST_VIEW`         |    ✅    |   ✅    |

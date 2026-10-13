@@ -25,6 +25,7 @@ import {
   SortearJogador,
 } from './sorteios';
 import type { IntentContext } from './registry';
+import * as S from './schemas';
 
 function mesa(ids = ['p1', 'p2']) {
   const state = new RoomState();
@@ -142,7 +143,8 @@ describe('dado e moeda', () => {
   it('o dado transmite o resultado e registra no log', () => {
     const { ctx, transmitidos, logs } = ctxDe(mesa());
 
-    new RolarDado().executa(ctx, { sides: 20 });
+    // O handler recebe o payload JÁ validado: o zod completa `amount: 1`.
+    new RolarDado().executa(ctx, { sides: 20, amount: 1 });
 
     expect(transmitidos).toHaveLength(1);
     const payload = transmitidos[0]!.payload as { sides: number; result: number };
@@ -151,6 +153,33 @@ describe('dado e moeda', () => {
     expect(payload.result).toBeGreaterThanOrEqual(1);
     expect(payload.result).toBeLessThanOrEqual(20);
     expect(logs).toHaveLength(1);
+  });
+
+  it('rola vários dados de uma vez: cada um no intervalo, e o total bate', () => {
+    // Antes eram cinco cliques e cinco linhas de log para 5d6.
+    const { ctx, transmitidos, logs } = ctxDe(mesa());
+
+    new RolarDado().executa(ctx, { sides: 6, amount: 5 });
+
+    const payload = transmitidos[0]!.payload as { results: number[]; result: number };
+    expect(payload.results).toHaveLength(5);
+    for (const r of payload.results) {
+      expect(r).toBeGreaterThanOrEqual(1);
+      expect(r).toBeLessThanOrEqual(6);
+    }
+    expect(payload.result).toBe(payload.results.reduce((a, b) => a + b, 0));
+    // Uma linha só, com cada dado e o total.
+    expect(logs).toHaveLength(1);
+  });
+
+  it('o schema aceita dado de tamanho livre e recusa o absurdo', () => {
+    expect(S.RollDiceIntent.safeParse({ sides: 3 }).success).toBe(true);
+    expect(S.RollDiceIntent.safeParse({ sides: 30, amount: 2 }).success).toBe(true);
+    expect(S.RollDiceIntent.safeParse({ sides: 1 }).success).toBe(false);
+    expect(S.RollDiceIntent.safeParse({ sides: 6, amount: 21 }).success).toBe(false);
+    // Sem `amount`, um dado — o pedido de clientes antigos continua igual.
+    const antigo = S.RollDiceIntent.safeParse({ sides: 20 });
+    expect(antigo.success && antigo.data.amount).toBe(1);
   });
 
   it('a moeda transmite CARA ou COROA — e não só escreve no log', () => {

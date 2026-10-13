@@ -34,6 +34,8 @@ import {
   Coins,
   Dices,
   BookOpen,
+  Droplets,
+  Smile,
   Ghost,
   LogOut,
   Mic,
@@ -52,6 +54,7 @@ import { useRouter } from 'next/navigation';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { useVoiceStore } from '../net/voice';
 import { useToast } from '../components/Toast';
+import { LISTA_DE_REACOES } from './reacoes';
 import type { RoomState } from '../net/schema/RoomState';
 import { esquecerReconexao } from '@/net/reconexao';
 
@@ -59,7 +62,8 @@ interface ActionBarProps {
   room: Room<RoomState>;
 }
 
-const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
+// O d2 estava no servidor desde sempre e faltava aqui (plano de paridade II.15).
+const DICE_SIDES = [2, 4, 6, 8, 10, 12, 20, 100] as const;
 
 /**
  * Teto de sorteios do CLIENTE. Espelha `REALTIME_LIMITS` do servidor de
@@ -135,6 +139,9 @@ export function ActionBar({ room }: ActionBarProps) {
   const setAberta = useUIStore((s) => s.setBarraAberta);
 
   const [showDice, setShowDice] = useState(false);
+  /** Quantos dados por rolagem, e o tamanho do dado personalizado. */
+  const [qtdDados, setQtdDados] = useState(1);
+  const [ladosLivres, setLadosLivres] = useState('');
   const [drawAmount, setDrawAmount] = useState(1);
   const [showDraw, setShowDraw] = useState(false);
 
@@ -172,12 +179,18 @@ export function ActionBar({ room }: ActionBarProps) {
   const { permitir: permitirSorteio, restantes } = useFreioDeSorteio();
 
   const diceRef = useFecharAoClicarFora<HTMLDivElement>(showDice, () => setShowDice(false));
+  const [showReacoes, setShowReacoes] = useState(false);
+  const reacoesRef = useFecharAoClicarFora<HTMLDivElement>(showReacoes, () =>
+    setShowReacoes(false),
+  );
+  const manaAberto = useUIStore((s) => s.manaAberto);
+  const setManaAberto = useUIStore((s) => s.setManaAberto);
   const drawRef = useFecharAoClicarFora<HTMLDivElement>(showDraw, () => setShowDraw(false));
 
   const handleDice = (sides: number) => {
     setShowDice(false);
     if (!permitirSorteio()) return;
-    intents.rollDice(room, sides);
+    intents.rollDice(room, sides, qtdDados);
   };
 
   const handleCoin = () => {
@@ -330,6 +343,45 @@ export function ActionBar({ room }: ActionBarProps) {
             <Coins className="h-4 w-4" />
           </button>
 
+          {/* Reações: o gesto de um clique para "boa jogada" e "e agora?",
+              que antes só existia digitando no chat. */}
+          <div className="relative shrink-0" ref={reacoesRef}>
+            <button
+              onClick={() => setShowReacoes((v) => !v)}
+              title="Reagir (teclas 7, 8, 9 e 0)"
+              className={`${iconBtn} hover:text-primary`}
+            >
+              <Smile className="h-4 w-4" />
+            </button>
+            {showReacoes && (
+              <div className="border-panel-border bg-panel absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 gap-1 rounded-xl border p-1.5 shadow-xl">
+                {LISTA_DE_REACOES.map((r) => (
+                  <button
+                    key={r.tipo}
+                    onClick={() => {
+                      intents.react(room, r.tipo);
+                      setShowReacoes(false);
+                    }}
+                    title={r.rotulo}
+                    aria-label={r.rotulo}
+                    className="hover:bg-panel-hover rounded-lg p-1.5 text-xl leading-none transition-transform hover:scale-110"
+                  >
+                    {r.emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setManaAberto(!manaAberto)}
+            title="Rastreador de mana (M)"
+            aria-pressed={manaAberto}
+            className={`${iconBtn} ${manaAberto ? 'text-primary' : ''} hover:text-primary`}
+          >
+            <Droplets className="h-4 w-4" />
+          </button>
+
           <button
             onClick={() => toggleModal('players')}
             title="Jogadores: pedir para ver a mão, enviar cartas, remover da sala"
@@ -365,6 +417,59 @@ export function ActionBar({ room }: ActionBarProps) {
                     </button>
                   ))}
                 </div>
+                {/* Vários dados de uma vez (Delina, Ancient Copper Dragon) e
+                    dado de tamanho livre (d3, d30): antes, 5d6 eram cinco
+                    cliques, cinco animações e cinco linhas de log. */}
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="text-text-muted text-[10px] font-bold uppercase">Quantos</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setQtdDados((q) => Math.max(1, q - 1))}
+                      className="bg-panel-hover text-text hover:text-primary rounded px-2 py-0.5 text-xs"
+                      aria-label="Menos um dado"
+                    >
+                      −
+                    </button>
+                    <span className="text-text w-5 text-center font-mono text-xs">{qtdDados}</span>
+                    <button
+                      onClick={() => setQtdDados((q) => Math.min(20, q + 1))}
+                      className="bg-panel-hover text-text hover:text-primary rounded px-2 py-0.5 text-xs"
+                      aria-label="Mais um dado"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <form
+                  className="mt-1.5 flex items-center gap-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const lados = Math.round(Number(ladosLivres));
+                    if (!Number.isFinite(lados) || lados < 2 || lados > 1000) {
+                      useToast.getState().mostrar('O dado precisa ter de 2 a 1000 lados.', 'info');
+                      return;
+                    }
+                    handleDice(lados);
+                  }}
+                >
+                  <span className="text-text-muted font-mono text-xs">D</span>
+                  <input
+                    type="number"
+                    min={2}
+                    max={1000}
+                    value={ladosLivres}
+                    onChange={(e) => setLadosLivres(e.target.value)}
+                    placeholder="2–1000"
+                    className="border-panel-border bg-table-deep text-text w-20 rounded border px-1.5 py-1 font-mono text-xs"
+                    aria-label="Lados do dado personalizado"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-primary hover:bg-primary-hover rounded px-2 py-1 text-[11px] font-bold text-white"
+                  >
+                    Rolar
+                  </button>
+                </form>
                 <p className="text-text-faint mt-1.5 text-center text-[10px]">
                   {restantes} de {MAX_SORTEIOS} nesta janela
                 </p>

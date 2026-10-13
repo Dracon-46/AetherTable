@@ -15,7 +15,7 @@
  *   - nunca incluir nome de carta em `warning` ou `error`.
  */
 
-import type { DiceSides, IntentError, IntentType } from './intents';
+import type { IntentError, IntentType, Reacao } from './intents';
 import type { HandshakeError } from './room';
 
 /** Tipos de entrada do log. Todos neutros (RN09). */
@@ -81,10 +81,20 @@ export interface ChatEvent {
   text: string;
 }
 
+/** Alguém reagiu. Só balão na tela; não entra no log nem no estado. */
+export interface ReactionEvent {
+  actorId: string;
+  tipo: Reacao;
+}
+
 export interface DiceEvent {
   actorId: string;
-  sides: DiceSides;
+  sides: number;
+  /** O TOTAL. Com um dado só, é o próprio resultado — como sempre foi. */
   result: number;
+  amount?: number;
+  /** Cada dado, na ordem em que saiu. Ausente em clientes antigos. */
+  results?: number[];
 }
 
 /**
@@ -228,6 +238,7 @@ export interface ServerEventMap {
   log: LogEvent;
   chat: ChatEvent;
   dice: DiceEvent;
+  reaction: ReactionEvent;
   coin: CoinEvent;
   ping: PingEvent;
   revealToOwner: RevealToOwnerEvent;

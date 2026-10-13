@@ -6,7 +6,12 @@
  */
 
 import type { Room } from 'colyseus.js';
-import type { PlayerCounter, SetRoomConfigPayload } from '@aethertable/shared-types';
+import type {
+  CorDeMana,
+  PlayerCounter,
+  Reacao,
+  SetRoomConfigPayload,
+} from '@aethertable/shared-types';
 
 let moveCardLastSent = 0;
 const MOVE_THROTTLE_MS = 50; // 20/s
@@ -289,9 +294,20 @@ export const intents = {
 
   // ─── Aleatório e comunicação ──────────────────────────────────────────────
 
-  rollDice: (room: Room, sides: number) => sendIntent(room, 'INTENT_ROLL_DICE', { sides }),
+  /** `amount` dados de `sides` lados (2–1000), num pedido e numa linha de log. */
+  rollDice: (room: Room, sides: number, amount = 1) =>
+    sendIntent(room, 'INTENT_ROLL_DICE', { sides, amount }),
 
   flipCoin: (room: Room) => sendIntent(room, 'INTENT_FLIP_COIN'),
+
+  /** Balão de reação para a mesa. Efêmero: não entra no log. */
+  react: (room: Room, tipo: Reacao) => sendIntent(room, 'INTENT_REACTION', { tipo }),
+
+  /** Soma `delta` a uma cor do PRÓPRIO pool de mana (0–99). */
+  ajustarMana: (room: Room, cor: CorDeMana, delta: number) =>
+    sendIntent(room, 'INTENT_MANA_POOL', { acao: 'AJUSTAR', cor, delta }),
+
+  limparMana: (room: Room) => sendIntent(room, 'INTENT_MANA_POOL', { acao: 'LIMPAR' }),
 
   randomPlayer: (room: Room) => sendIntent(room, 'INTENT_RANDOM_PLAYER'),
 

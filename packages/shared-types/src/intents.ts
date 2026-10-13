@@ -354,9 +354,30 @@ export const DICE_SIDES = [2, 4, 6, 8, 10, 12, 20, 100] as const;
 export type DiceSides = (typeof DICE_SIDES)[number];
 
 export interface RollDicePayload {
-  sides: DiceSides;
+  /** 2 a 1000. `DICE_SIDES` são só os atalhos da interface. */
+  sides: number;
+  /** Quantos dados de uma vez, 1 a 20. Padrão 1. */
+  amount?: number;
 }
 export type FlipCoinPayload = Record<string, never>;
+
+/**
+ * Reações rápidas à mesa. Efêmeras: um `broadcast` e um balão na tela, nada no
+ * estado e nada no log — o log é a auditoria da partida, e "👍" não é jogada.
+ * As quatro primeiras são as de teclas 7, 8, 9 e 0.
+ */
+/** As seis cores do rastreador de mana, na ordem do símbolo. */
+export const CORES_DE_MANA = ['W', 'U', 'B', 'R', 'G', 'C'] as const;
+export type CorDeMana = (typeof CORES_DE_MANA)[number];
+/** Ajusta uma cor do próprio pool, ou esvazia o pool inteiro. */
+export type ManaPoolPayload =
+  { acao: 'AJUSTAR'; cor: CorDeMana; delta: number } | { acao: 'LIMPAR' };
+
+export const REACOES = ['POLEGAR', 'PENSANDO', 'UAU', 'CHORO', 'RISADA', 'GG'] as const;
+export type Reacao = (typeof REACOES)[number];
+export interface ReactionPayload {
+  tipo: Reacao;
+}
 export type RandomPlayerPayload = Record<string, never>;
 export interface RandomCardPayload {
   zone: Zone;
@@ -620,6 +641,8 @@ export interface IntentPayloadMap {
   INTENT_CREATE_EMBLEM: CreateEmblemPayload;
   // aleatoriedade
   INTENT_ROLL_DICE: RollDicePayload;
+  INTENT_REACTION: ReactionPayload;
+  INTENT_MANA_POOL: ManaPoolPayload;
   INTENT_FLIP_COIN: FlipCoinPayload;
   INTENT_RANDOM_PLAYER: RandomPlayerPayload;
   INTENT_RANDOM_CARD: RandomCardPayload;

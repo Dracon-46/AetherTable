@@ -288,6 +288,9 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_SET_ZONE_VISIBILITY',
   'INTENT_CHAT',
   'INTENT_PING',
+  'INTENT_REACTION',
+  // O snapshot de jogador não guarda o pool: desfazer só gastaria o slot.
+  'INTENT_MANA_POOL',
   'INTENT_START_MATCH',
   'INTENT_RESET_MATCH',
   'INTENT_LEAVE',

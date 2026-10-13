@@ -126,8 +126,23 @@ export function logVida(actorId: string, nome: string, antes: number, depois: nu
   return criarLog('LIFE', actorId, `${nome}: vida ${antes} → ${depois}`);
 }
 
-export function logDado(actorId: string, nome: string, sides: number, resultado: number): LogEvent {
-  return criarLog('DICE', actorId, `${nome} rolou D${sides} e tirou ${resultado}`);
+export function logDado(
+  actorId: string,
+  nome: string,
+  sides: number,
+  resultados: number[],
+): LogEvent {
+  if (resultados.length === 1) {
+    return criarLog('DICE', actorId, `${nome} rolou D${sides} e tirou ${resultados[0]}`);
+  }
+  // Cada dado E o total: a mesa confere a soma sem refazer a conta, e quem
+  // precisa de "quantos deram 6" (Delina) lê a lista.
+  const total = resultados.reduce((a, b) => a + b, 0);
+  return criarLog(
+    'DICE',
+    actorId,
+    `${nome} rolou ${resultados.length}D${sides}: ${resultados.join(', ')} (total ${total})`,
+  );
 }
 
 export function logSistema(actorId: string, texto: string): LogEvent {

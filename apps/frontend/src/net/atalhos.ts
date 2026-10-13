@@ -42,6 +42,13 @@ import { useGameStore, useTableStore, useUIStore } from '../store/game.store';
 import { useAtalhos } from '../store/atalhos.store';
 import { PASSO_DO_FATOR } from '../canvas/layout';
 import { intents } from './intents';
+
+const REACAO_DO_ATALHO = {
+  REAGIR_POLEGAR: 'POLEGAR',
+  REAGIR_PENSANDO: 'PENSANDO',
+  REAGIR_UAU: 'UAU',
+  REAGIR_CHORO: 'CHORO',
+} as const;
 import type { RoomState } from './schema/RoomState';
 
 /**
@@ -438,6 +445,38 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
           e.preventDefault();
           ui.toggleModal('settings');
           break;
+
+        case 'ALTERNAR_MANA':
+          e.preventDefault();
+          ui.setManaAberto(!ui.manaAberto);
+          break;
+
+        case 'REAGIR_POLEGAR':
+        case 'REAGIR_PENSANDO':
+        case 'REAGIR_UAU':
+        case 'REAGIR_CHORO':
+          e.preventDefault();
+          intents.react(room, REACAO_DO_ATALHO[acao]);
+          break;
+
+        /**
+         * Assento N, não "o N-ésimo da lista de oponentes": o número que o
+         * jogador aperta é o que ele vê no assento, e não muda quando alguém
+         * sai. Assento vazio não faz nada (nem consome a tecla).
+         */
+        case 'FOCAR_JOGADOR_1':
+        case 'FOCAR_JOGADOR_2':
+        case 'FOCAR_JOGADOR_3':
+        case 'FOCAR_JOGADOR_4':
+        case 'FOCAR_JOGADOR_5':
+        case 'FOCAR_JOGADOR_6': {
+          const assento = Number(acao.slice(-1)) - 1;
+          const alvo = Object.values(jogo.players).find((p) => p.seat === assento);
+          if (!alvo) return;
+          e.preventDefault();
+          ui.setBoardView(alvo.id === jogo.mySessionId ? 'ME' : alvo.id);
+          break;
+        }
 
         default:
           break;

@@ -142,6 +142,13 @@ export const REALTIME_LIMITS = {
    */
   MAX_SORTEIOS_POR_JANELA: 5,
   SORTEIO_JANELA_MS: 8_000,
+  /**
+   * Reações (👍 🤔 😮 …) têm freio PRÓPRIO, e não o dos sorteios: dividir a
+   * cota faria um "👍" impedir a próxima rolagem de dado. São seis em dez
+   * segundos — o bastante para responder a mesa, pouco para virar confete.
+   */
+  MAX_REACOES_POR_JANELA: 6,
+  REACAO_JANELA_MS: 10_000,
 } as const;
 
 /**

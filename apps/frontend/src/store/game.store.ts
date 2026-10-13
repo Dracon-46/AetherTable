@@ -93,6 +93,8 @@ export interface PlayerData {
   decked: boolean;
   /** Modo "jogar com o topo do grimório revelado". Ver `Player` no servidor. */
   topoRevelado: boolean;
+  /** Rastreador de mana: `{ R: 3, G: 1 }`. Cor ausente = zero. */
+  manaPool: Record<string, number>;
 }
 
 export interface LogEntry {
@@ -526,6 +528,8 @@ interface UIState {
   anexosDesativados: boolean;
   /** Desenha o custo de mana impresso sobre as cartas da própria mão. */
   custoDeManaNaMao: boolean;
+  /** Rastreador de mana (pool W/U/B/R/G/C) aberto na tela. Tecla M. */
+  manaAberto: boolean;
   /**
    * ─── ESCALA REAL DA MESA, PARA O PAINEL NÃO MENTIR ───────────────────────
    *
@@ -569,6 +573,7 @@ interface UIState {
   setAlinharNaGrade: (v: boolean) => void;
   setAnexosDesativados: (v: boolean) => void;
   setCustoDeManaNaMao: (v: boolean) => void;
+  setManaAberto: (v: boolean) => void;
   /** Chamado pelo `GameBoard` a cada remontagem da geometria. */
   registrarEscalaDaMesa: (efetiva: number, pedida: number) => void;
 }
@@ -607,6 +612,7 @@ export const useUIStore = create<UIState>()(
       alinharNaGrade: false,
       anexosDesativados: false,
       custoDeManaNaMao: false,
+      manaAberto: false,
       escalaDaMesa: 1,
       escalaPedida: 1,
 
@@ -683,6 +689,7 @@ export const useUIStore = create<UIState>()(
       setAlinharNaGrade: (alinharNaGrade) => set({ alinharNaGrade }),
       setAnexosDesativados: (anexosDesativados) => set({ anexosDesativados }),
       setCustoDeManaNaMao: (custoDeManaNaMao) => set({ custoDeManaNaMao }),
+      setManaAberto: (manaAberto) => set({ manaAberto }),
       registrarEscalaDaMesa: (escalaDaMesa, escalaPedida) =>
         // Guarda só quando muda de verdade: o `GameBoard` remonta a geometria
         // a cada redimensionamento, e um `set` idêntico aqui viraria uma
@@ -726,6 +733,7 @@ export const useUIStore = create<UIState>()(
         alinharNaGrade: s.alinharNaGrade,
         anexosDesativados: s.anexosDesativados,
         custoDeManaNaMao: s.custoDeManaNaMao,
+        manaAberto: s.manaAberto,
       }),
     },
   ),
@@ -783,8 +791,27 @@ export interface SessaoScry {
  * aparece, seja qual for o tipo.
  */
 export type Sorteio =
-  | { tipo: 'DADO'; actorId: string; sides: number; result: number; em: number }
+  | {
+      tipo: 'DADO';
+      actorId: string;
+      sides: number;
+      /** O total. Com um dado só, o próprio resultado. */
+      result: number;
+      /** Cada dado, quando foram vários. */
+      results?: number[];
+      em: number;
+    }
   | { tipo: 'MOEDA'; actorId: string; result: 'CARA' | 'COROA'; em: number };
+
+/** Um balão de reação na tela. Some sozinho em `DURACAO_DA_REACAO_MS`. */
+export interface ReacaoVisual {
+  id: string;
+  actorId: string;
+  tipo: string;
+  em: number;
+}
+
+export const DURACAO_DA_REACAO_MS = 3200;
 
 /** Um pedido de "me deixa ver sua mão", esperando decisão do dono da zona. */
 export interface PedidoDeVista {
@@ -798,18 +825,22 @@ interface TableState {
   /** Último dado ou moeda, para o destaque visual na mesa. */
   ultimoSorteio: Sorteio | null;
   pings: PingVisual[];
+  /** Reações recentes, a mais nova no fim. No máximo oito na tela. */
+  reacoes: ReacaoVisual[];
   /** A olhada aberta no painel. A busca (tutor) usa o inspetor de zona. */
   peek: Olhada | null;
   scry: SessaoScry | null;
   /** Pedidos recebidos, na ordem de chegada. */
   pedidosDeVista: PedidoDeVista[];
 
-  setDado: (d: { actorId: string; sides: number; result: number }) => void;
+  setDado: (d: { actorId: string; sides: number; result: number; results?: number[] }) => void;
   setMoeda: (m: { actorId: string; result: 'CARA' | 'COROA' }) => void;
   /** Some com o sorteio depois da animação, para não congelar na tela. */
   limparSorteio: () => void;
   addPing: (p: Omit<PingVisual, 'id' | 'em'>) => void;
   expirarPings: () => void;
+  addReacao: (r: { actorId: string; tipo: string }) => void;
+  expirarReacoes: () => void;
   setPeek: (olhada: Olhada | null) => void;
   abrirScry: (s: SessaoScry) => void;
   fecharScry: () => void;
@@ -821,6 +852,7 @@ interface TableState {
 export const useTableStore = create<TableState>((set) => ({
   ultimoSorteio: null,
   pings: [],
+  reacoes: [],
   peek: null,
   scry: null,
   pedidosDeVista: [],
@@ -840,6 +872,18 @@ export const useTableStore = create<TableState>((set) => ({
       const vivos = s.pings.filter((p) => Date.now() - p.em < 2500);
       return vivos.length === s.pings.length ? s : { pings: vivos };
     }),
+  addReacao: (r) =>
+    set((s) => ({
+      reacoes: [
+        ...s.reacoes.slice(-7),
+        { ...r, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, em: Date.now() },
+      ],
+    })),
+  expirarReacoes: () =>
+    set((s) => {
+      const vivas = s.reacoes.filter((r) => Date.now() - r.em < DURACAO_DA_REACAO_MS);
+      return vivas.length === s.reacoes.length ? s : { reacoes: vivas };
+    }),
   setPeek: (peek) => set({ peek }),
   abrirScry: (scry) => set({ scry }),
   fecharScry: () => set({ scry: null }),
@@ -858,5 +902,13 @@ export const useTableStore = create<TableState>((set) => ({
         (x) => !(x.requesterId === requesterId && x.zone === zone),
       ),
     })),
-  reset: () => set({ ultimoSorteio: null, pings: [], peek: null, scry: null, pedidosDeVista: [] }),
+  reset: () =>
+    set({
+      ultimoSorteio: null,
+      pings: [],
+      reacoes: [],
+      peek: null,
+      scry: null,
+      pedidosDeVista: [],
+    }),
 }));

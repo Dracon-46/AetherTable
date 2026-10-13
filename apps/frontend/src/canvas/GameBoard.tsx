@@ -411,7 +411,9 @@ const CardSprite = React.memo(function CardSprite({
           um retângulo com "…" e ninguém sabia o que era a carta. */}
       {!imgEl && frente && (
         <Text
-          text={faceMeta?.name ?? '…'}
+          // Ficha sem impressão (criada pelo nome) não tem catálogo: o nome dela
+          // vive na anotação, e era "…" que aparecia no lugar.
+          text={faceMeta?.name ?? (card.isToken && card.note ? card.note : '…')}
           width={w - 10}
           height={h}
           x={5}
@@ -448,6 +450,37 @@ const CardSprite = React.memo(function CardSprite({
           cornerRadius={6}
           listening={false}
         />
+      )}
+
+      {/* ── FICHA E CÓPIA SE PARECIAM COM CARTA DE VERDADE ───────────────
+          O servidor marca `isToken` e `isCopy` desde sempre, e nada na mesa
+          os desenhava: só o menu ("Destruir token") contava a diferença. No
+          fim do turno de um Kiki-Jiki, ou num board wipe, a pergunta "qual
+          destas some?" não tinha resposta olhando para a mesa. Canto
+          superior ESQUERDO porque o direito é do dano. */}
+      {(card.isToken || card.isCopy) && card.zone === 'BATTLEFIELD' && (
+        // Cópia vence ficha no rótulo: a cópia de permanente também nasce como
+        // ficha, e "CÓPIA" diz mais sobre de onde ela veio.
+        <Group x={4 * escala} y={4 * escala} listening={false}>
+          <Rect
+            width={38 * escala}
+            height={13 * escala}
+            fill="rgba(15,23,42,0.88)"
+            stroke={card.isCopy ? '#A78BFA' : '#FBBF24'}
+            strokeWidth={1}
+            cornerRadius={3}
+          />
+          <Text
+            text={card.isCopy ? 'CÓPIA' : 'FICHA'}
+            width={38 * escala}
+            height={13 * escala}
+            align="center"
+            verticalAlign="middle"
+            fontSize={8 * escala}
+            fontStyle="bold"
+            fill={card.isCopy ? '#DDD6FE' : '#FDE68A'}
+          />
+        </Group>
       )}
 
       {/* Marcadores nomeados */}

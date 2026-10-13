@@ -99,7 +99,7 @@ Todas as intenções são validadas com Zod antes de qualquer efeito (`FR-11`). 
 | Jogador e designações | `INTENT_SET_LIFE`, `_SET_COMMANDER_DAMAGE`, `_TOGGLE_DESIGNATION`, `_SET_COMMANDER_TAX`, `_SET_RING`, `_SET_DAY_NIGHT`, `_SET_SPEED`, `_VENTURE`, `_CONCEDE`, `_SET_TURN_ORDER`, `_SET_MAX_HAND_SIZE`                           | 11        | §3.4              |
 | Objetos criados       | `INTENT_CREATE_TOKEN`, `_COPY_CARD`, `_DESTROY_TOKEN`, `_CLEAR_TOKENS`, `_CREATE_EMBLEM`                                                                                                                                        | 5         | §3.5              |
 | Aleatoriedade         | `INTENT_ROLL_DICE`, `_FLIP_COIN`, `_RANDOM_PLAYER`, `_RANDOM_CARD`, `_DISCARD_RANDOM`, `_PLANESWALK`, `_DRAW_SCHEME`                                                                                                            | 7         | §3.6              |
-| Mesa e comunicação    | `INTENT_CHAT`, `_PING`, `_ARROW`, `_CLEAR_ARROWS`, `_SET_TURN`, `_PASS_TURN`, `_UNDO`                                                                                                                                           | 7         | §3.6              |
+| Mesa e comunicação    | `INTENT_CHAT`, `_PING`, `_REACTION`, `_MANA_POOL`, `_ARROW`, `_CLEAR_ARROWS`, `_SET_TURN`, `_PASS_TURN`, `_UNDO`                                                                                                                | 9         | §3.6              |
 | Ciclo e formato       | `INTENT_RESET_MATCH`, `_LEAVE`, `_FETCH_FROM_SIDEBOARD`, `_CAST_COMMANDER`                                                                                                                                                      | 4         | §3.7              |
 | **Total**             |                                                                                                                                                                                                                                 | **~80**   |                   |
 
@@ -285,17 +285,19 @@ carta virada agora é o que a regra diz (708.2): uma 2/2 virada, sem identidade.
 
 ### 3.6 Aleatoriedade e comunicação
 
-| Intenção              | Payload                                | Efeito                                                                                                                                                         |
-| --------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INTENT_ROLL_DICE`    | `{ sides }` — ∈ {2,4,6,8,10,12,20,100} | Sorteio no servidor; resultado no log e em evento de animação                                                                                                  |
-| `INTENT_FLIP_COIN`    | `{}`                                   | Cara ou coroa no servidor                                                                                                                                      |
-| `INTENT_CHAT`         | `{ text }` — máx. 500 caracteres       | Mensagem sanitizada, publicada a todos                                                                                                                         |
-| `INTENT_PING`         | `{ x, y, targetId? }`                  | Marcador visual efêmero (`F13`)                                                                                                                                |
-| `INTENT_ARROW`        | `{ fromId, toId, color? }`             | **Seta de alvo** persistente — é como se diz "isto ataca aquilo" sem motor de regras (`DOC-036` §11.1)                                                         |
-| `INTENT_CLEAR_ARROWS` | `{ scope: "MINE" \| "COMBAT" }`        | Limpa setas; as de combate são limpas ao passar o turno                                                                                                        |
-| `INTENT_PASS_TURN`    | `{}`                                   | Avança o marcador visual de turno e limpa setas de combate; **pula eliminados** (ver abaixo)                                                                   |
-| `INTENT_UNDO`         | `{}`                                   | Desfaz a **última** ação própria, janela de 10 s. **Não desfaz** ação aleatória, revelação, compra, ficha, estado da mesa… — lista e motivos em `DOC-032` §3.2 |
-| `INTENT_SET_TURN`     | `{ turn?, phase? }`                    | Marcador **puramente visual** de turno (`F29`)                                                                                                                 |
+| Intenção              | Payload                                                                   | Efeito                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INTENT_ROLL_DICE`    | `{ sides, amount? }` — `sides` de 2 a 1000, `amount` de 1 a 20 (padrão 1) | Um sorteio por dado no servidor; uma linha de log com cada dado e o total; evento de animação com `results[]`                                                  |
+| `INTENT_FLIP_COIN`    | `{}`                                                                      | Cara ou coroa no servidor                                                                                                                                      |
+| `INTENT_CHAT`         | `{ text }` — máx. 500 caracteres                                          | Mensagem sanitizada, publicada a todos                                                                                                                         |
+| `INTENT_PING`         | `{ x, y, targetId? }`                                                     | Marcador visual efêmero (`F13`)                                                                                                                                |
+| `INTENT_REACTION`     | `{ tipo }` — `POLEGAR`, `PENSANDO`, `UAU`, `CHORO`, `RISADA`, `GG`        | Balão efêmero para a mesa (`reaction`). **Sem log e sem estado**; freio próprio de 6 a cada 10 s                                                               |
+| `INTENT_MANA_POOL`    | `{ acao: "AJUSTAR", cor, delta }`                                         | `{ acao: "LIMPAR" }`                                                                                                                                           | Rastreador de mana do **remetente** (`Player.manaPool`, 0–99 por cor). Sem alvo: não há como mexer no pool alheio. Sem log |
+| `INTENT_ARROW`        | `{ fromId, toId, color? }`                                                | **Seta de alvo** persistente — é como se diz "isto ataca aquilo" sem motor de regras (`DOC-036` §11.1)                                                         |
+| `INTENT_CLEAR_ARROWS` | `{ scope: "MINE" \| "COMBAT" }`                                           | Limpa setas; as de combate são limpas ao passar o turno                                                                                                        |
+| `INTENT_PASS_TURN`    | `{}`                                                                      | Avança o marcador visual de turno e limpa setas de combate; **pula eliminados** (ver abaixo)                                                                   |
+| `INTENT_UNDO`         | `{}`                                                                      | Desfaz a **última** ação própria, janela de 10 s. **Não desfaz** ação aleatória, revelação, compra, ficha, estado da mesa… — lista e motivos em `DOC-032` §3.2 |
+| `INTENT_SET_TURN`     | `{ turn?, phase? }`                                                       | Marcador **puramente visual** de turno (`F29`)                                                                                                                 |
 
 **`INTENT_PASS_TURN` pula quem já está fora.** A vez ia para o próximo assento mesmo eliminado — e
 quem perdeu costuma sair da tela ou só assistir: a mesa inteira esperava alguém que não ia mais
@@ -611,18 +613,19 @@ room.state.players.onChange((player, id) => ui.updatePanel(id, player));
 
 Coisas que **não** fazem parte do estado durável da mesa:
 
-| Evento                                     | Payload                                        | Uso                                           |
-| ------------------------------------------ | ---------------------------------------------- | --------------------------------------------- |
-| `log`                                      | `{ id, timestamp, type, actorId, text }`       | Entrada no painel de log/chat                 |
-| `chat`                                     | `{ id, timestamp, actorId, text }`             | Mensagem de usuário                           |
-| `dice`                                     | `{ actorId, sides, result }`                   | Dispara a animação do dado                    |
-| `ping`                                     | `{ actorId, x, y, targetId? }`                 | Marcador visual efêmero                       |
-| `revealToOwner`                            | `{ cards: [{ id, scryfallId }], motivo: "PEEK" | "SEARCH"                                      | "RANDOM", zone, from? }` | Resultado de olhar, buscar ou sortear — **enviado só ao dono**. Só `PEEK` e `RANDOM` abrem o painel de olhada; a busca é do inspetor de zona |
-| `warning`                                  | `{ code, message }`                            | Ex.: `RATE_LIMITED` por excesso de intenções  |
-| `error`                                    | `{ code, message, intent? }`                   | Intenção rejeitada                            |
-| `playerJoined` / `playerLeft`              | `{ playerId, name }`                           | Notificação de presença                       |
-| `playerDisconnected` / `playerReconnected` | `{ playerId }`                                 | Estado de conexão                             |
-| `roomClosing`                              | `{ reason, inSeconds }`                        | Aviso de encerramento ou drenagem para deploy |
+| Evento                                     | Payload                                         | Uso                                                                      |
+| ------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------ |
+| `log`                                      | `{ id, timestamp, type, actorId, text }`        | Entrada no painel de log/chat                                            |
+| `chat`                                     | `{ id, timestamp, actorId, text }`              | Mensagem de usuário                                                      |
+| `dice`                                     | `{ actorId, sides, result, amount?, results? }` | Dispara a animação do dado. `result` é o total; `results` traz cada dado |
+| `reaction`                                 | `{ actorId, tipo }`                             | Balão de reação. Não entra no log                                        |
+| `ping`                                     | `{ actorId, x, y, targetId? }`                  | Marcador visual efêmero                                                  |
+| `revealToOwner`                            | `{ cards: [{ id, scryfallId }], motivo: "PEEK"  | "SEARCH"                                                                 | "RANDOM", zone, from? }` | Resultado de olhar, buscar ou sortear — **enviado só ao dono**. Só `PEEK` e `RANDOM` abrem o painel de olhada; a busca é do inspetor de zona |
+| `warning`                                  | `{ code, message }`                             | Ex.: `RATE_LIMITED` por excesso de intenções                             |
+| `error`                                    | `{ code, message, intent? }`                    | Intenção rejeitada                                                       |
+| `playerJoined` / `playerLeft`              | `{ playerId, name }`                            | Notificação de presença                                                  |
+| `playerDisconnected` / `playerReconnected` | `{ playerId }`                                  | Estado de conexão                                                        |
+| `roomClosing`                              | `{ reason, inSeconds }`                         | Aviso de encerramento ou drenagem para deploy                            |
 
 **Por que separar de estado:** um dado rolado não é estado da mesa — é um acontecimento. Colocá-lo no
 `Schema` obrigaria a decidir quando removê-lo e geraria _patches_ inúteis.
