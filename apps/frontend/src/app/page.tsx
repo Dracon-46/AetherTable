@@ -11,6 +11,8 @@ import { API_URL } from '@/lib/api';
 import { api, mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
 import { OAuthTokenCapture } from '../components/OAuthTokenCapture';
+import { IDIOMAS_DA_INTERFACE, useLangDoDocumento, useT } from '../i18n/i18n';
+import { useAparencia } from '../store/aparencia.store';
 
 /**
  * ─── AS FRASES DE ERRO DE OAUTH MORAM AQUI, NÃO NA URL ─────────────────────
@@ -91,6 +93,10 @@ export default function LoginPage() {
    * pode sair da pré-renderização.
    */
   const [erroDeOAuth, setErroDeOAuth] = useState<string | null>(null);
+  const t = useT();
+  useLangDoDocumento();
+  const idioma = useAparencia((s) => s.idiomaDaInterface);
+  const setIdioma = useAparencia((s) => s.setIdiomaDaInterface);
 
   useEffect(() => {
     const codigo = new URLSearchParams(window.location.search).get('erro');
@@ -180,35 +186,35 @@ export default function LoginPage() {
           </div>
           <h1 className="text-text text-xl font-bold sm:text-2xl">AetherTable</h1>
           <p className="text-text-muted mt-1 text-sm">
-            Prepare suas defesas, o embate vai começar.
+            {t('Prepare suas defesas, o embate vai começar.')}
           </p>
         </div>
 
         {estadoServidor === 'acordando' && (
           <div className="border-warning/40 bg-warning/10 mb-4 flex items-start gap-3 rounded border p-3">
             <AlertCircle className="text-warning mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-warning text-sm">{MENSAGEM_POR_ESTADO.acordando}</p>
+            <p className="text-warning text-sm">{t(MENSAGEM_POR_ESTADO.acordando)}</p>
           </div>
         )}
 
         {erroDeOAuth && (
           <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
             <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-danger text-sm">{erroDeOAuth}</p>
+            <p className="text-danger text-sm">{t(erroDeOAuth)}</p>
           </div>
         )}
 
         {error && (
           <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
             <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-danger text-sm">{error}</p>
+            <p className="text-danger text-sm">{t(error)}</p>
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              E-mail
+              {t('E-mail')}
             </label>
             <input
               type="email"
@@ -217,14 +223,14 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="bg-table-deep border-panel-border text-text focus:border-primary focus:ring-primary w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-              placeholder="seuemail@exemplo.com"
+              placeholder={t('seuemail@exemplo.com')}
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-                Senha
+                {t('Senha')}
               </label>
               {/* Era `<a href="#">` — DOC-094 §I.8, "não há recuperação de
                   senha". Agora leva a /senha/esqueci. */}
@@ -232,7 +238,7 @@ export default function LoginPage() {
                 href="/senha/esqueci"
                 className="text-primary hover:text-primary-hover text-xs transition-colors"
               >
-                Esqueceu?
+                {t('Esqueceu?')}
               </Link>
             </div>
             <div className="relative">
@@ -271,12 +277,12 @@ export default function LoginPage() {
             {isLoggingIn ? (
               <>
                 <Flame className="h-4 w-4 animate-bounce" />
-                {estadoServidor === 'acordando' ? 'Acordando o servidor…' : 'Invocando...'}
+                {estadoServidor === 'acordando' ? t('Acordando o servidor…') : t('Invocando...')}
               </>
             ) : (
               <>
                 <LogIn className="h-4 w-4" />
-                Entrar no Saguão
+                {t('Entrar no Saguão')}
               </>
             )}
           </button>
@@ -296,7 +302,9 @@ export default function LoginPage() {
           <>
             <div className="mt-4 flex items-center justify-between">
               <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
-              <span className="text-text-muted text-center text-xs uppercase">ou continue com</span>
+              <span className="text-text-muted text-center text-xs uppercase">
+                {t('ou continue com')}
+              </span>
               <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
             </div>
 
@@ -334,12 +342,12 @@ export default function LoginPage() {
 
         <div className="border-panel-border mt-5 border-t pt-4 text-center">
           <p className="text-text-muted text-sm">
-            Não tem uma conta?{' '}
+            {t('Não tem uma conta?')}{' '}
             <Link
               href="/register"
               className="text-primary hover:text-primary-hover font-medium transition-colors"
             >
-              Aliste-se
+              {t('Aliste-se')}
             </Link>
           </p>
 
@@ -348,11 +356,30 @@ export default function LoginPage() {
               OAuth, e é onde uma pessoa procura antes de entregar o e-mail. */}
           <p className="text-text-muted/70 mt-3 text-xs">
             <Link href="/privacidade" className="hover:text-primary transition-colors">
-              Política de Privacidade
+              {t('Política de Privacidade')}
             </Link>
             <span className="mx-1.5">·</span>
-            <span>Projeto de fã, sem vínculo com a Wizards of the Coast</span>
+            <span>{t('Projeto de fã, sem vínculo com a Wizards of the Coast')}</span>
           </p>
+          {/* Quem chega aqui ainda não entrou: a troca de idioma precisa estar
+              na porta, e não só nos Ajustes. */}
+          <div className="mt-3 flex justify-center gap-1 text-xs" role="group" aria-label="Idioma">
+            {IDIOMAS_DA_INTERFACE.map((i) => (
+              <button
+                key={i.codigo}
+                type="button"
+                onClick={() => setIdioma(i.codigo)}
+                aria-pressed={idioma === i.codigo}
+                className={`rounded px-2 py-0.5 transition-colors ${
+                  idioma === i.codigo
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-text-muted hover:text-text'
+                }`}
+              >
+                {i.codigo === 'en' ? 'EN' : 'PT'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

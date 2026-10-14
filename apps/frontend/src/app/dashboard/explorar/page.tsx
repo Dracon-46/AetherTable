@@ -22,6 +22,7 @@ import { useCardCatalog, useHidratarCartas } from '@/cards/catalog';
 import { ToastHost } from '@/components/Toast';
 import { mensagemDaApi } from '@/lib/fetcher';
 import { useCurtir, useListaPublica, type DeckPublico } from '../../../deckbuilder/useExplorar';
+import { useT } from '../../../i18n/i18n';
 
 const COR_DO_PIP: Record<string, { fundo: string; texto: string }> = {
   W: { fundo: '#F8F3D6', texto: '#3B3524' },
@@ -41,6 +42,7 @@ export default function ExplorarPage() {
   const [pagina, setPagina] = useState(1);
   const catalogo = useCardCatalog((s) => s.cartas);
   const curtir = useCurtir();
+  const t = useT();
 
   // A busca por nome vai ao servidor: espera a pessoa parar de digitar.
   useEffect(() => {
@@ -80,10 +82,12 @@ export default function ExplorarPage() {
           <div>
             <h1 className="text-text mb-2 flex items-center gap-3 text-2xl font-bold sm:text-3xl">
               <Compass className="text-primary h-7 w-7 sm:h-8 sm:w-8" />
-              Explorar
+              {t('Explorar')}
             </h1>
             <p className="text-text-muted text-sm sm:text-base">
-              Decks que outros jogadores deixaram públicos. Curta para guardar, copie para jogar.
+              {t(
+                'Decks que outros jogadores deixaram públicos. Curta para guardar, copie para jogar.',
+              )}
             </p>
           </div>
           <div
