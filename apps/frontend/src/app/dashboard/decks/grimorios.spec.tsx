@@ -36,6 +36,7 @@ jest.mock('../../../deckbuilder/useDecks', () => ({
   // mas a página os chama no render.
   useAtualizarDeck: () => ({ mutate: jest.fn() }),
   useClonarDeck: () => ({ mutate: jest.fn() }),
+  useGerarDeckAleatorio: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 
 it('a recusa ao criar não vira rejeição não tratada nem navegação', async () => {

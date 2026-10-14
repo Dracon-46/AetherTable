@@ -15,6 +15,7 @@ import {
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
+import { GeradorDeDeckService } from './gerador/gerador-de-deck.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   AdicionarCartaDto,
@@ -65,7 +66,23 @@ const LIMITE_IMPORTACAO = {
 @UseGuards(JwtAuthGuard)
 @Throttle(LIMITE_DECK)
 export class DecksController {
-  constructor(private readonly decksService: DecksService) {}
+  constructor(
+    private readonly decksService: DecksService,
+    private readonly gerador: GeradorDeDeckService,
+  ) {}
+
+  /**
+   * DECK ALEATÓRIO: sorteia um comandante e monta o deck em volta dele (ver
+   * `gerador/`). Cada pedido são ~11 buscas na Scryfall — o limite é bem mais
+   * apertado que o das outras rotas de deck para um clique repetido não
+   * esgotar a cota da Scryfall do servidor inteiro.
+   */
+  @Post('aleatorio')
+  @Throttle({ curto: { limit: 2, ttl: 20_000 }, longo: { limit: 15, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Sorteia um comandante e monta um deck de Commander em volta dele' })
+  gerarAleatorio(@Request() req: RequisicaoAutenticada) {
+    return this.gerador.gerar(req.user.sub);
+  }
 
   @Post()
   createDeck(

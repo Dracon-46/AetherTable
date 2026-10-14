@@ -38,6 +38,7 @@ import {
   Copy,
   PenLine,
   Globe,
+  Dices,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -46,6 +47,7 @@ import {
   useAtualizarDeck,
   useClonarDeck,
   useCriarDeck,
+  useGerarDeckAleatorio,
   useListaDeDecks,
   type DeckResumo,
 } from '../../../deckbuilder/useDecks';
@@ -116,6 +118,7 @@ export default function DecksPage() {
   const apagar = useApagarDeck();
   const atualizar = useAtualizarDeck();
   const clonar = useClonarDeck();
+  const aleatorio = useGerarDeckAleatorio();
   const catalogo = useCardCatalog((s) => s.cartas);
 
   const [novoNome, setNovoNome] = useState('');
@@ -250,6 +253,29 @@ export default function DecksPage() {
               {criar.isPending ? 'Forjando...' : 'Criar Deck'}
             </button>
           </form>
+          {/* O sistema escolhe o comandante e monta o deck em volta dele. */}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const deck = await aleatorio.mutateAsync();
+                router.push(`/dashboard/decks/${deck.id}`);
+              } catch {
+                /* a mensagem já saiu pelo onError do hook */
+              }
+            }}
+            disabled={aleatorio.isPending}
+            className="border-panel-border bg-table-deep text-text hover:border-primary hover:text-primary mt-3 flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60"
+          >
+            {aleatorio.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Dices className="h-4 w-4" />
+            )}
+            {aleatorio.isPending
+              ? 'Sorteando o comandante e montando o deck…'
+              : 'Deck aleatório: sortear um comandante e montar em volta dele'}
+          </button>
           {criar.isError && (
             <p className="text-danger mt-3 flex items-center gap-2 text-sm">
               <AlertCircle className="h-4 w-4 shrink-0" />

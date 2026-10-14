@@ -242,18 +242,31 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   };
 
   /**
-   * DECK ALEATÓRIO, como o dado do seletor do EDHPlay: entre os decks da conta
-   * e os iniciais. Não é sorteio de jogo (não muda nada para a mesa), então
-   * `Math.random` basta — o CSPRNG do servidor é para o que a mesa precisa
-   * confiar.
+   * DECK ALEATÓRIO: o servidor sorteia um comandante e MONTA o deck em volta
+   * dele (`POST /decks/aleatorio`). O dado do EDHPlay só escolhe entre decks
+   * prontos; aqui sai um deck novo, com molde e tema — e ele fica na conta,
+   * para jogar de novo ou editar depois.
    */
-  const deckAleatorio = () => {
-    const opcoes = [
-      ...decks.map((d) => d.id),
-      ...iniciais.map((d) => `${PREFIXO_INICIAL}${d.codigo}`),
-    ];
-    const escolhido = opcoes[Math.floor(Math.random() * opcoes.length)];
-    if (escolhido) void escolherValor(escolhido);
+  const deckAleatorio = async () => {
+    if (!accessToken) return;
+    setCopiandoInicial(true);
+    try {
+      const resposta = await fetch(`${API_URL}/decks/aleatorio`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!resposta.ok) throw new Error(String(resposta.status));
+      const deck = (await resposta.json()) as DeckResumo;
+      setDecks((atuais) => [deck, ...atuais]);
+      escolherDeck(deck.id);
+      useToast.getState().mostrar(`Deck montado: ${deck.name}`, 'sucesso');
+    } catch {
+      useToast
+        .getState()
+        .mostrar('Não deu para montar o deck aleatório agora. Tente de novo.', 'erro');
+    } finally {
+      setCopiandoInicial(false);
+    }
   };
 
   /**
@@ -405,9 +418,9 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
 
                 <button
                   type="button"
-                  onClick={deckAleatorio}
+                  onClick={() => void deckAleatorio()}
                   disabled={copiandoInicial}
-                  title="Deck aleatório"
+                  title="Deck aleatório: sorteia um comandante e monta o deck em volta dele"
                   aria-label="Deck aleatório"
                   className="border-panel-border bg-table-deep text-text-muted hover:border-primary hover:text-primary flex shrink-0 items-center justify-center rounded-md border p-2.5 transition-colors disabled:opacity-50"
                 >

@@ -666,6 +666,25 @@ não depende de serviço externo para servi-las.
 A cópia é reconhecida pelo nome e pela descrição de origem: escolher o mesmo deck inicial duas vezes
 na sala de espera não cria dois decks. Limite: 3 req/10 s e 20 req/min.
 
+### 3.13 `POST /decks/aleatorio` — deck montado em volta de um comandante sorteado
+
+Sorteia um comandante entre os ~700 mais jogados do EDHREC (sem parceiro, sem Game Changer) e monta um
+deck de Commander em volta dele, gravado na conta (privado):
+
+| Papel           | Quantas                                             | Busca na Scryfall (dentro da identidade)                 |
+| --------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| Terrenos        | 36: não básicos (2–12, conforme as cores) + básicos | `t:land -t:basic produces:<cores>`                       |
+| Ramp            | 10                                                  | `otag:ramp -t:land`                                      |
+| Compra          | 10                                                  | `otag:draw -t:land`                                      |
+| Remoção         | 8                                                   | `otag:removal -otag:sweeper -t:land`                     |
+| Limpeza de mesa | 3                                                   | `otag:sweeper`                                           |
+| Tema (o resto)  | 20 criaturas + o que sobrar                         | tribo e mecânicas lidas do tipo e do texto do comandante |
+
+Cada papel sorteia entre as mais jogadas (três vezes o que pede), sempre singleton e sem Game Changer
+(mesa casual). Os básicos seguem a demanda de cor dos custos, com ao menos um de cada cor. Total sempre
+100; se faltar um básico da Scryfall, a rota recusa em vez de gravar deck incompleto. Limite: 2 a cada
+20 s e 15 por hora — cada pedido são ~11 buscas na Scryfall.
+
 ## 4. Cartas (proxy da Scryfall)
 
 Todo acesso à Scryfall passa por aqui, para centralizar cache e fila de 100 ms (`DOC-035` §3).

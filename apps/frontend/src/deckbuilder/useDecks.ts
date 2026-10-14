@@ -422,6 +422,27 @@ export function useAtualizarDeck() {
   });
 }
 
+/**
+ * Deck aleatório: o servidor sorteia um comandante e monta o deck em volta
+ * dele (molde de 36 terrenos, ramp, compra, remoção e o tema do comandante).
+ * Leva alguns segundos — são várias buscas na Scryfall —, e por isso a tela
+ * mostra "montando" em vez de parecer travada.
+ */
+export function useGerarDeckAleatorio() {
+  const qc = useQueryClient();
+  const avisar = useToast((s) => s.mostrar);
+  return useMutation({
+    mutationFn: () => api<DeckResumo>('/decks/aleatorio', { method: 'POST' }),
+    onSuccess: (novo) => {
+      qc.setQueryData<DeckResumo[]>(chavesDeDeck.lista(), (lista) =>
+        lista ? [novo, ...lista] : [novo],
+      );
+      void qc.invalidateQueries({ queryKey: chavesDeDeck.lista() });
+    },
+    onError: (erro) => avisar(mensagemDaApi(erro), 'erro'),
+  });
+}
+
 /** Copia o deck inteiro num deck novo (privado). */
 export function useClonarDeck() {
   const qc = useQueryClient();

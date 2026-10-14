@@ -5,6 +5,7 @@ import { ExplorarController } from './explorar.controller.js';
 import { ExplorarService } from './explorar.service.js';
 import { DecksIniciaisController } from './decks-iniciais.controller.js';
 import { DecksIniciaisService } from './decks-iniciais.service.js';
+import { GeradorDeDeckService } from './gerador/gerador-de-deck.service.js';
 import { CardsModule } from '../cards/cards.module.js';
 
 /**
@@ -20,7 +21,7 @@ import { CardsModule } from '../cards/cards.module.js';
     ExplorarController,
     DecksIniciaisController,
   ],
-  providers: [DecksService, ExplorarService, DecksIniciaisService],
+  providers: [DecksService, ExplorarService, DecksIniciaisService, GeradorDeDeckService],
   exports: [DecksService],
 })
 export class DecksModule {}
