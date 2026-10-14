@@ -29,6 +29,7 @@ import {
   Home,
   LibraryBig,
   Compass,
+  History,
   PanelLeftClose,
   PanelLeft,
   ShieldAlert,
@@ -61,6 +62,8 @@ const NAVEGACAO: ItemDeMenu[] = [
   { href: '/dashboard/decks', rotulo: 'Meus Grimórios', Icone: LibraryBig, prefixo: true },
   // Decks públicos de outras contas: o outro lado do interruptor "Público".
   { href: '/dashboard/explorar', rotulo: 'Explorar', Icone: Compass, prefixo: true },
+  // As partidas jogadas: resumo de cada mesa (RN12, revista em 14/10/2026).
+  { href: '/dashboard/historico', rotulo: 'Histórico', Icone: History },
   { href: '/dashboard/profile', rotulo: 'Meu Perfil', Icone: User },
   { href: '/dashboard/settings', rotulo: 'Ajustes', Icone: Settings },
 ];

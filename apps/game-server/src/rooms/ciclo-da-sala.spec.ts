@@ -215,3 +215,67 @@ describe('plateia e votação', () => {
     expect(sala.state.votacaoAlvo).toBe('');
   });
 });
+
+describe('histórico de partidas', () => {
+  /**
+   * O resumo era só duração e contas: quem venceu, com que deck e comandante,
+   * ninguém guardava. E quem sai antes do fim leva o próprio estado embora —
+   * a foto dele precisa ser tirada ANTES do `delete`.
+   */
+  it('o resumo leva vencedor, quem começou e a foto de quem saiu antes', async () => {
+    const sala = montarSala(['a', 'b', 'c']);
+    const interna = sala as unknown as {
+      inicioDaPartida: number;
+      quemComecou: string;
+      registrarParticipantes(): void;
+      registrarResumoDaPartida(): Promise<void>;
+    };
+    sala.state.phase = 'PLAYING';
+    sala.state.turnoIniciadoEm = Date.now();
+    sala.state.turn = 7;
+    interna.inicioDaPartida = Date.now() - 60_000;
+    interna.quemComecou = 'conta-b';
+    interna.registrarParticipantes();
+
+    const comandante = new Card();
+    comandante.id = 'cmd';
+    comandante.ownerId = 'c';
+    comandante.isCommander = true;
+    comandante.scryfallId = 'scry-c';
+    sala.state.cards.set(comandante.id, comandante);
+    sala.state.players.get('c')!.deckName = 'Deck do C';
+    sala.state.players.get('c')!.life = 13;
+
+    const b = sala.state.players.get('b')!;
+    b.eliminated = true;
+    b.eliminationReason = 'POISON';
+
+    // C sai com A vivo e B fora: a partida termina e A vence.
+    sala.removerJogador('c');
+    expect(sala.state.phase).toBe('CLOSING');
+
+    const enviado = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 201 }));
+    await interna.registrarResumoDaPartida();
+
+    const corpo = JSON.parse(String(enviado.mock.calls[0]![1]!.body)) as {
+      turnos: number;
+      detalhes: Array<Record<string, unknown>>;
+    };
+    expect(corpo.turnos).toBe(7);
+    const de = (conta: string) => corpo.detalhes.find((d) => d.userId === conta);
+    expect(de('conta-a')).toMatchObject({ venceu: true, saiuAntes: false });
+    expect(de('conta-b')).toMatchObject({
+      venceu: false,
+      comecou: true,
+      motivoDaEliminacao: 'POISON',
+    });
+    expect(de('conta-c')).toMatchObject({
+      saiuAntes: true,
+      comandanteId: 'scry-c',
+      nomeDoDeck: 'Deck do C',
+      vidaFinal: 13,
+    });
+  });
+});

@@ -406,9 +406,166 @@ describe('registrarResumo — conta excluída não derruba o resumo', () => {
       playerCount: 3,
       durationSeconds: 600,
       participantes: ['u1', 'u2-excluida', 'u3'],
+      // O zod completa `detalhes` com []: é o payload JÁ validado que chega aqui.
+      detalhes: [],
     });
 
     const dados = criar.mock.calls[0][0].data.participants.createMany.data;
-    expect(dados).toEqual([{ userId: 'u1' }, { userId: 'u3' }]);
+    // Cada linha agora leva também os detalhes do histórico (todos nulos aqui,
+    // sem `detalhes`); a regra que este teste guarda é sobre QUAIS contas.
+    expect(dados.map((d: { userId: string }) => d.userId)).toEqual(['u1', 'u3']);
+  });
+});
+
+describe('histórico de partidas (RN12, revista em 14/10/2026)', () => {
+  function servico(prisma: object, decks: object = {}) {
+    return new MatchesService(
+      {} as unknown as ConstructorParameters<typeof MatchesService>[0],
+      prisma as unknown as ConstructorParameters<typeof MatchesService>[1],
+      decks as unknown as ConstructorParameters<typeof MatchesService>[2],
+      {} as unknown as ConstructorParameters<typeof MatchesService>[3],
+    );
+  }
+
+  it('grava a foto de cada participante e o bracket do deck no momento da partida', async () => {
+    const criar = jest.fn().mockResolvedValue({ id: 'm1' });
+    const svc = servico(
+      {
+        matchSummary: { findFirst: jest.fn().mockResolvedValue(null), create: criar },
+        user: { findMany: jest.fn().mockResolvedValue([{ id: 'u1' }, { id: 'u2' }]) },
+      },
+      {
+        // Quatro Game Changers no deck do u1: bracket 4.
+        getDeckById: jest.fn().mockResolvedValue({
+          formatId: 'commander',
+          cards: ['A', 'B', 'C', 'D'].map((name) => ({
+            name,
+            quantity: 1,
+            boardType: 'MAIN',
+            gameChanger: true,
+          })),
+        }),
+      },
+    );
+
+    await svc.registrarResumo({
+      roomCode: 'ABC123',
+      playerCount: 2,
+      durationSeconds: 900,
+      participantes: ['u1', 'u2'],
+      formato: 'commander',
+      turnos: 8,
+      detalhes: [
+        {
+          userId: 'u1',
+          assento: 0,
+          deckId: '0b6c1f9e-3a5d-4c2b-9e8f-1a2b3c4d5e6f',
+          nomeDoDeck: 'Dinos',
+          comandanteId: 'sf-cmd',
+          vidaFinal: 12,
+          venceu: true,
+          comecou: true,
+        },
+        { userId: 'u2', assento: 1, vidaFinal: 0, motivoDaEliminacao: 'LIFE', saiuAntes: false },
+      ],
+    });
+
+    const { data } = criar.mock.calls[0][0];
+    expect(data).toMatchObject({ format: 'commander', turns: 8 });
+    const [u1, u2] = data.participants.createMany.data;
+    expect(u1).toMatchObject({
+      userId: 'u1',
+      won: true,
+      startedFirst: true,
+      bracket: 4,
+      finalLife: 12,
+    });
+    expect(u2).toMatchObject({
+      userId: 'u2',
+      won: false,
+      eliminationReason: 'LIFE',
+      bracket: null,
+    });
+  });
+
+  it('lista as partidas com o resultado de quem pede, e "Conta excluída" no lugar do nome apagado', async () => {
+    const partida = {
+      id: 'm1',
+      endedAt: new Date('2026-10-11T21:37:00Z'),
+      durationSeconds: 1500,
+      format: 'commander',
+      turns: 8,
+      playerCount: 2,
+      participants: [
+        {
+          userId: 'eu',
+          seat: 0,
+          deckId: 'd1',
+          deckName: 'Elfos',
+          commanderId: 'c1',
+          bracket: 3,
+          finalLife: 0,
+          won: false,
+          startedFirst: false,
+          leftEarly: false,
+          eliminationReason: 'LIFE',
+          user: { username: 'gaspare', displayName: null },
+        },
+        {
+          userId: null,
+          seat: 1,
+          deckId: 'd2',
+          deckName: 'Vermes',
+          commanderId: 'c2',
+          bracket: 1,
+          finalLife: 30,
+          won: true,
+          startedFirst: true,
+          leftEarly: false,
+          eliminationReason: null,
+          user: null,
+        },
+      ],
+    };
+    const svc = servico({
+      matchSummary: { count: jest.fn(), findMany: jest.fn() },
+      $transaction: jest.fn().mockResolvedValue([1, [partida]]),
+    });
+
+    const r = await svc.historico('eu', { resultado: 'todas', pagina: 1 });
+
+    expect(r.partidas[0]!.resultado).toBe('DERROTA');
+    const [eu, outro] = r.partidas[0]!.participantes;
+    expect(eu).toMatchObject({ souEu: true, deckId: 'd1', nome: 'gaspare' });
+    // O id do deck alheio não sai: só o dono abre o próprio deck.
+    expect(outro).toMatchObject({
+      souEu: false,
+      deckId: null,
+      nome: 'Conta excluída',
+      venceu: true,
+    });
+  });
+
+  it('estatísticas: vitórias, taxa, duração média e comandante mais jogado', async () => {
+    const svc = servico({
+      matchParticipant: {
+        findMany: jest.fn().mockResolvedValue([
+          { won: true, commanderId: 'c1', match: { durationSeconds: 600 } },
+          { won: false, commanderId: 'c1', match: { durationSeconds: 1200 } },
+          { won: false, commanderId: 'c2', match: { durationSeconds: 1800 } },
+          { won: false, commanderId: null, match: { durationSeconds: 600 } },
+        ]),
+      },
+    });
+
+    const e = await svc.estatisticasDoHistorico('eu');
+
+    expect(e).toEqual({
+      partidas: 4,
+      vitorias: 1,
+      taxaDeVitoria: 0.25,
+      duracaoMediaSegundos: 1050,
+      comandanteMaisJogado: { comandanteId: 'c1', partidas: 2 },
+    });
   });
 });

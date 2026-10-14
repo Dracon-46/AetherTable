@@ -889,6 +889,81 @@ uma plataforma vazia.
 > consegue reportar "a lista de mesas está indisponível", sem nada no log que
 > aponte para a causa.
 
+### 5.6 `GET /matches/historico`
+
+As partidas da conta, mais recentes primeiro, 20 por página (RN12, revista em
+14/10/2026). Querystring:
+
+| Parâmetro   | Valores                                             | Padrão  |
+| ----------- | --------------------------------------------------- | ------- |
+| `resultado` | `todas`, `vitorias`, `derrotas`, `sem-vencedor`     | `todas` |
+| `formato`   | id do formato (`commander`…), sem diferenciar caixa | —       |
+| `pagina`    | 1 a 1000                                            | `1`     |
+
+```json
+{
+  "total": 37,
+  "pagina": 1,
+  "porPagina": 20,
+  "partidas": [
+    {
+      "id": "…",
+      "terminouEm": "2026-10-14T21:40:00.000Z",
+      "duracaoSegundos": 3900,
+      "formato": "COMMANDER",
+      "rodadas": 11,
+      "jogadores": 4,
+      "resultado": "VITORIA",
+      "participantes": [
+        {
+          "nome": "Gaspare",
+          "usuario": "gaspare",
+          "souEu": true,
+          "deckId": "…",
+          "nomeDoDeck": "Atraxa Superfriends",
+          "comandanteId": "<scryfallId>",
+          "bracket": 3,
+          "vidaFinal": 12,
+          "venceu": true,
+          "comecou": false,
+          "saiuAntes": false,
+          "motivoDaEliminacao": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `resultado` é `SEM_VENCEDOR` quando ninguém venceu (mesa desfeita, todos
+  saíram). `derrotas` filtra partidas COM vencedor que não foi a conta.
+- `deckId` só vem preenchido na linha da própria conta — é o que abre "Abrir o
+  deck". O dos outros é sempre `null`.
+- O nome vem da conta na leitura; conta excluída aparece como `"Conta excluída"`
+  com `usuario: null`.
+- `bracket` é a estimativa do deck NO MOMENTO da partida: editar o deck depois
+  não reescreve o histórico.
+
+### 5.7 `GET /matches/historico/estatisticas`
+
+Os números do topo da tela de histórico:
+
+```json
+{
+  "partidas": 37,
+  "vitorias": 11,
+  "taxaDeVitoria": 0.297,
+  "duracaoMediaSegundos": 3420,
+  "comandanteMaisJogado": { "comandanteId": "<scryfallId>", "partidas": 9 }
+}
+```
+
+O resumo de cada partida chega por `POST /internal/matches/summary`, vindo do
+game-server: além de duração e participantes, ele agora traz `formato`,
+`turnos` e `detalhes[]` (assento, deck, comandante, vida final, venceu,
+começou, saiu antes, motivo da eliminação). Tudo opcional — game-server antigo
+continua sendo aceito, e a partida conta sem os detalhes.
+
 ---
 
 ## 6. Moderação

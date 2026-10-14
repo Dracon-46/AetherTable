@@ -160,11 +160,20 @@ jogador é removido e suas cartas saem da mesa.
 O sistema armazena apenas **e-mail, nome de exibição e URL de avatar**. Nunca senha de provedor
 OAuth, nunca dados de pagamento, nunca conteúdo de chat persistido além da sessão da sala.
 
-### RN12 — Sem persistência de partida no banco relacional
+### RN12 — Partida no banco: resumo sim, replay não
 
-O `RoomState` vive em memória (e opcionalmente em Redis). Nada de estado de partida em PostgreSQL:
-o banco relacional guarda usuários e decks. Consequência aceita: o histórico de partidas é
-estatística agregada, não replay — até que `DOC-002` §8 decida o contrário.
+O `RoomState` vive em memória (e opcionalmente em Redis). Nada do ESTADO de jogo vai para o
+PostgreSQL: nem cartas, nem zonas, nem log de ações. O que vai é o **resumo** de cada partida
+(revisto em 14/10/2026, para o histórico de partidas):
+
+- da partida: formato, número de jogadores, duração, rodadas e quando terminou;
+- de cada jogador: assento, deck usado (id e nome), comandante, bracket estimado do deck no
+  momento da partida, vida final, se venceu, se começou, se saiu antes do fim e o motivo da
+  eliminação.
+
+O nome dos jogadores NÃO é copiado para a partida: vem da conta na leitura. Quem exclui a conta
+perde o vínculo com as partidas (`ON DELETE SET NULL`) e aparece no histórico dos outros como
+"Conta excluída" — a partida continua contando para quem ficou. Replay continua fora de escopo.
 
 ### RN13 — Visibilidade conquistada por ação explícita
 
@@ -462,8 +471,9 @@ Catálogo completo das ações que concedem visibilidade em
 1. Um jogador aciona "Sair da partida" e confirma.
 2. O servidor remove o jogador e suas cartas (que retornam logicamente ao deck do `ownerId`).
 3. Quando a sala fica sem conexões, ela é destruída após 10 min (`FR-17`).
-4. O game server envia ao Backend Core um resumo **agregado** (duração, nº de jogadores) para
-   estatística de perfil. Nenhum estado de jogo é persistido (`RN12`).
+4. O game server envia ao Backend Core o **resumo** da partida (duração, formato, rodadas e,
+   de cada jogador, deck, comandante, vida final e resultado) para o histórico e a estatística
+   de perfil. Nenhum estado de jogo é persistido (`RN12`).
 
 **Fluxos de exceção**
 
