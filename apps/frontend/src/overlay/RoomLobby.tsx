@@ -50,6 +50,7 @@ import {
 import { useRouter } from 'next/navigation';
 import {
   CRONOMETROS_DE_TURNO,
+  TEMPOS_DE_MULLIGAN,
   NOME_DA_COMUNICACAO,
   NOME_DO_IDIOMA,
   REGRA_DO_MULLIGAN,
@@ -570,6 +571,30 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
 
               <div>
                 <label className="text-text-muted mb-1.5 block text-xs font-medium">
+                  Tempo para o mulligan
+                </label>
+                <select
+                  value={config.tempoDeMulligan}
+                  aria-label="Tempo para o mulligan"
+                  onChange={(e) => ajustarRegra({ tempoDeMulligan: Number(e.target.value) })}
+                  className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-3 py-2 text-sm focus:outline-none"
+                >
+                  {TEMPOS_DE_MULLIGAN.map((s) => (
+                    <option key={s} value={s}>
+                      {s ? nomeDoCronometro(s) : 'Sem limite'}
+                    </option>
+                  ))}
+                </select>
+                {/* Ao contrário do cronômetro de turno, este AGE — e precisa
+                    dizer isso antes, não na hora em que a mão é mantida. */}
+                <p className="text-text-faint mt-1 text-xs">
+                  Quem não decidir a tempo fica com a mão; o que faltar devolver vai ao fundo ao
+                  acaso.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-text-muted mb-1.5 block text-xs font-medium">
                   Quem começa
                 </label>
                 <select
@@ -643,6 +668,13 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
                     config.cronometroDeTurno > 0
                       ? `${nomeDoCronometro(config.cronometroDeTurno)} por turno — só avisa`
                       : 'Desligado',
+                },
+                {
+                  rotulo: 'Mulligan com prazo',
+                  valor:
+                    config.tempoDeMulligan > 0
+                      ? `${nomeDoCronometro(config.tempoDeMulligan)} para decidir a mão`
+                      : 'Sem limite',
                 },
                 {
                   rotulo: 'Quem começa',

@@ -143,6 +143,56 @@ describe('anexos, setas e contadores', () => {
     expect(state.arrows.size).toBe(0);
   });
 
+  /**
+   * `splice` com inserção LANÇA no ArraySchema do Colyseus 3: "para o fundo do
+   * grimório" e a devolução do London viravam "Erro interno na mesa".
+   */
+  it('mover para o grimório numa posição: fundo e meio', () => {
+    const state = montarMesa(['a']);
+    ['g1', 'g2', 'g3'].forEach((id, i) => poe(state, U(20 + i), 'a', 'LIBRARY', { id }));
+    const naMao = poe(state, U(30), 'a', 'HAND');
+    const outra = poe(state, U(31), 'a', 'HAND');
+
+    REGISTRY.INTENT_CHANGE_ZONE.executa(ctx(state, 'a'), {
+      entityId: naMao.id,
+      targetZone: 'LIBRARY',
+      index: 0,
+    } as never);
+    expect(lista(state, 'a', 'LIBRARY')[0]).toBe(naMao.id);
+
+    REGISTRY.INTENT_CHANGE_ZONE.executa(ctx(state, 'a'), {
+      entityId: outra.id,
+      targetZone: 'LIBRARY',
+      index: 2,
+    } as never);
+    expect(lista(state, 'a', 'LIBRARY')).toHaveLength(5);
+    expect(lista(state, 'a', 'LIBRARY')[2]).toBe(outra.id);
+  });
+
+  /** "Conjuro isto naquilo": a seta da mão segue a mágica até a pilha. */
+  it('a seta da mão sobrevive à pilha e some quando a mágica resolve', () => {
+    const state = montarMesa(['a', 'b']);
+    const c = poe(state, U(9), 'a', 'HAND');
+    const seta = new Arrow();
+    seta.id = 's2';
+    seta.ownerId = 'a';
+    seta.fromId = c.id;
+    seta.toId = 'b';
+    state.arrows.set(seta.id, seta);
+
+    REGISTRY.INTENT_CHANGE_ZONE.executa(ctx(state, 'a'), {
+      entityId: c.id,
+      targetZone: 'STACK',
+    } as never);
+    expect(state.arrows.has('s2')).toBe(true);
+
+    REGISTRY.INTENT_CHANGE_ZONE.executa(ctx(state, 'a'), {
+      entityId: c.id,
+      targetZone: 'GRAVEYARD',
+    } as never);
+    expect(state.arrows.size).toBe(0);
+  });
+
   it('tirar marcador em lote de quem não tem não grava valor negativo', () => {
     const state = montarMesa(['a']);
     const c = poe(state, U(8), 'a', 'BATTLEFIELD');

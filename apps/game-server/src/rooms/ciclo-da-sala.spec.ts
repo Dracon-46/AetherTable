@@ -279,3 +279,66 @@ describe('histórico de partidas', () => {
     });
   });
 });
+
+describe('prazo do mulligan', () => {
+  type ComPrazo = Sala & {
+    encerrarMulliganPorTempo(): void;
+    agendarFimDoMulligan(): void;
+  };
+
+  function comMao(sala: Sala, dono: string, n: number): string[] {
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const c = new Card();
+      c.id = `${dono}-mao-${i}`;
+      c.ownerId = dono;
+      c.controllerId = dono;
+      c.zone = 'HAND';
+      sala.state.cards.set(c.id, c);
+      sala.state.zoneOrder.get(zoneOrderKey(dono, 'HAND'))!.items.push(c.id);
+      ids.push(c.id);
+    }
+    return ids;
+  }
+
+  /** London com dois mulligans: devia duas ao fundo e não escolheu a tempo. */
+  it('quem não decidiu fica com a mão, e o que devia vai ao fundo ao acaso', () => {
+    const sala = montarSala(['a', 'b']) as ComPrazo;
+    sala.state.phase = 'PLAYING';
+    sala.state.tipoDeMulligan = 'LONDON';
+    sala.state.mulliganExpiraEm = Date.now() - 1;
+    const a = sala.state.players.get('a')!;
+    a.mulliganCount = 2;
+    comMao(sala, 'a', 7);
+    const b = sala.state.players.get('b')!;
+    b.keptHand = true;
+    comMao(sala, 'b', 7);
+
+    sala.encerrarMulliganPorTempo();
+
+    expect(a.keptHand).toBe(true);
+    expect(sala.state.zoneOrder.get(zoneOrderKey('a', 'HAND'))!.items.length).toBe(5);
+    expect(sala.state.zoneOrder.get(zoneOrderKey('a', 'LIBRARY'))!.items.length).toBe(2);
+    // Quem já tinha decidido não é tocado.
+    expect(sala.state.zoneOrder.get(zoneOrderKey('b', 'HAND'))!.items.length).toBe(7);
+    expect(sala.state.mulliganExpiraEm).toBe(0);
+  });
+
+  it('antes do prazo, nada acontece', () => {
+    const sala = montarSala(['a']) as ComPrazo;
+    sala.state.phase = 'PLAYING';
+    sala.state.mulliganExpiraEm = Date.now() + 60_000;
+    comMao(sala, 'a', 7);
+    sala.encerrarMulliganPorTempo();
+    expect(sala.state.players.get('a')!.keptHand).toBe(false);
+  });
+
+  it('todo mundo decidindo antes do prazo apaga o relógio', () => {
+    const sala = montarSala(['a', 'b']) as ComPrazo;
+    sala.state.phase = 'PLAYING';
+    sala.state.mulliganExpiraEm = Date.now() + 60_000;
+    sala.state.players.forEach((p) => (p.keptHand = true));
+    sala.agendarFimDoMulligan();
+    expect(sala.state.mulliganExpiraEm).toBe(0);
+  });
+});

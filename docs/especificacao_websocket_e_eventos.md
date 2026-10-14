@@ -329,8 +329,17 @@ em que a regra antiga ("o próximo é o assento 0") nunca contava a rodada.
   cronometroDeTurno?: number;   // 0 | 60 | 120 | 180 | 300, em segundos
   maxSeats?: number;            // 1..MAX_PLAYERS, preso à faixa `jogadores` do formato
   vidaInicial?: number;         // 1..999; 0 volta à do formato. Só na sala de espera
+  tempoDeMulligan?: number;     // 0 | 60 | 90 | 120 | 180, em segundos; 0 = sem limite
 }
 ```
+
+**Tempo para o mulligan.** Diferente do cronômetro de turno (que só avisa, RN01), este
+FECHA a janela de mulligan — que já é do servidor (`MULLIGAN_CLOSED`). START_MATCH grava
+`mulliganExpiraEm = agora + tempo` (nada na mesa `LIVRE`, que não tem janela); a sala agenda
+o fechamento no próprio relógio. No vencimento, quem não decidiu fica com a mão, e as
+cartas que a regra ainda cobrava ao fundo (`cartasParaDevolverNoMulligan`) vão ao fundo
+**ao acaso**, pelo CSPRNG (RN06), com uma linha no log. Todo mundo decidindo antes zera
+`mulliganExpiraEm`, e o relógio some da tela. RESET_MATCH também zera.
 
 **Vida inicial combinada.** A mesa livre prometia "vida configurável" no resumo do
 formato e não havia onde configurar; nenhuma mesa jogava regra da casa. Gravar
@@ -352,6 +361,7 @@ metade enquanto os patches chegam.
 | Só em `phase === 'WAITING'` (exceto `maxSeats`)    | `CONFIG_LOCKED`   |
 | `jogadorInicial` tem de existir em `state.players` | `INVALID_PAYLOAD` |
 | `cronometroDeTurno` só da lista fechada            | recusado pelo zod |
+| `tempoDeMulligan` só da lista fechada              | recusado pelo zod |
 | `maxSeats` abaixo dos jogadores já sentados        | `INVALID_PAYLOAD` |
 
 `CONFIG_LOCKED` existe porque trocar o tipo de mulligan com a partida em

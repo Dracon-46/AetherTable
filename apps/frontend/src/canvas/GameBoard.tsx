@@ -1764,7 +1764,12 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
 
             {/* ── Setas de alvo ──────────────────────────────────────────── */}
             {Object.values(arrows).map((seta) => {
-              const de = ancoras.get(seta.fromId);
+              // SETA QUE SAI DA MÃO. Para quem apontou, a carta está na mão
+              // dele, desenhada. Para o resto da mesa a mão é fechada: a carta
+              // não tem posição, e a seta não aparecia — "vou conjurar isto
+              // naquilo" ficava invisível justamente para o alvo. Ela passa a
+              // sair do nome de quem apontou, sem revelar a carta.
+              const de = ancoras.get(seta.fromId) ?? ancoras.get(seta.ownerId);
               const para = ancoras.get(seta.toId);
               if (!de || !para) return null;
               return (

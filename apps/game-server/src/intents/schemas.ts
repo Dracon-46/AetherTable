@@ -17,6 +17,7 @@ import {
   REACOES,
   REALTIME_LIMITS,
   TIPOS_DE_MULLIGAN,
+  TEMPOS_DE_MULLIGAN,
   ZONES,
   ehBorderValido,
   ehPetValido,
@@ -438,6 +439,11 @@ export const SetRoomConfigIntent = z
       .optional(),
     maxSeats: z.number().int().min(1).max(REALTIME_LIMITS.MAX_PLAYERS).optional(),
     vidaInicial: z.number().int().min(0).max(999).optional(),
+    tempoDeMulligan: z
+      .number()
+      .int()
+      .refine((v) => (TEMPOS_DE_MULLIGAN as readonly number[]).includes(v))
+      .optional(),
   })
   .strict();
 

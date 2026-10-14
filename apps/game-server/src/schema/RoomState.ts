@@ -169,4 +169,17 @@ export class RoomState extends Schema {
    * a 30, duelo a 30). No FIM da classe — o schema serializa por índice.
    */
   @type('number') vidaInicial = 0;
+
+  /**
+   * Tempo para decidir a mão inicial, em segundos. `0` = sem limite. Ver
+   * `TEMPOS_DE_MULLIGAN` em shared-types para por que este, ao contrário do
+   * cronômetro de turno, AGE. No FIM da classe — o schema serializa por índice.
+   */
+  @type('number') tempoDeMulligan = 0;
+  /**
+   * Epoch ms em que a janela de mulligan fecha sozinha. `0` = sem prazo
+   * correndo (desligado, ou todo mundo já decidiu). Estado, e não mensagem:
+   * quem reconecta no meio da decisão precisa ver quanto falta.
+   */
+  @type('number') mulliganExpiraEm = 0;
 }

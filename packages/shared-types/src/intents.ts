@@ -314,6 +314,8 @@ export interface SetRoomConfigPayload {
   sideboardPermitido?: boolean;
   /** Segundos. `0` = desligado. Valor de `CRONOMETROS_DE_TURNO`. */
   cronometroDeTurno?: number;
+  /** Segundos para decidir a mão inicial. `0` = sem limite. Valor de `TEMPOS_DE_MULLIGAN`. */
+  tempoDeMulligan?: number;
   /**
    * Assentos da mesa, dentro da faixa do formato. Único campo que vale com a
    * partida em andamento: abrir uma vaga não desfaz escolha de ninguém.

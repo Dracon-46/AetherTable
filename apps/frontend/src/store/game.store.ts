@@ -157,6 +157,10 @@ export interface ConfigDaMesa {
   votacaoExpiraEm: number;
   /** Vida inicial combinada no lobby. `0` = a do formato. */
   vidaInicial: number;
+  /** Segundos para decidir a mão inicial. `0` = sem limite. */
+  tempoDeMulligan: number;
+  /** Epoch ms em que o servidor fecha a janela de mulligan. `0` = sem prazo. */
+  mulliganExpiraEm: number;
 }
 
 const CONFIG_INICIAL: ConfigDaMesa = {
@@ -177,6 +181,8 @@ const CONFIG_INICIAL: ConfigDaMesa = {
   votacaoSim: '',
   votacaoExpiraEm: 0,
   vidaInicial: 0,
+  tempoDeMulligan: 0,
+  mulliganExpiraEm: 0,
   turnoIniciadoEm: 0,
 };
 
@@ -500,6 +506,8 @@ interface UIState {
    * ficam as pilhas de cada faixa — e a escolha sobrevive.
    */
   logAberto: boolean;
+  /** Chat e ações em duas listas, uma sobre a outra, em vez de misturados. */
+  logDividido: boolean;
   /**
    * ─── TAMANHO DA CARTA ────────────────────────────────────────────────────
    *
@@ -577,6 +585,7 @@ interface UIState {
   setBarraAberta: (v: boolean) => void;
   setVidaModo: (v: UIState['vidaModo']) => void;
   setLogAberto: (v: boolean) => void;
+  setLogDividido: (v: boolean) => void;
   setFatorCarta: (v: number) => void;
   /** Soma `delta` ao fator, já limitado. É o que os atalhos `=` e `-` chamam. */
   ajustarFatorCarta: (delta: number) => void;
@@ -621,6 +630,7 @@ export const useUIStore = create<UIState>()(
       barraAberta: false,
       vidaModo: 'minha',
       logAberto: false,
+      logDividido: false,
       fatorCarta: FATOR_CARTA_PADRAO,
       alinharNaGrade: false,
       anexosDesativados: false,
@@ -688,6 +698,7 @@ export const useUIStore = create<UIState>()(
       setBarraAberta: (barraAberta) => set({ barraAberta }),
       setVidaModo: (vidaModo) => set({ vidaModo }),
       setLogAberto: (logAberto) => set({ logAberto }),
+      setLogDividido: (logDividido) => set({ logDividido }),
       setFatorCarta: (v) =>
         set({ fatorCarta: Math.min(FATOR_CARTA_MAX, Math.max(FATOR_CARTA_MIN, v)) }),
       ajustarFatorCarta: (delta) =>
@@ -738,6 +749,7 @@ export const useUIStore = create<UIState>()(
       partialize: (s) => ({
         showZoneOutlines: s.showZoneOutlines,
         logAberto: s.logAberto,
+        logDividido: s.logDividido,
         trilhoAberto: s.trilhoAberto,
         seguirTurno: s.seguirTurno,
         // `boardView` guarda um sessionId quando aponta para um oponente, e

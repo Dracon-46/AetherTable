@@ -291,6 +291,8 @@ export function useRoomSync(room: Room<RoomState> | null) {
         votacaoSim: room.state.votacaoSim ?? '',
         votacaoExpiraEm: room.state.votacaoExpiraEm ?? 0,
         vidaInicial: room.state.vidaInicial ?? 0,
+        tempoDeMulligan: room.state.tempoDeMulligan ?? 0,
+        mulliganExpiraEm: room.state.mulliganExpiraEm ?? 0,
       });
     };
 

@@ -6,6 +6,7 @@ import {
   REALTIME_LIMITS,
   ZONES,
   acharFormato,
+  cartasParaDevolverNoMulligan,
   normalizarConfigDeSala,
   zoneOrderKey,
   type ConfigDeSala,
@@ -35,6 +36,7 @@ import {
   type IntentHandler,
 } from '../intents/registry';
 import { embaralhar } from '../services/rng';
+import { ordem } from '../services/mesa';
 import { ComandoDeIntencao, HistoricoDeComandos } from '../intents/comandos';
 import { logSistema } from '../services/log';
 import { reconciliarClient, reconciliarTudo } from '../services/view-sync';
@@ -206,6 +208,9 @@ export class AetherRoom extends Room<RoomState> {
   /** Encerramento agendado da votação aberta — ver `agendarFimDaVotacao`. */
   private fimDaVotacao: { clear(): void } | null = null;
   private fimDaVotacaoAgendado = 0;
+  /** Fechamento agendado da janela de mulligan — ver `agendarFimDoMulligan`. */
+  private fimDoMulligan: { clear(): void } | null = null;
+  private fimDoMulliganAgendado = 0;
   private proximoAssento = 0;
 
   /**
@@ -338,6 +343,81 @@ export class AetherRoom extends Room<RoomState> {
       },
       Math.max(0, votacaoExpiraEm - Date.now()) + 50,
     );
+  }
+
+  /**
+   * ─── O PRAZO DO MULLIGAN ─────────────────────────────────────────────────
+   *
+   * Mesmo desenho da votação: o estado diz QUANDO vence (`mulliganExpiraEm`)
+   * e quem fecha é o servidor, no relógio da sala — não o cliente, que pode
+   * estar com a aba em segundo plano, desconectado ou simplesmente mentindo.
+   * Chamado depois de cada intenção: é quando o prazo nasce (START_MATCH),
+   * morre (RESET_MATCH) ou deixa de importar (todo mundo decidiu).
+   */
+  private agendarFimDoMulligan(): void {
+    const { mulliganExpiraEm, phase } = this.state;
+    if (!mulliganExpiraEm) return;
+    // Todo mundo decidiu antes do prazo: o relógio some da tela de todos.
+    const faltaAlguem = Array.from(this.state.players.values()).some((p) => !p.keptHand);
+    if (phase !== 'PLAYING' || !faltaAlguem) {
+      this.state.mulliganExpiraEm = 0;
+      return;
+    }
+    if (this.fimDoMulliganAgendado === mulliganExpiraEm) return;
+    this.fimDoMulligan?.clear();
+    this.fimDoMulliganAgendado = mulliganExpiraEm;
+    this.fimDoMulligan = this.clock.setTimeout(
+      () => {
+        this.fimDoMulligan = null;
+        this.fimDoMulliganAgendado = 0;
+        this.encerrarMulliganPorTempo();
+      },
+      Math.max(0, mulliganExpiraEm - Date.now()) + 50,
+    );
+  }
+
+  /**
+   * Quem não decidiu fica com a mão que tem. As cartas que a regra da mesa
+   * ainda cobrava ao fundo (London, ou o segundo mulligan em diante no
+   * Commander) vão ao fundo AO ACASO — pelo CSPRNG, como todo sorteio da mesa
+   * (RN06) — e o log diz quantas foram.
+   */
+  private encerrarMulliganPorTempo(): void {
+    const { mulliganExpiraEm } = this.state;
+    if (!mulliganExpiraEm || mulliganExpiraEm > Date.now()) return;
+    this.state.mulliganExpiraEm = 0;
+    if (this.state.phase !== 'PLAYING') return;
+
+    this.state.players.forEach((p) => {
+      if (p.keptHand) return;
+      // O contexto é o do PRÓPRIO jogador: a carta sai da mão dele para o
+      // grimório dele pela mesma intenção de quando ele faz isso no modal.
+      // Desconectado, o cliente é um dublê mudo.
+      const cliente =
+        this.clients.find((c) => c.sessionId === p.id) ??
+        ({ sessionId: p.id, send: () => {} } as unknown as Client);
+      const contexto = this.montarContexto(cliente);
+      const devolver = cartasParaDevolverNoMulligan(this.state.tipoDeMulligan, p.mulliganCount);
+      const mao = [...(ordem(this.state, p.id, 'HAND') ?? [])];
+      const aoFundo = embaralhar(mao).slice(0, Math.min(devolver, mao.length));
+      for (const id of aoFundo) {
+        REGISTRY.INTENT_CHANGE_ZONE.executa(contexto, {
+          entityId: id,
+          targetZone: 'LIBRARY',
+          index: 0,
+        } as never);
+      }
+      p.keptHand = true;
+      aplicarTopoRevelado(contexto, p.id);
+      this.publicarLog(
+        logSistema(
+          p.id,
+          aoFundo.length
+            ? `O tempo do mulligan acabou: ${p.name} ficou com a mão, e ${aoFundo.length} carta(s) foram ao fundo ao acaso`
+            : `O tempo do mulligan acabou: ${p.name} ficou com a mão`,
+        ),
+      );
+    });
   }
 
   private cancelarDescarte(): void {
@@ -945,6 +1025,7 @@ export class AetherRoom extends Room<RoomState> {
             new ComandoDeIntencao(tipo, handler, contexto, parsed.data, this.state),
           );
           this.agendarFimDaVotacao();
+          this.agendarFimDoMulligan();
           if (this.state.phase !== faseAntes) {
             this.publicarMetadados();
             if (this.state.phase === 'PLAYING') {
