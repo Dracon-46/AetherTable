@@ -16,6 +16,7 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
 import { GeradorDeDeckService } from './gerador/gerador-de-deck.service.js';
+import { SugestoesDeCartasService } from './gerador/sugestoes.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   AdicionarCartaDto,
@@ -69,6 +70,7 @@ export class DecksController {
   constructor(
     private readonly decksService: DecksService,
     private readonly gerador: GeradorDeDeckService,
+    private readonly sugestoes: SugestoesDeCartasService,
   ) {}
 
   /**
@@ -100,6 +102,19 @@ export class DecksController {
   @Get(':id')
   getDeckById(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
     return this.decksService.getDeckById(req.user.sub, id);
+  }
+
+  /**
+   * CARTAS RECOMENDADAS para o deck, pelo tema e pela identidade do
+   * comandante (ver `gerador/sugestoes.service.ts`). Até cinco buscas na
+   * Scryfall por pedido — com cache, mas o limite é apertado pelo mesmo motivo
+   * do deck aleatório.
+   */
+  @Get(':id/sugestoes')
+  @Throttle({ curto: { limit: 3, ttl: 10_000 }, longo: { limit: 60, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Cartas recomendadas pelo comandante do deck' })
+  sugerirCartas(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
+    return this.sugestoes.sugerir(req.user.sub, id);
   }
 
   @Delete(':id')

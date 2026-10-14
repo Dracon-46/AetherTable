@@ -685,6 +685,39 @@ Cada papel sorteia entre as mais jogadas (três vezes o que pede), sempre single
 100; se faltar um básico da Scryfall, a rota recusa em vez de gravar deck incompleto. Limite: 2 a cada
 20 s e 15 por hora — cada pedido são ~11 buscas na Scryfall.
 
+### 3.14 `GET /decks/:id/sugestoes` — cartas recomendadas pelo comandante
+
+O tema do comandante (o mesmo leitor do deck aleatório) e a identidade de cor dele viram até cinco
+buscas, cada uma ordenada pelo EDHREC; o que o deck já tem (em qualquer impressão, por `oracle_id`)
+sai da lista. Até 12 cartas por grupo.
+
+```json
+{
+  "comandantes": ["Ghalta, Primal Hunger"],
+  "temas": ["tribo Dinosaur"],
+  "grupos": [
+    {
+      "papel": "tema",
+      "nome": "Do tema",
+      "cartas": [
+        {
+          "scryfallId": "…",
+          "name": "Gishath, Sun's Avatar",
+          "typeLine": "Legendary Creature — Dinosaur Avatar",
+          "manaCost": "{5}{R}{G}{W}",
+          "gameChanger": false
+        }
+      ]
+    }
+  ]
+}
+```
+
+`papel` é `tema`, `ramp`, `compra`, `remocao` ou `terrenos`; grupo vazio não vem. Deck sem
+comandante devolve `grupos: []` sem buscar nada. Diferente do deck aleatório, Game Changer **entra**
+na sugestão, marcado (`gameChanger: true`): a escolha é da pessoa, e a tela avisa que pode subir o
+bracket. Limite: 3 a cada 10 s e 60 por hora.
+
 ## 4. Cartas (proxy da Scryfall)
 
 Todo acesso à Scryfall passa por aqui, para centralizar cache e fila de 100 ms (`DOC-035` §3).
