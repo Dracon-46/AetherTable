@@ -4,6 +4,7 @@ import {
   ehAcaoDeAtalho,
   ehPreferenciaDeMesa,
   ehBorderValido,
+  ehNameplateValido,
   ehPetValido,
   ehPlaymatValido,
   ehSleeveValido,
@@ -115,6 +116,7 @@ export const AtualizarPerfilDto = z
     borderId: idDeCosmetico(ehBorderValido, 'borda'),
     titleId: idDeCosmetico(ehTitleValido, 'título'),
     petId: idDeCosmetico(ehPetValido, 'mascote'),
+    nameplateId: idDeCosmetico(ehNameplateValido, 'placa de nome'),
     cosmeticosDeOponentes: z.boolean().optional(),
     /** Mapa completo ação → tecla. Ver o comentário de `keybindings`. */
     keybindings: keybindings.optional(),

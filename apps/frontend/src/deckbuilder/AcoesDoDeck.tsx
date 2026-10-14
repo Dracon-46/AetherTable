@@ -11,13 +11,25 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Copy, Download, Globe, Lock, Loader2, Play } from 'lucide-react';
-import { normalizarConfigDeSala } from '@aethertable/shared-types';
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Download,
+  Globe,
+  Languages,
+  Lock,
+  Loader2,
+  Play,
+} from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { IDIOMAS_DE_CARTA, nomeDoIdioma, normalizarConfigDeSala } from '@aethertable/shared-types';
 import { api, mensagemDaApi } from '@/lib/fetcher';
 import { useToast } from '@/components/Toast';
 import { lembrarDeckDaSala } from '@/cards/deck-da-sala';
 import { exportarLista } from './agrupar';
-import { useAtualizarDeck, type DeckCarta, type DeckResumo } from './useDecks';
+import { chavesDeDeck, useAtualizarDeck, type DeckCarta, type DeckResumo } from './useDecks';
+import { useAparencia } from '../store/aparencia.store';
 
 const botao =
   'border-panel-border bg-panel text-text hover:border-primary hover:text-primary flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 sm:text-sm';
@@ -227,5 +239,99 @@ export function DescricaoDoDeck({
       aria-label="Descrição do deck"
       className="border-panel-border bg-panel text-text placeholder:text-text-faint focus:border-primary mb-5 w-full resize-y rounded-md border px-3 py-2 text-sm focus:outline-none"
     />
+  );
+}
+
+/**
+ * ─── O DECK INTEIRO NUM IDIOMA ─────────────────────────────────────────────
+ *
+ * Um clique troca cada carta pela impressão mais recente no idioma escolhido
+ * (ver `trocarIdioma` no backend). O idioma preferido, dos Ajustes, vem
+ * primeiro na lista. A resposta diz quantas mudaram e quais ficaram como
+ * estavam por não terem saído naquele idioma.
+ */
+export function MenuIdioma({ deckId, vazio }: { deckId: string; vazio: boolean }) {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const preferido = useAparencia((s) => s.idiomaDasCartas);
+  const avisar = useToast((s) => s.mostrar);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+    };
+    document.addEventListener('mousedown', fora);
+    return () => document.removeEventListener('mousedown', fora);
+  }, [aberto]);
+
+  const trocar = useMutation({
+    mutationFn: (idioma: string) =>
+      api<{ trocadas: number; semImpressao: string[] }>(`/decks/${deckId}/idioma`, {
+        method: 'POST',
+        body: { idioma },
+      }),
+    onSuccess: (r, idioma) => {
+      void qc.invalidateQueries({ queryKey: chavesDeDeck.um(deckId) });
+      void qc.invalidateQueries({ queryKey: chavesDeDeck.lista() });
+      const em = nomeDoIdioma(idioma).toLowerCase();
+      const faltaram = r.semImpressao.length;
+      avisar(
+        faltaram
+          ? `${r.trocadas} carta(s) em ${em}. ${faltaram} nunca saíram nesse idioma e ficaram como estavam.`
+          : `${r.trocadas} carta(s) em ${em}.`,
+        faltaram ? 'info' : 'sucesso',
+      );
+    },
+    onError: (e) => avisar(mensagemDaApi(e), 'erro'),
+  });
+
+  const ordem = [
+    ...IDIOMAS_DE_CARTA.filter((i) => i.codigo === preferido),
+    ...IDIOMAS_DE_CARTA.filter((i) => i.codigo !== preferido),
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setAberto((v) => !v)}
+        disabled={vazio || trocar.isPending}
+        aria-expanded={aberto}
+        className={botao}
+      >
+        {trocar.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Languages className="h-4 w-4" />
+        )}
+        Idioma
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+      {aberto && (
+        <div
+          role="menu"
+          className="border-panel-border bg-panel absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border py-1 shadow-xl"
+        >
+          <p className="text-text-faint px-3 py-1.5 text-[11px]">Pôr o deck em…</p>
+          {ordem.map((i) => (
+            <button
+              key={i.codigo}
+              role="menuitem"
+              onClick={() => {
+                setAberto(false);
+                trocar.mutate(i.codigo);
+              }}
+              className="text-text hover:bg-panel-hover flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm"
+            >
+              {i.nome}
+              {i.codigo === preferido && (
+                <span className="text-text-faint text-[10px]">preferido</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

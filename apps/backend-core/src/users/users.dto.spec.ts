@@ -57,3 +57,55 @@ describe('UsersService.updateUser — null apaga o nome de exibição', () => {
     );
   });
 });
+
+/**
+ * Placa de nome — a sexta família passa pelas mesmas duas trancas das outras:
+ * o DTO confere que o id EXISTE no catálogo, e o service confere que a conta
+ * tem DIREITO a ele. Uma família que pulasse qualquer uma delas reabriria o
+ * cadeado decorativo que `podeEquipar` fechou.
+ */
+describe('placa de nome no PATCH /users/me', () => {
+  function montar(supporterTier: 'FREE' | 'APOIADOR') {
+    const prisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue({ supporterTier }),
+        update: jest.fn().mockResolvedValue({ id: 'u1', username: 'gaspare' }),
+      },
+      userPreference: { upsert: jest.fn() },
+    };
+    return { prisma, svc: new UsersService(prisma as never) };
+  }
+
+  it('o DTO aceita uma placa do catálogo e null ("voltar ao padrão")', () => {
+    expect(AtualizarPerfilDto.parse({ nameplateId: 'mare' }).nameplateId).toBe('mare');
+    expect(AtualizarPerfilDto.parse({ nameplateId: null }).nameplateId).toBeNull();
+  });
+
+  it('o DTO recusa placa fora do catálogo — e URL, que seria upload disfarçado', () => {
+    expect(AtualizarPerfilDto.safeParse({ nameplateId: 'placa-inventada' }).success).toBe(false);
+    expect(AtualizarPerfilDto.safeParse({ nameplateId: 'https://x/y.png' }).success).toBe(false);
+  });
+
+  it('grava a placa na preferência, sem tocar nos outros cosméticos', async () => {
+    const { prisma, svc } = montar('FREE');
+
+    await svc.updateUser('u1', AtualizarPerfilDto.parse({ nameplateId: 'brasa' }));
+
+    expect(prisma.userPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { nameplateId: 'brasa' } }),
+    );
+  });
+
+  it('conta FREE não equipa placa de apoiador; conta APOIADOR equipa', async () => {
+    const free = montar('FREE');
+    await expect(
+      free.svc.updateUser('u1', AtualizarPerfilDto.parse({ nameplateId: 'ouro-real' })),
+    ).rejects.toThrow(/ouro-real/);
+    expect(free.prisma.userPreference.upsert).not.toHaveBeenCalled();
+
+    const apoiador = montar('APOIADOR');
+    await apoiador.svc.updateUser('u1', AtualizarPerfilDto.parse({ nameplateId: 'ouro-real' }));
+    expect(apoiador.prisma.userPreference.upsert).toHaveBeenCalled();
+  });
+});

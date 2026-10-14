@@ -110,6 +110,7 @@ function snapPlayer(p: Player): PlayerData {
     profileBorder: p.profileBorder ?? '',
     chatTitle: p.chatTitle ?? '',
     petId: p.petId ?? '',
+    profileNameplate: p.profileNameplate ?? '',
     ready: p.ready ?? false,
     keptHand: p.keptHand ?? false,
     deckName: p.deckName ?? '',

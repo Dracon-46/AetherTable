@@ -19,6 +19,7 @@ import { NOVIDADE_MAIS_RECENTE } from '../novidades/novidades';
 
 export type Notificacao =
   | { tipo: 'CURTIDAS'; em: string; deckId: string; nomeDoDeck: string; quantas: number }
+  | { tipo: 'COMENTARIOS'; em: string; deckId: string; nomeDoDeck: string; quantos: number }
   | {
       tipo: 'DENUNCIA_ANALISADA';
       em: string;

@@ -97,7 +97,7 @@ export class CardsService {
    * `ScryfallClient.printings` existia na main e NENHUM arquivo a chamava —
    * era o resto morto de uma tentativa anterior. Esta rota a acorda.
    */
-  async printings(scryfallId: string): Promise<{ data: ScryfallCard[] }> {
+  async printings(scryfallId: string, idioma?: string): Promise<{ data: ScryfallCard[] }> {
     const carta = await this.cardById(scryfallId);
     const oracleId = carta.oracle_id;
 
@@ -109,6 +109,23 @@ export class CardsService {
      * carta tem uma impressão só" — que é a verdade.
      */
     if (!oracleId) return { data: [carta] };
+
+    /**
+     * Com um idioma, as impressões nele entram junto com as em inglês. A busca
+     * da Scryfall só traz impressão estrangeira quando a consulta fala de
+     * `lang:` — sem isso, o seletor de arte nunca mostrava a carta em
+     * português, mesmo existindo.
+     */
+    if (idioma) {
+      return this.memo(`prints:${oracleId}:${idioma}`, TTL_BUSCA_MS, () =>
+        this.traduzirErros(() =>
+          this.scryfall.search(`oracleid:${oracleId} (lang:en or lang:${idioma})`, {
+            unique: 'prints',
+            order: 'released',
+          }),
+        ),
+      );
+    }
 
     return this.memo(`prints:${oracleId}`, TTL_BUSCA_MS, () =>
       this.traduzirErros(() => this.scryfall.printings(oracleId)),

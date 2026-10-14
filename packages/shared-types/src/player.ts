@@ -22,6 +22,8 @@ export interface IPlayer {
   profileBorder: string;
   chatTitle: string;
   petId: string;
+  /** Placa de nome — o fundo do nome do jogador na mesa. */
+  profileNameplate: string;
 
   /** Posicao na mesa, 0..3. */
   seat: number;

@@ -205,4 +205,13 @@ export class Player extends Schema {
    * FIM da classe, como todo campo novo (o schema serializa por índice).
    */
   @type({ map: 'number' }) manaPool = new MapSchema<number>();
+
+  /**
+   * Placa de nome equipada — o fundo do nome do jogador na mesa. Ver
+   * NAMEPLATES em @aethertable/shared-types. Mesmo papel de `profileBorder`, e
+   * por isso o mesmo prefixo; mas mora AQUI, no fim da classe, e nao ao lado
+   * dela: o schema serializa por indice, e um campo inserido no meio deslocaria
+   * todos os que vem depois num cliente com o mirror antigo.
+   */
+  @type('string') profileNameplate = '';
 }

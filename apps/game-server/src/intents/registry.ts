@@ -3005,6 +3005,7 @@ const INTENT_SET_COSMETICS: IntentHandler<typeof S.SetCosmeticsIntent> = {
     if (payload.borderId !== undefined) p.profileBorder = payload.borderId;
     if (payload.titleId !== undefined) p.chatTitle = payload.titleId;
     if (payload.petId !== undefined) p.petId = payload.petId;
+    if (payload.nameplateId !== undefined) p.profileNameplate = payload.nameplateId;
   },
 };
 

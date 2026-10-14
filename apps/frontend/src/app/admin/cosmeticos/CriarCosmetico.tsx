@@ -32,12 +32,13 @@ import {
   normalizarCosmeticoAutoral,
   type ChatTitle,
   type CosmeticoAutoral,
+  type Nameplate,
   type Pet,
   type Playmat,
   type Sleeve,
 } from '@aethertable/shared-types';
 import { caminhoDoPet, playmatCanvasDe, sleeveCanvasDe } from '@/cosmetics/render';
-import { Avatar } from '@/components/Avatar';
+import { Avatar, NomeComPlaca } from '@/components/Avatar';
 import { mensagemDaApi } from '@/lib/fetcher';
 import { useRegistrarCosmetico } from '../../../admin/useAdmin';
 
@@ -48,6 +49,7 @@ const TIPOS = [
   { tipo: 'PET', rotulo: 'Mascote' },
   { tipo: 'TITLE', rotulo: 'Título de chat' },
   { tipo: 'BORDER', rotulo: 'Borda de perfil' },
+  { tipo: 'NAMEPLATE', rotulo: 'Placa de nome' },
 ] as const;
 
 type Tipo = (typeof TIPOS)[number]['tipo'];
@@ -58,6 +60,7 @@ const FAMILIA: Record<Tipo, string> = {
   PET: 'petId',
   TITLE: 'titleId',
   BORDER: 'borderId',
+  NAMEPLATE: 'nameplateId',
 };
 
 /**
@@ -88,6 +91,8 @@ const CAMPOS_INICIAIS: Record<string, string> = {
   forma: 'slime',
   animacao: 'flutuar',
   badge: 'NOVO',
+  texto: '#f1f5f9',
+  estilo: 'placa',
   classe: PROFILE_BORDERS[1]?.classe ?? PROFILE_BORDERS[0]!.classe,
 };
 
@@ -296,6 +301,35 @@ export function CriarCosmetico() {
             </Campo>
           )}
 
+          {tipo === 'NAMEPLATE' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Cor rotulo="Fundo (início)" valor={campos.cor1!} ao={(v) => definir('cor1', v)} />
+              <Cor rotulo="Fundo (fim)" valor={campos.cor2!} ao={(v) => definir('cor2', v)} />
+              <Cor rotulo="Contorno" valor={campos.borda!} ao={(v) => definir('borda', v)} />
+              <Cor rotulo="Cor do nome" valor={campos.texto!} ao={(v) => definir('texto', v)} />
+              <Campo
+                rotulo="Estilo"
+                dica="O nome tem de ler de relance: confira o contraste na prévia."
+              >
+                <select
+                  value={campos.estilo}
+                  onChange={(e) => definir('estilo', e.target.value)}
+                  className={ENTRADA}
+                >
+                  {/* `nenhum` é o padrão (sem placa): um item autoral com ele
+                      seria uma placa invisível, que só ocupa o seletor. */}
+                  {VOCABULARIO_DE_COSMETICOS.estiloDeNameplate
+                    .filter((e) => e !== 'nenhum')
+                    .map((e) => (
+                      <option key={e} value={e}>
+                        {e}
+                      </option>
+                    ))}
+                </select>
+              </Campo>
+            </div>
+          )}
+
           <label className="text-text flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -415,6 +449,15 @@ function Previa({ item }: { item: CosmeticoAutoral }) {
     // A borda é classe CSS: desenhar com o próprio `Avatar` garante que a
     // prévia mostre o mesmo contorno que o painel de vida vai mostrar.
     return <Avatar nome="AT" borderId={item.item.id} tamanho="md" />;
+  }
+  if (item.familia === 'nameplateId') {
+    // O MESMO componente do painel de vida, com o item em edição — ele ainda
+    // não está no catálogo, então resolvê-lo por id cairia no padrão.
+    return (
+      <span className="text-text text-xs font-bold">
+        <NomeComPlaca nome="Planeswalker" placa={item.item as Nameplate} />
+      </span>
+    );
   }
   if (item.familia === 'titleId') {
     const t = item.item as ChatTitle;

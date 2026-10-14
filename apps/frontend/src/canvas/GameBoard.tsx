@@ -33,9 +33,9 @@ import { useGameStore, useTableStore, useUIStore, type CardData } from '../store
 import { getTexture } from './textureCache';
 import { chaveDaZona, idDoTopo } from '../store/ordem-de-zona';
 import { useCardCatalog, type CardMeta } from '../cards/catalog';
-import { caminhoDoPet, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
+import { caminhoDoPet, placaNoCanvas, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
 import { cosmeticosVisiveis, useCosmeticos } from '../cosmetics/store';
-import { acharPet } from '@aethertable/shared-types';
+import { acharNameplate, acharPet, type Nameplate } from '@aethertable/shared-types';
 import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
 import {
@@ -879,6 +879,112 @@ function Mascote({ petId, x, y }: { petId: string; x: number; y: number }) {
   );
 }
 
+// ─── Rótulo da faixa ─────────────────────────────────────────────────────────
+
+/** Corpo do rótulo. A placa é medida com a mesma fonte do `<Text>`. */
+const FONTE_ROTULO = 13;
+
+let medidorDeRotulo: Konva.Text | null = null;
+
+/**
+ * Largura do texto do rótulo, medida pelo próprio Konva.
+ *
+ * Um nó SOLTO (fora de qualquer camada) com a mesma fonte do `<Text>` que
+ * desenha — é o que faz a placa abraçar o texto sem sobrar nem cortar, em
+ * qualquer nome. Um só, reaproveitado: o rótulo muda a cada ponto de vida, e
+ * um nó novo por medição seria lixo para o coletor a cada clique.
+ */
+function larguraDoRotulo(texto: string): number {
+  if (!medidorDeRotulo) {
+    medidorDeRotulo = new Konva.Text({ fontSize: FONTE_ROTULO, fontStyle: 'bold' });
+  }
+  medidorDeRotulo.text(texto);
+  return medidorDeRotulo.width();
+}
+
+/**
+ * O rótulo da faixa — nome, vida e estado — sobre a placa de nome equipada.
+ *
+ * SEM PLACA (o padrão, ou cosméticos alheios desligados) é exatamente o
+ * `<Text>` de antes, na mesma posição e com a cor que diz de quem é a vez e
+ * quem caiu.
+ *
+ * COM PLACA, o texto passa a usar a cor DA PLACA — o fundo é dela, então o
+ * contraste também tem de ser: dourado sobre a placa "Ouro Real" não se lê. O
+ * sinal de estado muda de lugar em vez de sumir: vai para o CONTORNO, que fica
+ * dourado na vez e vermelho na desconexão. O "▶" e o "⚠ desconectado" seguem
+ * no texto, porque cor nunca foi o único sinal. Fora de foco, a placa inteira
+ * baixa a opacidade, no mesmo espírito do texto a 40% de antes: a faixa de
+ * quem não está em foco não pode gritar mais que a que está.
+ */
+function RotuloDaFaixa({
+  texto,
+  x,
+  y,
+  cor,
+  placa,
+  corDeEstado,
+  apagado,
+}: {
+  texto: string;
+  x: number;
+  y: number;
+  /** Cor do texto SEM placa — a mesma regra de estado de sempre. */
+  cor: string;
+  placa?: Nameplate;
+  /** Contorno da placa quando o estado importa (vez, desconexão). */
+  corDeEstado?: string;
+  apagado: boolean;
+}) {
+  const largura = useMemo(() => larguraDoRotulo(texto), [texto]);
+  const larguraDaPlaca = largura + 12;
+  const desenho = placa ? placaNoCanvas(placa, larguraDaPlaca) : null;
+
+  if (!desenho) {
+    return (
+      <Text
+        text={texto}
+        x={x + 8}
+        y={y + 2}
+        fontSize={FONTE_ROTULO}
+        fontStyle="bold"
+        fill={cor}
+        listening={false}
+      />
+    );
+  }
+
+  // O grupo começa 6px antes e 3px acima do texto: o texto fica exatamente
+  // onde estava sem placa, e o rótulo não pula ao equipar uma.
+  return (
+    <Group x={x + 2} y={y - 1} opacity={apagado ? 0.75 : 1} listening={false}>
+      <Rect
+        width={larguraDaPlaca}
+        height={FONTE_ROTULO + 6}
+        cornerRadius={5}
+        fillLinearGradientStartPoint={desenho.fillLinearGradientStartPoint}
+        fillLinearGradientEndPoint={desenho.fillLinearGradientEndPoint}
+        fillLinearGradientColorStops={desenho.fillLinearGradientColorStops}
+        stroke={corDeEstado ?? desenho.stroke}
+        strokeWidth={corDeEstado ? 2 : 1}
+        shadowColor={desenho.shadowColor}
+        shadowBlur={desenho.shadowBlur}
+        shadowOpacity={desenho.shadowOpacity}
+        shadowEnabled={Boolean(desenho.shadowColor)}
+        perfectDrawEnabled={false}
+      />
+      <Text
+        text={texto}
+        x={6}
+        y={3}
+        fontSize={FONTE_ROTULO}
+        fontStyle="bold"
+        fill={desenho.texto}
+      />
+    </Group>
+  );
+}
+
 /** `prefers-reduced-motion` do sistema. */
 function useMovimentoReduzido(): boolean {
   const [reduzido, setReduzido] = useState(false);
@@ -1212,6 +1318,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
         // O verso das pilhas ocultas daquele jogador. Ver `Pilha`.
         verso: sleeveCanvas(cosmeticos.sleeveId),
         petId: cosmeticos.petId,
+        // A placa do rótulo da faixa. Passa por `cosmeticosVisiveis` como o
+        // resto: com cosméticos alheios desligados, cai no padrão (sem placa).
+        placa: acharNameplate(cosmeticos.nameplateId),
         library: p?.libraryCount ?? contar('LIBRARY', faixa.playerId),
         command: contar('COMMAND', faixa.playerId),
         graveyard: contar('GRAVEYARD', faixa.playerId),
@@ -1576,8 +1685,8 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                   dash={r.player?.connected === false ? [6, 4] : undefined}
                   cornerRadius={12}
                 />
-                <Text
-                  text={
+                <RotuloDaFaixa
+                  texto={
                     r.player
                       ? `${r.faixa.playerId === activePlayerId ? '▶ ' : ''}${r.player.name}${
                           r.player.id === myId ? ' (você)' : ''
@@ -1586,10 +1695,23 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                         }`
                       : 'assento vazio'
                   }
-                  x={r.faixa.rotulo.x + 8}
-                  y={r.faixa.rotulo.y + 2}
-                  fontSize={13}
-                  fontStyle="bold"
+                  x={r.faixa.rotulo.x}
+                  y={r.faixa.rotulo.y}
+                  /* Assento vazio não tem placa: a placa é de alguém. */
+                  placa={r.player ? r.placa : undefined}
+                  /* Na placa, o estado vai para o CONTORNO. Ver `RotuloDaFaixa`. */
+                  corDeEstado={
+                    r.player?.connected === false
+                      ? COR_DESCONECTADO
+                      : r.faixa.playerId === activePlayerId
+                        ? COR_VEZ
+                        : undefined
+                  }
+                  apagado={
+                    r.player?.connected !== false &&
+                    r.faixa.playerId !== activePlayerId &&
+                    !r.faixa.emFoco
+                  }
                   /* O triângulo acompanha a borda dourada porque cor sozinha
                      não é sinal acessível: quem não distingue dourado de azul
                      ficaria sem saber de quem é a vez.
@@ -1602,7 +1724,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                      a quem está jogando, e a mesa inteira esperava a vez de um
                      jogador que não estava mais lá. O aviso e a cor apagada
                      dizem isso sem abrir o painel de jogadores. */
-                  fill={
+                  cor={
                     r.player?.connected === false
                       ? COR_DESCONECTADO
                       : r.faixa.playerId === activePlayerId

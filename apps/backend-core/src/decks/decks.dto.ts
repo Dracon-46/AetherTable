@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { formatoExiste } from '@aethertable/shared-types';
+import { CODIGOS_DE_IDIOMA, formatoExiste } from '@aethertable/shared-types';
 import { BOARD_TYPES } from './board-type.js';
 
 /**
@@ -83,12 +83,24 @@ export const AtualizarDeckDto = z
     description: z.string().trim().max(2000).optional(),
     isFavorite: z.boolean().optional(),
     isPublic: z.boolean().optional(),
+    /**
+     * A pasta do deck, para organizar a lista. Texto livre e curto; '' tira o
+     * deck da pasta. Não é tabela: pasta sem deck não existe, e renomear é
+     * mover os decks.
+     */
+    pasta: z.string().trim().max(40).optional(),
   })
   .strict()
   .refine((d) => Object.values(d).some((v) => v !== undefined), {
     message: 'Nada para atualizar',
   });
 export type AtualizarDeckDto = z.infer<typeof AtualizarDeckDto>;
+
+/** O idioma para o qual o deck inteiro vai. Ver `IDIOMAS_DE_CARTA`. */
+export const TrocarIdiomaDto = z.object({
+  idioma: z.enum(CODIGOS_DE_IDIOMA),
+});
+export type TrocarIdiomaDto = z.infer<typeof TrocarIdiomaDto>;
 
 export const ImportarDeckDto = z.object({
   decklist: z.string().min(1).max(LIMITE_DECKLIST),

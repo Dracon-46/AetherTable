@@ -41,6 +41,7 @@ import {
   type PartidaDoHistorico,
   type ResultadoDaPartida,
 } from '../../../historico/useHistorico';
+import { useT } from '../../../i18n/i18n';
 
 const ABAS: ReadonlyArray<readonly [FiltroDeResultado, string]> = [
   ['todas', 'Todas'],
@@ -87,6 +88,7 @@ function resumoEmTexto(p: PartidaDoHistorico, nomeDaCarta: (id: string | null) =
 }
 
 export default function HistoricoPage() {
+  const t = useT();
   const [resultado, setResultado] = useState<FiltroDeResultado>('todas');
   const [formato, setFormato] = useState('');
   const [pagina, setPagina] = useState(1);
@@ -133,10 +135,10 @@ export default function HistoricoPage() {
         <header className="mb-6">
           <h1 className="text-text mb-2 flex items-center gap-3 text-2xl font-bold sm:text-3xl">
             <History className="text-primary h-7 w-7 sm:h-8 sm:w-8" />
-            Histórico
+            {t('Histórico')}
           </h1>
           <p className="text-text-muted text-sm sm:text-base">
-            As partidas que você jogou: quem estava na mesa, com que deck e quem venceu.
+            {t('As partidas que você jogou: quem estava na mesa, com que deck e quem venceu.')}
           </p>
         </header>
 

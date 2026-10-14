@@ -7,6 +7,8 @@ import { DecksIniciaisController } from './decks-iniciais.controller.js';
 import { DecksIniciaisService } from './decks-iniciais.service.js';
 import { GeradorDeDeckService } from './gerador/gerador-de-deck.service.js';
 import { SugestoesDeCartasService } from './gerador/sugestoes.service.js';
+import { ComentariosController } from './comentarios.controller.js';
+import { ComentariosService } from './comentarios.service.js';
 import { CardsModule } from '../cards/cards.module.js';
 
 /**
@@ -21,6 +23,7 @@ import { CardsModule } from '../cards/cards.module.js';
     InternalDecksController,
     ExplorarController,
     DecksIniciaisController,
+    ComentariosController,
   ],
   providers: [
     DecksService,
@@ -28,6 +31,7 @@ import { CardsModule } from '../cards/cards.module.js';
     DecksIniciaisService,
     GeradorDeDeckService,
     SugestoesDeCartasService,
+    ComentariosService,
   ],
   exports: [DecksService],
 })

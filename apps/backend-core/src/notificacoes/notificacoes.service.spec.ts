@@ -11,9 +11,10 @@ import { NotificacoesService } from './notificacoes.service.js';
 const AGORA = new Date('2026-10-14T12:00:00Z');
 const horasAtras = (h: number) => new Date(AGORA.getTime() - h * 3_600_000);
 
-function montar(curtidas: unknown[], denuncias: unknown[]) {
+function montar(curtidas: unknown[], denuncias: unknown[], comentarios: unknown[] = []) {
   const prisma = {
     deckLike: { findMany: jest.fn().mockResolvedValue(curtidas) },
+    deckComment: { findMany: jest.fn().mockResolvedValue(comentarios) },
     report: { findMany: jest.fn().mockResolvedValue(denuncias) },
   };
   return { servico: new NotificacoesService(prisma as never), prisma };
@@ -60,4 +61,21 @@ it('denúncia analisada entra na ordem certa, só com o desfecho', async () => {
     desfecho: 'DISMISSED',
   });
   expect(itens[1]!.tipo).toBe('CURTIDAS');
+});
+
+it('comentários de outras pessoas nos meus decks, agregados por deck', async () => {
+  const deck = { id: 'd1', name: 'Atraxa' };
+  const { servico, prisma } = montar(
+    [],
+    [],
+    [
+      { createdAt: horasAtras(1), deck },
+      { createdAt: horasAtras(3), deck },
+    ],
+  );
+  const itens = await servico.listar('u1', AGORA);
+  expect(itens).toEqual([
+    { tipo: 'COMENTARIOS', em: horasAtras(1), deckId: 'd1', nomeDoDeck: 'Atraxa', quantos: 2 },
+  ]);
+  expect(prisma.deckComment.findMany.mock.calls[0][0].where.userId).toEqual({ not: 'u1' });
 });

@@ -58,6 +58,21 @@ describe('useHidratarPreferencias', () => {
     unmount();
   });
 
+  it('a placa de nome salva na conta é hidratada junto com os outros cosméticos', async () => {
+    // Sem esta linha no hook, a placa ficaria presa ao `localStorage`: trocar
+    // de máquina devolvia o jogador ao nome sem placa — o mesmo relato que
+    // trouxe os outros cosméticos para a conta.
+    apiMock.mockResolvedValue({
+      supporterTier: 'APOIADOR',
+      preference: { borderId: 'chama', nameplateId: 'ouro-real' },
+    });
+
+    const { unmount } = render(<Casca />);
+    await waitFor(() => expect(useCosmeticos.getState().nameplateId).toBe('ouro-real'));
+    expect(useCosmeticos.getState().borderId).toBe('chama');
+    unmount();
+  });
+
   it('a resposta que chega depois da desmontagem não é aplicada', async () => {
     let responder: (v: unknown) => void = () => {};
     apiMock.mockReturnValue(new Promise((r) => (responder = r)) as never);

@@ -26,6 +26,7 @@ import {
   AtualizarQuantidadeDto,
   CriarDeckDto,
   ImportarDeckDto,
+  TrocarIdiomaDto,
 } from './decks.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
@@ -115,6 +116,18 @@ export class DecksController {
   @ApiOperation({ summary: 'Cartas recomendadas pelo comandante do deck' })
   sugerirCartas(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
     return this.sugestoes.sugerir(req.user.sub, id);
+  }
+
+  /** Uma busca da Scryfall por lote de 12 cartas — o limite é de rota cara. */
+  @Post(':id/idioma')
+  @Throttle({ curto: { limit: 2, ttl: 30_000 }, longo: { limit: 20, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Troca cada carta do deck pela impressão mais recente num idioma' })
+  trocarIdioma(
+    @Request() req: RequisicaoAutenticada,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(TrocarIdiomaDto)) dto: TrocarIdiomaDto,
+  ) {
+    return this.decksService.trocarIdioma(req.user.sub, id, dto.idioma);
   }
 
   @Delete(':id')

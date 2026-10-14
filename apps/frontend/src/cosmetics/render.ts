@@ -17,9 +17,11 @@
  * §2.1 proíbe explicitamente de usar.
  */
 
+import type { CSSProperties } from 'react';
 import {
   acharPlaymat,
   acharSleeve,
+  type Nameplate,
   type Pet,
   type Playmat,
   type Sleeve,
@@ -436,4 +438,65 @@ export function caminhoDoPet(pet: Pet): Array<[number, number]> | null {
     default:
       return null;
   }
+}
+
+// ─── Placas de nome ──────────────────────────────────────────────────────────
+
+/**
+ * ─── UMA DESCRIÇÃO, DOIS DESENHOS ──────────────────────────────────────────
+ *
+ * A placa aparece no painel de vida (DOM) e no rótulo da faixa (Konva). As
+ * duas funções abaixo leem o MESMO item — cores, contorno, texto, estilo — e
+ * cada uma traduz para o seu mundo: `linear-gradient` e `box-shadow` de um
+ * lado, `fillLinearGradient` e `shadowBlur` do outro. Se uma placa nova ficar
+ * certa no seletor e errada na mesa, o defeito está numa destas duas, e só
+ * nelas.
+ *
+ * `null` significa "sem placa": o chamador desenha o nome como sempre desenhou.
+ * É o que o padrão devolve, e é o que a mesa usa quando o oponente desligou
+ * cosméticos alheios — o nome volta ao visual neutro, legível em qualquer tema.
+ */
+export function estiloCssDaPlaca(placa: Nameplate): CSSProperties | null {
+  if (placa.estilo === 'nenhum') return null;
+  const [inicio, fim] = placa.cores;
+  return {
+    background: `linear-gradient(90deg, ${inicio}, ${fim})`,
+    border: `1px solid ${placa.borda}`,
+    color: placa.texto,
+    // O halo é discreto de propósito — 6px, cor do contorno a ~50%. A placa
+    // decora o nome; ela não pode disputar atenção com a vez de jogar.
+    ...(placa.estilo === 'brilho' ? { boxShadow: `0 0 6px ${placa.borda}80` } : {}),
+  };
+}
+
+/** Propriedades de um `Rect` do Konva que desenha a placa com `largura` px. */
+export interface PlacaNoCanvas {
+  fillLinearGradientStartPoint: { x: number; y: number };
+  fillLinearGradientEndPoint: { x: number; y: number };
+  fillLinearGradientColorStops: Array<number | string>;
+  stroke: string;
+  texto: string;
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOpacity?: number;
+}
+
+/**
+ * A mesma placa, para o canvas. O gradiente do Konva é em coordenadas do
+ * próprio `Rect`, então ele precisa da largura — que só se sabe depois de
+ * medir o texto. Por isso a largura é parâmetro, e não parte do item.
+ */
+export function placaNoCanvas(placa: Nameplate, largura: number): PlacaNoCanvas | null {
+  if (placa.estilo === 'nenhum') return null;
+  const [inicio, fim] = placa.cores;
+  return {
+    fillLinearGradientStartPoint: { x: 0, y: 0 },
+    fillLinearGradientEndPoint: { x: Math.max(1, largura), y: 0 },
+    fillLinearGradientColorStops: [0, inicio, 1, fim],
+    stroke: placa.borda,
+    texto: placa.texto,
+    ...(placa.estilo === 'brilho'
+      ? { shadowColor: placa.borda, shadowBlur: 6, shadowOpacity: 0.5 }
+      : {}),
+  };
 }

@@ -14,9 +14,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bell, Heart, Megaphone, ShieldCheck, X } from 'lucide-react';
+import { Bell, Heart, Megaphone, MessageSquare, ShieldCheck, X } from 'lucide-react';
 import { NOVIDADE_MAIS_RECENTE } from '../novidades/novidades';
 import { useNaoLidas, useNotificacoes, type Notificacao } from './useNotificacoes';
+import { useT } from '../i18n/i18n';
 
 const RELATIVO = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
 
@@ -44,6 +45,13 @@ function textoDe(n: Notificacao): { texto: string; href?: string; Icone: typeof 
       Icone: Heart,
     };
   }
+  if (n.tipo === 'COMENTARIOS') {
+    return {
+      texto: `"${n.nomeDoDeck}" recebeu ${n.quantos} ${n.quantos === 1 ? 'comentário' : 'comentários'}.`,
+      href: `/dashboard/decks/${n.deckId}`,
+      Icone: MessageSquare,
+    };
+  }
   return {
     texto:
       n.desfecho === 'RESOLVED'
@@ -57,6 +65,7 @@ export function Sino({ className = '' }: { className?: string }) {
   const { data: notificacoes } = useNotificacoes();
   const { total, novidadeNova, vistoEm, marcarComoLido } = useNaoLidas(notificacoes);
   const [aberto, setAberto] = useState(false);
+  const t = useT();
   // O corte do momento em que a gaveta abriu: o que veio depois dele é "novo".
   const [corte, setCorte] = useState<{ vistoEm: string | null; novidade: boolean } | null>(null);
 
@@ -80,8 +89,8 @@ export function Sino({ className = '' }: { className?: string }) {
       <button
         onClick={abrir}
         className={`text-text-muted hover:text-text hover:bg-panel-hover relative rounded-md p-2 transition-colors ${className}`}
-        aria-label={total ? `Notificações: ${total} novas` : 'Notificações'}
-        title="Notificações"
+        aria-label={total ? t('Notificações: {n} novas', { n: total }) : t('Notificações')}
+        title={t('Notificações')}
       >
         <Bell className="h-5 w-5" />
         {total > 0 && (
@@ -106,13 +115,13 @@ export function Sino({ className = '' }: { className?: string }) {
           >
             <header className="border-panel-border flex items-center justify-between border-b p-4">
               <h2 id="titulo-do-sino" className="text-text flex items-center gap-2 font-bold">
-                <Bell className="text-primary h-5 w-5" /> Notificações
+                <Bell className="text-primary h-5 w-5" /> {t('Notificações')}
               </h2>
               <button
                 onClick={() => setAberto(false)}
                 autoFocus
                 className="text-text-muted hover:text-text hover:bg-panel-hover rounded-md p-1.5"
-                aria-label="Fechar"
+                aria-label={t('Fechar')}
               >
                 <X className="h-5 w-5" />
               </button>
@@ -127,7 +136,7 @@ export function Sino({ className = '' }: { className?: string }) {
                 }`}
               >
                 <p className="text-primary mb-1 flex items-center gap-1.5 text-xs font-semibold">
-                  <Megaphone className="h-3.5 w-3.5" /> Novidades da versão{' '}
+                  <Megaphone className="h-3.5 w-3.5" /> {t('Novidades da versão')}{' '}
                   {NOVIDADE_MAIS_RECENTE.versao}
                   {corte?.novidade && (
                     <span className="bg-primary rounded-full px-1.5 text-[10px] text-white">
@@ -136,12 +145,12 @@ export function Sino({ className = '' }: { className?: string }) {
                   )}
                 </p>
                 <p className="text-text text-sm font-semibold">{NOVIDADE_MAIS_RECENTE.titulo}</p>
-                <p className="text-text-muted mt-1 text-xs">Ver o que mudou →</p>
+                <p className="text-text-muted mt-1 text-xs">{t('Ver o que mudou →')}</p>
               </Link>
 
               {(notificacoes ?? []).length === 0 ? (
                 <p className="text-text-muted py-6 text-center text-sm">
-                  Nenhum aviso nos últimos 30 dias.
+                  {t('Nenhum aviso nos últimos 30 dias.')}
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -167,7 +176,9 @@ export function Sino({ className = '' }: { className?: string }) {
                       </>
                     );
                     return (
-                      <li key={`${n.tipo}-${n.tipo === 'CURTIDAS' ? n.deckId : n.denunciaId}`}>
+                      <li
+                        key={`${n.tipo}-${n.tipo === 'DENUNCIA_ANALISADA' ? n.denunciaId : n.deckId}`}
+                      >
                         {href ? (
                           <Link
                             href={href}

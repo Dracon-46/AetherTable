@@ -444,11 +444,12 @@ Os avisos do sino, dos últimos 30 dias, mais recentes primeiro (até 30):
 ```json
 [
   { "tipo": "CURTIDAS", "em": "…", "deckId": "…", "nomeDoDeck": "Atraxa", "quantas": 3 },
+  { "tipo": "COMENTARIOS", "em": "…", "deckId": "…", "nomeDoDeck": "Atraxa", "quantos": 2 },
   { "tipo": "DENUNCIA_ANALISADA", "em": "…", "denunciaId": "…", "desfecho": "DISMISSED" }
 ]
 ```
 
-Não há tabela de notificações: cada aviso é lido da fonte (`deck_likes`, `reports`) na hora, e por
+Não há tabela de notificações: cada aviso é lido da fonte (`deck_likes`, `deck_comments`, `reports`) na hora, e por
 isso nunca diverge do fato. As curtidas vêm **agregadas por deck e sem nomes**, porque o Explorar só
 mostra quantas curtidas um deck tem, nunca quem curtiu. A própria curtida não conta. Da denúncia sai
 só o desfecho (`RESOLVED` houve medida, `DISMISSED` não houve), nunca a anotação do moderador. "Lido"
@@ -598,7 +599,11 @@ transação.
 
 ### 3.6 `PATCH /decks/:id`
 
-Atualização parcial: `name`, `description`, `isFavorite`, `isPublic`, `commanderId`.
+Atualização parcial: `name`, `description`, `isFavorite`, `isPublic`, `pasta`.
+
+`pasta` (até 40 caracteres) organiza a lista de decks; `""` tira o deck da pasta (grava NULL). Pasta
+não é tabela: pasta sem deck não existe, e renomear uma pasta é mover os decks. A listagem devolve o
+campo como `folder`.
 
 ### 3.7 `POST /decks/:id/clone`
 
@@ -735,6 +740,27 @@ comandante devolve `grupos: []` sem buscar nada. Diferente do deck aleatório, G
 na sugestão, marcado (`gameChanger: true`): a escolha é da pessoa, e a tela avisa que pode subir o
 bracket. Limite: 3 a cada 10 s e 60 por hora.
 
+### 3.15 Comentários em deck público
+
+| Rota                                                   | O que faz                                    |
+| ------------------------------------------------------ | -------------------------------------------- |
+| `GET /explorar/decks/:id/comentarios`                  | Os 100 mais recentes, do mais antigo ao novo |
+| `POST /explorar/decks/:id/comentarios` `{ texto }`     | Comenta (1 a 500 caracteres, aparado)        |
+| `DELETE /explorar/decks/:id/comentarios/:comentarioId` | `204`. Só o autor ou o dono do deck          |
+
+Só deck público, com a mesma resposta `404` para "não existe" e "é privado". Quem o dono do deck
+bloqueou recebe `403` com uma mensagem que não fala em bloqueio. Cada comentário sai com
+`{ id, texto, em, autor: { usuario, nome }, meu, podeApagar }`; o nome vem da conta na leitura.
+Excluir a conta apaga os comentários dela (CASCADE). Limite do `POST`: 3 a cada 30 s e 30 por hora.
+
+### 3.16 `POST /decks/:id/idioma` — o deck inteiro num idioma
+
+`{ "idioma": "pt" }` (um código de `IDIOMAS_DE_CARTA`: en, pt, es, fr, de, it, ja). Cada carta vai
+para a impressão mais recente naquele idioma, com uma busca da Scryfall por lote de 12 cartas
+(`lang:pt (oracleid:… or …)`). Responde `{ trocadas, semImpressao: [nomes] }` — a carta que nunca
+saiu no idioma fica como estava. Duas impressões da mesma carta que viram a mesma são juntadas.
+Limite: 2 a cada 30 s e 20 por hora.
+
 ## 4. Cartas (proxy da Scryfall)
 
 Todo acesso à Scryfall passa por aqui, para centralizar cache e fila de 100 ms (`DOC-035` §3).
@@ -757,6 +783,10 @@ Uma carta hidratada. Serve do cache; em _miss_, busca e grava.
 ### 4.4 `GET /cards/:scryfallId/printings`
 
 Todas as impressões da mesma carta (`unique=prints`), para o seletor de arte (`F04`).
+
+`?idioma=pt` (um código de `IDIOMAS_DE_CARTA`) traz também as impressões naquele idioma — a busca
+da Scryfall só inclui impressão estrangeira quando a consulta fala de `lang:`. Sem o parâmetro, ou
+com `en`, só as em inglês.
 
 ### 4.5 `GET /cards/tokens?q=...`
 

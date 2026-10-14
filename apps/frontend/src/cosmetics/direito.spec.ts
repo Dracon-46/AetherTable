@@ -18,6 +18,7 @@
 
 import {
   CHAT_TITLES,
+  NAMEPLATES,
   PETS,
   PLAYMATS,
   PROFILE_BORDERS,
@@ -28,13 +29,14 @@ import {
   type FamiliaDeCosmetico,
 } from '@aethertable/shared-types';
 
-/** As cinco famílias, com o catálogo de cada uma. */
+/** As seis famílias, com o catálogo de cada uma. */
 const FAMILIAS: Array<{ familia: FamiliaDeCosmetico; itens: readonly { id: string }[] }> = [
   { familia: 'sleeveId', itens: SLEEVES },
   { familia: 'playmatId', itens: PLAYMATS },
   { familia: 'borderId', itens: PROFILE_BORDERS },
   { familia: 'titleId', itens: CHAT_TITLES },
   { familia: 'petId', itens: PETS },
+  { familia: 'nameplateId', itens: NAMEPLATES },
 ];
 
 describe('tierDoCosmetico', () => {
@@ -52,6 +54,7 @@ describe('tierDoCosmetico', () => {
     // o jogador fora de um item que ele nem tem.
     expect(tierDoCosmetico('sleeveId', 'nao-existe')).toBe('FREE');
     expect(tierDoCosmetico('petId', '')).toBe('FREE');
+    expect(tierDoCosmetico('nameplateId', 'placa-que-nao-existe')).toBe('FREE');
   });
 });
 
@@ -92,6 +95,7 @@ describe('podeEquipar', () => {
       ['borderId', COSMETICOS_PADRAO.borderId],
       ['titleId', COSMETICOS_PADRAO.titleId],
       ['petId', COSMETICOS_PADRAO.petId],
+      ['nameplateId', COSMETICOS_PADRAO.nameplateId],
     ];
     for (const [familia, id] of padroes) {
       expect(podeEquipar('FREE', familia, id)).toBe(true);

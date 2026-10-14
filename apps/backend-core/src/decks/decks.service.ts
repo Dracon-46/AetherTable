@@ -36,6 +36,9 @@ const ACIMA_DO_TETO = `Máximo de ${MAXIMO_DE_COPIAS} cópias por carta`;
  * backoff. Num deck reaberto, a hidratação passa a custar ZERO requisições.
  */
 
+/** Cartas por consulta de idioma. Cada `oracleid:` tem ~45 caracteres. */
+const LOTE_DE_IDIOMA = 12;
+
 @Injectable()
 export class DecksService {
   private readonly logger = new Logger(DecksService.name);
@@ -218,14 +221,20 @@ export class DecksService {
   async updateDeck(
     userId: string,
     deckId: string,
-    dados: { name?: string; description?: string; isFavorite?: boolean; isPublic?: boolean },
+    dados: {
+      name?: string;
+      description?: string;
+      isFavorite?: boolean;
+      isPublic?: boolean;
+      pasta?: string;
+    },
   ) {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
     // Só o que veio: um `undefined` mandado ao Prisma é ignorado, mas deixar a
     // lista explícita impede que um campo novo do DTO vire escrita sem querer.
-    const { name, description, isFavorite, isPublic } = dados;
+    const { name, description, isFavorite, isPublic, pasta } = dados;
     return this.prisma.deck.update({
       where: { id: deckId },
       data: {
@@ -233,6 +242,8 @@ export class DecksService {
         ...(description !== undefined ? { description } : {}),
         ...(isFavorite !== undefined ? { isFavorite } : {}),
         ...(isPublic !== undefined ? { isPublic } : {}),
+        // Vazio = sem pasta (NULL), e não uma pasta chamada "".
+        ...(pasta !== undefined ? { folder: pasta || null } : {}),
       },
     });
   }
@@ -528,6 +539,79 @@ export class DecksService {
         );
       }
     });
+  }
+
+  /**
+   * ─── O DECK INTEIRO NUM IDIOMA ───────────────────────────────────────────
+   *
+   * Trocar a impressão carta a carta, pelo seletor de arte, para pôr um deck
+   * de cem cartas em português eram cem janelas. Aqui é um clique: cada carta
+   * vai para a impressão MAIS RECENTE naquele idioma, e a mesa mostra a arte e
+   * o texto traduzidos porque desenha a impressão que o deck guarda.
+   *
+   * A busca é por LOTE de `oracle_id` — uma consulta da Scryfall para várias
+   * cartas —, e não uma por carta: cem buscas seriam dez segundos de fila.
+   * Carta sem impressão no idioma fica como está e volta na lista
+   * `semImpressao`: muita carta nunca saiu em português, e trocar por "nada"
+   * não é opção.
+   */
+  async trocarIdioma(userId: string, deckId: string, idioma: string) {
+    const deck = await this.prisma.deck.findFirst({
+      where: { id: deckId, userId },
+      include: { cards: true },
+    });
+    if (!deck) throw new NotFoundException('Deck não encontrado');
+    if (deck.cards.length === 0) return { trocadas: 0, semImpressao: [] as string[] };
+
+    const unicos = [...new Set(deck.cards.map((c) => c.scryfallId.toLowerCase()))];
+    const { data } = await this.cards.collection(unicos.map((id) => ({ id })));
+    const porId = new Map(data.map((c) => [c.id.toLowerCase(), c]));
+    const oracles = [
+      ...new Set(data.map((c) => c.oracle_id).filter((o): o is string => Boolean(o))),
+    ];
+
+    // oracle_id → a impressão mais recente no idioma (a busca vem em ordem de
+    // lançamento decrescente; a primeira de cada carta é a que fica).
+    const noIdioma = new Map<string, string>();
+    for (let i = 0; i < oracles.length; i += LOTE_DE_IDIOMA) {
+      const lote = oracles.slice(i, i + LOTE_DE_IDIOMA);
+      const consulta = `lang:${idioma} game:paper (${lote.map((o) => `oracleid:${o}`).join(' or ')})`;
+      let achadas: ScryfallCard[] = [];
+      try {
+        const r = (await this.cards.search(consulta, 'prints', 1, 'released', 'desc')) as {
+          data?: ScryfallCard[];
+        };
+        achadas = r.data ?? [];
+      } catch (erro) {
+        // 404 da Scryfall = nenhuma carta do lote saiu nesse idioma.
+        if (!(erro instanceof NotFoundException)) throw erro;
+      }
+      for (const p of achadas) {
+        if (p.oracle_id && !noIdioma.has(p.oracle_id))
+          noIdioma.set(p.oracle_id, p.id.toLowerCase());
+      }
+    }
+
+    let trocadas = 0;
+    const semImpressao = new Set<string>();
+    for (const linha of deck.cards) {
+      const atual = porId.get(linha.scryfallId.toLowerCase());
+      const alvo = atual?.oracle_id ? noIdioma.get(atual.oracle_id) : undefined;
+      if (!alvo) {
+        if (atual && atual.lang !== idioma) semImpressao.add(atual.name);
+        continue;
+      }
+      if (alvo === linha.scryfallId.toLowerCase()) continue;
+      // Duas impressões da mesma carta no deck vão para a MESMA no idioma: a
+      // segunda é juntada à primeira por `moverLinha`, e a linha lida no
+      // começo pode já não existir.
+      const viva = await this.prisma.deckCard.findUnique({ where: { id: linha.id } });
+      if (!viva) continue;
+      await this.moverLinha(deckId, viva, { scryfallId: alvo, boardType: viva.boardType });
+      trocadas += 1;
+    }
+
+    return { trocadas, semImpressao: [...semImpressao].sort() };
   }
 
   // --- Sistema de Importação ---

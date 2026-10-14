@@ -556,8 +556,9 @@ export const FORMATOS: readonly FormatPreset[] = [
     id: 'sealed',
     nome: 'Sealed Deck',
     categoria: 'LIMITADO',
-    status: 'PLANEJADO',
-    resumo: 'Seis pacotes abertos, deck de 40 montado na hora.',
+    // Os seis pacotes abrem em Draft › Selado; a mesa recebe o deck de 40.
+    status: 'BETA',
+    resumo: 'Seis pacotes abertos (em Draft › Selado), deck de 40 montado na hora.',
     jogadores: { min: 1, max: 8, padrao: 2 },
     times: null,
     vidaInicial: 20,
@@ -584,9 +585,11 @@ export const FORMATOS: readonly FormatPreset[] = [
     id: 'booster_draft',
     nome: 'Booster Draft',
     categoria: 'LIMITADO',
-    status: 'PLANEJADO',
-    resumo: 'Três pacotes passando em roda. Precisa do motor de draft.',
-    jogadores: { min: 4, max: 8, padrao: 8 },
+    // BETA: o draft é contra sete robôs, na página Draft, e o deck de 40 vem
+    // para a mesa. O draft AO VIVO entre as pessoas da mesa continua sem motor.
+    status: 'BETA',
+    resumo: 'Três pacotes em roda contra robôs (em Draft); o deck de 40 vem para a mesa.',
+    jogadores: { min: 2, max: 8, padrao: 2 },
     times: null,
     vidaInicial: 20,
     maoInicial: 7,

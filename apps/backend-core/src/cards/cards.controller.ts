@@ -18,6 +18,7 @@ import { CardsService } from './cards.service.js';
 import { CardImageService } from './card-image.service.js';
 import { ColecaoDto } from './cards.dto.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { CODIGOS_DE_IDIOMA } from '@aethertable/shared-types';
 
 /**
  * cards.controller.ts — a Scryfall vista pelo nosso domínio.
@@ -164,8 +165,14 @@ export class CardsController {
   @Get('printings/:scryfallId')
   @Throttle(LIMITE_BUSCA)
   @ApiOperation({ summary: 'Todas as impressões de uma carta, por oracle_id' })
-  printings(@Param('scryfallId', ParseUUIDPipe) scryfallId: string) {
-    return this.cards.printings(scryfallId);
+  printings(
+    @Param('scryfallId', ParseUUIDPipe) scryfallId: string,
+    // Mais um idioma além do inglês. Lista fechada: vira `lang:` dentro da
+    // busca, e texto livre ali seria sintaxe de busca vinda do cliente.
+    @Query('idioma') idioma?: string,
+  ) {
+    const extra = idioma && idioma !== 'en' && CODIGOS_DE_IDIOMA.includes(idioma as never);
+    return this.cards.printings(scryfallId, extra ? idioma : undefined);
   }
 
   /**

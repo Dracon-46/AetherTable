@@ -458,6 +458,8 @@ export interface SetCosmeticsPayload {
   borderId?: string;
   titleId?: string;
   petId?: string;
+  /** Placa de nome. Vai para `Player.profileNameplate` na mesa. */
+  nameplateId?: string;
 }
 
 /**

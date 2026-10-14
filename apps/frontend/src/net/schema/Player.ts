@@ -48,4 +48,5 @@ export class Player extends Schema {
   @type('boolean') public topoRevelado!: boolean;
   @type('string') public topoReveladoId!: string;
   @type({ map: 'number' }) public manaPool: MapSchema<number> = new MapSchema<number>();
+  @type('string') public profileNameplate!: string;
 }

@@ -36,6 +36,7 @@ import { cardImageUrl } from '../canvas/textureCache';
 import { useToast } from '../components/Toast';
 import { chavesDeDeck, type DeckCarta } from './useDecks';
 import { useFecharComEsc } from '../overlay/useFecharComEsc';
+import { useAparencia } from '../store/aparencia.store';
 
 interface Impressao {
   id: string;
@@ -62,10 +63,12 @@ export function PrintingPicker({ card, deckId, onClose, onSuccess }: PrintingPic
 
   useFecharComEsc(true, onClose);
 
+  // O idioma preferido (Ajustes) entra junto com o inglês.
+  const idioma = useAparencia((s) => s.idiomaDasCartas);
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['cards', 'printings', card.scryfallId],
+    queryKey: ['cards', 'printings', card.scryfallId, idioma],
     queryFn: ({ signal }) =>
-      api<{ data?: Impressao[] }>(`/cards/printings/${card.scryfallId}`, {
+      api<{ data?: Impressao[] }>(`/cards/printings/${card.scryfallId}?idioma=${idioma}`, {
         signal,
         publica: true,
       }),
@@ -172,6 +175,11 @@ export function PrintingPicker({ card, deckId, onClose, onSuccess }: PrintingPic
                     <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/80 p-1.5 text-[10px] backdrop-blur-sm">
                       <span className="truncate pr-1 font-bold text-white">
                         {impressao.set?.toUpperCase()}
+                        {impressao.lang && impressao.lang !== 'en' && (
+                          <span className="bg-primary ml-1 rounded px-1 text-[9px] uppercase">
+                            {impressao.lang}
+                          </span>
+                        )}
                       </span>
                       <span className="text-text-muted shrink-0">
                         #{impressao.collector_number}

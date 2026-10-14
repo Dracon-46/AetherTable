@@ -50,6 +50,7 @@ export const FAMILIA_POR_TIPO: Record<CosmeticType, FamiliaDeCosmetico> = {
   [CosmeticType.BORDER]: 'borderId',
   [CosmeticType.TITLE]: 'titleId',
   [CosmeticType.PET]: 'petId',
+  [CosmeticType.NAMEPLATE]: 'nameplateId',
 };
 
 /** O que sai na rota pública. */

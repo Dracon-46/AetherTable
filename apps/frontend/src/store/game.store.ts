@@ -78,6 +78,7 @@ export interface PlayerData {
   profileBorder: string;
   chatTitle: string;
   petId: string;
+  profileNameplate: string;
   /** Sala de espera: confirmou que está pronto. */
   ready: boolean;
   /** Já decidiu ficar com a mão inicial — fecha a janela de mulligan. */

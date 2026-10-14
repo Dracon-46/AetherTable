@@ -33,6 +33,13 @@ export type Notificacao =
       quantas: number;
     }
   | {
+      tipo: 'COMENTARIOS';
+      em: Date;
+      deckId: string;
+      nomeDoDeck: string;
+      quantos: number;
+    }
+  | {
       tipo: 'DENUNCIA_ANALISADA';
       em: Date;
       denunciaId: string;
@@ -47,9 +54,17 @@ export class NotificacoesService {
   async listar(userId: string, agora = new Date()): Promise<Notificacao[]> {
     const desde = new Date(agora.getTime() - JANELA_EM_DIAS * DIA);
 
-    const [curtidas, denuncias] = await Promise.all([
+    const [curtidas, comentarios, denuncias] = await Promise.all([
       this.prisma.deckLike.findMany({
         // Curtir o próprio deck não é notícia para ninguém.
+        where: { deck: { userId }, userId: { not: userId }, createdAt: { gte: desde } },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+        select: { createdAt: true, deck: { select: { id: true, name: true } } },
+      }),
+      // Comentários nos MEUS decks, de outras pessoas. Agregados por deck
+      // como as curtidas: o sino avisa e leva ao deck, onde a conversa está.
+      this.prisma.deckComment.findMany({
         where: { deck: { userId }, userId: { not: userId }, createdAt: { gte: desde } },
         orderBy: { createdAt: 'desc' },
         take: 500,
@@ -83,6 +98,21 @@ export class NotificacoesService {
       }
     }
 
+    const comentadosPorDeck = new Map<string, Extract<Notificacao, { tipo: 'COMENTARIOS' }>>();
+    for (const c of comentarios) {
+      const atual = comentadosPorDeck.get(c.deck.id);
+      if (atual) atual.quantos += 1;
+      else {
+        comentadosPorDeck.set(c.deck.id, {
+          tipo: 'COMENTARIOS',
+          em: c.createdAt,
+          deckId: c.deck.id,
+          nomeDoDeck: c.deck.name,
+          quantos: 1,
+        });
+      }
+    }
+
     const analisadas: Notificacao[] = denuncias.map((d) => ({
       tipo: 'DENUNCIA_ANALISADA',
       em: d.resolvedAt!,
@@ -90,7 +120,7 @@ export class NotificacoesService {
       desfecho: d.status as 'RESOLVED' | 'DISMISSED',
     }));
 
-    return [...porDeck.values(), ...analisadas]
+    return [...porDeck.values(), ...comentadosPorDeck.values(), ...analisadas]
       .sort((a, b) => b.em.getTime() - a.em.getTime())
       .slice(0, MAXIMO);
   }

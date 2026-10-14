@@ -9,6 +9,7 @@
 
 import { Megaphone } from 'lucide-react';
 import { NOVIDADES } from '../../../novidades/novidades';
+import { useT } from '../../../i18n/i18n';
 
 const DATA = new Intl.DateTimeFormat('pt-BR', {
   day: '2-digit',
@@ -18,14 +19,15 @@ const DATA = new Intl.DateTimeFormat('pt-BR', {
 });
 
 export default function NovidadesPage() {
+  const t = useT();
   return (
     <div className="mx-auto max-w-3xl animate-[fadeIn_0.3s_ease-out]">
       <header className="mb-8">
         <h1 className="text-text mb-2 flex items-center gap-3 text-2xl font-bold sm:text-3xl">
           <Megaphone className="text-primary h-7 w-7 sm:h-8 sm:w-8" />
-          Novidades
+          {t('Novidades')}
         </h1>
-        <p className="text-text-muted text-sm sm:text-base">O que mudou em cada versão.</p>
+        <p className="text-text-muted text-sm sm:text-base">{t('O que mudou em cada versão.')}</p>
       </header>
 
       <ol className="border-panel-border relative space-y-8 border-l pl-6">

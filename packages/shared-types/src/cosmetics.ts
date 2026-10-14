@@ -85,6 +85,40 @@ export interface Pet {
   animacao: 'flutuar' | 'pulsar' | 'balancar';
 }
 
+/**
+ * Placa de nome: o fundo e a moldura do NOME do jogador na mesa — no painel de
+ * vida e no rotulo da faixa, no canvas.
+ *
+ * ─── POR QUE CORES E NAO UMA CLASSE CSS, COMO A BORDA ──────────────────────
+ *
+ * A borda de perfil so existe no DOM (o avatar), entao uma classe da folha de
+ * estilo basta. A placa aparece nos DOIS mundos: no painel de vida (HTML) e no
+ * rotulo da faixa, que e desenhado pelo Konva — onde classe CSS nenhuma chega.
+ * Descrita por cores, a mesma placa vira `linear-gradient` no DOM e
+ * `fillLinearGradient` no canvas, e as duas pontas leem o mesmo item. Pelo
+ * mesmo motivo ela e componivel no backoffice: sao cores e um estilo de uma
+ * lista fechada, como o sleeve.
+ */
+export interface Nameplate {
+  id: string;
+  nome: string;
+  tier: CosmeticTier;
+  /** Fundo da placa, da esquerda para a direita. Duas cores iguais = fundo liso. */
+  cores: [string, string];
+  /** Contorno da placa. */
+  borda: string;
+  /**
+   * Cor do nome escrito SOBRE a placa. Fixa, e nao a cor do tema: o fundo da
+   * placa nao muda com o tema claro, entao o contraste tambem nao pode mudar.
+   */
+  texto: string;
+  /**
+   * `nenhum` = sem placa: o nome aparece como sempre apareceu. `placa` = fundo
+   * e contorno. `brilho` = placa com um halo discreto da cor do contorno.
+   */
+  estilo: 'nenhum' | 'placa' | 'brilho';
+}
+
 // ─── Catalogo ────────────────────────────────────────────────────────────────
 
 export const SLEEVES: readonly Sleeve[] = [
@@ -268,6 +302,70 @@ export const PETS: readonly Pet[] = [
   },
 ] as const;
 
+/**
+ * Placas de nome. Todas escuras o bastante para o texto claro ler de relance —
+ * a placa decora o nome, e um nome que nao se le derrota o proprio cosmetico.
+ * O padrao e "sem placa", pelo mesmo motivo de "Sem borda" e "Sem titulo": e o
+ * visual de quem nao escolheu nada, e o que a mesa mostra quando o oponente
+ * desliga cosmeticos alheios.
+ */
+export const NAMEPLATES: readonly Nameplate[] = [
+  {
+    id: 'padrao',
+    nome: 'Padrão',
+    tier: 'FREE',
+    cores: ['#1e293b', '#1e293b'],
+    borda: '#334155',
+    texto: '#e2e8f0',
+    estilo: 'nenhum',
+  },
+  {
+    id: 'ardosia',
+    nome: 'Ardósia',
+    tier: 'FREE',
+    cores: ['#334155', '#1e293b'],
+    borda: '#64748b',
+    texto: '#f1f5f9',
+    estilo: 'placa',
+  },
+  {
+    id: 'mare',
+    nome: 'Maré',
+    tier: 'FREE',
+    cores: ['#1d4e78', '#0d2540'],
+    borda: '#3d7fb5',
+    texto: '#e0f2fe',
+    estilo: 'placa',
+  },
+  {
+    id: 'brasa',
+    nome: 'Brasa',
+    tier: 'FREE',
+    cores: ['#7a2c1e', '#3a140d'],
+    borda: '#b8543c',
+    texto: '#ffedd5',
+    estilo: 'placa',
+  },
+  {
+    id: 'ouro-real',
+    nome: 'Ouro Real',
+    tier: 'APOIADOR',
+    cores: ['#854d0e', '#3b2306'],
+    borda: '#facc15',
+    texto: '#fef9c3',
+    estilo: 'brilho',
+  },
+  {
+    id: 'eter',
+    nome: 'Éter',
+    tier: 'APOIADOR',
+    cores: ['#4c1d95', '#115e59'],
+    borda: '#a78bfa',
+    texto: '#f5f3ff',
+    estilo: 'brilho',
+  },
+] as const;
+
 // ─── Acesso ──────────────────────────────────────────────────────────────────
 
 export const SLEEVE_PADRAO = 'aether-classic';
@@ -275,6 +373,7 @@ export const PLAYMAT_PADRAO = 'mesa-padrao';
 export const BORDER_PADRAO = 'nenhuma';
 export const TITLE_PADRAO = 'nenhum';
 export const PET_PADRAO = 'nenhum';
+export const NAMEPLATE_PADRAO = 'padrao';
 
 /** O conjunto que o jogador tem equipado. */
 export interface CosmeticosEquipados {
@@ -283,6 +382,7 @@ export interface CosmeticosEquipados {
   borderId: string;
   titleId: string;
   petId: string;
+  nameplateId: string;
 }
 
 export const COSMETICOS_PADRAO: CosmeticosEquipados = {
@@ -291,6 +391,7 @@ export const COSMETICOS_PADRAO: CosmeticosEquipados = {
   borderId: BORDER_PADRAO,
   titleId: TITLE_PADRAO,
   petId: PET_PADRAO,
+  nameplateId: NAMEPLATE_PADRAO,
 };
 
 // ─── Catalogo autoral: itens criados pelo backoffice ─────────────────────────
@@ -307,9 +408,10 @@ export const COSMETICOS_PADRAO: CosmeticosEquipados = {
  * FECHADO: nao ha upload, nao entra arquivo de imagem, nao entra arte de
  * terceiros. O que o backoffice compoe sao COMBINACOES novas de primitivas que
  * ja estao no cliente — as seis tramas de sleeve, os cinco fundos de playmat,
- * as cinco silhuetas de mascote — mais cores. O vocabulario e fechado por
- * construcao: `padrao`, `forma` e `animacao` sao unioes de literais, e um
- * valor fora delas nao compila aqui nem sobrevive a `normalizarCosmeticoAutoral`.
+ * as cinco silhuetas de mascote, os estilos de placa de nome — mais cores. O
+ * vocabulario e fechado por construcao: `padrao`, `forma`, `animacao` e
+ * `estilo` sao unioes de literais, e um valor fora delas nao compila aqui nem
+ * sobrevive a `normalizarCosmeticoAutoral`.
  *
  * O resultado e que um item autoral e indistinguivel de um item de codigo para
  * todo o resto do sistema: mesmos campos, mesmo renderizador, mesmo resolvedor.
@@ -335,7 +437,7 @@ export interface CosmeticoAutoral {
   /** A familia determina em qual mapa ele entra. */
   familia: FamiliaDeCosmetico;
   /** O item em si — ja no formato final de `Sleeve`, `Playmat`, etc. */
-  item: Sleeve | Playmat | ProfileBorder | ChatTitle | Pet;
+  item: Sleeve | Playmat | ProfileBorder | ChatTitle | Pet | Nameplate;
 }
 
 const porId = <T extends { id: string }>(itens: readonly T[]) =>
@@ -354,6 +456,7 @@ const MAPA_PLAYMATS = porId(PLAYMATS);
 const MAPA_BORDERS = porId(PROFILE_BORDERS);
 const MAPA_TITLES = porId(CHAT_TITLES);
 const MAPA_PETS = porId(PETS);
+const MAPA_NAMEPLATES = porId(NAMEPLATES);
 
 /** Ids de codigo, congelados: um item autoral nunca pode sobrescrever um deles. */
 const IDS_DE_CODIGO: Record<FamiliaDeCosmetico, ReadonlySet<string>> = {
@@ -362,6 +465,7 @@ const IDS_DE_CODIGO: Record<FamiliaDeCosmetico, ReadonlySet<string>> = {
   borderId: new Set(PROFILE_BORDERS.map((i) => i.id)),
   titleId: new Set(CHAT_TITLES.map((i) => i.id)),
   petId: new Set(PETS.map((i) => i.id)),
+  nameplateId: new Set(NAMEPLATES.map((i) => i.id)),
 };
 
 const MAPAS: Record<FamiliaDeCosmetico, Map<string, { id: string }>> = {
@@ -370,6 +474,7 @@ const MAPAS: Record<FamiliaDeCosmetico, Map<string, { id: string }>> = {
   borderId: MAPA_BORDERS as Map<string, { id: string }>,
   titleId: MAPA_TITLES as Map<string, { id: string }>,
   petId: MAPA_PETS as Map<string, { id: string }>,
+  nameplateId: MAPA_NAMEPLATES as Map<string, { id: string }>,
 };
 
 /** Ids autorais atualmente registrados, por familia — usado para limpar antes de recarregar. */
@@ -379,6 +484,7 @@ const AUTORAIS: Record<FamiliaDeCosmetico, Set<string>> = {
   borderId: new Set(),
   titleId: new Set(),
   petId: new Set(),
+  nameplateId: new Set(),
 };
 
 /**
@@ -421,6 +527,7 @@ export const listarPlaymats = (): readonly Playmat[] => [...MAPA_PLAYMATS.values
 export const listarBorders = (): readonly ProfileBorder[] => [...MAPA_BORDERS.values()];
 export const listarTitles = (): readonly ChatTitle[] => [...MAPA_TITLES.values()];
 export const listarPets = (): readonly Pet[] => [...MAPA_PETS.values()];
+export const listarNameplates = (): readonly Nameplate[] => [...MAPA_NAMEPLATES.values()];
 
 /** O item e autoral (veio do backoffice) e nao do bundle? */
 export const ehAutoral = (familia: FamiliaDeCosmetico, id: string): boolean =>
@@ -444,12 +551,14 @@ const PADROES_DE_SLEEVE = ['losango', 'raios', 'ondas', 'grade', 'liso', 'circui
 const PADROES_DE_PLAYMAT = ['nebulosa', 'hexagonos', 'linhas', 'liso', 'runas'] as const;
 const FORMAS_DE_PET = ['dragao', 'coruja', 'gato', 'slime', 'fenix', 'nenhum'] as const;
 const ANIMACOES_DE_PET = ['flutuar', 'pulsar', 'balancar'] as const;
+const ESTILOS_DE_NAMEPLATE = ['nenhum', 'placa', 'brilho'] as const;
 
 export const VOCABULARIO_DE_COSMETICOS = {
   padraoDeSleeve: PADROES_DE_SLEEVE,
   padraoDePlaymat: PADROES_DE_PLAYMAT,
   formaDePet: FORMAS_DE_PET,
   animacaoDePet: ANIMACOES_DE_PET,
+  estiloDeNameplate: ESTILOS_DE_NAMEPLATE,
 } as const;
 
 /** Amarra as listas de runtime as interfaces. Acrescentar uma sem a outra nao compila. */
@@ -458,6 +567,7 @@ const _conferir = {
   p: PADROES_DE_PLAYMAT satisfies readonly Playmat['padrao'][],
   f: FORMAS_DE_PET satisfies readonly Pet['forma'][],
   a: ANIMACOES_DE_PET satisfies readonly Pet['animacao'][],
+  n: ESTILOS_DE_NAMEPLATE satisfies readonly Nameplate['estilo'][],
 };
 void _conferir;
 
@@ -540,6 +650,7 @@ export function normalizarCosmeticoAutoral(bruto: CosmeticoAutoralBruto): Cosmet
     'borderId',
     'titleId',
     'petId',
+    'nameplateId',
   ] as const);
   if (!familia) return null;
 
@@ -588,6 +699,17 @@ export function normalizarCosmeticoAutoral(bruto: CosmeticoAutoralBruto): Cosmet
       if (!forma || !animacao || !c) return null;
       return { familia, item: { id, nome, tier, forma, cor: c, animacao } };
     }
+    case 'nameplateId': {
+      // Mesmo contrato do sleeve: `cores` aceita as duas formas (ver
+      // `parDeCores`), e toda cor e `#rrggbb` porque vai direto para
+      // `linear-gradient` no DOM e `fillLinearGradient` no canvas.
+      const cores = parDeCores(bruto);
+      const borda = cor(bruto['borda']);
+      const textoDaPlaca = cor(bruto['texto']);
+      const estilo = umDe(bruto['estilo'], ESTILOS_DE_NAMEPLATE);
+      if (!cores || !borda || !textoDaPlaca || !estilo) return null;
+      return { familia, item: { id, nome, tier, cores, borda, texto: textoDaPlaca, estilo } };
+    }
   }
 }
 
@@ -617,6 +739,8 @@ export const acharBorder = (id?: string): ProfileBorder =>
 export const acharTitle = (id?: string): ChatTitle =>
   MAPA_TITLES.get(id ?? '') ?? MAPA_TITLES.get(TITLE_PADRAO)!;
 export const acharPet = (id?: string): Pet => MAPA_PETS.get(id ?? '') ?? MAPA_PETS.get(PET_PADRAO)!;
+export const acharNameplate = (id?: string): Nameplate =>
+  MAPA_NAMEPLATES.get(id ?? '') ?? MAPA_NAMEPLATES.get(NAMEPLATE_PADRAO)!;
 
 /** O id existe no catalogo? Usado pelo servidor antes de gravar no estado. */
 export const ehSleeveValido = (id: string) => MAPA_SLEEVES.has(id);
@@ -624,10 +748,11 @@ export const ehPlaymatValido = (id: string) => MAPA_PLAYMATS.has(id);
 export const ehBorderValido = (id: string) => MAPA_BORDERS.has(id);
 export const ehTitleValido = (id: string) => MAPA_TITLES.has(id);
 export const ehPetValido = (id: string) => MAPA_PETS.has(id);
+export const ehNameplateValido = (id: string) => MAPA_NAMEPLATES.has(id);
 
 // ─── DIREITO DE EQUIPAR ───────────────────────────────────────────────────────
 
-/** As cinco famílias, na forma em que o perfil as recebe. */
+/** As seis famílias, na forma em que o perfil as recebe. */
 export type FamiliaDeCosmetico = keyof CosmeticosEquipados;
 
 /**
@@ -647,6 +772,8 @@ export function tierDoCosmetico(familia: FamiliaDeCosmetico, id: string): Cosmet
       return MAPA_TITLES.get(id)?.tier ?? 'FREE';
     case 'petId':
       return MAPA_PETS.get(id)?.tier ?? 'FREE';
+    case 'nameplateId':
+      return MAPA_NAMEPLATES.get(id)?.tier ?? 'FREE';
   }
 }
 

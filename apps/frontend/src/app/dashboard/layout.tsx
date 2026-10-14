@@ -31,6 +31,8 @@ import {
   Compass,
   History,
   Megaphone,
+  Puzzle,
+  Package,
   PanelLeftClose,
   PanelLeft,
   ShieldAlert,
@@ -47,6 +49,7 @@ import { useSouAdmin } from '../../admin/useAdmin';
 import { useHidratarPreferencias } from '../../store/useHidratarPreferencias';
 import { api } from '@/lib/fetcher';
 import { Sino } from '../../notificacoes/Sino';
+import { useLangDoDocumento, useT } from '../../i18n/i18n';
 
 interface ItemDeMenu {
   href: string;
@@ -66,6 +69,10 @@ const NAVEGACAO: ItemDeMenu[] = [
   { href: '/dashboard/explorar', rotulo: 'Explorar', Icone: Compass, prefixo: true },
   // As partidas jogadas: resumo de cada mesa (RN12, revista em 14/10/2026).
   { href: '/dashboard/historico', rotulo: 'Histórico', Icone: History },
+  // Passatempos com cartas (adivinhar, comparar, grade).
+  // Draft contra robôs e selado: o deck de 40 vai para a conta.
+  { href: '/dashboard/draft', rotulo: 'Draft', Icone: Package },
+  { href: '/dashboard/desafios', rotulo: 'Desafios', Icone: Puzzle },
   { href: '/dashboard/profile', rotulo: 'Meu Perfil', Icone: User },
   { href: '/dashboard/novidades', rotulo: 'Novidades', Icone: Megaphone },
   { href: '/dashboard/settings', rotulo: 'Ajustes', Icone: Settings },
@@ -78,6 +85,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [gavetaAberta, setGavetaAberta] = useState(false);
   const recolhido = useAparencia((s) => s.menuRecolhido);
   const alternarMenu = useAparencia((s) => s.alternarMenu);
+  const t = useT();
+  useLangDoDocumento();
 
   /**
    * ─── O PAINEL PRECISAVA DE UMA PORTA ───────────────────────────────────────
@@ -158,7 +167,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button
             onClick={() => setGavetaAberta((v) => !v)}
             className="text-text hover:bg-panel-hover rounded-md p-2 transition-colors"
-            aria-label={gavetaAberta ? 'Fechar menu' : 'Abrir menu'}
+            aria-label={gavetaAberta ? t('Fechar menu') : t('Abrir menu')}
             aria-expanded={gavetaAberta}
           >
             {gavetaAberta ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -178,7 +187,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           className={`bg-panel border-panel-border fixed left-0 top-0 z-30 flex h-full w-64 transform flex-col justify-between border-r shadow-2xl transition-[transform,width] duration-300 ease-in-out md:relative md:translate-x-0 ${
             gavetaAberta ? 'translate-x-0' : '-translate-x-full'
           } ${larguraDaTrilha} pt-16 md:pt-0`}
-          aria-label="Navegação principal"
+          aria-label={t('Navegação principal')}
         >
           <div className="min-h-0 flex-1 overflow-y-auto">
             {/* Cartão do usuário. Recolhido, sobra o avatar centralizado — o
@@ -201,7 +210,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </span>
                 <span className="text-success flex items-center gap-1 text-xs">
                   <span className="bg-success h-2 w-2 animate-pulse rounded-full" />
-                  Conectado
+                  {t('Conectado')}
                 </span>
               </div>
               {/* No celular o sino fica no cabeçalho; aqui, só com o menu largo. */}
@@ -224,14 +233,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     aria-current={ativo ? 'page' : undefined}
                     // `title` só quando recolhido: com o rótulo visível, a
                     // tooltip repetindo o texto ao lado é ruído.
-                    title={recolhido ? item.rotulo : undefined}
+                    title={recolhido ? t(item.rotulo) : undefined}
                     className={`flex items-center gap-3 rounded-lg px-4 py-3 transition-colors ${
                       recolhido ? 'md:justify-center md:px-0' : ''
                     } ${ativo ? 'bg-primary/20 text-primary' : 'text-text hover:bg-panel-hover'}`}
                   >
                     <item.Icone className="h-5 w-5 shrink-0" />
                     <span className={`truncate font-medium ${recolhido ? 'md:hidden' : ''}`}>
-                      {item.rotulo}
+                      {t(item.rotulo)}
                     </span>
                   </Link>
                 );
@@ -268,15 +277,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className={`text-text-muted hover:bg-panel-hover hover:text-text hidden w-full items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium transition-colors md:flex ${
                 recolhido ? 'md:justify-center md:px-0' : ''
               }`}
-              title={recolhido ? 'Expandir menu' : 'Minimizar menu'}
-              aria-label={recolhido ? 'Expandir menu' : 'Minimizar menu'}
+              title={recolhido ? t('Expandir menu') : t('Minimizar menu')}
+              aria-label={recolhido ? t('Expandir menu') : t('Minimizar menu')}
             >
               {recolhido ? (
                 <PanelLeft className="h-5 w-5 shrink-0" />
               ) : (
                 <PanelLeftClose className="h-5 w-5 shrink-0" />
               )}
-              <span className={recolhido ? 'md:hidden' : ''}>Minimizar</span>
+              <span className={recolhido ? 'md:hidden' : ''}>{t('Minimizar')}</span>
             </button>
 
             <button
@@ -284,10 +293,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className={`text-danger hover:bg-danger/10 flex w-full items-center gap-3 rounded-md px-4 py-3 font-medium transition-colors ${
                 recolhido ? 'md:justify-center md:px-0' : ''
               }`}
-              title="Sair da Mesa"
+              title={t('Sair da Mesa')}
             >
               <LogOut className="h-5 w-5 shrink-0" />
-              <span className={recolhido ? 'md:hidden' : ''}>Sair da Mesa</span>
+              <span className={recolhido ? 'md:hidden' : ''}>{t('Sair da Mesa')}</span>
             </button>
           </div>
         </aside>

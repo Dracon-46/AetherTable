@@ -77,6 +77,8 @@ export interface DeckResumo {
   commanderId?: string | null;
   partnerId?: string | null;
   colorIdentity?: string[];
+  /** Pasta da lista. `null` = fora de pasta. */
+  folder?: string | null;
 }
 
 export interface DeckCompleto extends DeckResumo {
@@ -384,7 +386,7 @@ export function useCriarDeck() {
 
 /** O que dá para mudar no deck sem tocar nas cartas. */
 export type AlteracaoDeDeck = Partial<
-  Pick<DeckResumo, 'name' | 'isFavorite' | 'isPublic'> & { description: string }
+  Pick<DeckResumo, 'name' | 'isFavorite' | 'isPublic'> & { description: string; pasta: string }
 >;
 
 /**
@@ -403,11 +405,14 @@ export function useAtualizarDeck() {
       const chave = chavesDeDeck.lista();
       await qc.cancelQueries({ queryKey: chave });
       const anterior = qc.getQueryData<DeckResumo[]>(chave);
+      // O PATCH fala `pasta`; a linha do deck guarda `folder` (vazio = sem pasta).
+      const { pasta, ...resto } = dados;
+      const patch = pasta === undefined ? resto : { ...resto, folder: pasta || null };
       qc.setQueryData<DeckResumo[]>(chave, (lista) =>
-        lista?.map((d) => (d.id === deckId ? { ...d, ...dados } : d)),
+        lista?.map((d) => (d.id === deckId ? { ...d, ...patch } : d)),
       );
       qc.setQueryData<DeckCompleto>(chavesDeDeck.um(deckId), (deck) =>
-        deck ? { ...deck, ...dados } : deck,
+        deck ? { ...deck, ...patch } : deck,
       );
       return { anterior };
     },

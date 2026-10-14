@@ -58,6 +58,7 @@ import { ConfirmDialog, ToastHost, useToast } from '../../../../components/Toast
 import { CardSearch } from '../../../../deckbuilder/CardSearch';
 import { PrintingPicker } from '../../../../deckbuilder/PrintingPicker';
 import { SugestoesDoDeck } from '../../../../deckbuilder/SugestoesDoDeck';
+import { ComentariosDoDeck } from '../../../../deckbuilder/ComentariosDoDeck';
 import {
   COLUNAS_DA_GALERIA,
   useAparencia,
@@ -96,6 +97,7 @@ import {
   DescricaoDoDeck,
   InterruptorPublico,
   MenuExportar,
+  MenuIdioma,
 } from '../../../../deckbuilder/AcoesDoDeck';
 import { acharFormato } from '@aethertable/shared-types';
 import { mensagemDaApi } from '@/lib/fetcher';
@@ -444,6 +446,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <BotaoTestar deck={deck} />
             <MenuExportar cartas={cartas} nome={deck.name} />
+            {!somenteLeitura && <MenuIdioma deckId={deck.id} vazio={cartas.length === 0} />}
             <InterruptorPublico deck={deck} />
           </div>
         </header>
@@ -752,6 +755,10 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             </div>
           </section>
         </div>
+
+        {/* Público, o deck recebe comentários — e é aqui que o dono os lê e
+            apaga o que não quer na casa dele. */}
+        {deck.isPublic && <ComentariosDoDeck deckId={deck.id} />}
 
         {cartaParaArte && (
           <PrintingPicker

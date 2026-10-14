@@ -89,6 +89,9 @@ enum CosmeticType {
   /// Mascote da mesa. Faltava aqui e os mascotes ficavam de fora do registro —
   /// nao dava para conceder um de premio nem para criar um no backoffice.
   PET
+  /// Placa de nome: o fundo do nome do jogador na mesa. Entra no enum junto
+  /// com a familia, para nao repetir a lacuna que o `PET` teve.
+  NAMEPLATE
 }
 
 enum ReportReason {
@@ -134,19 +137,19 @@ enum AdminAction {
 // ─── Usuario e identidade ─────────────────────────────────────────────────────
 
 model User {
-  id       String @id @default(uuid()) @db.Uuid
-  email    String @unique @db.VarChar(255)
+  id            String        @id @default(uuid()) @db.Uuid
+  email         String        @unique @db.VarChar(255)
   /// ^[a-zA-Z0-9_]{3,32}$
-  username String @unique @db.VarChar(32)
+  username      String        @unique @db.VarChar(32)
   /// Nome exibido na mesa; cai para `username` quando nulo.
-  displayName String? @map("display_name") @db.VarChar(48)
+  displayName   String?       @map("display_name") @db.VarChar(48)
   /// Argon2id. NULO quando a conta e exclusivamente OAuth.
-  passwordHash    String?   @map("password_hash") @db.VarChar(255)
-  avatarUrl       String?   @map("avatar_url")
-  role            Role      @default(USER)
+  passwordHash  String?       @map("password_hash") @db.VarChar(255)
+  avatarUrl     String?       @map("avatar_url")
+  role          Role          @default(USER)
   /// Direito a cosmetico de apoiador. Ver o enum: administrado pelo backoffice
   /// enquanto nao houver integracao de pagamento.
-  supporterTier   SupporterTier @default(FREE) @map("supporter_tier")
+  supporterTier SupporterTier @default(FREE) @map("supporter_tier")
 
   /// ─── CORTE DE SESSAO: TUDO EMITIDO ANTES DAQUI NAO VALE MAIS ──────────────
   ///
@@ -161,10 +164,10 @@ model User {
   /// O `JwtStrategy` compara o `iat` do token com esta data. Uma coluna, uma
   /// comparacao, e nenhuma linha nova por sessao derrubada.
   tokensValidosApos DateTime? @map("tokens_validos_apos") @db.Timestamptz
-  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
-  lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz
+  emailVerifiedAt   DateTime? @map("email_verified_at") @db.Timestamptz
+  lastSeenAt        DateTime? @map("last_seen_at") @db.Timestamptz
   /// Soft delete para LGPD: expurgo fisico em 30 dias (§7.1).
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
 
   /// SUSPENSAO TEMPORARIA (DOC-061 §2).
   ///
@@ -176,20 +179,21 @@ model User {
   suspendedUntil   DateTime? @map("suspended_until") @db.Timestamptz
   /// O motivo mostrado ao usuario na tentativa de login.
   suspensionReason String?   @map("suspension_reason")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  decks        Deck[]
-  deckLikes    DeckLike[]
-  accounts     Account[]
+  decks          Deck[]
+  deckLikes      DeckLike[]
+  deckComments   DeckComment[]
+  accounts       Account[]
   passwordResets PasswordResetToken[]
-  preference   UserPreference?
-  blocksMade   Block[]           @relation("blocker")
-  blocksGot    Block[]           @relation("blocked")
-  reportsMade  Report[]          @relation("reporter")
-  reportsGot   Report[]          @relation("reported")
-  cosmetics    UserCosmetic[]
-  participions MatchParticipant[]
+  preference     UserPreference?
+  blocksMade     Block[]              @relation("blocker")
+  blocksGot      Block[]              @relation("blocked")
+  reportsMade    Report[]             @relation("reporter")
+  reportsGot     Report[]             @relation("reported")
+  cosmetics      UserCosmetic[]
+  participions   MatchParticipant[]
 
   auditActions    AuditLog[] @relation("auditActor")
   reportsResolved Report[]   @relation("reportResolver")
@@ -237,22 +241,25 @@ model UserPreference {
   /// usam — o servidor valida na entrada, o cliente normaliza na saida.
   preferenciasDeMesa Json @default("{}") @map("preferencias_de_mesa")
 
-  theme            Theme     @default(DARK)
+  theme             Theme   @default(DARK)
   /// ─── FK PARA `CosmeticItem`. NAO E ONDE O EQUIPAMENTO VIVE. ──────────────
   ///
-  /// Estas quatro colunas sao `Uuid` e apontam para `cosmetic_items` — o
-  /// registro de itens CONCEDIVEIS (o premio de campeonato de DOC-061 §2).
-  /// Elas nunca foram escritas por ninguem, e nao por desleixo: os cosmeticos
-  /// que o jogo desenha vem do catalogo PROCEDURAL em codigo
-  /// (`shared-types/cosmetics.ts`, DOC-060 §1.1) e tem id de texto —
-  /// 'aether-classic', 'mesa-padrao'. Uma string dessas nao entra num Uuid.
+  /// Estas colunas sao `Uuid` e apontam para `cosmetic_items` — o registro de
+  /// itens CONCEDIVEIS (o premio de campeonato de DOC-061 §2). Elas nunca
+  /// foram escritas por ninguem, e nao por desleixo: os cosmeticos que o jogo
+  /// desenha vem do catalogo PROCEDURAL em codigo (`shared-types/cosmetics.ts`,
+  /// DOC-060 §1.1) e tem id de texto — 'aether-classic', 'mesa-padrao'. Uma
+  /// string dessas nao entra num Uuid.
   ///
   /// Ficam para o dia em que o inventario concedido virar equipavel. O
-  /// equipamento de verdade mora nas colunas de texto abaixo.
-  activePlaymatId  String?   @map("active_playmat_id") @db.Uuid
-  activeSleeveId   String?   @map("active_sleeve_id") @db.Uuid
-  activeBorderId   String?   @map("active_border_id") @db.Uuid
-  activeTitleId    String?   @map("active_title_id") @db.Uuid
+  /// equipamento de verdade mora nas colunas de texto abaixo. A placa de nome
+  /// ganhou a sua junto com a familia, espelhando a borda — o mascote nunca
+  /// teve uma.
+  activePlaymatId   String? @map("active_playmat_id") @db.Uuid
+  activeSleeveId    String? @map("active_sleeve_id") @db.Uuid
+  activeBorderId    String? @map("active_border_id") @db.Uuid
+  activeTitleId     String? @map("active_title_id") @db.Uuid
+  activeNameplateId String? @map("active_nameplate_id") @db.Uuid
 
   /// ─── O EQUIPAMENTO, POR CONTA ────────────────────────────────────────────
   ///
@@ -269,24 +276,27 @@ model UserPreference {
   /// round-trip de API para saber com que sleeve desenhar as cartas. O banco e
   /// a fonte da verdade entre dispositivos; o cache local e o que faz a mesa
   /// abrir sem piscar.
-  sleeveId  String? @map("sleeve_id") @db.VarChar(48)
-  playmatId String? @map("playmat_id") @db.VarChar(48)
-  borderId  String? @map("border_id") @db.VarChar(48)
-  titleId   String? @map("title_id") @db.VarChar(48)
-  petId     String? @map("pet_id") @db.VarChar(48)
+  sleeveId              String?   @map("sleeve_id") @db.VarChar(48)
+  playmatId             String?   @map("playmat_id") @db.VarChar(48)
+  borderId              String?   @map("border_id") @db.VarChar(48)
+  titleId               String?   @map("title_id") @db.VarChar(48)
+  petId                 String?   @map("pet_id") @db.VarChar(48)
+  /// Placa de nome — o fundo do nome do jogador na mesa. Ver `NAMEPLATES`.
+  nameplateId           String?   @map("nameplate_id") @db.VarChar(48)
   /// Acessibilidade (DOC-060 §4): desligar o visual dos outros na minha tela.
-  cosmeticosDeOponentes Boolean @default(true) @map("cosmeticos_de_oponentes")
-  voiceMode        VoiceMode @default(VAD)
-  pttKey           String?   @map("ptt_key") @db.VarChar(24)
+  cosmeticosDeOponentes Boolean   @default(true) @map("cosmeticos_de_oponentes")
+  voiceMode             VoiceMode @default(VAD)
+  pttKey                String?   @map("ptt_key") @db.VarChar(24)
   /// 0..100
-  masterVolume Int    @default(100) @map("master_volume") @db.SmallInt
-  language     String @default("pt-BR") @db.VarChar(8)
+  masterVolume          Int       @default(100) @map("master_volume") @db.SmallInt
+  language              String    @default("pt-BR") @db.VarChar(8)
 
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activePlaymat CosmeticItem? @relation("playmat", fields: [activePlaymatId], references: [id])
-  activeSleeve  CosmeticItem? @relation("sleeve", fields: [activeSleeveId], references: [id])
-  activeBorder  CosmeticItem? @relation("border", fields: [activeBorderId], references: [id])
-  activeTitle   CosmeticItem? @relation("title", fields: [activeTitleId], references: [id])
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activePlaymat   CosmeticItem? @relation("playmat", fields: [activePlaymatId], references: [id])
+  activeSleeve    CosmeticItem? @relation("sleeve", fields: [activeSleeveId], references: [id])
+  activeBorder    CosmeticItem? @relation("border", fields: [activeBorderId], references: [id])
+  activeTitle     CosmeticItem? @relation("title", fields: [activeTitleId], references: [id])
+  activeNameplate CosmeticItem? @relation("nameplate", fields: [activeNameplateId], references: [id])
 
   @@map("user_preferences")
 }
@@ -294,18 +304,18 @@ model UserPreference {
 // ─── Decks ────────────────────────────────────────────────────────────────────
 
 model Deck {
-  id          String  @id @default(uuid()) @db.Uuid
-  userId      String  @map("user_id") @db.Uuid
-  name        String  @db.VarChar(80)
-  description String?
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  name          String   @db.VarChar(80)
+  description   String?
   /// scryfall_id do comandante.
-  commanderId String? @map("commander_id") @db.VarChar(36)
+  commanderId   String?  @map("commander_id") @db.VarChar(36)
   /// Segundo comandante (Partner / Background).
-  partnerId String? @map("partner_id") @db.VarChar(36)
+  partnerId     String?  @map("partner_id") @db.VarChar(36)
   /// Referencia FormatPreset.id. Nao e enum — ver nota no topo.
-  formatId   String   @default("commander") @map("format_id") @db.VarChar(32)
-  isPublic   Boolean  @default(false) @map("is_public")
-  isFavorite Boolean  @default(false) @map("is_favorite")
+  formatId      String   @default("commander") @map("format_id") @db.VarChar(32)
+  isPublic      Boolean  @default(false) @map("is_public")
+  isFavorite    Boolean  @default(false) @map("is_favorite")
   /// DESNORMALIZADO: soma de `quantity`. A listagem de decks e a tela mais
   /// visitada; somar a cada carregamento e desperdicio. Atualizado na MESMA
   /// transacao que altera as cartas.
@@ -315,12 +325,16 @@ model Deck {
   /// contar `deck_likes` por deck a cada página seria um GROUP BY por visita.
   /// Atualizado na MESMA transação que cria ou apaga a curtida.
   likeCount     Int      @default(0) @map("like_count")
+  /// Pasta da lista de decks. Texto livre, não tabela: pasta sem deck não
+  /// existe, e renomear uma pasta é mover os decks dela. NULL = fora de pasta.
+  folder        String?  @db.VarChar(40)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cards DeckCard[]
-  likes DeckLike[]
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards    DeckCard[]
+  likes    DeckLike[]
+  comments DeckComment[]
 
   @@index([userId, updatedAt(sort: Desc)])
   @@index([isPublic])
@@ -345,13 +359,31 @@ model DeckLike {
   @@map("deck_likes")
 }
 
+/// Comentário num deck PÚBLICO. Some junto com o deck ou com a conta de quem
+/// escreveu (CASCADE): quem pediu para ser esquecido não fica falando nos
+/// decks dos outros. O nome do autor vem da conta na leitura, nunca daqui.
+model DeckComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  deckId    String   @map("deck_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  text      String   @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deckId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("deck_comments")
+}
+
 /// Exatamente o que FR-04 exige: apenas scryfall_id, quantity, is_commander e
 /// board_type. Nome, texto e imagem NUNCA aqui.
 model DeckCard {
-  id     String @id @default(uuid()) @db.Uuid
-  deckId String @map("deck_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  deckId      String    @map("deck_id") @db.Uuid
   /// Referencia ABSOLUTA de impressao — define arte, edicao e idioma.
-  scryfallId String @map("scryfall_id") @db.VarChar(36)
+  scryfallId  String    @map("scryfall_id") @db.VarChar(36)
   /// 1..99 (CHECK aplicado por migracao manual).
   quantity    Int       @default(1)
   isCommander Boolean   @default(false) @map("is_commander")
@@ -390,8 +422,8 @@ model CardCache {
   imageNormal    String   @default("") @map("image_normal")
   /// Faces de DFC / split / adventure. Cartas de dupla face nao tem image_uris
   /// na raiz (DOC-035 §2.2).
-  faces     Json     @default("[]")
-  fetchedAt DateTime @default(now()) @map("fetched_at") @db.Timestamptz
+  faces          Json     @default("[]")
+  fetchedAt      DateTime @default(now()) @map("fetched_at") @db.Timestamptz
 
   @@index([oracleId])
   @@index([name])
@@ -439,7 +471,7 @@ model Report {
   resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz
   resolvedById String?   @map("resolved_by_id") @db.Uuid
   /// O que o moderador decidiu, em texto livre. Fica visivel na fila.
-  resolution String?
+  resolution   String?
 
   reporter   User  @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
   reported   User  @relation("reported", fields: [reportedId], references: [id], onDelete: Cascade)
@@ -558,17 +590,17 @@ model AuditLog {
   action AdminAction
 
   /// Sobre o que a acao foi: 'user', 'cosmetic', 'report', 'flag', 'system'.
-  targetType String  @map("target_type") @db.VarChar(24)
-  targetId   String? @map("target_id") @db.VarChar(64)
+  targetType  String  @map("target_type") @db.VarChar(24)
+  targetId    String? @map("target_id") @db.VarChar(64)
   /// Rotulo legivel do alvo, tambem congelado.
   targetLabel String? @map("target_label") @db.VarChar(160)
 
   /// Justificativa que o admin digitou. Obrigatoria nas acoes punitivas.
-  reason String?
+  reason   String?
   /// Detalhe estruturado da acao (role anterior e nova, dias de suspensao...).
-  metadata Json @default("{}")
+  metadata Json    @default("{}")
   /// IP de origem, para investigar acesso indevido a conta administrativa.
-  ip String? @db.VarChar(64)
+  ip       String? @db.VarChar(64)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
@@ -678,22 +710,23 @@ model CosmeticItem {
   /// NAO e uma URL: guarda o `catalogoId`, a chave de texto do item no catalogo
   /// procedural. O cliente desenha a partir do catalogo, entao o que a linha
   /// precisa guardar e a CHAVE, nao um endereco (DOC-060 §1.1).
-  resourceUrl String? @map("resource_url")
+  resourceUrl String?      @map("resource_url")
   /// Nivel de apoiador necessario.
-  minTier  Int     @default(0) @map("min_tier")
-  isActive Boolean @default(true) @map("is_active")
+  minTier     Int          @default(0) @map("min_tier")
+  isActive    Boolean      @default(true) @map("is_active")
   /// Descricao procedural do item AUTORAL — cores, padrao, forma — quando ele
   /// foi composto no backoffice em vez de vir do catalogo em codigo. Nulo
   /// significa "este item existe no bundle"; preenchido significa "este item so
   /// existe aqui, e o cliente o recebe pela sincronizacao do catalogo".
   /// Validado por `normalizarCosmeticoAutoral` na entrada E na leitura.
-  parametros Json? @db.JsonB
+  parametros  Json?        @db.JsonB
 
-  ownedBy      UserCosmetic[]
-  asPlaymatFor UserPreference[] @relation("playmat")
-  asSleeveFor  UserPreference[] @relation("sleeve")
-  asBorderFor  UserPreference[] @relation("border")
-  asTitleFor   UserPreference[] @relation("title")
+  ownedBy        UserCosmetic[]
+  asPlaymatFor   UserPreference[] @relation("playmat")
+  asSleeveFor    UserPreference[] @relation("sleeve")
+  asBorderFor    UserPreference[] @relation("border")
+  asTitleFor     UserPreference[] @relation("title")
+  asNameplateFor UserPreference[] @relation("nameplate")
 
   @@index([type])
   @@map("cosmetic_items")

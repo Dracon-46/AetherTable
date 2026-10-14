@@ -20,6 +20,7 @@ import {
   TEMPOS_DE_MULLIGAN,
   ZONES,
   ehBorderValido,
+  ehNameplateValido,
   ehPetValido,
   ehPlaymatValido,
   ehSleeveValido,
@@ -491,6 +492,7 @@ export const SetCosmeticsIntent = z
     borderId: z.string().refine(ehBorderValido, 'borda fora do catalogo').optional(),
     titleId: z.string().refine(ehTitleValido, 'titulo fora do catalogo').optional(),
     petId: z.string().refine(ehPetValido, 'mascote fora do catalogo').optional(),
+    nameplateId: z.string().refine(ehNameplateValido, 'placa de nome fora do catalogo').optional(),
   })
   .strict();
 

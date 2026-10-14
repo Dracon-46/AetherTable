@@ -39,6 +39,7 @@ import {
   PenLine,
   Globe,
   Dices,
+  Folder,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -111,6 +112,9 @@ function PipsDeCor({ cores }: { cores?: string[] }) {
   );
 }
 
+/** Valor do filtro para "fora de qualquer pasta" — não colide com nome de pasta (que é aparado). */
+const SEM_PASTA = ' sem pasta ';
+
 export default function DecksPage() {
   const router = useRouter();
   const { data: decks, isPending, isError, error } = useListaDeDecks();
@@ -130,6 +134,9 @@ export default function DecksPage() {
   const [buscaComandante, setBuscaComandante] = useState('');
   const [formatoFiltro, setFormatoFiltro] = useState('');
   const [soFavoritos, setSoFavoritos] = useState(false);
+  /** `''` = todas; `SEM_PASTA` = só os que estão fora de pasta. */
+  const [pastaFiltro, setPastaFiltro] = useState('');
+  const [movendo, setMovendo] = useState<{ id: string; pasta: string } | null>(null);
   const [menuDe, setMenuDe] = useState<string | null>(null);
   const [renomeando, setRenomeando] = useState<{ id: string; nome: string } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -171,16 +178,34 @@ export default function DecksPage() {
   const termo = busca.trim().toLowerCase();
   const termoComandante = buscaComandante.trim().toLowerCase();
   const formatosUsados = [...new Set((decks ?? []).map((d) => d.formatId))];
+  const pastas = [
+    ...new Set((decks ?? []).map((d) => d.folder).filter((p): p is string => Boolean(p))),
+  ].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const visiveis: DeckResumo[] = (decks ?? [])
     .filter((d) => !termo || d.name.toLowerCase().includes(termo))
     .filter((d) => !termoComandante || nomeDoComandante(d).toLowerCase().includes(termoComandante))
     .filter((d) => !formatoFiltro || d.formatId === formatoFiltro)
     .filter((d) => !soFavoritos || d.isFavorite)
+    .filter((d) =>
+      !pastaFiltro ? true : pastaFiltro === SEM_PASTA ? !d.folder : d.folder === pastaFiltro,
+    )
     // Favoritos primeiro; dentro de cada grupo, a ordem do servidor (o mais
     // recente no topo). `sort` é estável, então a segunda ordem se mantém.
     .sort((a, b) => Number(Boolean(b.isFavorite)) - Number(Boolean(a.isFavorite)));
 
-  const filtrando = Boolean(termo || termoComandante || formatoFiltro || soFavoritos);
+  const filtrando = Boolean(
+    termo || termoComandante || formatoFiltro || soFavoritos || pastaFiltro,
+  );
+
+  const salvarPasta = () => {
+    if (!movendo) return;
+    const deck = decks?.find((d) => d.id === movendo.id);
+    const nova = movendo.pasta.trim().slice(0, 40);
+    if (deck && (deck.folder ?? '') !== nova) {
+      atualizar.mutate({ deckId: movendo.id, dados: { pasta: nova } });
+    }
+    setMovendo(null);
+  };
 
   const salvarNome = () => {
     if (!renomeando) return;
@@ -341,6 +366,24 @@ export default function DecksPage() {
               <Star className={`h-4 w-4 ${soFavoritos ? 'fill-current' : ''}`} />
               Favoritos
             </button>
+            {/* Só com alguma pasta criada: sem pastas, o filtro seria uma
+                caixa com uma opção só. */}
+            {pastas.length > 0 && (
+              <select
+                value={pastaFiltro}
+                onChange={(e) => setPastaFiltro(e.target.value)}
+                aria-label="Filtrar por pasta"
+                className="border-panel-border bg-panel text-text focus:border-primary rounded-md border px-3 py-2 text-sm focus:outline-none"
+              >
+                <option value="">Todas as pastas</option>
+                {pastas.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+                <option value={SEM_PASTA}>Fora de pasta</option>
+              </select>
+            )}
           </div>
         )}
 
@@ -440,6 +483,16 @@ export default function DecksPage() {
                           <button
                             role="menuitem"
                             onClick={() => {
+                              setMovendo({ id: deck.id, pasta: deck.folder ?? '' });
+                              setMenuDe(null);
+                            }}
+                            className="text-text hover:bg-panel-hover flex w-full items-center gap-2 px-3 py-2 text-left text-sm"
+                          >
+                            <Folder className="h-4 w-4" /> Mover para pasta…
+                          </button>
+                          <button
+                            role="menuitem"
+                            onClick={() => {
                               setDeckParaDestruir(deck.id);
                               setMenuDe(null);
                             }}
@@ -488,6 +541,15 @@ export default function DecksPage() {
                           identificador vazando para o usuário. */}
                       <span className="text-text-faint">{acharFormato(deck.formatId).nome}</span>
                       <PipsDeCor cores={deck.colorIdentity} />
+                      {deck.folder && movendo?.id !== deck.id && (
+                        <button
+                          onClick={() => setPastaFiltro(deck.folder!)}
+                          className="text-text-muted hover:text-text flex items-center gap-1 text-[11px]"
+                          title="Ver só esta pasta"
+                        >
+                          <Folder className="h-3 w-3" /> {deck.folder}
+                        </button>
+                      )}
                       {deck.isPublic && (
                         <span
                           className="text-primary flex items-center gap-1 text-[11px]"
@@ -500,6 +562,26 @@ export default function DecksPage() {
                         · {new Date(deck.updatedAt).toLocaleDateString()}
                       </span>
                     </p>
+
+                    {movendo?.id === deck.id && (
+                      <div className="mb-3">
+                        <input
+                          autoFocus
+                          value={movendo.pasta}
+                          maxLength={40}
+                          list="pastas-existentes"
+                          onChange={(e) => setMovendo({ id: deck.id, pasta: e.target.value })}
+                          onBlur={salvarPasta}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') salvarPasta();
+                            if (e.key === 'Escape') setMovendo(null);
+                          }}
+                          placeholder="Nome da pasta (vazio = sem pasta)"
+                          aria-label="Pasta do deck"
+                          className="border-primary bg-table-deep text-text w-full rounded border px-2 py-1 text-sm focus:outline-none"
+                        />
+                      </div>
+                    )}
 
                     <div className="mt-auto flex items-center gap-2">
                       {/*
@@ -541,6 +623,11 @@ export default function DecksPage() {
         )}
       </div>
 
+      <datalist id="pastas-existentes">
+        {pastas.map((p) => (
+          <option key={p} value={p} />
+        ))}
+      </datalist>
       <ConfirmDialog
         aberto={deckParaDestruir !== null}
         titulo="Destruir este grimório?"

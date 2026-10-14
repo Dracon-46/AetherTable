@@ -52,6 +52,14 @@ interface AparenciaState {
   animacoesReduzidas: boolean;
   /** Painel de busca/importação do deckbuilder minimizado. */
   painelDeBuscaRecolhido: boolean;
+  /**
+   * Idioma preferido das CARTAS (código da Scryfall: "pt", "en"…), não da
+   * interface. É o padrão de "pôr o deck num idioma" no editor e o idioma que
+   * o seletor de arte mostra além do inglês.
+   */
+  idiomaDasCartas: string;
+  /** Idioma da INTERFACE. Ver `i18n/i18n.ts`. */
+  idiomaDaInterface: 'pt-BR' | 'en';
 
   alternarMenu: () => void;
   setMenuRecolhido: (v: boolean) => void;
@@ -62,6 +70,8 @@ interface AparenciaState {
   setDensidade: (v: Densidade) => void;
   setAnimacoesReduzidas: (v: boolean) => void;
   alternarPainelDeBusca: () => void;
+  setIdiomaDasCartas: (v: string) => void;
+  setIdiomaDaInterface: (v: 'pt-BR' | 'en') => void;
 }
 
 export const useAparencia = create<AparenciaState>()(
@@ -75,6 +85,8 @@ export const useAparencia = create<AparenciaState>()(
       densidade: 'confortavel',
       animacoesReduzidas: false,
       painelDeBuscaRecolhido: false,
+      idiomaDasCartas: 'pt',
+      idiomaDaInterface: 'pt-BR',
 
       alternarMenu: () => set((s) => ({ menuRecolhido: !s.menuRecolhido })),
       setMenuRecolhido: (menuRecolhido) => set({ menuRecolhido }),
@@ -86,6 +98,8 @@ export const useAparencia = create<AparenciaState>()(
       setAnimacoesReduzidas: (animacoesReduzidas) => set({ animacoesReduzidas }),
       alternarPainelDeBusca: () =>
         set((s) => ({ painelDeBuscaRecolhido: !s.painelDeBuscaRecolhido })),
+      setIdiomaDasCartas: (idiomaDasCartas) => set({ idiomaDasCartas }),
+      setIdiomaDaInterface: (idiomaDaInterface) => set({ idiomaDaInterface }),
     }),
     {
       name: 'aether-aparencia',
