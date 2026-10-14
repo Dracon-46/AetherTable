@@ -652,6 +652,20 @@ aparece pelo nome de usuário, nunca pelo id.
 
 A curtida tem chave composta `(deck, conta)` no banco e `decks.like_count` é mantido na mesma transação.
 
+### 3.12 Decks iniciais — os pré-montados oficiais
+
+Prefixo próprio pelo mesmo motivo do Explorar. As listas são dados do repositório
+(`decks-iniciais.dados.ts`), geradas do MTGJSON (licença MIT) por `tools/decks-iniciais.mjs`: a API
+não depende de serviço externo para servi-las.
+
+| Rota                                | O que faz                                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /decks-iniciais`               | A vitrine: código, nome, coleção, comandantes e cores — sem as cem cartas        |
+| `POST /decks-iniciais/:codigo/usar` | Copia a lista para a conta (Commander, privado) ou devolve a cópia que já existe |
+
+A cópia é reconhecida pelo nome e pela descrição de origem: escolher o mesmo deck inicial duas vezes
+na sala de espera não cria dois decks. Limite: 3 req/10 s e 20 req/min.
+
 ## 4. Cartas (proxy da Scryfall)
 
 Todo acesso à Scryfall passa por aqui, para centralizar cache e fila de 100 ms (`DOC-035` §3).

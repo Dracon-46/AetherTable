@@ -54,6 +54,7 @@ import { ConfirmDialog, ToastHost } from '@/components/Toast';
 import { FORMATOS_JOGAVEIS, acharFormato } from '@aethertable/shared-types';
 import { cardImageUrl } from '@/canvas/textureCache';
 import { useCardCatalog, useHidratarCartas } from '@/cards/catalog';
+import { VitrineDeDecksIniciais } from '../../../deckbuilder/VitrineDeDecksIniciais';
 
 /**
  * ─── OS FORMATOS SAEM DO CATÁLOGO, NÃO DO JSX ─────────────────────────────
@@ -256,6 +257,10 @@ export default function DecksPage() {
             </p>
           )}
         </section>
+
+        {/* Aberta para quem ainda não tem deck: é o caminho mais curto até
+            a primeira partida. Quem já tem decks a vê recolhida. */}
+        {!isPending && <VitrineDeDecksIniciais abertaDeInicio={(decks?.length ?? 0) === 0} />}
 
         {/* Filtros: aparecem com dois grimórios ou mais. Um filtro sobre um
             deck só é decoração. */}

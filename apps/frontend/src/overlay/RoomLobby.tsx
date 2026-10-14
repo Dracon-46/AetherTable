@@ -40,6 +40,7 @@ import {
   DoorOpen,
   Eye,
   Library,
+  Dices,
   Loader2,
   Play,
   Settings2,
@@ -67,6 +68,7 @@ import { API_URL } from '@/lib/api';
 import type { RoomState } from '../net/schema/RoomState';
 import { esquecerReconexao } from '@/net/reconexao';
 import { lembrarDeckDaSala } from '@/cards/deck-da-sala';
+import { useToast } from '@/components/Toast';
 
 /** Vidas que a mesa pode combinar além da do formato. */
 const VIDAS_INICIAIS = [10, 20, 25, 30, 40, 50, 60, 100] as const;
@@ -85,6 +87,16 @@ interface DeckResumo {
   formatId?: string;
 }
 
+/** Um deck pré-montado oficial da vitrine (`GET /decks-iniciais`). */
+interface DeckInicialResumo {
+  codigo: string;
+  nome: string;
+  nomesDosComandantes: string[];
+}
+
+/** No `<select>`, os iniciais vêm com prefixo para não colidir com ids de deck. */
+const PREFIXO_INICIAL = 'inicial:';
+
 export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   const router = useRouter();
   const phase = useGameStore((s) => s.phase);
@@ -102,6 +114,8 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   const [decks, setDecks] = useState<DeckResumo[]>([]);
   const [carregandoDecks, setCarregandoDecks] = useState(true);
   const [deckEscolhido, setDeckEscolhido] = useState('');
+  const [iniciais, setIniciais] = useState<DeckInicialResumo[]>([]);
+  const [copiandoInicial, setCopiandoInicial] = useState(false);
 
   /**
    * A lista de grimórios vem para DENTRO da mesa.
@@ -118,6 +132,17 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
       return;
     }
     let ativo = true;
+    /**
+     * Os decks iniciais vêm junto: sem eles, quem acabou de criar a conta lia
+     * "volte à Taverna e monte um deck" — cem cartas de Commander antes da
+     * primeira partida. Falhar aqui não impede nada; só some a opção.
+     */
+    fetch(`${API_URL}/decks-iniciais`, { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((dados: DeckInicialResumo[]) => {
+        if (ativo) setIniciais(Array.isArray(dados) ? dados : []);
+      })
+      .catch(() => {});
     fetch(`${API_URL}/decks`, { headers: { Authorization: `Bearer ${accessToken}` } })
       .then((r) => (r.ok ? r.json() : []))
       .then((dados: DeckResumo[]) => {
@@ -186,6 +211,49 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
     intents.setDeck(room, id);
     // O criador de fichas lê daqui para oferecer as fichas do deck inteiro.
     lembrarDeckDaSala(codigo, id);
+  };
+
+  /**
+   * Um deck inicial vira um deck DA CONTA antes de ir à mesa: o game-server
+   * só monta grimório de deck que pertence a quem pede (`getDeckForServer`).
+   * O backend reencontra a cópia se a pessoa escolher o mesmo deck de novo.
+   */
+  const escolherValor = async (valor: string) => {
+    if (!valor.startsWith(PREFIXO_INICIAL)) {
+      escolherDeck(valor);
+      return;
+    }
+    if (!accessToken) return;
+    setCopiandoInicial(true);
+    try {
+      const resposta = await fetch(
+        `${API_URL}/decks-iniciais/${encodeURIComponent(valor.slice(PREFIXO_INICIAL.length))}/usar`,
+        { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!resposta.ok) throw new Error(String(resposta.status));
+      const deck = (await resposta.json()) as DeckResumo;
+      setDecks((atuais) => (atuais.some((d) => d.id === deck.id) ? atuais : [deck, ...atuais]));
+      escolherDeck(deck.id);
+    } catch {
+      useToast.getState().mostrar('Não deu para preparar o deck inicial. Tente de novo.', 'erro');
+    } finally {
+      setCopiandoInicial(false);
+    }
+  };
+
+  /**
+   * DECK ALEATÓRIO, como o dado do seletor do EDHPlay: entre os decks da conta
+   * e os iniciais. Não é sorteio de jogo (não muda nada para a mesa), então
+   * `Math.random` basta — o CSPRNG do servidor é para o que a mesa precisa
+   * confiar.
+   */
+  const deckAleatorio = () => {
+    const opcoes = [
+      ...decks.map((d) => d.id),
+      ...iniciais.map((d) => `${PREFIXO_INICIAL}${d.codigo}`),
+    ];
+    const escolhido = opcoes[Math.floor(Math.random() * opcoes.length)];
+    if (escolhido) void escolherValor(escolhido);
   };
 
   /**
@@ -299,7 +367,7 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
               <p className="text-text-faint flex items-center gap-2 text-sm">
                 <Loader2 className="h-4 w-4 animate-spin" /> Buscando seus decks…
               </p>
-            ) : decks.length === 0 ? (
+            ) : decks.length === 0 && iniciais.length === 0 ? (
               <p className="text-text-faint text-sm">
                 Nenhum deck na conta. Volte à Taverna e monte um antes de jogar.
               </p>
@@ -308,18 +376,47 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
                 <select
                   value={deckEscolhido}
                   aria-label="Seu grimório"
-                  onChange={(e) => escolherDeck(e.target.value)}
+                  disabled={copiandoInicial}
+                  onChange={(e) => void escolherValor(e.target.value)}
                   className="bg-table-deep border-panel-border text-text focus:border-primary min-w-0 flex-1 rounded-md border px-4 py-2.5 focus:outline-none"
                 >
                   <option value="" disabled>
                     {eu?.deckName ? `Atual: ${eu.deckName}` : '— escolha um grimório —'}
                   </option>
-                  {decks.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} ({d.cardCount ?? 0} cartas)
-                    </option>
-                  ))}
+                  {decks.length > 0 && (
+                    <optgroup label="Meus decks">
+                      {decks.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.cardCount ?? 0} cartas)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {iniciais.length > 0 && (
+                    <optgroup label="Decks iniciais (oficiais)">
+                      {iniciais.map((d) => (
+                        <option key={d.codigo} value={`${PREFIXO_INICIAL}${d.codigo}`}>
+                          {d.nome} — {d.nomesDosComandantes.join(' & ')}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+
+                <button
+                  type="button"
+                  onClick={deckAleatorio}
+                  disabled={copiandoInicial}
+                  title="Deck aleatório"
+                  aria-label="Deck aleatório"
+                  className="border-panel-border bg-table-deep text-text-muted hover:border-primary hover:text-primary flex shrink-0 items-center justify-center rounded-md border p-2.5 transition-colors disabled:opacity-50"
+                >
+                  {copiandoInicial ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Dices className="h-4 w-4" />
+                  )}
+                </button>
 
                 <span
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold ${
