@@ -10,10 +10,12 @@
  *
  * ─── O QUE A TELA PROMETE, E O QUE NÃO PROMETE ─────────────────────────────
  *
- * A conta some na hora (login, perfil, decks) e todas as sessões caem. O
- * apagamento definitivo dos dados segue o fluxo de 30 dias do backoffice. Não
- * existe agendador que faça isso sozinho, e por isso a tela não diz "seus dados
- * serão apagados automaticamente".
+ * A conta some na hora (login, perfil, decks) e todas as sessões caem. A
+ * remoção física dos dados é feita por um administrador, sob pedido — é o que a
+ * política de privacidade (/privacidade) diz, com essas palavras, porque não
+ * existe agendador que apague sozinho. A primeira versão desta tela falava em
+ * "retenção de 30 dias" e contradizia a política publicada: as duas precisam
+ * dizer a mesma coisa.
  */
 
 import { useState } from 'react';
@@ -66,8 +68,12 @@ export function ExcluirConta() {
       </h2>
       <p className="text-text-muted mb-4 text-sm leading-relaxed">
         A conta é desativada na hora: você sai de todas as sessões, e o seu perfil e os seus decks
-        deixam de aparecer para qualquer pessoa. O apagamento definitivo dos dados segue a política
-        de retenção de 30 dias. Isto não se desfaz pela tela.
+        deixam de aparecer para qualquer pessoa. A remoção definitiva dos dados do banco é feita por
+        um administrador, sob pedido — veja a{' '}
+        <a href="/privacidade" className="text-primary underline">
+          política de privacidade
+        </a>
+        . Isto não se desfaz pela tela.
       </p>
 
       {!aberto ? (

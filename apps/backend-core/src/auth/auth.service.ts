@@ -337,9 +337,10 @@ export class AuthService {
    *
    * É o mesmo soft delete do banimento: a conta some de todo lugar na hora
    * (login, perfil público, busca — todos filtram `deletedAt: null`) e TODAS as
-   * sessões caem (`tokensValidosApos`), inclusive a de quem pediu. O expurgo
-   * físico segue o fluxo de 30 dias do backoffice (§7.1); prometer aqui um
-   * apagamento automático seria mentir, porque o projeto não tem agendador.
+   * sessões caem (`tokensValidosApos`), inclusive a de quem pediu. A remoção
+   * física é ação de administrador, sob pedido, como a política de privacidade
+   * publicada diz; prometer aqui um apagamento automático seria mentir, porque
+   * o projeto não tem agendador.
    *
    * O último administrador não se exclui: sem administrador, o painel só volta
    * por acesso direto ao banco — a mesma trava do banimento.
