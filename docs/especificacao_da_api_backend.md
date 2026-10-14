@@ -90,18 +90,21 @@ Prisma continua `500` — traduzir o que não se entende esconderia um defeito.
 
 ### 1.4 Rate limiting (`NFR-04`)
 
-| Escopo                       | Limite                                            | Chave   |
-| ---------------------------- | ------------------------------------------------- | ------- |
-| Global                       | 10 req/5 s (`curto`) e 120 req/min (`longo`)      | IP      |
-| `/internal/*` (game-server)  | **fora** dos baldes globais (`SEM_LIMITE_GLOBAL`) | —       |
-| `POST /auth/login`           | 5 req/min, 20 req/15 min                          | IP      |
-| `POST /auth/register`        | 3 req/min, 10 req/hora                            | IP      |
-| `POST /auth/senha`           | 2 req/10 s, 5 req/min                             | IP      |
-| `POST /auth/senha/esqueci`   | 3 req/min, 10 req/hora                            | IP      |
-| `POST /auth/senha/redefinir` | 5 req/min, 20 req/hora                            | IP      |
-| `POST /rooms`                | 3 req/hora                                        | usuário |
-| `POST /decks/import`         | 10 req/min                                        | usuário |
-| `GET /cards/search`          | 30 req/min                                        | usuário |
+| Escopo                            | Limite                                            | Chave   |
+| --------------------------------- | ------------------------------------------------- | ------- |
+| Global                            | 10 req/5 s (`curto`) e 120 req/min (`longo`)      | IP      |
+| `/internal/*` (game-server)       | **fora** dos baldes globais (`SEM_LIMITE_GLOBAL`) | —       |
+| `POST /auth/login`                | 5 req/min, 20 req/15 min                          | IP      |
+| `POST /auth/register`             | 3 req/min, 10 req/hora                            | IP      |
+| `POST /auth/senha`                | 2 req/10 s, 5 req/min                             | IP      |
+| `POST /auth/senha/esqueci`        | 3 req/min, 10 req/hora                            | IP      |
+| `POST /auth/senha/redefinir`      | 5 req/min, 20 req/hora                            | IP      |
+| `POST /auth/excluir-conta`        | 2 req/10 s, 5 req/min                             | IP      |
+| `POST /explorar/decks/:id/curtir` | 10 req/10 s, 60 req/min                           | IP      |
+| `POST /explorar/decks/:id/copiar` | 3 req/10 s, 20 req/min                            | IP      |
+| `POST /rooms`                     | 3 req/hora                                        | usuário |
+| `POST /decks/import`              | 10 req/min                                        | usuário |
+| `GET /cards/search`               | 30 req/min                                        | usuário |
 
 `/auth/senha/esqueci` é o mais apertado dos três de senha por um motivo que não é força bruta: cada
 pedido bem-sucedido dispara um **e-mail para um endereço que quem pede escolhe**. Sem limite, a rota
@@ -417,10 +420,22 @@ colunas JSONB (`keybindings` e `preferenciasDeMesa`):
    controle) e não por gramática — quem decide o que é um valor aceitável é a função de normalização
    que as duas pontas usam.
 
-### 2.15 `DELETE /users/me`
+### 2.15 `POST /auth/excluir-conta`
 
-Exige `{ "confirmation": "<username>" }` no corpo. Aplica _soft delete_, invalida todas as sessões e
-agenda o expurgo em 30 dias (`RF13`, `DOC-023` §7).
+A pessoa apaga a própria conta, autenticada. (O `DELETE /users/me` desenhado aqui antes nunca existiu.)
+
+```json
+{ "confirmacao": "<nome de usuário exato>", "senha": "obrigatória se a conta tem senha" }
+```
+
+Responde `204`. A conta é **apagada na hora**, com o mesmo `user.delete` do expurgo do backoffice:
+decks, cartas, preferências, cosméticos, curtidas, contas OAuth e tokens de redefinição caem em
+`CASCADE`; a participação em partidas e a auditoria ficam com `userId` NULL. O JWT de qualquer
+sessão deixa de valer porque a conta não existe mais. Não há soft delete nem espera de 30 dias: quem
+pediu a exclusão já fez o pedido.
+
+Nome errado ou senha errada são `400` (não `401`, pelo mesmo motivo da troca de senha). O último
+administrador ativo recebe `403`. Conta banida não chega aqui: ela não loga.
 
 ---
 
@@ -568,9 +583,10 @@ transação.
 
 Atualização parcial: `name`, `description`, `isFavorite`, `isPublic`, `commanderId`.
 
-### 3.7 `POST /decks/:id/duplicate`
+### 3.7 `POST /decks/:id/clone`
 
-Cria cópia independente com o nome sufixado por " (cópia)".
+Cria cópia independente do próprio deck, linha a linha e na mesma impressão, com o nome sufixado por
+" (cópia)". Nasce privada e fora dos favoritos. (O nome desenhado antes era `/duplicate`.)
 
 ### 3.8 `DELETE /decks/:id`
 
@@ -620,6 +636,21 @@ combinação que o deck já tem soma as quantidades na linha existente e apaga a
 99 cópias.". Antes o `update` batia na chave única e respondia `500`.
 
 ---
+
+### 3.11 Explorar — decks públicos
+
+Prefixo próprio porque `/decks/publicos` cairia no `GET /decks/:id` (`ParseUUIDPipe`). Só aparece
+deck com `isPublic` de conta ativa; deck privado e deck inexistente respondem o mesmo `404`. O dono
+aparece pelo nome de usuário, nunca pelo id.
+
+| Rota                              | O que faz                                                            |
+| --------------------------------- | -------------------------------------------------------------------- |
+| `GET /explorar/decks`             | Lista paginada (24). Query: `busca`, `formato`, `ordem=curtidos      | recentes`, `curtidos=1`, `pagina`                                      |
+| `GET /explorar/decks/:id`         | O deck hidratado como no editor, com `dono`, `curtido` e `likeCount` |
+| `POST /explorar/decks/:id/curtir` | `{ "curtir": true                                                    | false }` — destino explícito, idempotente. Não se curte o próprio deck |
+| `POST /explorar/decks/:id/copiar` | Copia o deck para a conta de quem pediu, privado                     |
+
+A curtida tem chave composta `(deck, conta)` no banco e `decks.like_count` é mantido na mesma transação.
 
 ## 4. Cartas (proxy da Scryfall)
 

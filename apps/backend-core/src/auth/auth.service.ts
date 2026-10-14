@@ -335,12 +335,23 @@ export class AuthService {
    * forma de sair do produto era pedir a um administrador. A LGPD dá ao titular
    * o direito de pedir a eliminação, e o caminho precisa estar ao alcance dele.
    *
-   * É o mesmo soft delete do banimento: a conta some de todo lugar na hora
-   * (login, perfil público, busca — todos filtram `deletedAt: null`) e TODAS as
-   * sessões caem (`tokensValidosApos`), inclusive a de quem pediu. A remoção
-   * física é ação de administrador, sob pedido, como a política de privacidade
-   * publicada diz; prometer aqui um apagamento automático seria mentir, porque
-   * o projeto não tem agendador.
+   * ─── QUEM PEDIU, TEM: A CONTA É APAGADA NA HORA ──────────────────────────
+   *
+   * A primeira versão fazia soft delete (o mesmo do banimento) e deixava a
+   * remoção física para um administrador, sob pedido. Mas a pessoa já PEDIU —
+   * é exatamente isto que esta rota é. Exigir um segundo pedido por outro canal
+   * para apagar de verdade era transformar um direito (LGPD, art. 18, VI) num
+   * chamado de suporte.
+   *
+   * É o mesmo `user.delete` do expurgo do backoffice, e o banco faz o resto:
+   * decks, cartas, preferências, cosméticos, curtidas, contas OAuth e tokens de
+   * redefinição caem em CASCADE; a participação em partidas e a trilha de
+   * auditoria ficam com `userId` NULL (SetNull) — estatística sem pessoa.
+   * Com a linha apagada, o JWT de qualquer sessão deixa de valer na validação
+   * (`jwt.strategy` recusa conta inexistente).
+   *
+   * Banimento continua sendo soft delete: a conta banida não loga, e por isso
+   * não alcança esta rota para apagar o próprio histórico de moderação.
    *
    * O último administrador não se exclui: sem administrador, o painel só volta
    * por acesso direto ao banco — a mesma trava do banimento.
@@ -371,11 +382,7 @@ export class AuthService {
       }
     }
 
-    const agora = new Date();
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { deletedAt: agora, tokensValidosApos: agora },
-    });
+    await this.prisma.user.delete({ where: { id: user.id } });
   }
 
   async register(email: string, username: string, pass: string) {

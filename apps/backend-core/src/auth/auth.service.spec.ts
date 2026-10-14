@@ -32,6 +32,7 @@ async function montar(existentes: { email?: boolean; username?: boolean } = {}) 
       }),
       update: jest.fn().mockResolvedValue({}),
       create: jest.fn(),
+      delete: jest.fn().mockResolvedValue({}),
       count: jest.fn().mockResolvedValue(1),
     },
   };
@@ -95,30 +96,30 @@ describe('AuthService.register — conflito com mensagem legível', () => {
   });
 });
 
-describe('AuthService.excluirConta — a pessoa sai sem precisar de um administrador', () => {
-  it('com nome e senha certos, desativa a conta e derruba TODAS as sessões', async () => {
+describe('AuthService.excluirConta — quem pediu, tem: a conta é apagada na hora', () => {
+  it('com nome e senha certos, APAGA a conta (não só desativa)', async () => {
     const { svc, prisma } = await montar();
 
     await svc.excluirConta(USUARIO, 'gaspare', 'senha-atual-correta');
 
-    const dados = prisma.user.update.mock.calls[0]![0].data;
-    expect(dados.deletedAt).toBeInstanceOf(Date);
-    // O mesmo instante: o token de quem pediu também cai.
-    expect(dados.tokensValidosApos).toBe(dados.deletedAt);
+    // O mesmo `user.delete` do expurgo do backoffice: o banco leva decks,
+    // preferências e cosméticos em CASCADE. Soft delete deixava tudo lá.
+    expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: USUARIO } });
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
   it('senha errada é 400 e não apaga nada', async () => {
     const { svc, prisma } = await montar();
     const erro = await svc.excluirConta(USUARIO, 'gaspare', 'chute').catch((e) => e);
     expect(erro).toBeInstanceOf(BadRequestException);
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.user.delete).not.toHaveBeenCalled();
   });
 
   it('o nome digitado precisa ser o exato da conta', async () => {
     const { svc, prisma } = await montar();
     const erro = await svc.excluirConta(USUARIO, 'Gaspare', 'senha-atual-correta').catch((e) => e);
     expect(erro).toBeInstanceOf(BadRequestException);
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.user.delete).not.toHaveBeenCalled();
   });
 
   it('conta de Google/Discord (sem senha) se exclui só com a confirmação', async () => {
@@ -129,7 +130,7 @@ describe('AuthService.excluirConta — a pessoa sai sem precisar de um administr
       passwordHash: null,
     });
     await svc.excluirConta(USUARIO, 'gaspare');
-    expect(prisma.user.update).toHaveBeenCalled();
+    expect(prisma.user.delete).toHaveBeenCalled();
   });
 
   it('o último administrador não se exclui', async () => {
@@ -144,6 +145,6 @@ describe('AuthService.excluirConta — a pessoa sai sem precisar de um administr
     prisma.user.count.mockResolvedValue(0);
     const erro = await svc.excluirConta(USUARIO, 'gaspare', 'x').catch((e) => e);
     expect(erro).toBeInstanceOf(ForbiddenException);
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.user.delete).not.toHaveBeenCalled();
   });
 });

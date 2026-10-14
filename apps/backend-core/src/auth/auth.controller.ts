@@ -188,7 +188,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ curto: { limit: 2, ttl: 10_000 }, longo: { limit: 5, ttl: 60_000 } })
   @UsePipes(new ZodValidationPipe(ExcluirContaDto))
-  @ApiOperation({ summary: 'Desativa a própria conta e derruba todas as sessões' })
+  @ApiOperation({ summary: 'Apaga a própria conta e todos os dados dela, na hora' })
   async excluirConta(@Req() req: RequisicaoAutenticada, @Body() dto: ExcluirContaDto) {
     await this.authService.excluirConta(req.user.sub, dto.confirmacao, dto.senha);
   }
