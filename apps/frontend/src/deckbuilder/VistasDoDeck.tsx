@@ -33,8 +33,11 @@ import {
   Minus as MinusIcon,
   Image as ImageIcon,
   Loader2,
+  Copy,
 } from 'lucide-react';
 import { cardImageUrl } from '@/canvas/textureCache';
+import { useToast } from '../components/Toast';
+import { quantidadeValida } from './CardSearch';
 import type { DeckCarta } from './useDecks';
 
 export interface AcoesDeCarta {
@@ -74,6 +77,97 @@ function BotaoDeReserva({
     >
       <ArrowLeftRight className={tamanho} />
     </button>
+  );
+}
+
+/**
+ * Copia o nome da carta — para colar numa busca, num site de preços, numa
+ * conversa. Vale também em modo de leitura: copiar não muda o deck.
+ */
+function BotaoCopiarNome({
+  nome,
+  className,
+  tamanho = 'h-3.5 w-3.5',
+}: {
+  nome: string | undefined;
+  className: string;
+  tamanho?: string;
+}) {
+  const avisar = useToast((s) => s.mostrar);
+  if (!nome) return null;
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(nome);
+          avisar(`"${nome}" copiado.`, 'sucesso');
+        } catch {
+          avisar('O navegador negou a área de transferência.', 'erro');
+        }
+      }}
+      className={className}
+      title="Copiar o nome"
+      aria-label={`Copiar o nome de ${nome}`}
+    >
+      <Copy className={tamanho} />
+    </button>
+  );
+}
+
+/**
+ * A quantidade, digitável. Com só "+" e "−", pôr 30 Relentless Rats (ou
+ * acertar 14 Florestas) eram dezenas de cliques. O número vai ao servidor como
+ * a diferença para o valor atual, pela mesma rota do "+": ao sair do campo ou
+ * no Enter — nunca a cada tecla (ver o campo de quantidade da busca).
+ */
+function CampoDeQuantidade({
+  carta,
+  acoes,
+  className,
+}: {
+  carta: DeckCarta;
+  acoes: AcoesDeCarta;
+  className: string;
+}) {
+  const [texto, setTexto] = React.useState(String(carta.quantity));
+  // A quantidade muda por fora (o "+", a reconciliação com o servidor).
+  React.useEffect(() => setTexto(String(carta.quantity)), [carta.quantity]);
+
+  // Esc desiste: o `blur` que vem em seguida não pode confirmar o digitado.
+  const desistiu = React.useRef(false);
+
+  const confirmar = () => {
+    if (desistiu.current) {
+      desistiu.current = false;
+      setTexto(String(carta.quantity));
+      return;
+    }
+    const n = quantidadeValida(texto);
+    setTexto(String(n));
+    if (n !== carta.quantity) acoes.onMudarQuantidade?.(carta.id, n - carta.quantity);
+  };
+
+  return (
+    <input
+      type="number"
+      min={1}
+      max={99}
+      value={texto}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={confirmar}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          desistiu.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      aria-label={`Quantidade de ${carta.name ?? 'carta'}`}
+      className={`[appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${className}`}
+    />
   );
 }
 
@@ -135,6 +229,10 @@ export const LinhaDeCarta = React.memo(function LinhaDeCarta({
       </button>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <BotaoCopiarNome
+          nome={carta.name}
+          className="text-text-muted hover:text-primary p-1 transition-opacity sm:opacity-0 sm:focus:opacity-100 sm:group-hover:opacity-100"
+        />
         <span className="text-primary bg-primary/10 hidden rounded px-2 py-1 font-mono text-[10px] sm:inline">
           [{carta.set ?? '???'}]
         </span>
@@ -164,9 +262,11 @@ export const LinhaDeCarta = React.memo(function LinhaDeCarta({
             >
               <MinusIcon className="h-3 w-3" />
             </button>
-            <span className="text-text w-5 px-1 text-center text-xs font-bold">
-              {carta.quantity}
-            </span>
+            <CampoDeQuantidade
+              carta={carta}
+              acoes={acoes}
+              className="text-text focus:bg-panel w-7 bg-transparent px-0.5 text-center text-xs font-bold"
+            />
             <button
               onClick={() => acoes.onMudarQuantidade?.(carta.id, 1)}
               className="hover:bg-success/20 hover:text-success text-text-muted p-1.5 transition-colors"
@@ -235,6 +335,11 @@ export const LinhaCompacta = React.memo(function LinhaCompacta({
       <span className="text-text-faint hidden shrink-0 font-mono text-[10px] sm:inline">
         {carta.set ?? '???'}
       </span>
+      <BotaoCopiarNome
+        nome={carta.name}
+        tamanho="h-3 w-3"
+        className="text-text-muted hover:text-primary pointer-events-none shrink-0 px-1 opacity-0 transition-opacity focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+      />
       {podeEditar && (
         // Os controles só aparecem no hover/foco: com cem linhas na tela, seis
         // botões por linha viram seiscentos botões competindo com os nomes.
@@ -378,9 +483,11 @@ export const ArteDeCarta = React.memo(function ArteDeCarta({
             >
               <MinusIcon className="h-3.5 w-3.5" />
             </button>
-            <span className="w-4 text-center font-mono text-xs font-bold text-white">
-              {carta.quantity}
-            </span>
+            <CampoDeQuantidade
+              carta={carta}
+              acoes={acoes}
+              className="w-6 bg-transparent text-center font-mono text-xs font-bold text-white"
+            />
             <button
               onClick={() => acoes.onMudarQuantidade?.(carta.id, 1)}
               className="p-1.5 text-white/80 transition-colors hover:text-white"
@@ -418,6 +525,11 @@ export const ArteDeCarta = React.memo(function ArteDeCarta({
             >
               <ImageIcon className="h-3 w-3" /> Arte
             </button>
+            <BotaoCopiarNome
+              nome={carta.name}
+              tamanho="h-3 w-3"
+              className="rounded bg-black/80 px-2 py-2 text-white transition-colors hover:bg-black"
+            />
           </div>
         </div>
       )}

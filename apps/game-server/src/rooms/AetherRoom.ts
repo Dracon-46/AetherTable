@@ -6,6 +6,7 @@ import {
   REALTIME_LIMITS,
   ZONES,
   acharFormato,
+  cartasParaDevolverNoMulligan,
   normalizarConfigDeSala,
   zoneOrderKey,
   type ConfigDeSala,
@@ -35,6 +36,7 @@ import {
   type IntentHandler,
 } from '../intents/registry';
 import { embaralhar } from '../services/rng';
+import { ordem } from '../services/mesa';
 import { ComandoDeIntencao, HistoricoDeComandos } from '../intents/comandos';
 import { logSistema } from '../services/log';
 import { reconciliarClient, reconciliarTudo } from '../services/view-sync';
@@ -65,6 +67,23 @@ interface DeckCardPayload {
   scryfallId: string;
   quantity: number;
   boardType: string;
+}
+
+/**
+ * O que o histórico de partidas guarda de cada jogador — a "foto" tirada quando
+ * ele sai da mesa, quando a partida termina e quando a sala fecha. Quem sai
+ * antes do fim leva o próprio estado embora (`players.delete`), e por isso a
+ * foto é tirada ANTES, e não reconstruída no `onDispose`.
+ */
+interface ParticipacaoNaPartida {
+  userId: string;
+  assento: number;
+  deckId?: string;
+  nomeDoDeck?: string;
+  comandanteId?: string;
+  vidaFinal: number;
+  motivoDaEliminacao?: string;
+  saiuAntes: boolean;
 }
 
 /** Resposta de `GET /api/v1/internal/decks/:id`. */
@@ -189,6 +208,9 @@ export class AetherRoom extends Room<RoomState> {
   /** Encerramento agendado da votação aberta — ver `agendarFimDaVotacao`. */
   private fimDaVotacao: { clear(): void } | null = null;
   private fimDaVotacaoAgendado = 0;
+  /** Fechamento agendado da janela de mulligan — ver `agendarFimDoMulligan`. */
+  private fimDoMulligan: { clear(): void } | null = null;
+  private fimDoMulliganAgendado = 0;
   private proximoAssento = 0;
 
   /**
@@ -210,6 +232,18 @@ export class AetherRoom extends Room<RoomState> {
   private augeDeJogadores = 0;
   /** Epoch ms do primeiro START_MATCH. A duração da partida não inclui o lobby. */
   private inicioDaPartida = 0;
+  /** Uma foto por CONTA (não por sessão: quem reconecta é a mesma pessoa). */
+  private readonly participacoes = new Map<string, ParticipacaoNaPartida>();
+  /** De qual deck saiu o grimório de cada sessão — o histórico abre o deck por ele. */
+  private readonly deckIdPorSessao = new Map<string, string>();
+  /** Conta de quem estava na vez quando a partida começou. */
+  private quemComecou = '';
+  /**
+   * Conta de quem venceu. O fim de partida era só um aviso (`matchEnded`) para
+   * a tela — anunciado em três lugares — e ninguém guardava o resultado.
+   * Agora os três passam por `transmitir`, que o registra.
+   */
+  private vencedorUserId = '';
   /**
    * Versão do provisionamento de cada jogador. Duas escolhas de grimório em
    * sequência (setas no `<select>` do lobby) disparam dois `fetch`; sem saber
@@ -309,6 +343,81 @@ export class AetherRoom extends Room<RoomState> {
       },
       Math.max(0, votacaoExpiraEm - Date.now()) + 50,
     );
+  }
+
+  /**
+   * ─── O PRAZO DO MULLIGAN ─────────────────────────────────────────────────
+   *
+   * Mesmo desenho da votação: o estado diz QUANDO vence (`mulliganExpiraEm`)
+   * e quem fecha é o servidor, no relógio da sala — não o cliente, que pode
+   * estar com a aba em segundo plano, desconectado ou simplesmente mentindo.
+   * Chamado depois de cada intenção: é quando o prazo nasce (START_MATCH),
+   * morre (RESET_MATCH) ou deixa de importar (todo mundo decidiu).
+   */
+  private agendarFimDoMulligan(): void {
+    const { mulliganExpiraEm, phase } = this.state;
+    if (!mulliganExpiraEm) return;
+    // Todo mundo decidiu antes do prazo: o relógio some da tela de todos.
+    const faltaAlguem = Array.from(this.state.players.values()).some((p) => !p.keptHand);
+    if (phase !== 'PLAYING' || !faltaAlguem) {
+      this.state.mulliganExpiraEm = 0;
+      return;
+    }
+    if (this.fimDoMulliganAgendado === mulliganExpiraEm) return;
+    this.fimDoMulligan?.clear();
+    this.fimDoMulliganAgendado = mulliganExpiraEm;
+    this.fimDoMulligan = this.clock.setTimeout(
+      () => {
+        this.fimDoMulligan = null;
+        this.fimDoMulliganAgendado = 0;
+        this.encerrarMulliganPorTempo();
+      },
+      Math.max(0, mulliganExpiraEm - Date.now()) + 50,
+    );
+  }
+
+  /**
+   * Quem não decidiu fica com a mão que tem. As cartas que a regra da mesa
+   * ainda cobrava ao fundo (London, ou o segundo mulligan em diante no
+   * Commander) vão ao fundo AO ACASO — pelo CSPRNG, como todo sorteio da mesa
+   * (RN06) — e o log diz quantas foram.
+   */
+  private encerrarMulliganPorTempo(): void {
+    const { mulliganExpiraEm } = this.state;
+    if (!mulliganExpiraEm || mulliganExpiraEm > Date.now()) return;
+    this.state.mulliganExpiraEm = 0;
+    if (this.state.phase !== 'PLAYING') return;
+
+    this.state.players.forEach((p) => {
+      if (p.keptHand) return;
+      // O contexto é o do PRÓPRIO jogador: a carta sai da mão dele para o
+      // grimório dele pela mesma intenção de quando ele faz isso no modal.
+      // Desconectado, o cliente é um dublê mudo.
+      const cliente =
+        this.clients.find((c) => c.sessionId === p.id) ??
+        ({ sessionId: p.id, send: () => {} } as unknown as Client);
+      const contexto = this.montarContexto(cliente);
+      const devolver = cartasParaDevolverNoMulligan(this.state.tipoDeMulligan, p.mulliganCount);
+      const mao = [...(ordem(this.state, p.id, 'HAND') ?? [])];
+      const aoFundo = embaralhar(mao).slice(0, Math.min(devolver, mao.length));
+      for (const id of aoFundo) {
+        REGISTRY.INTENT_CHANGE_ZONE.executa(contexto, {
+          entityId: id,
+          targetZone: 'LIBRARY',
+          index: 0,
+        } as never);
+      }
+      p.keptHand = true;
+      aplicarTopoRevelado(contexto, p.id);
+      this.publicarLog(
+        logSistema(
+          p.id,
+          aoFundo.length
+            ? `O tempo do mulligan acabou: ${p.name} ficou com a mão, e ${aoFundo.length} carta(s) foram ao fundo ao acaso`
+            : `O tempo do mulligan acabou: ${p.name} ficou com a mão`,
+        ),
+      );
+    });
   }
 
   private cancelarDescarte(): void {
@@ -728,9 +837,49 @@ export class AetherRoom extends Room<RoomState> {
     this.augeDeJogadores = Math.max(this.augeDeJogadores, this.state.players.size);
   }
 
+  /**
+   * Toda transmissão de fim de partida passa por aqui: é onde o vencedor fica
+   * registrado e a mesa inteira é fotografada no instante do fim.
+   */
+  private transmitir(evento: string, payload?: unknown): void {
+    if (evento === 'matchEnded') {
+      const id = (payload as { winnerId?: string } | undefined)?.winnerId;
+      const vencedor = id ? this.state.players.get(id) : undefined;
+      if (vencedor?.userId) this.vencedorUserId = vencedor.userId;
+      this.state.players.forEach((p) => this.fotografar(p, false));
+    }
+    this.broadcast(evento, payload);
+  }
+
+  /** A foto de um jogador para o histórico. Só vale depois que a partida começou. */
+  private fotografar(p: Player, saiuAntes: boolean): void {
+    if (!p.userId || !this.inicioDaPartida) return;
+    let comandanteId: string | undefined;
+    this.state.cards.forEach((c) => {
+      if (!comandanteId && c.ownerId === p.id && c.isCommander && c.scryfallId) {
+        comandanteId = c.scryfallId;
+      }
+    });
+    const anterior = this.participacoes.get(p.userId);
+    this.participacoes.set(p.userId, {
+      userId: p.userId,
+      assento: p.seat,
+      deckId: this.deckIdPorSessao.get(p.id) ?? anterior?.deckId,
+      // Os cortes casam com os limites do DTO da API: um campo comprido demais
+      // faria o resumo INTEIRO ser recusado, e a partida sumiria do histórico.
+      nomeDoDeck: p.deckName.slice(0, 80) || anterior?.nomeDoDeck,
+      comandanteId: comandanteId ?? anterior?.comandanteId,
+      vidaFinal: p.life,
+      motivoDaEliminacao: p.eliminated ? p.eliminationReason || undefined : undefined,
+      saiuAntes,
+    });
+  }
+
   private async registrarResumoDaPartida(): Promise<void> {
     if (!this.state.turnoIniciadoEm) return;
     if (this.contasQueJogaram.size === 0) return;
+    // Quem continua na mesa até a sala fechar é fotografado agora.
+    this.state.players.forEach((p) => this.fotografar(p, false));
 
     // Do START_MATCH, nao da criacao da sala: a duracao incluia o lobby e a
     // espera de descarte da sala vazia.
@@ -749,6 +898,15 @@ export class AetherRoom extends Room<RoomState> {
           playerCount: this.augeDeJogadores,
           durationSeconds: duracao,
           participantes: Array.from(this.contasQueJogaram).slice(0, REALTIME_LIMITS.MAX_PLAYERS),
+          formato: this.state.gameType.slice(0, 32),
+          turnos: this.state.turn,
+          detalhes: Array.from(this.participacoes.values())
+            .slice(0, REALTIME_LIMITS.MAX_PLAYERS)
+            .map((p) => ({
+              ...p,
+              venceu: p.userId === this.vencedorUserId,
+              comecou: p.userId === this.quemComecou,
+            })),
         }),
       });
       if (!res.ok) {
@@ -867,11 +1025,15 @@ export class AetherRoom extends Room<RoomState> {
             new ComandoDeIntencao(tipo, handler, contexto, parsed.data, this.state),
           );
           this.agendarFimDaVotacao();
+          this.agendarFimDoMulligan();
           if (this.state.phase !== faseAntes) {
             this.publicarMetadados();
             if (this.state.phase === 'PLAYING') {
               if (!this.inicioDaPartida) this.inicioDaPartida = Date.now();
               this.registrarParticipantes();
+              if (!this.quemComecou) {
+                this.quemComecou = this.state.players.get(this.state.activePlayerId)?.userId ?? '';
+              }
             }
           }
 
@@ -917,7 +1079,7 @@ export class AetherRoom extends Room<RoomState> {
       client,
       clients: this.clients,
       send: (event, payload) => client.send(event, payload),
-      broadcast: (event, payload) => this.broadcast(event, payload),
+      broadcast: (event, payload) => this.transmitir(event, payload),
       log: (entrada) => this.publicarLog(entrada),
       desfazer: () => this.historico.desfazer(client.sessionId),
       expulsar: (sessionId) => this.expulsar(sessionId),
@@ -1037,6 +1199,9 @@ export class AetherRoom extends Room<RoomState> {
     // `onAuth`, e a janela de reconexão dele ainda vence depois e chama isto
     // de novo — sem a guarda, a mesa anunciaria a saída duas vezes.
     if (!player) return;
+    // A foto vem ANTES do `delete`: depois dele, a vida, o deck e o
+    // comandante de quem saiu não existem mais em lugar nenhum.
+    this.fotografar(player, this.state.phase === 'PLAYING');
     const assentoQueSaiu = player.seat;
     this.state.players.delete(sessionId);
     this.provisionamento.delete(sessionId);
@@ -1109,7 +1274,7 @@ export class AetherRoom extends Room<RoomState> {
     // PLAYING para sempre e ninguem era anunciado vencedor.
     verificarFimDePartida({
       state: this.state,
-      broadcast: (event, payload) => this.broadcast(event, payload),
+      broadcast: (event, payload) => this.transmitir(event, payload),
       log: (entrada) => this.publicarLog(entrada),
     });
 
@@ -1129,7 +1294,7 @@ export class AetherRoom extends Room<RoomState> {
     ) {
       const vencedor = Array.from(this.state.players.values())[0]!;
       this.state.phase = 'CLOSING';
-      this.broadcast('matchEnded', { winnerId: vencedor.id, winnerName: vencedor.name });
+      this.transmitir('matchEnded', { winnerId: vencedor.id, winnerName: vencedor.name });
       this.publicarLog(logSistema(vencedor.id, `${vencedor.name} venceu a partida`));
     }
 
@@ -1298,6 +1463,7 @@ export class AetherRoom extends Room<RoomState> {
         player.handCount = mao.length;
         player.libraryCount = grimorio.length;
         player.deckName = deckReal.name ?? '';
+        this.deckIdPorSessao.set(sessionId, deckId);
         // Trocar de deck invalida uma prontidao ja declarada: o jogador
         // confirmou com OUTRO grimorio na mesa.
         player.ready = false;

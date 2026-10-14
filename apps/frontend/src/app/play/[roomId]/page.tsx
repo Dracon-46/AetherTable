@@ -119,6 +119,7 @@ export default function PlayRoomPage() {
   const borderId = useCosmeticos((s) => s.borderId);
   const titleId = useCosmeticos((s) => s.titleId);
   const petId = useCosmeticos((s) => s.petId);
+  const nameplateId = useCosmeticos((s) => s.nameplateId);
 
   // So quem JA aparece entre os jogadores. Esperar `souEspectador` nao bastava:
   // ele nasce `false` e so vira `true` quando o estado da plateia chega — e o
@@ -130,8 +131,8 @@ export default function PlayRoomPage() {
     // Espectador nao tem `Player` para vestir: a intencao seria recusada como
     // SPECTATOR e viraria um erro na tela dele a cada troca de cosmetico.
     if (!room || souEspectador || !souJogador) return;
-    intents.setCosmetics(room, { sleeveId, playmatId, borderId, titleId, petId });
-  }, [room, souEspectador, souJogador, sleeveId, playmatId, borderId, titleId, petId]);
+    intents.setCosmetics(room, { sleeveId, playmatId, borderId, titleId, petId, nameplateId });
+  }, [room, souEspectador, souJogador, sleeveId, playmatId, borderId, titleId, petId, nameplateId]);
 
   useEffect(() => {
     if (!roomId || !accessToken || !token) return;

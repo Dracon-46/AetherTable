@@ -383,6 +383,22 @@ export function cartasParaDevolverNoMulligan(tipo: string, mulliganCount: number
 export const CRONOMETROS_DE_TURNO = [0, 60, 120, 180, 300] as const;
 export type CronometroDeTurno = (typeof CRONOMETROS_DE_TURNO)[number];
 
+/**
+ * ─── O TEMPO DO MULLIGAN, AO CONTRÁRIO DO DO TURNO, FECHA ALGO ─────────────
+ *
+ * A janela de mulligan já é do servidor (`MULLIGAN_CLOSED`): ele recusa o
+ * mulligan depois de a pessoa manter a mão ou de a partida andar. O tempo é
+ * só mais uma condição de fechamento — e por isso, diferente do cronômetro de
+ * turno, ele AGE: quem não decidiu quando o tempo acaba fica com a mão que
+ * tem, e as cartas que ainda devia devolver ao fundo vão ao fundo ao acaso.
+ * É opção da mesa, desligada por padrão e visível na sala de espera — a mesa
+ * que liga sabe o que ligou.
+ *
+ * Em segundos; `0` = sem limite. Lista fechada pelo mesmo motivo do turno.
+ */
+export const TEMPOS_DE_MULLIGAN = [0, 60, 90, 120, 180] as const;
+export type TempoDeMulligan = (typeof TEMPOS_DE_MULLIGAN)[number];
+
 /** Rótulo legível de uma duração de cronômetro. */
 export function nomeDoCronometro(segundos: number): string {
   if (!segundos) return 'Desligado';

@@ -22,3 +22,4 @@ export * from './cards-catalog';
 export * from './cosmetics';
 export * from './atalhos';
 export * from './preferencias';
+export * from './idiomas';

@@ -166,7 +166,10 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
     ctx.state.cards.forEach((outra) => {
       if (outra.attachedTo === card.id) outra.attachedTo = '';
     });
-    removerSetasDe(ctx.state, card.id);
+    // A pilha é a exceção das setas: "conjuro isto naquilo" é a seta da mão
+    // que segue a mágica até a pilha — é ali que o alvo importa. Ela some
+    // quando a mágica resolve (pilha → cemitério).
+    if (destino !== 'STACK') removerSetasDe(ctx.state, card.id);
   }
 
   // Fichas deixam de existir fora do campo. A pilha é a exceção: a cópia de

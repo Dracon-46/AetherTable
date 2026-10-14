@@ -12,8 +12,8 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { ArteDeCarta, LinhaCompacta, type AcoesDeCarta } from './VistasDoDeck';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ArteDeCarta, LinhaCompacta, LinhaDeCarta, type AcoesDeCarta } from './VistasDoDeck';
 import type { DeckCarta } from './useDecks';
 
 jest.mock(
@@ -128,5 +128,49 @@ describe('LinhaCompacta', () => {
       '[@media(hover:none)]:pointer-events-auto',
       '[@media(hover:none)]:opacity-100',
     );
+  });
+});
+
+describe('quantidade digitável e copiar o nome', () => {
+  /** Com só "+" e "−", 30 Relentless Rats eram 29 cliques. */
+  it('digitar a quantidade manda a diferença, ao sair do campo', () => {
+    const a = acoes();
+    render(<LinhaDeCarta carta={{ ...CARTA, quantity: 2 }} acoes={a} />);
+    const campo = screen.getByLabelText('Quantidade de Sol Ring');
+
+    fireEvent.change(campo, { target: { value: '30' } });
+    expect(a.onMudarQuantidade).not.toHaveBeenCalled();
+    fireEvent.blur(campo);
+    expect(a.onMudarQuantidade).toHaveBeenCalledWith('c1', 28);
+  });
+
+  it('Esc desiste do número digitado', () => {
+    const a = acoes();
+    render(<LinhaDeCarta carta={CARTA} acoes={a} />);
+    const campo = screen.getByLabelText('Quantidade de Sol Ring');
+
+    fireEvent.change(campo, { target: { value: '7' } });
+    fireEvent.keyDown(campo, { key: 'Escape' });
+    fireEvent.blur(campo);
+    expect(a.onMudarQuantidade).not.toHaveBeenCalled();
+    expect(campo).toHaveValue(1);
+  });
+
+  it('copiar o nome funciona mesmo em modo de leitura', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(
+      <LinhaCompacta
+        carta={CARTA}
+        acoes={{
+          onMudarQuantidade: null,
+          onRemover: null,
+          onAlternarComandante: null,
+          onTrocarArte: null,
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Copiar o nome de Sol Ring'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Sol Ring'));
   });
 });

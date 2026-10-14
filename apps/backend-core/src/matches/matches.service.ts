@@ -6,8 +6,13 @@ import { DecksService } from '../decks/decks.service.js';
 import { validarDeckParaFormato, type DeckValidavel } from '../decks/formato.js';
 import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
-import { normalizarConfigDeSala, type ConfigDeSala } from '@aethertable/shared-types';
-import type { CriarPartidaDto, ResumoDePartidaDto } from './matches.dto.js';
+import { Prisma } from '@prisma/client';
+import {
+  estimarBracket,
+  normalizarConfigDeSala,
+  type ConfigDeSala,
+} from '@aethertable/shared-types';
+import type { CriarPartidaDto, FiltrosDoHistoricoDto, ResumoDePartidaDto } from './matches.dto.js';
 import { AUDIENCIA_DA_MESA } from '../auth/passe-de-mesa.js';
 
 @Injectable()
@@ -250,12 +255,26 @@ export class MatchesService {
     });
     const participantes = existentes.map((u) => u.id);
 
+    /**
+     * O bracket de cada deck é calculado AGORA, e não na leitura: o deck pode
+     * ser editado (ou apagado) depois, e o histórico precisa dizer com o que a
+     * pessoa jogou naquela partida.
+     */
+    const detalhes = new Map((dto.detalhes ?? []).map((d) => [d.userId, d]));
+    const brackets = new Map<string, number | null>();
+    for (const userId of participantes) {
+      const deckId = detalhes.get(userId)?.deckId;
+      if (deckId) brackets.set(userId, await this.bracketDoDeck(userId, deckId));
+    }
+
     const resumo = await this.prisma.matchSummary.create({
       data: {
         roomCode: dto.roomCode,
         playerCount: dto.playerCount,
         durationSeconds: dto.durationSeconds,
         endedAt: agora,
+        format: dto.formato ?? null,
+        turns: dto.turnos ?? null,
         participants: {
           /**
            * `createMany` com `skipDuplicates` por causa do `@@unique([matchId,
@@ -264,7 +283,22 @@ export class MatchesService {
            * fariam a partida contar em dobro para essa pessoa.
            */
           createMany: {
-            data: participantes.map((userId) => ({ userId })),
+            data: participantes.map((userId) => {
+              const d = detalhes.get(userId);
+              return {
+                userId,
+                seat: d?.assento ?? null,
+                deckId: d?.deckId ?? null,
+                deckName: d?.nomeDoDeck ?? null,
+                commanderId: d?.comandanteId ?? null,
+                bracket: brackets.get(userId) ?? null,
+                finalLife: d?.vidaFinal ?? null,
+                won: d?.venceu ?? false,
+                startedFirst: d?.comecou ?? false,
+                leftEarly: d?.saiuAntes ?? false,
+                eliminationReason: d?.motivoDaEliminacao ?? null,
+              };
+            }),
             skipDuplicates: true,
           },
         },
@@ -273,6 +307,156 @@ export class MatchesService {
     });
 
     return { id: resumo.id, duplicado: false };
+  }
+
+  /** Estimativa do bracket do deck, ou `null` se o deck sumiu ou a Scryfall falhou. */
+  private async bracketDoDeck(userId: string, deckId: string): Promise<number | null> {
+    try {
+      const deck = (await this.decksService.getDeckById(userId, deckId)) as unknown as {
+        formatId: string;
+        cards: Array<{
+          name?: string;
+          boardType?: string;
+          gameChanger?: boolean;
+          quantity: number;
+        }>;
+      };
+      return estimarBracket(deck.cards, deck.formatId)?.minimo ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // ─── Histórico ─────────────────────────────────────────────────────────────
+
+  /**
+   * As partidas de uma conta, mais recentes primeiro, com quem jogou o quê.
+   *
+   * O nome de cada jogador vem da CONTA na hora da leitura, nunca de uma cópia
+   * gravada na partida: quem excluiu a conta aparece como "Conta excluída", e
+   * o histórico dos outros não guarda o nome de quem pediu para ser esquecido.
+   */
+  async historico(userId: string, filtros: FiltrosDoHistoricoDto) {
+    const POR_PAGINA = 20;
+    const minha: Prisma.MatchSummaryWhereInput = { participants: { some: { userId } } };
+    const porResultado: Record<FiltrosDoHistoricoDto['resultado'], Prisma.MatchSummaryWhereInput> =
+      {
+        todas: {},
+        vitorias: { participants: { some: { userId, won: true } } },
+        derrotas: {
+          AND: [
+            { participants: { some: { userId, won: false } } },
+            { participants: { some: { won: true } } },
+          ],
+        },
+        'sem-vencedor': { participants: { none: { won: true } } },
+      };
+    const where: Prisma.MatchSummaryWhereInput = {
+      AND: [
+        minha,
+        porResultado[filtros.resultado],
+        // A sala grava `COMMANDER`; o catálogo de formatos usa `commander`.
+        filtros.formato ? { format: { equals: filtros.formato, mode: 'insensitive' } } : {},
+      ],
+    };
+
+    const [total, linhas] = await this.prisma.$transaction([
+      this.prisma.matchSummary.count({ where }),
+      this.prisma.matchSummary.findMany({
+        where,
+        orderBy: { endedAt: 'desc' },
+        skip: (filtros.pagina - 1) * POR_PAGINA,
+        take: POR_PAGINA,
+        select: {
+          id: true,
+          endedAt: true,
+          durationSeconds: true,
+          format: true,
+          turns: true,
+          playerCount: true,
+          participants: {
+            select: {
+              userId: true,
+              seat: true,
+              deckId: true,
+              deckName: true,
+              commanderId: true,
+              bracket: true,
+              finalLife: true,
+              won: true,
+              startedFirst: true,
+              leftEarly: true,
+              eliminationReason: true,
+              user: { select: { username: true, displayName: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      pagina: filtros.pagina,
+      porPagina: POR_PAGINA,
+      partidas: linhas.map((m) => {
+        const eu = m.participants.find((p) => p.userId === userId);
+        const houveVencedor = m.participants.some((p) => p.won);
+        return {
+          id: m.id,
+          terminouEm: m.endedAt,
+          duracaoSegundos: m.durationSeconds,
+          formato: m.format,
+          rodadas: m.turns,
+          jogadores: m.playerCount,
+          resultado: !houveVencedor ? 'SEM_VENCEDOR' : eu?.won ? 'VITORIA' : 'DERROTA',
+          participantes: [...m.participants]
+            .sort((a, b) => (a.seat ?? 99) - (b.seat ?? 99))
+            .map((p) => ({
+              nome: p.user ? p.user.displayName || p.user.username : 'Conta excluída',
+              usuario: p.user?.username ?? null,
+              souEu: p.userId === userId,
+              // O id do deck só vai para o dono: é o que abre "ver deck".
+              deckId: p.userId === userId ? p.deckId : null,
+              nomeDoDeck: p.deckName,
+              comandanteId: p.commanderId,
+              bracket: p.bracket,
+              vidaFinal: p.finalLife,
+              venceu: p.won,
+              comecou: p.startedFirst,
+              saiuAntes: p.leftEarly,
+              motivoDaEliminacao: p.eliminationReason,
+            })),
+        };
+      }),
+    };
+  }
+
+  /** Os números do topo do histórico: partidas, vitórias, duração média e comandante favorito. */
+  async estatisticasDoHistorico(userId: string) {
+    const minhas = await this.prisma.matchParticipant.findMany({
+      where: { userId },
+      select: { won: true, commanderId: true, match: { select: { durationSeconds: true } } },
+    });
+    const partidas = minhas.length;
+    const vitorias = minhas.filter((p) => p.won).length;
+    const duracaoMedia = partidas
+      ? Math.round(minhas.reduce((s, p) => s + p.match.durationSeconds, 0) / partidas)
+      : 0;
+    const porComandante = new Map<string, number>();
+    for (const p of minhas) {
+      if (p.commanderId)
+        porComandante.set(p.commanderId, (porComandante.get(p.commanderId) ?? 0) + 1);
+    }
+    const [maisJogado] = [...porComandante].sort((a, b) => b[1] - a[1]);
+    return {
+      partidas,
+      vitorias,
+      taxaDeVitoria: partidas ? vitorias / partidas : 0,
+      duracaoMediaSegundos: duracaoMedia,
+      comandanteMaisJogado: maisJogado
+        ? { comandanteId: maisJogado[0], partidas: maisJogado[1] }
+        : null,
+    };
   }
 
   /**

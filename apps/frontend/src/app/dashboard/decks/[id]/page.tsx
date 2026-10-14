@@ -51,11 +51,14 @@ import {
   DollarSign,
   PanelLeftClose,
   PanelLeft,
+  Sparkles,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ConfirmDialog, ToastHost, useToast } from '../../../../components/Toast';
 import { CardSearch } from '../../../../deckbuilder/CardSearch';
 import { PrintingPicker } from '../../../../deckbuilder/PrintingPicker';
+import { SugestoesDoDeck } from '../../../../deckbuilder/SugestoesDoDeck';
+import { ComentariosDoDeck } from '../../../../deckbuilder/ComentariosDoDeck';
 import {
   COLUNAS_DA_GALERIA,
   useAparencia,
@@ -94,6 +97,7 @@ import {
   DescricaoDoDeck,
   InterruptorPublico,
   MenuExportar,
+  MenuIdioma,
 } from '../../../../deckbuilder/AcoesDoDeck';
 import { acharFormato } from '@aethertable/shared-types';
 import { mensagemDaApi } from '@/lib/fetcher';
@@ -201,7 +205,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
 
   // ── Estado local da tela ─────────────────────────────────────────────────
   const [textoDaLista, setTextoDaLista] = useState('');
-  const [abaEsquerda, setAbaEsquerda] = useState<'busca' | 'importacao'>('busca');
+  const [abaEsquerda, setAbaEsquerda] = useState<'busca' | 'sugestoes' | 'importacao'>('busca');
   const [editandoNome, setEditandoNome] = useState(false);
   const [nomeEditado, setNomeEditado] = useState('');
   const [cartaParaArte, setCartaParaArte] = useState<DeckCarta | null>(null);
@@ -231,6 +235,16 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
   const ordenadas = useMemo(() => ordenarParaExibir(cartas, ordenacao), [cartas, ordenacao]);
   const bracket = useMemo(() => calcularBracket(cartas, deck?.formatId), [cartas, deck?.formatId]);
   const preco = useMemo(() => precoTotal(cartas), [cartas]);
+  /** Chave das sugestões: elas partem do comandante, e trocá-lo as invalida. */
+  const comandantes = useMemo(
+    () =>
+      cartas
+        .filter((c) => c.boardType === 'COMMANDER' && !c.pendente)
+        .map((c) => c.scryfallId)
+        .sort()
+        .join(','),
+    [cartas],
+  );
 
   /**
    * Handlers estáveis: são o que faz o `React.memo` das linhas valer algo.
@@ -432,6 +446,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <BotaoTestar deck={deck} />
             <MenuExportar cartas={cartas} nome={deck.name} />
+            {!somenteLeitura && <MenuIdioma deckId={deck.id} vazio={cartas.length === 0} />}
             <InterruptorPublico deck={deck} />
           </div>
         </header>
@@ -558,7 +573,18 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                         : 'text-text-muted hover:text-text'
                     }`}
                   >
-                    <SearchIcon className="h-4 w-4" /> Buscar Cartas
+                    <SearchIcon className="h-4 w-4" /> Buscar
+                  </button>
+                  <button
+                    onClick={() => setAbaEsquerda('sugestoes')}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-t-md py-2 text-sm font-medium transition-colors ${
+                      abaEsquerda === 'sugestoes'
+                        ? 'text-primary border-primary border-b-2'
+                        : 'text-text-muted hover:text-text'
+                    }`}
+                    title="Cartas que combinam com o comandante"
+                  >
+                    <Sparkles className="h-4 w-4" /> Sugestões
                   </button>
                   <button
                     onClick={() => setAbaEsquerda('importacao')}
@@ -583,6 +609,14 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                 {abaEsquerda === 'busca' ? (
                   <div className="flex min-h-[24rem] flex-1 flex-col overflow-hidden">
                     <CardSearch onAddCard={aoAdicionarCarta} />
+                  </div>
+                ) : abaEsquerda === 'sugestoes' ? (
+                  <div className="flex max-h-[70vh] min-h-[24rem] flex-1 flex-col overflow-hidden">
+                    <SugestoesDoDeck
+                      deckId={deck.id}
+                      comandantes={comandantes}
+                      onAddCard={aoAdicionarCarta}
+                    />
                   </div>
                 ) : (
                   <div className="flex flex-1 flex-col">
@@ -721,6 +755,10 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             </div>
           </section>
         </div>
+
+        {/* Público, o deck recebe comentários — e é aqui que o dono os lê e
+            apaga o que não quer na casa dele. */}
+        {deck.isPublic && <ComentariosDoDeck deckId={deck.id} />}
 
         {cartaParaArte && (
           <PrintingPicker

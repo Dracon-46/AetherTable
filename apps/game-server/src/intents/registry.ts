@@ -377,9 +377,25 @@ function moverNaOrdem(
     if (i !== -1) origem.splice(i, 1);
   }
   const destino = ordem(state, playerId, para);
-  if (destino) {
-    if (index === undefined) destino.push(cardId);
-    else destino.splice(index, 0, cardId);
+  if (!destino) return;
+  /**
+   * ─── `splice` COM INSERÇÃO LANÇA NO ARRAYSCHEMA ───────────────────────────
+   *
+   * Era `destino.splice(index, 0, cardId)`. No Colyseus 3 o `splice` só aceita
+   * inserir até o que remove ("insertCount must be equal or lower than
+   * deleteCount") — e lança. Toda troca de zona COM posição falhava com "Erro
+   * interno na mesa": "para o fundo do grimório" no menu da carta e a
+   * devolução ao fundo do London mulligan nunca funcionaram.
+   *
+   * Fundo é `unshift` (o topo é o FIM da lista). Uma posição do meio cresce a
+   * lista com `push` e reescreve na mesma largura, que o `splice` aceita.
+   */
+  if (index === undefined || index >= destino.length) destino.push(cardId);
+  else if (index <= 0) destino.unshift(cardId);
+  else {
+    const antes = [...destino];
+    destino.push(cardId);
+    destino.splice(0, destino.length, ...antes.slice(0, index), cardId, ...antes.slice(index));
   }
 }
 
@@ -1596,6 +1612,7 @@ const INTENT_RESET_MATCH: IntentHandler<typeof S.ResetMatchIntent> = {
     ctx.state.phase = 'WAITING';
     ctx.state.turn = 1;
     ctx.state.activePlayerId = '';
+    ctx.state.mulliganExpiraEm = 0;
 
     const vidaInicial = vidaInicialDaMesa(ctx.state);
     ctx.state.players.forEach((p) => {
@@ -1750,6 +1767,12 @@ const INTENT_START_MATCH: IntentHandler<typeof S.StartMatchIntent> = {
 
     ctx.state.phase = 'PLAYING';
     ctx.state.turn = 1;
+    // O prazo do mulligan corre a partir da mão inicial. Na mesa LIVRE não
+    // há janela de mulligan para fechar, e portanto nada a cronometrar.
+    ctx.state.mulliganExpiraEm =
+      ctx.state.tempoDeMulligan > 0 && ctx.state.tipoDeMulligan !== 'LIVRE'
+        ? Date.now() + ctx.state.tempoDeMulligan * 1000
+        : 0;
 
     /**
      * A VIDA INICIAL E DO FORMATO.
@@ -2808,6 +2831,9 @@ const INTENT_SET_ROOM_CONFIG: IntentHandler<typeof S.SetRoomConfigIntent> = {
     if (payload.cronometroDeTurno !== undefined) {
       ctx.state.cronometroDeTurno = payload.cronometroDeTurno;
     }
+    if (payload.tempoDeMulligan !== undefined) {
+      ctx.state.tempoDeMulligan = payload.tempoDeMulligan;
+    }
 
     ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} ajustou as regras da mesa`));
   },
@@ -2979,6 +3005,7 @@ const INTENT_SET_COSMETICS: IntentHandler<typeof S.SetCosmeticsIntent> = {
     if (payload.borderId !== undefined) p.profileBorder = payload.borderId;
     if (payload.titleId !== undefined) p.chatTitle = payload.titleId;
     if (payload.petId !== undefined) p.petId = payload.petId;
+    if (payload.nameplateId !== undefined) p.profileNameplate = payload.nameplateId;
   },
 };
 

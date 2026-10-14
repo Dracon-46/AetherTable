@@ -70,3 +70,39 @@ describe('AdminUsuariosService — punições derrubam as sessões abertas', () 
     expect(data.tokensValidosApos).toBeInstanceOf(Date);
   });
 });
+
+describe('AdminUsuariosService.mudarTier — rebaixar tira a placa de apoiador', () => {
+  it('a placa de apoiador volta ao padrão junto com os outros cosméticos', async () => {
+    const { svc, prisma, req } = montar();
+    prisma.user.findUnique.mockResolvedValue({
+      id: ALVO,
+      username: 'alvo',
+      email: 'alvo@exemplo.com',
+      role: Role.USER,
+      deletedAt: null,
+      supporterTier: 'APOIADOR',
+    });
+    const userPreference = {
+      findUnique: jest.fn().mockResolvedValue({
+        sleeveId: 'aether-classic',
+        playmatId: null,
+        borderId: 'chama',
+        titleId: null,
+        petId: null,
+        nameplateId: 'ouro-real',
+      }),
+      update: jest.fn().mockResolvedValue({}),
+    };
+    Object.assign(prisma, { userPreference });
+
+    const r = await svc.mudarTier(req, ALVO, { tier: 'FREE', motivo: 'fim do apoio mensal' });
+
+    // Sem a família na lista, a conta rebaixada seguiria com a placa dourada
+    // na mesa — um cosmético de apoiador que ela não pode mais equipar.
+    expect(r.desequipados).toEqual(expect.arrayContaining(['chama', 'ouro-real']));
+    expect(userPreference.update).toHaveBeenCalledWith({
+      where: { userId: ALVO },
+      data: { borderId: null, nameplateId: null },
+    });
+  });
+});

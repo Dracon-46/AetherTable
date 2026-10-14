@@ -67,6 +67,7 @@ interface PreferenciaDaConta {
     borderId?: string | null;
     titleId?: string | null;
     petId?: string | null;
+    nameplateId?: string | null;
     cosmeticosDeOponentes?: boolean | null;
     keybindings?: Record<string, string> | null;
     /**
@@ -139,6 +140,7 @@ export function useHidratarPreferencias(): void {
           ...(p.borderId ? { borderId: p.borderId } : {}),
           ...(p.titleId ? { titleId: p.titleId } : {}),
           ...(p.petId ? { petId: p.petId } : {}),
+          ...(p.nameplateId ? { nameplateId: p.nameplateId } : {}),
           ...(typeof p.cosmeticosDeOponentes === 'boolean'
             ? { cosmeticosDeOponentes: p.cosmeticosDeOponentes }
             : {}),

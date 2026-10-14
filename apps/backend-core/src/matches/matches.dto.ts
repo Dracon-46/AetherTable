@@ -141,5 +141,37 @@ export const ResumoDePartidaDto = z.object({
    * jogou a partida e não entra na estatística de ninguém.
    */
   participantes: z.array(z.string().uuid()).max(REALTIME_LIMITS.MAX_PLAYERS).default([]),
+  /** `gameType` da sala. Opcional: game-server antigo não manda. */
+  formato: z.string().max(32).optional(),
+  turnos: z.number().int().min(0).max(10_000).optional(),
+  /**
+   * A foto de cada participante para o histórico (RN12, revista em
+   * 14/10/2026). Tudo opcional: sem detalhes, a partida ainda conta.
+   */
+  detalhes: z
+    .array(
+      z.object({
+        userId: z.string().uuid(),
+        assento: z.number().int().min(0).max(REALTIME_LIMITS.MAX_PLAYERS).optional(),
+        deckId: z.string().uuid().optional(),
+        nomeDoDeck: z.string().max(80).optional(),
+        comandanteId: z.string().max(36).optional(),
+        vidaFinal: z.number().int().min(-99_999).max(99_999).optional(),
+        motivoDaEliminacao: z.string().max(16).optional(),
+        saiuAntes: z.boolean().optional(),
+        venceu: z.boolean().optional(),
+        comecou: z.boolean().optional(),
+      }),
+    )
+    .max(REALTIME_LIMITS.MAX_PLAYERS)
+    .default([]),
 });
 export type ResumoDePartidaDto = z.infer<typeof ResumoDePartidaDto>;
+
+/** Filtros do histórico, pela querystring. */
+export const FiltrosDoHistoricoDto = z.object({
+  resultado: z.enum(['todas', 'vitorias', 'derrotas', 'sem-vencedor']).default('todas'),
+  formato: z.string().trim().max(32).optional(),
+  pagina: z.coerce.number().int().min(1).max(1000).default(1),
+});
+export type FiltrosDoHistoricoDto = z.infer<typeof FiltrosDoHistoricoDto>;

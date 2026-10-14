@@ -52,7 +52,7 @@ import type { Room } from 'colyseus.js';
 import { useGameStore, useUIStore, type PlayerData } from '../store/game.store';
 import { intents } from '../net/intents';
 import { useVoiceStore } from '../net/voice';
-import { Avatar, TituloDeChat } from '../components/Avatar';
+import { Avatar, NomeComPlaca, TituloDeChat } from '../components/Avatar';
 import { useCosmeticos, cosmeticosVisiveis } from '../cosmetics/store';
 import { useCardCatalog } from '../cards/catalog';
 import type { RoomState } from '../net/schema/RoomState';
@@ -352,8 +352,14 @@ function PlayerCard({
               ▶
             </span>
           )}
+          {/* A placa de nome passa pelo mesmo filtro de `cosmeticosVisiveis`
+              que a borda e o título: com cosméticos alheios desligados, o
+              nome do oponente volta ao texto neutro. O `span` de fora é quem
+              ocupa a linha e corta; a placa, por dentro, abraça só o nome —
+              esticada até a borda do painel, ela viraria uma faixa colorida
+              em vez de uma moldura. */}
           <span className="text-text min-w-0 flex-1 truncate text-xs font-bold" title={player.name}>
-            {player.name}
+            <NomeComPlaca nome={player.name} nameplateId={cosmeticos.nameplateId} />
           </span>
 
           {player.isMonarch && (

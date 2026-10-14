@@ -10,6 +10,7 @@ import { DESCRICAO_DO_TEMA, TEMAS } from '@aethertable/shared-types';
 import { useTema } from '../../../store/tema.store';
 import { CosmeticPicker } from '../../../components/CosmeticPicker';
 import { TrocarSenha } from './TrocarSenha';
+import { IdiomaDaInterface, IdiomaDasCartas } from './IdiomaDasCartas';
 import { ExcluirConta } from './ExcluirConta';
 
 export default function SettingsPage() {
@@ -235,6 +236,8 @@ export default function SettingsPage() {
             </form>
           </section>
 
+          <IdiomaDaInterface />
+          <IdiomaDasCartas />
           <TrocarSenha />
           <ExcluirConta />
         </>

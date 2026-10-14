@@ -24,14 +24,19 @@
  */
 
 import {
+  NAMEPLATES,
+  NAMEPLATE_PADRAO,
   PETS,
   SLEEVES,
   SLEEVE_PADRAO,
+  acharNameplate,
   acharPet,
   acharSleeve,
   ehAutoral,
+  ehNameplateValido,
   ehPetValido,
   ehSleeveValido,
+  listarNameplates,
   listarPlaymats,
   listarSleeves,
   normalizarCosmeticoAutoral,
@@ -61,6 +66,18 @@ const PET_BOM: CosmeticoAutoralBruto = {
   forma: 'slime',
   cor: '#b87333',
   animacao: 'balancar',
+};
+
+const PLACA_BOA: CosmeticoAutoralBruto = {
+  familia: 'nameplateId',
+  id: 'placa-de-cobre',
+  nome: 'Placa de Cobre',
+  tier: 'APOIADOR',
+  cor1: '#7a4a1e',
+  cor2: '#2b1a0c',
+  borda: '#c98a3e',
+  texto: '#FFF7ED',
+  estilo: 'brilho',
 };
 
 /** Toda suíte volta ao catálogo de código: o registro é global ao processo. */
@@ -184,6 +201,53 @@ describe('normalizarCosmeticoAutoral', () => {
   });
 });
 
+/**
+ * A placa de nome é a família mais nova, e a única cujas cores vão parar nos
+ * DOIS mundos — `linear-gradient` no painel de vida e `fillLinearGradient` no
+ * canvas. Uma cor que passasse daqui sem ser `#rrggbb` não lançaria em nenhum
+ * dos dois: viraria um fundo transparente no DOM e preto no Konva.
+ */
+describe('normalizarCosmeticoAutoral — placa de nome', () => {
+  it('aceita a placa completa e devolve exatamente os campos do contrato', () => {
+    const r = normalizarCosmeticoAutoral(PLACA_BOA);
+    expect(r).not.toBeNull();
+    expect(r!.familia).toBe('nameplateId');
+    expect(r!.item).toEqual({
+      id: 'placa-de-cobre',
+      nome: 'Placa de Cobre',
+      tier: 'APOIADOR',
+      cores: ['#7a4a1e', '#2b1a0c'],
+      borda: '#c98a3e',
+      // Minúsculas, como toda cor normalizada.
+      texto: '#fff7ed',
+      estilo: 'brilho',
+    });
+  });
+
+  it('recusa estilo fora do vocabulário e cor de texto inválida', () => {
+    expect(normalizarCosmeticoAutoral({ ...PLACA_BOA, estilo: 'neon-piscante' })).toBeNull();
+    expect(normalizarCosmeticoAutoral({ ...PLACA_BOA, texto: 'white' })).toBeNull();
+    const { texto: _ignorado, ...semTexto } = PLACA_BOA;
+    expect(normalizarCosmeticoAutoral(semTexto)).toBeNull();
+  });
+
+  it('é idempotente, como as outras famílias com par de cores', () => {
+    const uma = normalizarCosmeticoAutoral(PLACA_BOA)!;
+    const relida = normalizarCosmeticoAutoral({ ...uma.item, familia: uma.familia })!;
+    expect(relida).not.toBeNull();
+    expect(relida.item).toEqual(uma.item);
+  });
+
+  it('todo item do catálogo de código passa pelo próprio normalizador', () => {
+    // O vocabulário de runtime e o catálogo de código não podem divergir:
+    // uma placa do bundle que o normalizador recusasse não poderia ser
+    // recriada no backoffice nem relida de `parametros`.
+    for (const n of NAMEPLATES) {
+      expect(normalizarCosmeticoAutoral({ ...n, familia: 'nameplateId' })?.item).toEqual(n);
+    }
+  });
+});
+
 describe('registrarCosmeticosAutorais', () => {
   it('o item registrado passa a existir para o resolvedor e para o validador', () => {
     registrarCosmeticosAutorais(normalizarCosmeticosAutorais([SLEEVE_BOM, PET_BOM]));
@@ -222,6 +286,29 @@ describe('registrarCosmeticosAutorais', () => {
 
     registrarCosmeticosAutorais([]);
     expect(ehPetValido('tatu-de-bronze')).toBe(false);
+  });
+
+  it('a placa registrada vale para o resolvedor, o validador, o tier e o seletor', () => {
+    const antes = listarNameplates().length;
+    registrarCosmeticosAutorais(normalizarCosmeticosAutorais([PLACA_BOA]));
+
+    expect(ehNameplateValido('placa-de-cobre')).toBe(true);
+    expect(acharNameplate('placa-de-cobre').estilo).toBe('brilho');
+    expect(tierDoCosmetico('nameplateId', 'placa-de-cobre')).toBe('APOIADOR');
+    expect(listarNameplates().length).toBe(antes + 1);
+
+    registrarCosmeticosAutorais([]);
+    expect(ehNameplateValido('placa-de-cobre')).toBe(false);
+    // E o id que sumiu cai no padrão — sem placa —, sem lançar.
+    expect(acharNameplate('placa-de-cobre').id).toBe(NAMEPLATE_PADRAO);
+  });
+
+  it('uma placa autoral não sequestra o padrão', () => {
+    const aceitos = registrarCosmeticosAutorais(
+      normalizarCosmeticosAutorais([{ ...PLACA_BOA, id: NAMEPLATE_PADRAO }]),
+    );
+    expect(aceitos).toBe(0);
+    expect(acharNameplate(NAMEPLATE_PADRAO).estilo).toBe('nenhum');
   });
 
   it('NÃO deixa um item autoral sobrescrever um item do código', () => {

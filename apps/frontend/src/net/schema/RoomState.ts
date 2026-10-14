@@ -45,4 +45,6 @@ export class RoomState extends Schema {
   @type('string') public votacaoSim!: string;
   @type('number') public votacaoExpiraEm!: number;
   @type('number') public vidaInicial!: number;
+  @type('number') public tempoDeMulligan!: number;
+  @type('number') public mulliganExpiraEm!: number;
 }

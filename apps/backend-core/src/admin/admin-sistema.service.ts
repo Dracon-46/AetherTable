@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AdminAction, CosmeticType, Prisma, ReportStatus, Role } from '@prisma/client';
 import {
   CHAT_TITLES,
+  NAMEPLATES,
   PETS,
   PLAYMATS,
   PROFILE_BORDERS,
@@ -77,6 +78,12 @@ function catalogoEmCodigo() {
       nome: i.nome,
       tier: i.tier,
       tipo: CosmeticType.PET,
+    })),
+    ...NAMEPLATES.map((i) => ({
+      catalogoId: i.id,
+      nome: i.nome,
+      tier: i.tier,
+      tipo: CosmeticType.NAMEPLATE,
     })),
   ];
 }

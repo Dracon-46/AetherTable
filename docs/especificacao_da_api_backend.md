@@ -90,18 +90,21 @@ Prisma continua `500` — traduzir o que não se entende esconderia um defeito.
 
 ### 1.4 Rate limiting (`NFR-04`)
 
-| Escopo                       | Limite                                            | Chave   |
-| ---------------------------- | ------------------------------------------------- | ------- |
-| Global                       | 10 req/5 s (`curto`) e 120 req/min (`longo`)      | IP      |
-| `/internal/*` (game-server)  | **fora** dos baldes globais (`SEM_LIMITE_GLOBAL`) | —       |
-| `POST /auth/login`           | 5 req/min, 20 req/15 min                          | IP      |
-| `POST /auth/register`        | 3 req/min, 10 req/hora                            | IP      |
-| `POST /auth/senha`           | 2 req/10 s, 5 req/min                             | IP      |
-| `POST /auth/senha/esqueci`   | 3 req/min, 10 req/hora                            | IP      |
-| `POST /auth/senha/redefinir` | 5 req/min, 20 req/hora                            | IP      |
-| `POST /rooms`                | 3 req/hora                                        | usuário |
-| `POST /decks/import`         | 10 req/min                                        | usuário |
-| `GET /cards/search`          | 30 req/min                                        | usuário |
+| Escopo                            | Limite                                            | Chave   |
+| --------------------------------- | ------------------------------------------------- | ------- |
+| Global                            | 10 req/5 s (`curto`) e 120 req/min (`longo`)      | IP      |
+| `/internal/*` (game-server)       | **fora** dos baldes globais (`SEM_LIMITE_GLOBAL`) | —       |
+| `POST /auth/login`                | 5 req/min, 20 req/15 min                          | IP      |
+| `POST /auth/register`             | 3 req/min, 10 req/hora                            | IP      |
+| `POST /auth/senha`                | 2 req/10 s, 5 req/min                             | IP      |
+| `POST /auth/senha/esqueci`        | 3 req/min, 10 req/hora                            | IP      |
+| `POST /auth/senha/redefinir`      | 5 req/min, 20 req/hora                            | IP      |
+| `POST /auth/excluir-conta`        | 2 req/10 s, 5 req/min                             | IP      |
+| `POST /explorar/decks/:id/curtir` | 10 req/10 s, 60 req/min                           | IP      |
+| `POST /explorar/decks/:id/copiar` | 3 req/10 s, 20 req/min                            | IP      |
+| `POST /rooms`                     | 3 req/hora                                        | usuário |
+| `POST /decks/import`              | 10 req/min                                        | usuário |
+| `GET /cards/search`               | 30 req/min                                        | usuário |
 
 `/auth/senha/esqueci` é o mais apertado dos três de senha por um motivo que não é força bruta: cada
 pedido bem-sucedido dispara um **e-mail para um endereço que quem pede escolhe**. Sem limite, a rota
@@ -417,10 +420,40 @@ colunas JSONB (`keybindings` e `preferenciasDeMesa`):
    controle) e não por gramática — quem decide o que é um valor aceitável é a função de normalização
    que as duas pontas usam.
 
-### 2.15 `DELETE /users/me`
+### 2.15 `POST /auth/excluir-conta`
 
-Exige `{ "confirmation": "<username>" }` no corpo. Aplica _soft delete_, invalida todas as sessões e
-agenda o expurgo em 30 dias (`RF13`, `DOC-023` §7).
+A pessoa apaga a própria conta, autenticada. (O `DELETE /users/me` desenhado aqui antes nunca existiu.)
+
+```json
+{ "confirmacao": "<nome de usuário exato>", "senha": "obrigatória se a conta tem senha" }
+```
+
+Responde `204`. A conta é **apagada na hora**, com o mesmo `user.delete` do expurgo do backoffice:
+decks, cartas, preferências, cosméticos, curtidas, contas OAuth e tokens de redefinição caem em
+`CASCADE`; a participação em partidas e a auditoria ficam com `userId` NULL. O JWT de qualquer
+sessão deixa de valer porque a conta não existe mais. Não há soft delete nem espera de 30 dias: quem
+pediu a exclusão já fez o pedido.
+
+Nome errado ou senha errada são `400` (não `401`, pelo mesmo motivo da troca de senha). O último
+administrador ativo recebe `403`. Conta banida não chega aqui: ela não loga.
+
+### 2.16 `GET /notificacoes`
+
+Os avisos do sino, dos últimos 30 dias, mais recentes primeiro (até 30):
+
+```json
+[
+  { "tipo": "CURTIDAS", "em": "…", "deckId": "…", "nomeDoDeck": "Atraxa", "quantas": 3 },
+  { "tipo": "COMENTARIOS", "em": "…", "deckId": "…", "nomeDoDeck": "Atraxa", "quantos": 2 },
+  { "tipo": "DENUNCIA_ANALISADA", "em": "…", "denunciaId": "…", "desfecho": "DISMISSED" }
+]
+```
+
+Não há tabela de notificações: cada aviso é lido da fonte (`deck_likes`, `deck_comments`, `reports`) na hora, e por
+isso nunca diverge do fato. As curtidas vêm **agregadas por deck e sem nomes**, porque o Explorar só
+mostra quantas curtidas um deck tem, nunca quem curtiu. A própria curtida não conta. Da denúncia sai
+só o desfecho (`RESOLVED` houve medida, `DISMISSED` não houve), nunca a anotação do moderador. "Lido"
+é estado do cliente: o sino guarda a data da última vez que foi aberto.
 
 ---
 
@@ -566,11 +599,16 @@ transação.
 
 ### 3.6 `PATCH /decks/:id`
 
-Atualização parcial: `name`, `description`, `isFavorite`, `isPublic`, `commanderId`.
+Atualização parcial: `name`, `description`, `isFavorite`, `isPublic`, `pasta`.
 
-### 3.7 `POST /decks/:id/duplicate`
+`pasta` (até 40 caracteres) organiza a lista de decks; `""` tira o deck da pasta (grava NULL). Pasta
+não é tabela: pasta sem deck não existe, e renomear uma pasta é mover os decks. A listagem devolve o
+campo como `folder`.
 
-Cria cópia independente com o nome sufixado por " (cópia)".
+### 3.7 `POST /decks/:id/clone`
+
+Cria cópia independente do próprio deck, linha a linha e na mesma impressão, com o nome sufixado por
+" (cópia)". Nasce privada e fora dos favoritos. (O nome desenhado antes era `/duplicate`.)
 
 ### 3.8 `DELETE /decks/:id`
 
@@ -621,6 +659,108 @@ combinação que o deck já tem soma as quantidades na linha existente e apaga a
 
 ---
 
+### 3.11 Explorar — decks públicos
+
+Prefixo próprio porque `/decks/publicos` cairia no `GET /decks/:id` (`ParseUUIDPipe`). Só aparece
+deck com `isPublic` de conta ativa; deck privado e deck inexistente respondem o mesmo `404`. O dono
+aparece pelo nome de usuário, nunca pelo id.
+
+| Rota                              | O que faz                                                            |
+| --------------------------------- | -------------------------------------------------------------------- |
+| `GET /explorar/decks`             | Lista paginada (24). Query: `busca`, `formato`, `ordem=curtidos      | recentes`, `curtidos=1`, `pagina`                                      |
+| `GET /explorar/decks/:id`         | O deck hidratado como no editor, com `dono`, `curtido` e `likeCount` |
+| `POST /explorar/decks/:id/curtir` | `{ "curtir": true                                                    | false }` — destino explícito, idempotente. Não se curte o próprio deck |
+| `POST /explorar/decks/:id/copiar` | Copia o deck para a conta de quem pediu, privado                     |
+
+A curtida tem chave composta `(deck, conta)` no banco e `decks.like_count` é mantido na mesma transação.
+
+### 3.12 Decks iniciais — os pré-montados oficiais
+
+Prefixo próprio pelo mesmo motivo do Explorar. As listas são dados do repositório
+(`decks-iniciais.dados.ts`), geradas do MTGJSON (licença MIT) por `tools/decks-iniciais.mjs`: a API
+não depende de serviço externo para servi-las.
+
+| Rota                                | O que faz                                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /decks-iniciais`               | A vitrine: código, nome, coleção, comandantes e cores — sem as cem cartas        |
+| `POST /decks-iniciais/:codigo/usar` | Copia a lista para a conta (Commander, privado) ou devolve a cópia que já existe |
+
+A cópia é reconhecida pelo nome e pela descrição de origem: escolher o mesmo deck inicial duas vezes
+na sala de espera não cria dois decks. Limite: 3 req/10 s e 20 req/min.
+
+### 3.13 `POST /decks/aleatorio` — deck montado em volta de um comandante sorteado
+
+Sorteia um comandante entre os ~700 mais jogados do EDHREC (sem parceiro, sem Game Changer) e monta um
+deck de Commander em volta dele, gravado na conta (privado):
+
+| Papel           | Quantas                                             | Busca na Scryfall (dentro da identidade)                 |
+| --------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| Terrenos        | 36: não básicos (2–12, conforme as cores) + básicos | `t:land -t:basic produces:<cores>`                       |
+| Ramp            | 10                                                  | `otag:ramp -t:land`                                      |
+| Compra          | 10                                                  | `otag:draw -t:land`                                      |
+| Remoção         | 8                                                   | `otag:removal -otag:sweeper -t:land`                     |
+| Limpeza de mesa | 3                                                   | `otag:sweeper`                                           |
+| Tema (o resto)  | 20 criaturas + o que sobrar                         | tribo e mecânicas lidas do tipo e do texto do comandante |
+
+Cada papel sorteia entre as mais jogadas (três vezes o que pede), sempre singleton e sem Game Changer
+(mesa casual). Os básicos seguem a demanda de cor dos custos, com ao menos um de cada cor. Total sempre
+100; se faltar um básico da Scryfall, a rota recusa em vez de gravar deck incompleto. Limite: 2 a cada
+20 s e 15 por hora — cada pedido são ~11 buscas na Scryfall.
+
+### 3.14 `GET /decks/:id/sugestoes` — cartas recomendadas pelo comandante
+
+O tema do comandante (o mesmo leitor do deck aleatório) e a identidade de cor dele viram até cinco
+buscas, cada uma ordenada pelo EDHREC; o que o deck já tem (em qualquer impressão, por `oracle_id`)
+sai da lista. Até 12 cartas por grupo.
+
+```json
+{
+  "comandantes": ["Ghalta, Primal Hunger"],
+  "temas": ["tribo Dinosaur"],
+  "grupos": [
+    {
+      "papel": "tema",
+      "nome": "Do tema",
+      "cartas": [
+        {
+          "scryfallId": "…",
+          "name": "Gishath, Sun's Avatar",
+          "typeLine": "Legendary Creature — Dinosaur Avatar",
+          "manaCost": "{5}{R}{G}{W}",
+          "gameChanger": false
+        }
+      ]
+    }
+  ]
+}
+```
+
+`papel` é `tema`, `ramp`, `compra`, `remocao` ou `terrenos`; grupo vazio não vem. Deck sem
+comandante devolve `grupos: []` sem buscar nada. Diferente do deck aleatório, Game Changer **entra**
+na sugestão, marcado (`gameChanger: true`): a escolha é da pessoa, e a tela avisa que pode subir o
+bracket. Limite: 3 a cada 10 s e 60 por hora.
+
+### 3.15 Comentários em deck público
+
+| Rota                                                   | O que faz                                    |
+| ------------------------------------------------------ | -------------------------------------------- |
+| `GET /explorar/decks/:id/comentarios`                  | Os 100 mais recentes, do mais antigo ao novo |
+| `POST /explorar/decks/:id/comentarios` `{ texto }`     | Comenta (1 a 500 caracteres, aparado)        |
+| `DELETE /explorar/decks/:id/comentarios/:comentarioId` | `204`. Só o autor ou o dono do deck          |
+
+Só deck público, com a mesma resposta `404` para "não existe" e "é privado". Quem o dono do deck
+bloqueou recebe `403` com uma mensagem que não fala em bloqueio. Cada comentário sai com
+`{ id, texto, em, autor: { usuario, nome }, meu, podeApagar }`; o nome vem da conta na leitura.
+Excluir a conta apaga os comentários dela (CASCADE). Limite do `POST`: 3 a cada 30 s e 30 por hora.
+
+### 3.16 `POST /decks/:id/idioma` — o deck inteiro num idioma
+
+`{ "idioma": "pt" }` (um código de `IDIOMAS_DE_CARTA`: en, pt, es, fr, de, it, ja). Cada carta vai
+para a impressão mais recente naquele idioma, com uma busca da Scryfall por lote de 12 cartas
+(`lang:pt (oracleid:… or …)`). Responde `{ trocadas, semImpressao: [nomes] }` — a carta que nunca
+saiu no idioma fica como estava. Duas impressões da mesma carta que viram a mesma são juntadas.
+Limite: 2 a cada 30 s e 20 por hora.
+
 ## 4. Cartas (proxy da Scryfall)
 
 Todo acesso à Scryfall passa por aqui, para centralizar cache e fila de 100 ms (`DOC-035` §3).
@@ -643,6 +783,10 @@ Uma carta hidratada. Serve do cache; em _miss_, busca e grava.
 ### 4.4 `GET /cards/:scryfallId/printings`
 
 Todas as impressões da mesma carta (`unique=prints`), para o seletor de arte (`F04`).
+
+`?idioma=pt` (um código de `IDIOMAS_DE_CARTA`) traz também as impressões naquele idioma — a busca
+da Scryfall só inclui impressão estrangeira quando a consulta fala de `lang:`. Sem o parâmetro, ou
+com `en`, só as em inglês.
 
 ### 4.5 `GET /cards/tokens?q=...`
 
@@ -824,6 +968,81 @@ uma plataforma vazia.
 > variável em produção a vitrine fica permanentemente vazia e o painel só
 > consegue reportar "a lista de mesas está indisponível", sem nada no log que
 > aponte para a causa.
+
+### 5.6 `GET /matches/historico`
+
+As partidas da conta, mais recentes primeiro, 20 por página (RN12, revista em
+14/10/2026). Querystring:
+
+| Parâmetro   | Valores                                             | Padrão  |
+| ----------- | --------------------------------------------------- | ------- |
+| `resultado` | `todas`, `vitorias`, `derrotas`, `sem-vencedor`     | `todas` |
+| `formato`   | id do formato (`commander`…), sem diferenciar caixa | —       |
+| `pagina`    | 1 a 1000                                            | `1`     |
+
+```json
+{
+  "total": 37,
+  "pagina": 1,
+  "porPagina": 20,
+  "partidas": [
+    {
+      "id": "…",
+      "terminouEm": "2026-10-14T21:40:00.000Z",
+      "duracaoSegundos": 3900,
+      "formato": "COMMANDER",
+      "rodadas": 11,
+      "jogadores": 4,
+      "resultado": "VITORIA",
+      "participantes": [
+        {
+          "nome": "Gaspare",
+          "usuario": "gaspare",
+          "souEu": true,
+          "deckId": "…",
+          "nomeDoDeck": "Atraxa Superfriends",
+          "comandanteId": "<scryfallId>",
+          "bracket": 3,
+          "vidaFinal": 12,
+          "venceu": true,
+          "comecou": false,
+          "saiuAntes": false,
+          "motivoDaEliminacao": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `resultado` é `SEM_VENCEDOR` quando ninguém venceu (mesa desfeita, todos
+  saíram). `derrotas` filtra partidas COM vencedor que não foi a conta.
+- `deckId` só vem preenchido na linha da própria conta — é o que abre "Abrir o
+  deck". O dos outros é sempre `null`.
+- O nome vem da conta na leitura; conta excluída aparece como `"Conta excluída"`
+  com `usuario: null`.
+- `bracket` é a estimativa do deck NO MOMENTO da partida: editar o deck depois
+  não reescreve o histórico.
+
+### 5.7 `GET /matches/historico/estatisticas`
+
+Os números do topo da tela de histórico:
+
+```json
+{
+  "partidas": 37,
+  "vitorias": 11,
+  "taxaDeVitoria": 0.297,
+  "duracaoMediaSegundos": 3420,
+  "comandanteMaisJogado": { "comandanteId": "<scryfallId>", "partidas": 9 }
+}
+```
+
+O resumo de cada partida chega por `POST /internal/matches/summary`, vindo do
+game-server: além de duração e participantes, ele agora traz `formato`,
+`turnos` e `detalhes[]` (assento, deck, comandante, vida final, venceu,
+começou, saiu antes, motivo da eliminação). Tudo opcional — game-server antigo
+continua sendo aceito, e a partida conta sem os detalhes.
 
 ---
 

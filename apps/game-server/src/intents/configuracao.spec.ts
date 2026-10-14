@@ -168,6 +168,13 @@ describe('SetRoomConfigIntent — o que o schema recusa antes do handler', () =>
     }
   });
 
+  it('tempo de mulligan: só os da lista, inclusive o 0 de "sem limite"', () => {
+    expect(schema.safeParse({ tempoDeMulligan: 5 }).success).toBe(false);
+    for (const v of [0, 60, 90, 120, 180]) {
+      expect(schema.safeParse({ tempoDeMulligan: v }).success).toBe(true);
+    }
+  });
+
   it('recusa tipo de mulligan inventado e campo desconhecido', () => {
     expect(schema.safeParse({ tipoDeMulligan: 'PARIS' }).success).toBe(false);
     expect(schema.safeParse({ vantagemDoAnfitriao: true }).success).toBe(false);

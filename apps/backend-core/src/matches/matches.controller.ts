@@ -1,4 +1,14 @@
-import { Controller, Post, Body, Param, UseGuards, Request, Get, Headers } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  Get,
+  Headers,
+  Query,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { MatchesService } from './matches.service.js';
@@ -6,6 +16,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   CriarPartidaDto,
   EntrarNaPartidaDto,
+  FiltrosDoHistoricoDto,
   ResumoDePartidaDto,
   RoomCodeParam,
 } from './matches.dto.js';
@@ -58,6 +69,26 @@ export class MatchesController {
     @Param('roomCode', new ZodValidationPipe(RoomCodeParam)) roomCode: string,
   ) {
     return this.matchesService.spectateMatch(req.user.sub, req.user.username, roomCode);
+  }
+
+  /**
+   * Histórico de partidas da conta (RN12, revista em 14/10/2026). Declarado
+   * ANTES de `:roomCode/voice-token` por clareza; os caminhos não colidem
+   * (o segundo segmento é literal).
+   */
+  @Get('historico')
+  @ApiOperation({ summary: 'As partidas da conta, com filtros e paginação' })
+  historico(
+    @Request() req: RequisicaoAutenticada,
+    @Query(new ZodValidationPipe(FiltrosDoHistoricoDto)) filtros: FiltrosDoHistoricoDto,
+  ) {
+    return this.matchesService.historico(req.user.sub, filtros);
+  }
+
+  @Get('historico/estatisticas')
+  @ApiOperation({ summary: 'Partidas, vitórias, duração média e comandante mais jogado' })
+  estatisticas(@Request() req: RequisicaoAutenticada) {
+    return this.matchesService.estatisticasDoHistorico(req.user.sub);
   }
 
   @Get(':roomCode/voice-token')

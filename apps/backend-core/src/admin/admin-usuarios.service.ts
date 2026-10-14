@@ -360,7 +360,14 @@ export class AdminUsuariosService {
   private async desequiparCosmeticosDeApoiador(userId: string): Promise<string[]> {
     const pref = await this.prisma.userPreference.findUnique({
       where: { userId },
-      select: { sleeveId: true, playmatId: true, borderId: true, titleId: true, petId: true },
+      select: {
+        sleeveId: true,
+        playmatId: true,
+        borderId: true,
+        titleId: true,
+        petId: true,
+        nameplateId: true,
+      },
     });
     if (!pref) return [];
 
@@ -373,6 +380,7 @@ export class AdminUsuariosService {
       'borderId',
       'titleId',
       'petId',
+      'nameplateId',
     ] as FamiliaDeCosmetico[]) {
       const id = pref[familia];
       if (id && tierDoCosmetico(familia, id) === 'APOIADOR') {
@@ -406,9 +414,9 @@ export class AdminUsuariosService {
      * `UserCosmetic` usam UUID; o que o jogo desenha vem do catálogo em código
      * (`shared-types/cosmetics.ts`) e tem id de texto — `aether-classic`. As
      * colunas `active*Id` limpas abaixo são as de UUID, e `sleeveId` /
-     * `playmatId` / `borderId` / `titleId` / `petId` — as reais — não têm como
-     * ser alcançadas a partir de um UUID, porque nada no `CosmeticItem` casa
-     * com um id de catálogo.
+     * `playmatId` / `borderId` / `titleId` / `petId` / `nameplateId` — as
+     * reais — não têm como ser alcançadas a partir de um UUID, porque nada no
+     * `CosmeticItem` casa com um id de catálogo.
      *
      * Por isso o que governa o direito de equipar é o TIER, e não o inventário:
      * ver `mudarTier` abaixo, que é a ação que de fato tira um cosmético de
@@ -429,6 +437,10 @@ export class AdminUsuariosService {
     await this.prisma.userPreference.updateMany({
       where: { userId: id, activeTitleId: dto.cosmeticoId },
       data: { activeTitleId: null },
+    });
+    await this.prisma.userPreference.updateMany({
+      where: { userId: id, activeNameplateId: dto.cosmeticoId },
+      data: { activeNameplateId: null },
     });
 
     await this.auditoria.registrar(req, {

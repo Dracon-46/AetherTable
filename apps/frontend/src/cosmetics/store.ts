@@ -104,6 +104,7 @@ function gravar(estado: CosmeticState): void {
         borderId: estado.borderId,
         titleId: estado.titleId,
         petId: estado.petId,
+        nameplateId: estado.nameplateId,
         cosmeticosDeOponentes: estado.cosmeticosDeOponentes,
       }),
     );
@@ -176,6 +177,7 @@ export function cosmeticosVisiveis(
         profileBorder?: string;
         chatTitle?: string;
         petId?: string;
+        profileNameplate?: string;
       }
     | undefined,
   souEu: boolean,
@@ -189,5 +191,6 @@ export function cosmeticosVisiveis(
     borderId: jogador.profileBorder || COSMETICOS_PADRAO.borderId,
     titleId: jogador.chatTitle || COSMETICOS_PADRAO.titleId,
     petId: jogador.petId || COSMETICOS_PADRAO.petId,
+    nameplateId: jogador.profileNameplate || COSMETICOS_PADRAO.nameplateId,
   };
 }

@@ -47,6 +47,7 @@ const ROTULO_DE_TIPO: Record<string, string> = {
   // sem rótulo, o seletor mostrava "[PET] Sem mascote" ao lado de "[Título no
   // chat] Sem título" — e a grade do catálogo, um rótulo em branco.
   PET: 'Mascote',
+  NAMEPLATE: 'Placa de nome',
 };
 
 export default function CosmeticosPage() {

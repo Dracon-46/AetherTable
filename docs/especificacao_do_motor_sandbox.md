@@ -283,6 +283,8 @@ export class RoomState extends Schema {
   @type('boolean') sideboardPermitido = false;
   @type('number') cronometroDeTurno = 0; // segundos; 0 = desligado
   @type('number') turnoIniciadoEm = 0; // epoch ms
+  @type('number') tempoDeMulligan = 0; // segundos; 0 = sem limite (no FIM da classe)
+  @type('number') mulliganExpiraEm = 0; // epoch ms; 0 = sem prazo correndo (no FIM da classe)
 
   // ─── plateia ───────────────────────────────────────────────────────────
   @type({ map: Espectador }) espectadores = new MapSchema<Espectador>();

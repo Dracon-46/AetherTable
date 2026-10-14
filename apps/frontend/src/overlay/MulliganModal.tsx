@@ -38,6 +38,31 @@ function chaveDecisao(roomId: string) {
   return `aether:kept-hand:${roomId}`;
 }
 
+/**
+ * Quanto falta para o servidor fechar a janela de mulligan.
+ *
+ * A conta é feita aqui, a partir do instante de vencimento que veio no estado
+ * (`mulliganExpiraEm`) — o servidor não manda um tique por segundo. Quem fecha
+ * a janela é ele; isto só mostra o relógio.
+ */
+export function usePrazoDoMulligan(): number | null {
+  const expiraEm = useGameStore((s) => s.config.mulliganExpiraEm);
+  const [agora, setAgora] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!expiraEm) return;
+    setAgora(Date.now());
+    const t = window.setInterval(() => setAgora(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [expiraEm]);
+  if (!expiraEm) return null;
+  return Math.max(0, Math.ceil((expiraEm - agora) / 1000));
+}
+
+/** "1:05". */
+export function formatarPrazo(segundos: number): string {
+  return `${Math.floor(segundos / 60)}:${String(segundos % 60).padStart(2, '0')}`;
+}
+
 export function MulliganModal({ room }: MulliganModalProps) {
   const cards = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
@@ -58,6 +83,7 @@ export function MulliganModal({ room }: MulliganModalProps) {
    */
   const [espiando, setEspiando] = React.useState(false);
   const activePlayerId = useGameStore((s) => s.activePlayerId);
+  const prazo = usePrazoDoMulligan();
 
   const eu = myId ? players[myId] : undefined;
   const keptHandNoServidor = eu?.keptHand;
@@ -181,6 +207,8 @@ export function MulliganModal({ room }: MulliganModalProps) {
       >
         <Repeat className="h-4 w-4" />
         Voltar à mão inicial
+        {/* Espiando a mesa o relógio continua correndo — e precisa aparecer. */}
+        {prazo !== null && <span className="font-mono">({formatarPrazo(prazo)})</span>}
       </button>
     );
   }
@@ -229,6 +257,20 @@ export function MulliganModal({ room }: MulliganModalProps) {
         <p className="text-text-faint mt-2 text-xs sm:text-sm">
           {REGRA_DO_MULLIGAN[tipoDeMulligan as TipoDeMulligan] ?? REGRA_DO_MULLIGAN.COMMANDER}
         </p>
+        {prazo !== null && (
+          <p
+            role="timer"
+            aria-live="off"
+            className={`mt-2 font-mono text-sm font-bold sm:text-base ${
+              prazo <= 10 ? 'text-danger animate-pulse' : 'text-warning'
+            }`}
+          >
+            {formatarPrazo(prazo)} para decidir
+            <span className="text-text-faint ml-2 font-sans text-xs font-normal">
+              — depois a mão fica como está
+            </span>
+          </p>
+        )}
       </div>
 
       {/* `flex-wrap` + largura por breakpoint: com 7 cartas de 192px fixos a

@@ -349,6 +349,7 @@ export const intents = {
       borderId: string;
       titleId: string;
       petId: string;
+      nameplateId: string;
     }>,
   ) => sendIntent(room, 'INTENT_SET_COSMETICS', cosmeticos),
 

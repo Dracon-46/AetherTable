@@ -81,6 +81,7 @@ export class UsersService {
             borderId: true,
             titleId: true,
             petId: true,
+            nameplateId: true,
             cosmeticosDeOponentes: true,
             /**
              * Os atalhos vêm no `GET /users/me` pelo mesmo motivo dos
@@ -203,6 +204,7 @@ export class UsersService {
       'borderId',
       'titleId',
       'petId',
+      'nameplateId',
     ];
     // `null` é "voltar ao padrão", e o padrão é sempre gratuito.
     const pedidos = familias
@@ -243,6 +245,7 @@ export class UsersService {
       borderId?: string | null;
       titleId?: string | null;
       petId?: string | null;
+      nameplateId?: string | null;
       cosmeticosDeOponentes?: boolean;
       /** Mapa completo ação → tecla. Validado em `AtualizarPerfilDto`. */
       keybindings?: Record<string, string>;
@@ -291,6 +294,7 @@ export class UsersService {
       ...(data.borderId !== undefined ? { borderId: data.borderId } : {}),
       ...(data.titleId !== undefined ? { titleId: data.titleId } : {}),
       ...(data.petId !== undefined ? { petId: data.petId } : {}),
+      ...(data.nameplateId !== undefined ? { nameplateId: data.nameplateId } : {}),
       ...(data.cosmeticosDeOponentes !== undefined
         ? { cosmeticosDeOponentes: data.cosmeticosDeOponentes }
         : {}),

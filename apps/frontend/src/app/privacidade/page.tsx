@@ -14,10 +14,11 @@
  * escritas aqui como a realidade, não como o documento:
  *
  *  1. NÃO HÁ EXPURGO AUTOMÁTICO EM 30 DIAS. O documento desenha um "job
- *     diário"; não existe scheduler nenhum no repositório (DOC-094 §I.8). A
- *     exclusão torna a conta inacessível na hora, e a remoção física é uma
- *     ação de administrador. Prometer o automático seria a pior versão de uma
- *     tela que mente: uma promessa legal que o sistema não cumpre.
+ *     diário"; não existe scheduler nenhum no repositório (DOC-094 §I.8).
+ *     Desde a v0.8.1 isso deixou de importar para quem pede: excluir a conta
+ *     em Ajustes APAGA a conta e os dados na hora (`auth.service`,
+ *     `excluirConta`). O que continua manual é o expurgo de conta BANIDA,
+ *     que é ação de administrador.
  *  2. Os prazos de retenção do documento (12 meses, 24 meses, 6 meses)
  *     também dependem desse job. Aqui eles aparecem como o critério de quando
  *     apagamos sob pedido, que é o que de fato acontece.
@@ -173,15 +174,15 @@ export default function PrivacidadePage() {
 
         <Secao titulo="Por quanto tempo guardamos">
           <p>
-            Sua conta e seus decks ficam enquanto a conta existir. Ao excluir a conta, ela se torna{' '}
-            <strong>inacessível imediatamente</strong> e todas as suas sessões caem na hora.
+            Sua conta e seus decks ficam enquanto a conta existir. Ao excluir a conta em{' '}
+            <span className="text-text">Ajustes</span>, ela é{' '}
+            <strong>apagada na hora, de forma definitiva</strong>: decks, preferências, cosméticos e
+            curtidas vão junto, e todas as suas sessões caem.
           </p>
           <p>
-            <strong>Sendo direto sobre uma limitação:</strong> a remoção física dos dados do banco
-            hoje é feita manualmente por um administrador — não há um processo automático rodando
-            todo dia. Se você quiser a remoção definitiva, peça pelo contato abaixo e ela será
-            feita. Registros de moderação e de auditoria podem sobreviver de forma desvinculada da
-            sua pessoa, porque um histórico que apaga a si mesmo não serve para apurar nada.
+            O que sobrevive não identifica você: a contagem de partidas de cada mesa e os registros
+            de auditoria administrativa ficam desvinculados da sua pessoa, porque um histórico que
+            apaga a si mesmo não serve para apurar nada.
           </p>
         </Secao>
 

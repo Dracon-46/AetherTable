@@ -841,6 +841,16 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
       if (card.zone === 'HAND') {
         acoes.push(
           {
+            // Da mão também: "vou conjurar isto naquilo" antes de conjurar.
+            // Os outros veem a seta sair do seu nome, não a carta.
+            rotulo: 'Apontar seta para…',
+            icone: <Crosshair className="h-4 w-4" />,
+            onClick: executar(() => {
+              setArrowSource(card.id);
+              setModoAnexar(false);
+            }),
+          },
+          {
             /**
              * CONJURAR PELA PILHA. Jogar direto no campo pula o momento em que
              * a mesa responde — e "eu conjuro isto, alguém responde?" é a

@@ -3,6 +3,12 @@ import { DecksController, InternalDecksController } from './decks.controller.js'
 import { DecksService } from './decks.service.js';
 import { ExplorarController } from './explorar.controller.js';
 import { ExplorarService } from './explorar.service.js';
+import { DecksIniciaisController } from './decks-iniciais.controller.js';
+import { DecksIniciaisService } from './decks-iniciais.service.js';
+import { GeradorDeDeckService } from './gerador/gerador-de-deck.service.js';
+import { SugestoesDeCartasService } from './gerador/sugestoes.service.js';
+import { ComentariosController } from './comentarios.controller.js';
+import { ComentariosService } from './comentarios.service.js';
 import { CardsModule } from '../cards/cards.module.js';
 
 /**
@@ -12,8 +18,21 @@ import { CardsModule } from '../cards/cards.module.js';
  */
 @Module({
   imports: [CardsModule],
-  controllers: [DecksController, InternalDecksController, ExplorarController],
-  providers: [DecksService, ExplorarService],
+  controllers: [
+    DecksController,
+    InternalDecksController,
+    ExplorarController,
+    DecksIniciaisController,
+    ComentariosController,
+  ],
+  providers: [
+    DecksService,
+    ExplorarService,
+    DecksIniciaisService,
+    GeradorDeDeckService,
+    SugestoesDeCartasService,
+    ComentariosService,
+  ],
   exports: [DecksService],
 })
 export class DecksModule {}

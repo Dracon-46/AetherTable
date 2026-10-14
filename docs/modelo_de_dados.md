@@ -228,6 +228,8 @@ transações críticas.
 | `active_sleeve_id`     | `UUID`        | nullable, FK → `CosmeticItem`                 | Protetor de carta equipado |
 | `active_border_id`     | `UUID`        | nullable, FK → `CosmeticItem`                 | Borda de perfil equipada   |
 | `active_title_id`      | `UUID`        | nullable, FK → `CosmeticItem`                 | Título de chat equipado    |
+| `active_nameplate_id`  | `UUID`        | nullable, FK → `CosmeticItem`                 | Placa de nome (concedida)  |
+| `nameplate_id`         | `VARCHAR(48)` | nullable, id do catálogo (`NAMEPLATES`)       | Placa de nome equipada     |
 | `voice_mode`           | `ENUM`        | `VAD` \| `PTT`, default `VAD`                 | Modo de voz                |
 | `ptt_key`              | `VARCHAR(24)` | nullable                                      | Tecla de Push-to-Talk      |
 | `master_volume`        | `SMALLINT`    | default 100, `CHECK (0..100)`                 | Volume geral               |

@@ -99,8 +99,18 @@ export interface ScryfallCard {
     name: string;
     type_line?: string;
     mana_cost?: string;
+    oracle_text?: string;
     image_uris?: { small?: string; normal?: string; large?: string };
   }>;
+  /**
+   * Texto de regras e palavras-chave. O gerador de deck aleatório lê o TEMA do
+   * comandante daqui ("+1/+1 counter", "token", "graveyard"…). Em carta de
+   * dupla face o texto mora em `card_faces`.
+   */
+  oracle_text?: string;
+  keywords?: string[];
+  /** Posição de popularidade no EDHREC (1 = a mais jogada). Ausente em carta nova. */
+  edhrec_rank?: number;
 }
 
 export interface CollectionResponse {

@@ -8,14 +8,14 @@
  * LGPD dá ao titular o direito de pedir a eliminação, e o caminho tem de estar
  * ao alcance dele — na tela de ajustes, não num e-mail para o suporte.
  *
- * ─── O QUE A TELA PROMETE, E O QUE NÃO PROMETE ─────────────────────────────
+ * ─── APAGAR É APAGAR ──────────────────────────────────────────────────────
  *
- * A conta some na hora (login, perfil, decks) e todas as sessões caem. A
- * remoção física dos dados é feita por um administrador, sob pedido — é o que a
- * política de privacidade (/privacidade) diz, com essas palavras, porque não
- * existe agendador que apague sozinho. A primeira versão desta tela falava em
- * "retenção de 30 dias" e contradizia a política publicada: as duas precisam
- * dizer a mesma coisa.
+ * Confirmado o nome (e a senha, se a conta tem), a conta e os dados dela são
+ * apagados do banco NA HORA — não desativados à espera de um administrador.
+ * Quem pediu a exclusão já fez o pedido; exigir outro, por outro canal, era
+ * transformar um direito num chamado de suporte. A política de privacidade
+ * (/privacidade) diz exatamente isto, e as duas precisam continuar dizendo a
+ * mesma coisa.
  */
 
 import { useState } from 'react';
@@ -67,13 +67,13 @@ export function ExcluirConta() {
         Excluir minha conta
       </h2>
       <p className="text-text-muted mb-4 text-sm leading-relaxed">
-        A conta é desativada na hora: você sai de todas as sessões, e o seu perfil e os seus decks
-        deixam de aparecer para qualquer pessoa. A remoção definitiva dos dados do banco é feita por
-        um administrador, sob pedido — veja a{' '}
+        A conta é apagada na hora, de forma definitiva, junto com os seus decks, preferências,
+        cosméticos e curtidas. Você sai de todas as sessões. Fica só o que não identifica você: a
+        contagem de partidas jogadas. Isto não tem volta — veja a{' '}
         <a href="/privacidade" className="text-primary underline">
           política de privacidade
         </a>
-        . Isto não se desfaz pela tela.
+        .
       </p>
 
       {!aberto ? (

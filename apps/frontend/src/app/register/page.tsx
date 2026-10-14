@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
+import { useLangDoDocumento, useT } from '../../i18n/i18n';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -29,6 +30,8 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const t = useT();
+  useLangDoDocumento();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,28 +86,30 @@ export default function RegisterPage() {
           <div className="bg-table-deep border-panel-border mb-3 rounded-full border p-2.5 shadow-inner">
             <ShieldCheck className="text-success h-7 w-7" />
           </div>
-          <h1 className="text-text text-xl font-bold sm:text-2xl">Alistar-se</h1>
-          <p className="text-text-muted mt-1 text-sm">Junte-se à mesa e forje seu destino.</p>
+          <h1 className="text-text text-xl font-bold sm:text-2xl">{t('Alistar-se')}</h1>
+          <p className="text-text-muted mt-1 text-sm">
+            {t('Junte-se à mesa e forje seu destino.')}
+          </p>
         </div>
 
         {estadoServidor === 'acordando' && (
           <div className="border-warning/40 bg-warning/10 mb-6 flex items-start gap-3 rounded border p-3">
             <AlertCircle className="text-warning mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-warning text-sm">{MENSAGEM_POR_ESTADO.acordando}</p>
+            <p className="text-warning text-sm">{t(MENSAGEM_POR_ESTADO.acordando)}</p>
           </div>
         )}
 
         {error && (
           <div className="bg-danger/20 border-danger/50 mb-6 flex items-start gap-3 rounded border p-3">
             <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-danger text-sm">{error}</p>
+            <p className="text-danger text-sm">{t(error)}</p>
           </div>
         )}
 
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="space-y-2">
             <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              Nome de Usuário
+              {t('Nome de Usuário')}
             </label>
             <input
               type="text"
@@ -119,7 +124,7 @@ export default function RegisterPage() {
 
           <div className="space-y-2">
             <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              E-mail
+              {t('E-mail')}
             </label>
             <input
               type="email"
@@ -128,13 +133,13 @@ export default function RegisterPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-              placeholder="seuemail@exemplo.com"
+              placeholder={t('seuemail@exemplo.com')}
             />
           </div>
 
           <div className="space-y-2">
             <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              Senha (Criptografada)
+              {t('Senha (Criptografada)')}
             </label>
             <input
               type="password"
@@ -161,12 +166,12 @@ export default function RegisterPage() {
             {isRegistering ? (
               <>
                 <UserPlus className="h-4 w-4 animate-bounce" />
-                Criando Perfil...
+                {t('Criando Perfil...')}
               </>
             ) : (
               <>
                 <UserPlus className="h-4 w-4" />
-                Criar Conta Grátis
+                {t('Criar Conta Grátis')}
               </>
             )}
           </button>
@@ -179,7 +184,7 @@ export default function RegisterPage() {
               href="/"
               className="text-success font-medium transition-colors hover:brightness-110"
             >
-              Voltar ao Login
+              {t('Voltar ao Login')}
             </Link>
           </p>
         </div>

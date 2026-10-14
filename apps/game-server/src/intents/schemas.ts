@@ -17,8 +17,10 @@ import {
   REACOES,
   REALTIME_LIMITS,
   TIPOS_DE_MULLIGAN,
+  TEMPOS_DE_MULLIGAN,
   ZONES,
   ehBorderValido,
+  ehNameplateValido,
   ehPetValido,
   ehPlaymatValido,
   ehSleeveValido,
@@ -438,6 +440,11 @@ export const SetRoomConfigIntent = z
       .optional(),
     maxSeats: z.number().int().min(1).max(REALTIME_LIMITS.MAX_PLAYERS).optional(),
     vidaInicial: z.number().int().min(0).max(999).optional(),
+    tempoDeMulligan: z
+      .number()
+      .int()
+      .refine((v) => (TEMPOS_DE_MULLIGAN as readonly number[]).includes(v))
+      .optional(),
   })
   .strict();
 
@@ -485,6 +492,7 @@ export const SetCosmeticsIntent = z
     borderId: z.string().refine(ehBorderValido, 'borda fora do catalogo').optional(),
     titleId: z.string().refine(ehTitleValido, 'titulo fora do catalogo').optional(),
     petId: z.string().refine(ehPetValido, 'mascote fora do catalogo').optional(),
+    nameplateId: z.string().refine(ehNameplateValido, 'placa de nome fora do catalogo').optional(),
   })
   .strict();
 

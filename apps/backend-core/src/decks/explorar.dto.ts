@@ -20,3 +20,11 @@ export type FiltrosDoExplorar = z.infer<typeof FiltrosDoExplorarDto>;
 
 export const CurtirDto = z.object({ curtir: z.boolean() });
 export type CurtirDto = z.infer<typeof CurtirDto>;
+
+/**
+ * Um comentário. O texto é aparado e não pode ficar vazio; 500 caracteres
+ * bastam para "joguei com isso e o X ficou fraco", e o teto também é o da
+ * coluna no banco.
+ */
+export const ComentarDto = z.object({ texto: z.string().trim().min(1).max(500) });
+export type ComentarDto = z.infer<typeof ComentarDto>;

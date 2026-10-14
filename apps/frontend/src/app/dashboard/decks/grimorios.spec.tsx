@@ -21,6 +21,12 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: jest.fn(), prefetch: jest.fn() }),
 }));
 
+// A vitrine de decks iniciais busca a própria lista (react-query, que este
+// teste não monta); o assunto aqui é o formulário de criação.
+jest.mock('../../../deckbuilder/VitrineDeDecksIniciais', () => ({
+  VitrineDeDecksIniciais: () => null,
+}));
+
 const mutateAsync = jest.fn();
 jest.mock('../../../deckbuilder/useDecks', () => ({
   useListaDeDecks: () => ({ data: [], isPending: false, isError: false, error: null }),
@@ -30,6 +36,7 @@ jest.mock('../../../deckbuilder/useDecks', () => ({
   // mas a página os chama no render.
   useAtualizarDeck: () => ({ mutate: jest.fn() }),
   useClonarDeck: () => ({ mutate: jest.fn() }),
+  useGerarDeckAleatorio: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 
 it('a recusa ao criar não vira rejeição não tratada nem navegação', async () => {

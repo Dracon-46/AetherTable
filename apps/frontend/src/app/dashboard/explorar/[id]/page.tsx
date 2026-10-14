@@ -19,6 +19,7 @@ import { agruparCartas, calcularBracket, precoTotal } from '../../../../deckbuil
 import { LinhaCompacta, type AcoesDeCarta } from '../../../../deckbuilder/VistasDoDeck';
 import { PainelDeLegalidade } from '../../../../deckbuilder/PainelDeLegalidade';
 import { MenuExportar } from '../../../../deckbuilder/AcoesDoDeck';
+import { ComentariosDoDeck } from '../../../../deckbuilder/ComentariosDoDeck';
 import { useCopiarPublico, useCurtir, useDeckPublico } from '../../../../deckbuilder/useExplorar';
 import type { DeckCarta } from '../../../../deckbuilder/useDecks';
 
@@ -136,6 +137,8 @@ export default function DeckPublicoPage({ params }: { params: Promise<{ id: stri
             </section>
           ))}
         </div>
+
+        <ComentariosDoDeck deckId={deck.id} />
       </div>
       <ToastHost />
     </>

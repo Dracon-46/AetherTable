@@ -13,6 +13,7 @@ import React, { useEffect, useRef } from 'react';
 import { Lock } from 'lucide-react';
 import {
   listarBorders,
+  listarNameplates,
   listarPets,
   listarPlaymats,
   listarSleeves,
@@ -23,7 +24,7 @@ import {
 } from '@aethertable/shared-types';
 import { caminhoDoPet, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
 import { useCosmeticos } from '../cosmetics/store';
-import { Avatar } from './Avatar';
+import { Avatar, NomeComPlaca } from './Avatar';
 import { useCatalogoDeCosmeticos } from '../cosmetics/useCatalogo';
 
 /** Desenha um canvas procedural dentro de um elemento. */
@@ -195,6 +196,31 @@ export function CosmeticPicker() {
                 <Avatar nome="AT" borderId={b.id} tamanho="md" />
               </div>
               <span className="text-text truncate px-0.5 text-[11px]">{b.nome}</span>
+            </button>
+          ))}
+        </Grade>
+      </Secao>
+
+      <Secao
+        titulo="Placa de nome"
+        descricao="O fundo do seu nome no painel de vida e no rótulo da sua faixa da mesa. Só cores — sempre com o nome legível por cima."
+      >
+        <Grade>
+          {listarNameplates().map((n) => (
+            <button
+              key={n.id}
+              onClick={() => equipar({ nameplateId: n.id })}
+              disabled={travado('nameplateId', n.id)}
+              title={motivo(travado('nameplateId', n.id))}
+              className={sel(equipado.nameplateId === n.id, travado('nameplateId', n.id))}
+            >
+              <Cadeado travado={travado('nameplateId', n.id)} />
+              {/* O MESMO componente do painel de vida, com a placa do item:
+                  a prévia é o resultado, não uma aproximação. */}
+              <div className="text-text flex items-center justify-center px-1 py-4 text-xs font-bold">
+                <NomeComPlaca nome="Planeswalker" placa={n} />
+              </div>
+              <span className="text-text truncate px-0.5 text-[11px]">{n.nome}</span>
             </button>
           ))}
         </Grade>

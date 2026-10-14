@@ -10,7 +10,8 @@
  */
 
 import React from 'react';
-import { acharBorder, acharTitle } from '@aethertable/shared-types';
+import { acharBorder, acharNameplate, acharTitle, type Nameplate } from '@aethertable/shared-types';
+import { estiloCssDaPlaca } from '../cosmetics/render';
 
 interface AvatarProps {
   nome: string;
@@ -67,4 +68,38 @@ function acharTitleSeguro(titleId?: string) {
   // O item "nenhum" existe no catálogo com badge vazio: não renderiza nada.
   const t = acharTitle(titleId);
   return t.badge ? t : null;
+}
+
+/**
+ * O nome do jogador sobre a placa equipada.
+ *
+ * Sem placa (o padrão, ou cosméticos alheios desligados), devolve o nome cru
+ * com as classes do chamador — o painel de vida fica idêntico ao que era. Com
+ * placa, o nome ganha fundo, contorno e a cor de texto DA PLACA: a cor do tema
+ * não serve aqui, porque o fundo da placa não muda com o tema claro.
+ *
+ * `placa` vence `nameplateId`: a prévia do backoffice desenha um item que
+ * ainda não está registrado no catálogo, e resolvê-lo por id cairia no padrão.
+ */
+export function NomeComPlaca({
+  nome,
+  nameplateId,
+  placa,
+  className = '',
+}: {
+  nome: string;
+  nameplateId?: string;
+  placa?: Nameplate;
+  className?: string;
+}) {
+  const estilo = estiloCssDaPlaca(placa ?? acharNameplate(nameplateId));
+  if (!estilo) return <span className={className}>{nome}</span>;
+  return (
+    <span
+      className={`inline-block max-w-full truncate rounded px-1.5 py-px align-middle leading-tight ${className}`}
+      style={estilo}
+    >
+      {nome}
+    </span>
+  );
 }

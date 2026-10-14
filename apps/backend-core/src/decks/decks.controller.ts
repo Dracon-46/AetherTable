@@ -15,6 +15,8 @@ import {
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DecksService } from './decks.service.js';
+import { GeradorDeDeckService } from './gerador/gerador-de-deck.service.js';
+import { SugestoesDeCartasService } from './gerador/sugestoes.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   AdicionarCartaDto,
@@ -24,6 +26,7 @@ import {
   AtualizarQuantidadeDto,
   CriarDeckDto,
   ImportarDeckDto,
+  TrocarIdiomaDto,
 } from './decks.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
@@ -65,7 +68,24 @@ const LIMITE_IMPORTACAO = {
 @UseGuards(JwtAuthGuard)
 @Throttle(LIMITE_DECK)
 export class DecksController {
-  constructor(private readonly decksService: DecksService) {}
+  constructor(
+    private readonly decksService: DecksService,
+    private readonly gerador: GeradorDeDeckService,
+    private readonly sugestoes: SugestoesDeCartasService,
+  ) {}
+
+  /**
+   * DECK ALEATÓRIO: sorteia um comandante e monta o deck em volta dele (ver
+   * `gerador/`). Cada pedido são ~11 buscas na Scryfall — o limite é bem mais
+   * apertado que o das outras rotas de deck para um clique repetido não
+   * esgotar a cota da Scryfall do servidor inteiro.
+   */
+  @Post('aleatorio')
+  @Throttle({ curto: { limit: 2, ttl: 20_000 }, longo: { limit: 15, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Sorteia um comandante e monta um deck de Commander em volta dele' })
+  gerarAleatorio(@Request() req: RequisicaoAutenticada) {
+    return this.gerador.gerar(req.user.sub);
+  }
 
   @Post()
   createDeck(
@@ -83,6 +103,31 @@ export class DecksController {
   @Get(':id')
   getDeckById(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
     return this.decksService.getDeckById(req.user.sub, id);
+  }
+
+  /**
+   * CARTAS RECOMENDADAS para o deck, pelo tema e pela identidade do
+   * comandante (ver `gerador/sugestoes.service.ts`). Até cinco buscas na
+   * Scryfall por pedido — com cache, mas o limite é apertado pelo mesmo motivo
+   * do deck aleatório.
+   */
+  @Get(':id/sugestoes')
+  @Throttle({ curto: { limit: 3, ttl: 10_000 }, longo: { limit: 60, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Cartas recomendadas pelo comandante do deck' })
+  sugerirCartas(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
+    return this.sugestoes.sugerir(req.user.sub, id);
+  }
+
+  /** Uma busca da Scryfall por lote de 12 cartas — o limite é de rota cara. */
+  @Post(':id/idioma')
+  @Throttle({ curto: { limit: 2, ttl: 30_000 }, longo: { limit: 20, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Troca cada carta do deck pela impressão mais recente num idioma' })
+  trocarIdioma(
+    @Request() req: RequisicaoAutenticada,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(TrocarIdiomaDto)) dto: TrocarIdiomaDto,
+  ) {
+    return this.decksService.trocarIdioma(req.user.sub, id, dto.idioma);
   }
 
   @Delete(':id')
