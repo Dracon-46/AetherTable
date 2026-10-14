@@ -111,16 +111,19 @@ export class AuditoriaService {
 /**
  * IP de origem, atrás de proxy.
  *
- * O Render, o Fly e qualquer CDN põem o IP real em `x-forwarded-for` e o
- * `req.ip` passa a ser o do balanceador — o mesmo endereço para todo mundo, o
- * que torna o campo inútil justamente para o que ele existe: investigar acesso
- * indevido a uma conta administrativa.
+ * ─── O PRIMEIRO DO `X-Forwarded-For` ERA ESCOLHIDO PELO CLIENTE ─────────────
  *
- * O PRIMEIRO da lista é o cliente; os seguintes são os proxies do caminho.
+ * A versão anterior lia o primeiro endereço do `x-forwarded-for`. Só que o
+ * proxy do Render ACRESCENTA o IP real ao fim do cabeçalho que recebeu — ele
+ * não apaga o que o cliente mandou. Um `X-Forwarded-For: 1.2.3.4` enviado pelo
+ * próprio administrador virava o "IP de origem" gravado na auditoria: o campo
+ * que existe para investigar acesso indevido a uma conta administrativa era
+ * escrito por quem estava sendo investigado.
+ *
+ * `req.ip` é o endereço que o Express resolve com `trust proxy: 1` (ver
+ * `main.ts`): o último salto antes do nosso proxy, que o cliente não controla.
+ * É o mesmo valor que o rate limit usa, pelo mesmo motivo.
  */
 function ipDaRequisicao(req: RequisicaoAdmin): string | null {
-  const encaminhado = req.headers?.['x-forwarded-for'];
-  const bruto = Array.isArray(encaminhado) ? encaminhado[0] : encaminhado;
-  const primeiro = bruto?.split(',')[0]?.trim();
-  return (primeiro || req.ip || null)?.slice(0, 64) ?? null;
+  return req.ip ? req.ip.slice(0, 64) : null;
 }

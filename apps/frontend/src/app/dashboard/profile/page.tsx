@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
 import { API_URL } from '@/lib/api';
+import { apelidoParaEnvio } from '@/lib/perfil';
+import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { User, Save, Loader2, Trophy, Clock } from 'lucide-react';
 import Link from 'next/link';
 
@@ -50,7 +52,12 @@ export default function ProfilePage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ displayName, username }),
+        // Ver `apelidoParaEnvio`: o apelido em branco ia como `''` e o servidor
+        // recusava o formulário inteiro, inclusive a troca de nome de usuário.
+        body: JSON.stringify({
+          username,
+          displayName: apelidoParaEnvio(displayName, profile?.displayName),
+        }),
       });
 
       if (res.ok) {
@@ -63,12 +70,18 @@ export default function ProfilePage() {
           setAuth(accessToken, {
             ...sessionUser,
             username: updatedUser.username,
+            displayName: updatedUser.displayName ?? null,
             avatarUrl: updatedUser.avatarUrl || '',
           });
         }
       } else {
         const err = await res.json();
-        setMessage({ text: err.message || 'Erro ao atualizar perfil.', type: 'error' });
+        // `err.message` de um 400 de validação é sempre "Dados inválidos.";
+        // o campo e o motivo vêm em `erros[]`. Ver `mensagemDoCorpoDeErro`.
+        setMessage({
+          text: mensagemDoCorpoDeErro(err) ?? 'Erro ao atualizar perfil.',
+          type: 'error',
+        });
       }
     } catch (err) {
       console.error(err);

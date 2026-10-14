@@ -12,8 +12,10 @@
 import { z } from 'zod';
 import {
   COUNTER_NAME_PATTERN,
+  CORES_DE_MANA,
   CRONOMETROS_DE_TURNO,
-  DICE_SIDES,
+  REACOES,
+  REALTIME_LIMITS,
   TIPOS_DE_MULLIGAN,
   ZONES,
   ehBorderValido,
@@ -52,6 +54,10 @@ export const ChangeZoneIntent = z.object({
   index: z.number().int().min(0).max(1000).optional(),
   x: coord.optional(),
   y: coord.optional(),
+  /** Jogar/exilar com a face para baixo (morph, manifest, disguise, foretell). */
+  faceDown: z.boolean().optional(),
+  /** Entrar no campo sob controle de OUTRO jogador. O dono nunca muda. */
+  controllerId: z.string().min(1).max(64).optional(),
 });
 
 export const DrawIntent = z.object({ amount: z.number().int().min(1).max(100) });
@@ -82,6 +88,17 @@ export const PeekIntent = z.object({
 
 export const ClosePeekIntent = z.object({}).strict();
 
+/**
+ * Rearruma cartas que o remetente está olhando. `ids` vem na ordem da tela a
+ * partir da ponta escolhida. 100 é o teto de `PeekIntent.amount`: não dá para
+ * olhar mais que isso de uma vez, logo não há o que rearrumar além disso.
+ */
+export const ArrangePeekedIntent = z.object({
+  ids: z.array(entityId).min(1).max(100),
+  destino: z.enum(['TOP', 'BOTTOM']),
+  aleatorio: z.boolean().default(false),
+});
+
 export const RevealIntent = z.object({
   ids: z.array(entityId).min(1).max(100),
   to: z.union([z.literal('ALL'), z.array(z.string().min(1)).min(1).max(7)]),
@@ -101,7 +118,14 @@ export const UpdatePropertyIntent = z.object({
   value: z.union([z.boolean(), z.number()]),
 });
 
-export const CopyCardIntent = z.object({ entityId: z.string().uuid() });
+/**
+ * `destino: 'STACK'` é "criar cópia na pilha": Twincast, Strionic Resonator,
+ * a habilidade copiada. Sem ele, a cópia nasce no campo, como sempre.
+ */
+export const CopyCardIntent = z.object({
+  entityId: z.string().uuid(),
+  destino: z.enum(['BATTLEFIELD', 'STACK']).default('BATTLEFIELD'),
+});
 
 export const AddCounterIntent = z.object({
   entityId,
@@ -128,22 +152,40 @@ export const CreateTokenIntent = z.object({
 
 export const SetLifeIntent = z.union([
   z.object({ delta: z.number().int().min(-999).max(999) }),
-  z.object({ absolute: z.number().int().min(-999).max(999) }),
+  // Teto maior que o do delta: a vida passa de 999 somando cliques (vínculo
+  // vital, Aetherflux), e com o teto antigo o valor DIGITADO por cima dela era
+  // recusado — o jogador não conseguia corrigir a própria vida.
+  z.object({ absolute: z.number().int().min(-99_999).max(99_999) }),
 ]);
 
 // ─── Aleatoriedade e comunicacao ─────────────────────────────────────────────
 
+/**
+ * ─── DADO DE QUALQUER TAMANHO, E VÁRIOS DE UMA VEZ ─────────────────────────
+ *
+ * Só aceitava os oito tamanhos de `DICE_SIDES`, um por vez. Magic pede mais:
+ * Delina rola d6 por criatura, Ancient Copper Dragon rola d20, e muita mesa
+ * caseira usa d3 ou d30. Rolar cinco d6 virava cinco cliques e cinco linhas
+ * de log. `DICE_SIDES` continua como os ATALHOS da interface; o servidor
+ * aceita de 2 a 1000 lados e até 20 dados por pedido.
+ */
 export const RollDiceIntent = z.object({
-  sides: z.union(
-    DICE_SIDES.map((s) => z.literal(s)) as unknown as [
-      z.ZodLiteral<number>,
-      z.ZodLiteral<number>,
-      ...z.ZodLiteral<number>[],
-    ],
-  ),
+  sides: z.number().int().min(2).max(1000),
+  amount: z.number().int().min(1).max(20).default(1),
 });
 
 export const FlipCoinIntent = z.object({}).strict();
+
+export const ReactionIntent = z.object({ tipo: z.enum(REACOES) });
+
+export const ManaPoolIntent = z.discriminatedUnion('acao', [
+  z.object({
+    acao: z.literal('AJUSTAR'),
+    cor: z.enum(CORES_DE_MANA),
+    delta: z.number().int().min(-99).max(99),
+  }),
+  z.object({ acao: z.literal('LIMPAR') }),
+]);
 
 export const ChatIntent = z.object({ text: z.string().min(1).max(500) });
 
@@ -201,6 +243,7 @@ export const ClearTokensIntent = z.object({}).strict();
 export const SetCommanderDamageIntent = z.object({
   fromPlayerId: z.string().min(1).max(64),
   delta: z.number().int().min(-99).max(99),
+  commanderId: entityId.optional(),
 });
 
 export const AddPlayerCounterIntent = z.object({
@@ -308,14 +351,26 @@ export const SetDamageIntent = z.object({
 
 export const ClearDamageIntent = z.object({}).strict();
 
+/**
+ * Teto UNICO dos lotes. Eram 60 em dois e 100 no terceiro, e com a selecao por
+ * laco um campo de fichas passa de 60 facil: a selecao inteira era recusada com
+ * INVALID_PAYLOAD. 200 cobre qualquer mesa real e continua barato num tick.
+ */
+const MAX_LOTE = 200;
+
+export const BatchChangeZoneIntent = z.object({
+  entityIds: z.array(entityId).min(1).max(MAX_LOTE),
+  targetZone: zona,
+});
+
 export const BatchUpdateIntent = z.object({
-  entityIds: z.array(entityId).min(1).max(60),
+  entityIds: z.array(entityId).min(1).max(MAX_LOTE),
   property: z.enum(['isTapped', 'faceDown', 'rotation', 'phasedOut', 'enteredThisTurn']),
   value: z.union([z.boolean(), z.number()]),
 });
 
 export const BatchCounterIntent = z.object({
-  entityIds: z.array(entityId).min(1).max(60),
+  entityIds: z.array(entityId).min(1).max(MAX_LOTE),
   name: z.string().regex(COUNTER_NAME_PATTERN),
   amount: z.number().int().min(-99).max(99),
 });
@@ -381,6 +436,8 @@ export const SetRoomConfigIntent = z
       .int()
       .refine((v) => (CRONOMETROS_DE_TURNO as readonly number[]).includes(v))
       .optional(),
+    maxSeats: z.number().int().min(1).max(REALTIME_LIMITS.MAX_PLAYERS).optional(),
+    vidaInicial: z.number().int().min(0).max(999).optional(),
   })
   .strict();
 
@@ -436,19 +493,14 @@ export const SetCosmeticsIntent = z
 /** Zonas cujo conteudo pode ser PEDIDO a outro jogador (RN13). */
 const zonaPedivel = z.enum(['HAND', 'LIBRARY', 'GRAVEYARD', 'EXILE']);
 
-/**
- * O deck e escolhido DENTRO da sala de espera.
- *
- * `deckId` e um uuid porque e o formato do id no Postgres (DOC-030): validar
- * aqui evita que uma string arbitraria vire uma chamada HTTP interna com path
- * controlado pelo cliente.
- */
-export const SetDeckIntent = z.object({ deckId: z.string().uuid() }).strict();
-
 export const SetReadyIntent = z.object({ ready: z.boolean() }).strict();
 
 /** `playerId` e o sessionId do Colyseus, nao um uuid. */
 export const KickPlayerIntent = z.object({ playerId: z.string().min(1).max(64) }).strict();
+
+export const VoteKickIntent = z
+  .object({ playerId: z.string().min(1).max(64), aceitar: z.boolean() })
+  .strict();
 
 export const KeepHandIntent = z.object({}).strict();
 
@@ -469,7 +521,15 @@ export const RevokeViewIntent = z
   .strict();
 
 export const GiveCardIntent = z
-  .object({ entityId, targetPlayerId: z.string().min(1).max(64) })
+  .object({
+    entityId,
+    targetPlayerId: z.string().min(1).max(64),
+    /** Entrega com a face para baixo: só quem recebe passa a ver. */
+    faceDown: z.boolean().optional(),
+    /** Onde soltar, relativo à faixa de quem recebe. Sem isto, o canto (0, 0). */
+    x: coord.optional(),
+    y: coord.optional(),
+  })
   .strict();
 
 /**

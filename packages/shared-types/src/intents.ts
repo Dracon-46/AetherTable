@@ -43,6 +43,10 @@ export interface ChangeZonePayload {
   index?: number;
   x?: number;
   y?: number;
+  /** Só vale para campo e exílio: jogar/exilar com a face para baixo. */
+  faceDown?: boolean;
+  /** Só vale para o campo: entra sob controle deste jogador. */
+  controllerId?: string;
 }
 export interface DrawPayload {
   amount: number;
@@ -93,6 +97,12 @@ export interface PeekPayload {
   from?: 'TOP' | 'BOTTOM';
 }
 export type ClosePeekPayload = Record<string, never>;
+/** Ver `ArrangePeekedIntent` no game-server. `ids[0]` é a ponta (topo ou fundo). */
+export interface ArrangePeekedPayload {
+  ids: string[];
+  destino: 'TOP' | 'BOTTOM';
+  aleatorio?: boolean;
+}
 export interface ScryPayload {
   amount: number;
 }
@@ -198,6 +208,11 @@ export interface SetControllerPayload {
   controllerId: string;
 }
 /** Uma mensagem para selecao multipla (F25) — evita estourar o limite de 30/s. */
+/** Mesma troca de `INTENT_CHANGE_ZONE`, para a seleção inteira, numa mensagem. */
+export interface BatchChangeZonePayload {
+  entityIds: string[];
+  targetZone: Zone;
+}
 export interface BatchUpdatePayload {
   entityIds: string[];
   property: CardBooleanProperty | 'rotation';
@@ -225,7 +240,8 @@ export interface ClearCountersPayload {
   entityId: string;
 }
 export interface AddPlayerCounterPayload {
-  name: string;
+  /** Era `string`: a documentação mostrava `"poison"`, que o zod recusa. */
+  name: PlayerCounter;
   amount: number;
 }
 export interface BatchCounterPayload {
@@ -240,6 +256,12 @@ export type SetLifePayload = { delta: number } | { absolute: number };
 export interface SetCommanderDamagePayload {
   fromPlayerId: string;
   delta: number;
+  /**
+   * `Card.id` do comandante que causou o dano. Com parceiros, cada comandante
+   * conta separado (regra 903.10a); sem isto, 11 de Tymna + 10 de Thrasios
+   * somavam 21 numa chave só e eliminavam quem não devia ser eliminado.
+   */
+  commanderId?: string;
 }
 export interface SetPlayerCounterPayload {
   type: PlayerCounter;
@@ -292,6 +314,13 @@ export interface SetRoomConfigPayload {
   sideboardPermitido?: boolean;
   /** Segundos. `0` = desligado. Valor de `CRONOMETROS_DE_TURNO`. */
   cronometroDeTurno?: number;
+  /**
+   * Assentos da mesa, dentro da faixa do formato. Único campo que vale com a
+   * partida em andamento: abrir uma vaga não desfaz escolha de ninguém.
+   */
+  maxSeats?: number;
+  /** Vida inicial da mesa (1–999); `0` volta à do formato. Só na sala de espera. */
+  vidaInicial?: number;
 }
 /** Marca o jogador como eliminado. NAO o remove da sala (RN01). */
 export type ConcedePayload = Record<string, never>;
@@ -310,6 +339,8 @@ export interface CreateTokenPayload {
 }
 export interface CopyCardPayload {
   entityId: string;
+  /** `STACK` = "criar cópia na pilha". Padrão: no campo. */
+  destino?: 'BATTLEFIELD' | 'STACK';
 }
 export interface DestroyTokenPayload {
   entityId: string;
@@ -325,9 +356,30 @@ export const DICE_SIDES = [2, 4, 6, 8, 10, 12, 20, 100] as const;
 export type DiceSides = (typeof DICE_SIDES)[number];
 
 export interface RollDicePayload {
-  sides: DiceSides;
+  /** 2 a 1000. `DICE_SIDES` são só os atalhos da interface. */
+  sides: number;
+  /** Quantos dados de uma vez, 1 a 20. Padrão 1. */
+  amount?: number;
 }
 export type FlipCoinPayload = Record<string, never>;
+
+/**
+ * Reações rápidas à mesa. Efêmeras: um `broadcast` e um balão na tela, nada no
+ * estado e nada no log — o log é a auditoria da partida, e "👍" não é jogada.
+ * As quatro primeiras são as de teclas 7, 8, 9 e 0.
+ */
+/** As seis cores do rastreador de mana, na ordem do símbolo. */
+export const CORES_DE_MANA = ['W', 'U', 'B', 'R', 'G', 'C'] as const;
+export type CorDeMana = (typeof CORES_DE_MANA)[number];
+/** Ajusta uma cor do próprio pool, ou esvazia o pool inteiro. */
+export type ManaPoolPayload =
+  { acao: 'AJUSTAR'; cor: CorDeMana; delta: number } | { acao: 'LIMPAR' };
+
+export const REACOES = ['POLEGAR', 'PENSANDO', 'UAU', 'CHORO', 'RISADA', 'GG'] as const;
+export type Reacao = (typeof REACOES)[number];
+export interface ReactionPayload {
+  tipo: Reacao;
+}
 export type RandomPlayerPayload = Record<string, never>;
 export interface RandomCardPayload {
   zone: Zone;
@@ -446,6 +498,15 @@ export interface SetReadyPayload {
 }
 
 /** Remove alguem da sala. So o anfitriao (assento 0). */
+/**
+ * Propõe (ou vota) remover um jogador. A primeira chamada abre a votação e
+ * vale como o voto de quem propôs; um "não" encerra; todos os outros jogadores
+ * conectados dizendo "sim", o alvo sai e não volta.
+ */
+export interface VoteKickPayload {
+  playerId: string;
+  aceitar: boolean;
+}
 export interface KickPlayerPayload {
   playerId: string;
 }
@@ -494,6 +555,11 @@ export interface RevokeViewPayload {
 export interface GiveCardPayload {
   entityId: string;
   targetPlayerId: string;
+  /** Entrega com a face para baixo: só quem recebe passa a ver a carta. */
+  faceDown?: boolean;
+  /** Posição relativa à faixa de quem recebe. */
+  x?: number;
+  y?: number;
 }
 
 // ─── Mapa canonico: nome da intencao -> payload ──────────────────────────────
@@ -517,6 +583,7 @@ export interface IntentPayloadMap {
   // visibilidade
   INTENT_PEEK: PeekPayload;
   INTENT_CLOSE_PEEK: ClosePeekPayload;
+  INTENT_ARRANGE_PEEKED: ArrangePeekedPayload;
   INTENT_SCRY: ScryPayload;
   INTENT_SCRY_COMMIT: ScryCommitPayload;
   INTENT_SURVEIL: SurveilPayload;
@@ -546,6 +613,7 @@ export interface IntentPayloadMap {
   INTENT_SET_HIGHLIGHT: SetHighlightPayload;
   INTENT_SET_CONTROLLER: SetControllerPayload;
   INTENT_BATCH_UPDATE: BatchUpdatePayload;
+  INTENT_BATCH_CHANGE_ZONE: BatchChangeZonePayload;
   INTENT_SET_COMMANDER: SetCommanderPayload;
   // contadores
   INTENT_ADD_COUNTER: AddCounterPayload;
@@ -575,6 +643,8 @@ export interface IntentPayloadMap {
   INTENT_CREATE_EMBLEM: CreateEmblemPayload;
   // aleatoriedade
   INTENT_ROLL_DICE: RollDicePayload;
+  INTENT_REACTION: ReactionPayload;
+  INTENT_MANA_POOL: ManaPoolPayload;
   INTENT_FLIP_COIN: FlipCoinPayload;
   INTENT_RANDOM_PLAYER: RandomPlayerPayload;
   INTENT_RANDOM_CARD: RandomCardPayload;
@@ -601,6 +671,7 @@ export interface IntentPayloadMap {
   INTENT_SET_DECK: SetDeckPayload;
   INTENT_SET_READY: SetReadyPayload;
   INTENT_KICK_PLAYER: KickPlayerPayload;
+  INTENT_VOTE_KICK: VoteKickPayload;
   INTENT_KEEP_HAND: KeepHandPayload;
   INTENT_REQUEST_VIEW: RequestViewPayload;
   INTENT_RESPOND_VIEW: RespondViewPayload;

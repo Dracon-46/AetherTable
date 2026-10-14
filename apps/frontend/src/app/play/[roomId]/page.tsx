@@ -23,11 +23,13 @@ import { CameraControls } from '@/overlay/CameraControls';
 import { ExibicaoControls } from '@/overlay/ExibicaoControls';
 import { ContextMenu } from '@/overlay/ContextMenu';
 import { ScryModal } from '@/overlay/ScryModal';
+import { OlhadaPanel } from '@/overlay/OlhadaPanel';
 import { TableMenu } from '@/overlay/TableMenu';
 import { SelectionBar } from '@/overlay/SelectionBar';
 import { CardHoverPreview } from '@/overlay/CardHoverPreview';
 import { CardEditor } from '@/overlay/CardEditor';
 import { useAtalhosDaMesa } from '@/net/atalhos';
+import { useEfeitosDaMesa } from '@/net/efeitos';
 import { useCosmeticos } from '@/cosmetics/store';
 import { useHidratarPreferencias } from '@/store/useHidratarPreferencias';
 import { RoomLobby } from '@/overlay/RoomLobby';
@@ -35,8 +37,12 @@ import { MulliganModal } from '@/overlay/MulliganModal';
 import { CronometroDeTurno } from '@/overlay/CronometroDeTurno';
 import { PlayersModal } from '@/overlay/PlayersModal';
 import { ViewRequestPrompt } from '@/overlay/ViewRequestPrompt';
+import { VotacaoDeRemocao } from '@/overlay/VotacaoDeRemocao';
 import { FimDeJogo } from '@/overlay/FimDeJogo';
 import { SorteioOverlay } from '@/overlay/SorteioOverlay';
+import { ReacoesOverlay } from '@/overlay/ReacoesOverlay';
+import { ManaTracker } from '@/overlay/ManaTracker';
+import { PilhaPanel } from '@/overlay/PilhaPanel';
 import { VoiceBridge } from '@/net/voice';
 import { ToastHost } from '@/components/Toast';
 import { mensagemDeConexao } from '@/net/erros';
@@ -91,6 +97,7 @@ export default function PlayRoomPage() {
   // Teclado da mesa. Só depois de a partida começar: na sala de espera as
   // teclas pertencem ao lobby.
   useAtalhosDaMesa(room, phase !== 'WAITING' && !souEspectador);
+  useEfeitosDaMesa();
 
   // Anuncia os cosméticos equipados assim que a sala aceita a conexão. Eles
   // vivem no cliente (localStorage) porque a mesa não pode esperar um
@@ -113,19 +120,28 @@ export default function PlayRoomPage() {
   const titleId = useCosmeticos((s) => s.titleId);
   const petId = useCosmeticos((s) => s.petId);
 
+  // So quem JA aparece entre os jogadores. Esperar `souEspectador` nao bastava:
+  // ele nasce `false` e so vira `true` quando o estado da plateia chega — e o
+  // espectador mandava os cosmeticos nesse intervalo e via um erro SPECTATOR na
+  // tela logo ao entrar.
+  const souJogador = useGameStore((s) => Boolean(s.mySessionId && s.players[s.mySessionId]));
+
   useEffect(() => {
     // Espectador nao tem `Player` para vestir: a intencao seria recusada como
     // SPECTATOR e viraria um erro na tela dele a cada troca de cosmetico.
-    if (!room || souEspectador) return;
+    if (!room || souEspectador || !souJogador) return;
     intents.setCosmetics(room, { sleeveId, playmatId, borderId, titleId, petId });
-  }, [room, souEspectador, sleeveId, playmatId, borderId, titleId, petId]);
+  }, [room, souEspectador, souJogador, sleeveId, playmatId, borderId, titleId, petId]);
 
   useEffect(() => {
-    if (!roomId || !accessToken) return;
+    if (!roomId || !accessToken || !token) return;
     let active = true;
 
+    // O passe da mesa vai junto como prova de que esta conta está NESTA sala.
+    // Sem ele o backend emitia voz para qualquer código — e a vitrine lista os
+    // códigos das mesas públicas.
     fetch(`${API_URL}/matches/${roomId}/voice-token`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${accessToken}`, 'X-Passe-De-Mesa': token },
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -136,7 +152,7 @@ export default function PlayRoomPage() {
     return () => {
       active = false;
     };
-  }, [roomId, accessToken]);
+  }, [roomId, accessToken, token]);
 
   useEffect(() => {
     if (!roomId || !token) {
@@ -320,6 +336,10 @@ export default function PlayRoomPage() {
             <LifePanel room={room} />
           </div>
           <ChatLog room={room} />
+          {!souEspectador && <ManaTracker room={room} />}
+          {/* A pilha é pública: a plateia vê o que espera para resolver, mas
+              sem botão nenhum. */}
+          <PilhaPanel room={room} espectador={souEspectador} />
           {!souEspectador && <ActionBar room={room} />}
           {!souEspectador && <SelectionBar room={room} />}
           <CardHoverPreview />
@@ -340,6 +360,7 @@ export default function PlayRoomPage() {
               <ZoneInspector room={room} />
               <ContextMenu room={room} setModoAnexar={setModoAnexar} />
               <ScryModal room={room} />
+              <OlhadaPanel room={room} />
               <CardEditor room={room} />
               <PlayersModal room={room} />
             </>
@@ -347,12 +368,14 @@ export default function PlayRoomPage() {
           {/* Pedidos de "me deixa ver sua mão". Fora do wrapper recortado: eles
               chegam a qualquer momento e precisam ficar por cima do HUD. */}
           {!souEspectador && <ViewRequestPrompt room={room} />}
+          {!souEspectador && <VotacaoDeRemocao room={room} />}
           {/* Derrota e vitória. Fora do wrapper recortado: o fim de partida
               ocupa a tela inteira. */}
           <FimDeJogo />
           {/* Espectador nao tem mao inicial para decidir. */}
           {!souEspectador && <MulliganModal room={room} />}
           <SorteioOverlay />
+          <ReacoesOverlay />
         </>
       )}
 
@@ -365,21 +388,25 @@ export default function PlayRoomPage() {
     </div>
   );
 
-  if (voiceToken) {
-    return (
-      <LiveKitRoom
-        video={false}
-        audio={true}
-        token={voiceToken}
-        serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://aether-livekit-mock.livekit.cloud'}
-        connect={true}
-      >
-        <RoomAudioRenderer />
-        <VoiceBridge />
-        {Content}
-      </LiveKitRoom>
-    );
-  }
-
-  return Content;
+  /**
+   * O `LiveKitRoom` fica SEMPRE na árvore, e só conecta quando o passe chega.
+   *
+   * Era `if (voiceToken) return <LiveKitRoom>{Content}</LiveKitRoom>`, senão
+   * `Content` puro: quando o passe de voz chegava DEPOIS da mesa — o caso
+   * normal —, a raiz trocava de tipo e o React desmontava e remontava a mesa
+   * inteira, levando junto menus abertos, seleção e o estado de cada painel.
+   */
+  return (
+    <LiveKitRoom
+      video={false}
+      audio={true}
+      token={voiceToken ?? undefined}
+      serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://aether-livekit-mock.livekit.cloud'}
+      connect={Boolean(voiceToken)}
+    >
+      {voiceToken && <RoomAudioRenderer />}
+      {voiceToken && <VoiceBridge />}
+      {Content}
+    </LiveKitRoom>
+  );
 }

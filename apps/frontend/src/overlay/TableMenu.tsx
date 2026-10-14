@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
+import { esquecerReconexao } from '@/net/reconexao';
 import { AtalhosEditor } from './AtalhosEditor';
 import type { RoomState } from '../net/schema/RoomState';
 
@@ -476,6 +477,9 @@ export function TableMenu({ room }: TableMenuProps) {
                 <button
                   onClick={() => {
                     intents.leave(room);
+                    // Saída deliberada: sem apagar a chave, a próxima entrada
+                    // nesta sala gastava uma tentativa de reconexão que falha.
+                    esquecerReconexao(room.state?.roomCode || room.roomId);
                     room.leave();
                     router.push('/dashboard');
                   }}

@@ -7,6 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { getStateCallbacks, type Room } from 'colyseus.js';
+import type { DiceEvent, ReactionEvent, RevealToOwnerEvent } from '@aethertable/shared-types';
 import {
   useGameStore,
   useTableStore,
@@ -117,6 +118,7 @@ function snapPlayer(p: Player): PlayerData {
     eliminationReason: p.eliminationReason ?? '',
     decked: p.decked ?? false,
     topoRevelado: p.topoRevelado ?? false,
+    manaPool: Object.fromEntries(p.manaPool?.entries?.() ?? []),
   };
 }
 
@@ -225,6 +227,11 @@ export function useRoomSync(room: Room<RoomState> | null) {
       $(player).sharedZones.onAdd(reSnap);
       $(player).sharedZones.onChange(reSnap);
       $(player).sharedZones.onRemove(reSnap);
+      // Mapa aninhado como os dois acima: sem isto o pool mudava no servidor
+      // e o rastreador continuava mostrando o valor antigo.
+      $(player).manaPool.onAdd(reSnap);
+      $(player).manaPool.onChange(reSnap);
+      $(player).manaPool.onRemove(reSnap);
       reSnap();
     });
 
@@ -279,6 +286,11 @@ export function useRoomSync(room: Room<RoomState> | null) {
         sideboardPermitido: room.state.sideboardPermitido ?? false,
         cronometroDeTurno: room.state.cronometroDeTurno ?? 0,
         turnoIniciadoEm: room.state.turnoIniciadoEm ?? 0,
+        votacaoAlvo: room.state.votacaoAlvo ?? '',
+        votacaoAutor: room.state.votacaoAutor ?? '',
+        votacaoSim: room.state.votacaoSim ?? '',
+        votacaoExpiraEm: room.state.votacaoExpiraEm ?? 0,
+        vidaInicial: room.state.vidaInicial ?? 0,
       });
     };
 
@@ -336,8 +348,13 @@ export function useRoomSync(room: Room<RoomState> | null) {
     // Sem estes handlers, olhar o topo do grimório não mostrava nada, o ping
     // não aparecia na mesa e o dado só existia como texto no log.
 
-    room.onMessage('dice', (payload: { actorId: string; sides: number; result: number }) => {
+    room.onMessage('dice', (payload: DiceEvent) => {
       useTableStore.getState().setDado(payload);
+    });
+
+    room.onMessage('reaction', (payload: ReactionEvent) => {
+      if (!payload?.actorId) return;
+      useTableStore.getState().addReacao(payload);
     });
 
     room.onMessage('coin', (payload: { actorId: string; result: 'CARA' | 'COROA' }) => {
@@ -348,12 +365,21 @@ export function useRoomSync(room: Room<RoomState> | null) {
       useTableStore.getState().addPing(payload);
     });
 
-    room.onMessage(
-      'revealToOwner',
-      (payload: { cards: Array<{ id: string; scryfallId: string }> }) => {
-        useTableStore.getState().setPeek(payload.cards ?? []);
-      },
-    );
+    /**
+     * A busca (tutor) também chega aqui, e é mostrada pelo inspetor de zona —
+     * abrir o painel de olhada junto duplicaria a tela. Só a olhada e o
+     * sorteio de carta abrem o painel.
+     */
+    room.onMessage('revealToOwner', (payload: RevealToOwnerEvent) => {
+      if (payload.motivo !== 'PEEK' && payload.motivo !== 'RANDOM') return;
+      if (!payload.cards?.length) return;
+      useTableStore.getState().setPeek({
+        cards: payload.cards,
+        motivo: payload.motivo,
+        zone: payload.zone ?? 'LIBRARY',
+        from: payload.from ?? 'TOP',
+      });
+    });
 
     room.onMessage(
       'scryOpened',

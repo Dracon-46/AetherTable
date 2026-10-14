@@ -18,7 +18,6 @@
  */
 
 import {
-  acharPet,
   acharPlaymat,
   acharSleeve,
   type Pet,
@@ -438,5 +437,3 @@ export function caminhoDoPet(pet: Pet): Array<[number, number]> | null {
       return null;
   }
 }
-
-export { acharPet, acharPlaymat, acharSleeve };

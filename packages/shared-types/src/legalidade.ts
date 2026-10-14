@@ -60,6 +60,7 @@
  * poderia ter entrado.
  */
 
+import { estimarBracket, rotuloDoBracket, type EstimativaDeBracket } from './bracket';
 import { acharFormato, descreverTamanho, type FormatPreset } from './format';
 
 /** As cinco cores, na ordem canônica. */
@@ -105,6 +106,8 @@ export interface CartaValidavel {
   legalities?: Record<string, string>;
   /** Pré-computado pelo backend a partir de `legalities` + formato do deck. */
   isBanned?: boolean;
+  /** `game_changer` da Scryfall — alimenta a estimativa de bracket. */
+  gameChanger?: boolean;
 }
 
 export interface DeckValidavel {
@@ -134,7 +137,8 @@ export interface Achado {
     | 'IDENTIDADE_DE_COR'
     | 'SEM_FEITICO_ASSINATURA'
     | 'LISTA_DE_PONTOS'
-    | 'CONTADOR_DESSINCRONIZADO';
+    | 'CONTADOR_DESSINCRONIZADO'
+    | 'BRACKET_ACIMA_DA_MESA';
   gravidade: Gravidade;
   mensagem: string;
   /** Nomes das cartas envolvidas, quando o achado é sobre cartas. */
@@ -151,6 +155,8 @@ export interface Legalidade {
   podeEntrarNaMesa: boolean;
   /** Identidade de cor deduzida do(s) comandante(s), em WUBRG. */
   identidadeDeCor: string[];
+  /** Estimativa pela contagem de Game Changers. `null` fora de Commander. */
+  bracket: EstimativaDeBracket | null;
 }
 
 /** Só estes board types contam como "o deck". Reserva e maybeboard ficam fora. */
@@ -191,6 +197,26 @@ function nomeDe(carta: CartaValidavel): string {
   return carta.name ?? 'carta desconhecida';
 }
 
+/** A face da frente, em minúsculas: é o que identifica "a mesma carta". */
+function chaveDoNome(carta: CartaValidavel): string {
+  return (carta.name ?? carta.scryfallId ?? '?').split(' // ')[0]!.toLowerCase();
+}
+
+/** Total de cópias por nome, somando impressões. Terreno básico fica de fora. */
+function agruparPorNome(
+  cartas: CartaValidavel[],
+): Map<string, { qtd: number; carta: CartaValidavel }> {
+  const porNome = new Map<string, { qtd: number; carta: CartaValidavel }>();
+  for (const c of cartas) {
+    if (eBasico(c)) continue;
+    const chave = chaveDoNome(c);
+    const atual = porNome.get(chave);
+    if (atual) atual.qtd += c.quantity ?? 1;
+    else porNome.set(chave, { qtd: c.quantity ?? 1, carta: c });
+  }
+  return porNome;
+}
+
 /** Soma as cartas contáveis. `quantity` ausente vale 1 (`@default(1)`). */
 export function contarCartas(cards: CartaValidavel[]): number {
   return cards.reduce(
@@ -200,13 +226,29 @@ export function contarCartas(cards: CartaValidavel[]): number {
 }
 
 /**
+ * Soma de TODAS as linhas, de todo board — o que `Deck.cardCount` guarda.
+ *
+ * Existe à parte de `contarCartas` porque as duas respondem perguntas
+ * diferentes: "quantas cartas jogam" e "quantas cartas o contador do banco
+ * deveria dizer". Usar a primeira para conferir o contador era o defeito.
+ */
+export function contarTodasAsLinhas(cards: CartaValidavel[]): number {
+  return cards.reduce((soma, c) => soma + (c.quantity ?? 1), 0);
+}
+
+/**
  * Avalia o deck contra o preset do formato.
  *
  * `formatoDaSala` vence `deck.formatId` quando informado: a sala é que define o
  * que está sendo jogado. Sem isso, levar um deck marcado como "commander" para
  * uma sala de Modern passaria pela regra errada.
  */
-export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): Legalidade {
+export function avaliarLegalidade(
+  deck: DeckValidavel,
+  formatoDaSala?: string,
+  /** Nível de poder DECLARADO da sala (1–5), quando há um. */
+  nivelDaSala?: number | null,
+): Legalidade {
   const formato = acharFormato(formatoDaSala || deck.formatId);
   const regras = formato.deck;
   const achados: Achado[] = [];
@@ -225,11 +267,17 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
   // da escrita da carta. Uma falha entre os dois deixa o contador errado, e
   // validar CONTRA ele significaria recusar uma mesa por causa de um número que
   // não corresponde a nada. A verdade é a soma; a divergência é um aviso.
-  if (deck.cardCount !== undefined && deck.cardCount !== total) {
+  //
+  // A comparação é com a soma de TODAS as linhas, e não com `total`. O backend
+  // incrementa `cardCount` em toda escrita de carta, inclusive na reserva e no
+  // maybeboard; comparar com `total` (só main, comando e feitiço) acusava
+  // "uma escrita falhou" em todo deck com reserva, que não tinha falha nenhuma.
+  const totalGravado = contarTodasAsLinhas(deck.cards);
+  if (deck.cardCount !== undefined && deck.cardCount !== totalGravado) {
     achados.push({
       codigo: 'CONTADOR_DESSINCRONIZADO',
       gravidade: 'aviso',
-      mensagem: `O contador do grimório diz ${deck.cardCount} cartas, mas a lista tem ${total}. Uma escrita falhou pela metade; abrir e fechar o deck corrige.`,
+      mensagem: `O contador do grimório diz ${deck.cardCount} cartas, mas a lista tem ${totalGravado}. Uma escrita falhou pela metade; abrir e fechar o deck corrige.`,
     });
   }
 
@@ -268,14 +316,15 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
   // Ring são quatro cópias da mesma carta pelas regras do jogo. Agrupar por id
   // deixaria passar exatamente a forma mais comum de furar o singleton num
   // deckbuilder — trocar a arte.
-  const porNome = new Map<string, { qtd: number; carta: CartaValidavel }>();
-  for (const c of contaveis) {
-    if (eBasico(c)) continue;
-    const chave = (c.name ?? c.scryfallId ?? '?').split(' // ')[0]!.toLowerCase();
-    const atual = porNome.get(chave);
-    if (atual) atual.qtd += c.quantity ?? 1;
-    else porNome.set(chave, { qtd: c.quantity ?? 1, carta: c });
-  }
+  //
+  // A RESERVA ENTRA nos formatos que têm reserva (CR 100.4a: o limite de quatro
+  // vale para o deck E a reserva juntos). Contando só o main, quatro Lightning
+  // Bolt no main e mais duas na reserva passavam sem aviso. Em formato sem
+  // reserva (Commander), o que está lá não joga, e contá-lo acusaria o deck
+  // por uma anotação.
+  const jogaveis = regras.reserva ? [...contaveis, ...naReserva] : contaveis;
+  const porNome = agruparPorNome(contaveis);
+  const porNomeComReserva = agruparPorNome(jogaveis);
 
   if (regras.singleton) {
     const repetidas = [...porNome.values()].filter((e) => e.qtd > 1);
@@ -288,7 +337,7 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
       });
     }
   } else {
-    const excedentes = [...porNome.values()].filter((e) => e.qtd > regras.maxCopias);
+    const excedentes = [...porNomeComReserva.values()].filter((e) => e.qtd > regras.maxCopias);
     if (excedentes.length > 0) {
       achados.push({
         codigo: 'COPIAS',
@@ -310,7 +359,10 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
   const restritas: { nome: string; qtd: number }[] = [];
   const foraDoFormato: string[] = [];
 
-  for (const c of contaveis) {
+  // `jogaveis`, e não `contaveis`: uma banida na RESERVA entra na partida a
+  // cada troca de reserva, e só o main era olhado — Ragavan na reserva de um
+  // deck de Modern passava sem acusação.
+  for (const c of jogaveis) {
     const situacao = chave ? c.legalities?.[chave] : undefined;
     if (situacao === undefined) {
       // Sem `legalities`: usa o recuo, e só ele.
@@ -319,8 +371,19 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
     }
     if (situacao === 'banned') banidas.push(nomeDe(c));
     else if (situacao === 'restricted') {
-      if ((c.quantity ?? 1) > 1) restritas.push({ nome: nomeDe(c), qtd: c.quantity ?? 1 });
-    } else if (situacao === 'not_legal') foraDoFormato.push(nomeDe(c));
+      // Pelo TOTAL DO NOME, somando impressões e reserva. Linha a linha, duas
+      // impressões de Black Lotus com uma cópia cada passavam no Vintage.
+      const qtd = porNomeComReserva.get(chaveDoNome(c))?.qtd ?? c.quantity ?? 1;
+      if (qtd > 1 && !restritas.some((r) => r.nome === nomeDe(c))) {
+        restritas.push({ nome: nomeDe(c), qtd });
+      }
+    } else if (situacao === 'not_legal') {
+      // A chave de PDH (`paupercommander`) descreve as 99: o comandante
+      // incomum aparece como `not_legal` nela por definição. Sem esta
+      // exceção, todo comandante legal de PDH era acusado de fora do pool.
+      if (c.boardType === 'COMMANDER' && formato.comandante?.raridadeDoComandante) continue;
+      foraDoFormato.push(nomeDe(c));
+    }
   }
 
   if (banidas.length > 0) {
@@ -358,6 +421,11 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
       // O comandante tem teto PRÓPRIO em PDH (incomum num deck de comuns), e
       // aplicar o teto do deck nele acusaria todo comandante legal de PDH.
       if (c.boardType === 'COMMANDER') return false;
+      // A raridade que chega é a da IMPRESSÃO escolhida, e a regra de Pauper
+      // é "impressa como comum em ALGUMA coleção". Counterspell de MH2 é
+      // incomum e é legal em Pauper; quando a Scryfall diz `legal` na chave do
+      // formato, ela já resolveu isso olhando todas as impressões.
+      if (chave && c.legalities?.[chave] === 'legal') return false;
       const r = c.rarity ? PESO_DA_RARIDADE[c.rarity] : undefined;
       return r !== undefined && r > teto;
     });
@@ -452,11 +520,18 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
     const comTipo = comandantes.filter((c) => c.typeLine);
     const tipoErrado = comTipo.filter((c) => {
       if (rc.tipo === 'planeswalker') return !contemTipo(c, 'planeswalker');
+      // Brawl aceita planeswalker lendário além de criatura lendária; sem
+      // isto, todo Brawl comandado por planeswalker recebia o aviso.
+      if (rc.aceitaPlaneswalker && eLendaria(c) && contemTipo(c, 'planeswalker')) return false;
       // Uma criatura lendária é o caso normal. "Pode ser seu comandante" é
       // texto de regra que a Scryfall NÃO devolve em campo estruturado (existe
       // só no oracle text), então cartas como Grist ou os Backgrounds caem no
       // aviso — que é o comportamento certo num sandbox: avisa, não impede.
-      return !(eLendaria(c) && contemTipo(c, 'creature'));
+      //
+      // `exigeLendario` existe por PDH: lá o comandante é qualquer criatura
+      // incomum, e a exigência fixa de lendária acusava comandantes legais.
+      if (!contemTipo(c, 'creature')) return true;
+      return rc.exigeLendario && !eLendaria(c);
     });
     if (tipoErrado.length > 0) {
       achados.push({
@@ -465,7 +540,9 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
         mensagem:
           rc.tipo === 'planeswalker'
             ? `Em ${formato.nome} o comandante é um planeswalker. Verifique: ${listar(tipoErrado.map(nomeDe))}.`
-            : `O comandante costuma ser uma criatura lendária. Verifique se a carta diz "pode ser seu comandante": ${listar(tipoErrado.map(nomeDe))}.`,
+            : rc.exigeLendario
+              ? `O comandante costuma ser uma criatura lendária${rc.aceitaPlaneswalker ? ' ou um planeswalker lendário' : ''}. Verifique se a carta diz "pode ser seu comandante": ${listar(tipoErrado.map(nomeDe))}.`
+              : `Em ${formato.nome} o comandante é uma criatura. Verifique: ${listar(tipoErrado.map(nomeDe))}.`,
         cartas: tipoErrado.map(nomeDe),
       });
     }
@@ -539,6 +616,19 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
     });
   }
 
+  const bracket = estimarBracket(deck.cards, formato.id);
+  // Aviso e não erro: o nível da sala é uma etiqueta declarada pelo anfitrião
+  // (RN01), e a mesa pode muito bem aceitar o deck mais forte. O que não pode
+  // é o jogador descobrir isso só quando a partida já começou.
+  if (bracket && nivelDaSala && bracket.minimo > nivelDaSala) {
+    achados.push({
+      codigo: 'BRACKET_ACIMA_DA_MESA',
+      gravidade: 'aviso',
+      mensagem: `A mesa declarou nível ${nivelDaSala}, e o deck tem ${bracket.gameChangers.length} Game Changer(s): ${rotuloDoBracket(bracket)}.`,
+      cartas: bracket.gameChangers,
+    });
+  }
+
   return {
     formato,
     total,
@@ -546,6 +636,7 @@ export function avaliarLegalidade(deck: DeckValidavel, formatoDaSala?: string): 
     achados,
     podeEntrarNaMesa: !achados.some((a) => a.gravidade === 'erro'),
     identidadeDeCor,
+    bracket,
   };
 }
 

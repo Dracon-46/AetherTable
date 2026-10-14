@@ -1,0 +1,71 @@
+%% AetherTable — DOC-097 — Padrao Command no desfazer da mesa
+%% Fonte: apps/game-server/src/intents/comandos.ts
+classDiagram
+    direction LR
+
+    class ComandoDeMesa {
+        <<interface>>
+        +tipo: string
+        +autor: string
+        +executar() void
+        +reversivel() boolean
+        +desfazer() void
+    }
+
+    class ComandoDeIntencao {
+        <<comando concreto>>
+        -handler: IntentHandler
+        -ctx: IntentContext
+        -dados: unknown
+        -state: RoomState
+        -memento: Snapshot
+        +executar() void
+        +reversivel() boolean
+        +desfazer() void
+    }
+
+    class HistoricoDeComandos {
+        <<invoker>>
+        -ultimo: Map~sid, comando+em~
+        +executar(comando, agora) void
+        +desfazer(sid, agora) string
+        +esquecer(sid) void
+    }
+
+    class AetherRoom {
+        <<cliente>>
+        +onMessage(tipo) void
+        monta o comando e entrega
+    }
+
+    class IntentHandler {
+        <<receiver>>
+        +schema
+        +autoriza
+        +executa(ctx, payload) void
+    }
+
+    class Snapshot {
+        <<memento>>
+        +cartas
+        +zonas
+        +jogador
+        +em: number
+    }
+
+    class undo_ts {
+        <<services/undo.ts>>
+        +capturar(state, sid, tipo) Snapshot
+        +restaurar(state, snap) void
+        +NAO_REVERSIVEIS: Set
+        +JANELA_UNDO_MS
+    }
+
+    ComandoDeMesa <|.. ComandoDeIntencao
+    HistoricoDeComandos o-- ComandoDeMesa : guarda o ultimo por jogador
+    AetherRoom ..> ComandoDeIntencao : cria
+    AetherRoom ..> HistoricoDeComandos : executar / desfazer
+    ComandoDeIntencao --> IntentHandler : executa
+    ComandoDeIntencao --> Snapshot : guarda
+    ComandoDeIntencao ..> undo_ts : capturar e restaurar
+    undo_ts ..> Snapshot : produz

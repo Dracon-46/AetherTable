@@ -85,7 +85,17 @@ export class AdminBootstrapService implements OnModuleInit {
         // env resultariam em nenhuma promoção, sem erro nenhum.
         OR: emails.map((email) => ({ email: { equals: email, mode: 'insensitive' as const } })),
       },
-      select: { id: true, email: true, username: true, role: true, deletedAt: true },
+      // A busca NÃO filtra por e-mail confirmado de propósito: a conta não
+      // confirmada precisa ser encontrada para o log dizer POR QUE ela não
+      // foi promovida, em vez de "não existe conta com esse e-mail".
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        deletedAt: true,
+        emailVerifiedAt: true,
+      },
     });
 
     const encontrados = new Set(contas.map((c) => c.email.toLowerCase()));
@@ -108,7 +118,37 @@ export class AdminBootstrapService implements OnModuleInit {
       }
       if (conta.role === Role.ADMIN) continue;
 
-      await this.prisma.user.update({ where: { id: conta.id }, data: { role: Role.ADMIN } });
+      /**
+       * ─── SÓ PROMOVE QUEM PROVOU SER DONO DO E-MAIL ───────────────────────
+       *
+       * O cadastro por senha não confirma o e-mail. Sem esta trava, qualquer
+       * pessoa que soubesse um endereço de `ADMIN_EMAILS` — e eles não são
+       * segredo, são o e-mail do dono — podia se cadastrar com ele antes do
+       * dono e virar ADMIN no próximo boot, sem nunca ter tido acesso à caixa
+       * de entrada.
+       *
+       * Hoje quem grava `emailVerifiedAt` é o login social (Google/Discord só
+       * entregam endereço confirmado — ver `AuthService.validateOAuthUser`).
+       * Então o dono precisa entrar UMA vez pelo provedor com esse e-mail. O
+       * aviso abaixo diz exatamente isso, porque sem ele o operador veria a
+       * promoção não acontecer e não saberia o motivo.
+       */
+      if (!conta.emailVerifiedAt) {
+        this.logger.warn(
+          `"${conta.email}" está em ADMIN_EMAILS, mas o e-mail dessa conta nunca foi confirmado — ` +
+            'ela NÃO foi promovida. Entre uma vez com Google ou Discord usando esse mesmo e-mail ' +
+            '(o login social confirma a posse) e reinicie a API.',
+        );
+        continue;
+      }
+
+      // A condição de e-mail confirmado vai também no WHERE da escrita, e não
+      // só na leitura acima: a garantia fica no próprio UPDATE.
+      const promovida = await this.prisma.user.updateMany({
+        where: { id: conta.id, emailVerifiedAt: { not: null }, deletedAt: null },
+        data: { role: Role.ADMIN },
+      });
+      if (promovida.count !== 1) continue;
 
       /**
        * A promoção é auditada como qualquer outra, com o autor "sistema".

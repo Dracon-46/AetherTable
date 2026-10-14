@@ -106,7 +106,8 @@ export function SeloDeEstado({
 export interface CampoExtra {
   nome: string;
   rotulo: string;
-  tipo: 'numero' | 'texto' | 'selecao';
+  /** `senha` mascara o campo e pede ao navegador para não preenchê-lo sozinho. */
+  tipo: 'numero' | 'texto' | 'selecao' | 'senha';
   valorInicial: string;
   opcoes?: Array<{ valor: string; rotulo: string }>;
   min?: number;
@@ -145,12 +146,22 @@ export function DialogoDeAcao({
 }) {
   const [motivo, setMotivo] = useState('');
   const [valores, setValores] = useState<Record<string, string>>({});
+  /**
+   * ─── O ERRO DA AÇÃO ANTERIOR REABRIA JUNTO ───────────────────────────────
+   *
+   * `erro` vem da mutação do chamador, que sobrevive ao diálogo: banir falhava
+   * com 403, a pessoa fechava, abria "Suspender" — e o diálogo novo já nascia
+   * dizendo "Você não tem permissão para isso", antes de qualquer clique. O
+   * erro só é desta abertura depois que ELA confirmou alguma coisa.
+   */
+  const [confirmouNestaAbertura, setConfirmouNestaAbertura] = useState(false);
 
   // Reabrir o diálogo com o motivo da ação ANTERIOR ainda digitado é o caminho
   // mais curto para um log de auditoria com justificativa errada.
   useEffect(() => {
     if (!aberto) return;
     setMotivo('');
+    setConfirmouNestaAbertura(false);
     setValores(Object.fromEntries(extras.map((e) => [e.nome, e.valorInicial])));
     // `extras` é recriado a cada render pelo chamador; depender dele reiniciaria
     // os campos a cada tecla digitada.
@@ -217,7 +228,12 @@ export function DialogoDeAcao({
               </select>
             ) : (
               <input
-                type={campo.tipo === 'numero' ? 'number' : 'text'}
+                type={
+                  campo.tipo === 'numero' ? 'number' : campo.tipo === 'senha' ? 'password' : 'text'
+                }
+                // `new-password`: sem isto o navegador oferece a senha SALVA
+                // DO PRÓPRIO ADMIN para a conta de outra pessoa.
+                autoComplete={campo.tipo === 'senha' ? 'new-password' : undefined}
                 min={campo.min}
                 max={campo.max}
                 value={valores[campo.nome] ?? campo.valorInicial}
@@ -246,7 +262,7 @@ export function DialogoDeAcao({
           </p>
         </div>
 
-        {Boolean(erro) && (
+        {confirmouNestaAbertura && Boolean(erro) && (
           <p className="border-danger/30 bg-danger/10 text-danger mb-4 rounded-md border p-3 text-sm">
             {mensagemDaApi(erro)}
           </p>
@@ -261,7 +277,10 @@ export function DialogoDeAcao({
             Cancelar
           </button>
           <button
-            onClick={() => onConfirmar({ motivo: motivo.trim(), extras: valores })}
+            onClick={() => {
+              setConfirmouNestaAbertura(true);
+              onConfirmar({ motivo: motivo.trim(), extras: valores });
+            }}
             disabled={ocupado || !motivoValido}
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${
               perigo ? 'bg-danger hover:bg-danger-hover' : 'bg-primary hover:bg-primary-hover'

@@ -145,6 +145,12 @@ A zona mais rica em ações e a mais sensível em visibilidade.
 | 28  | Devolver uma zona inteira ao grimório e embaralhar         | `INTENT_RETURN_ZONE {from:GRAVEYARD, to:LIBRARY, shuffle:true}` | Público                                 | S     | V1   |
 | 29  | **Jogar com o topo revelado** (modo contínuo)              | `INTENT_SET_TOP_REVEALED {ligado:true}`                         | **Público** (só a do topo)              | **S** | V1   |
 
+**Atalhos _para o topo / fundo do grimório_ (ações 20 e 21, sobre a seleção).** O de fundo mandava
+`-1` na posição do `x` de `intents.changeZone`: o índice nem chegava e a carta ia para o **topo** — e
+`-1` como índice o servidor recusaria (`min(0)`). No contrato real a posição é `index`, contado do
+fundo: sem índice é o fim do array, o topo; `index: 0` é o fundo. O topo vai em lote
+(`INTENT_BATCH_CHANGE_ZONE`, §4.3); o fundo segue carta a carta, com `index: 0`.
+
 ### 2.1 O fluxo de "olhar X cartas" em detalhe
 
 Esta é a ação que mais exige cuidado, porque a carta **não muda de zona** — muda apenas quem pode vê-la.
@@ -194,7 +200,8 @@ INTENT_SCRY { amount: 3 }
    → cliente mostra o painel de ordenação
 
 INTENT_SCRY_COMMIT { toBottom: [id2], topOrder: [id3, id1] }
-   → servidor valida: os ids pertencem ao buffer daquele jogador
+   → servidor valida: é uma permutação exata do buffer E as cartas ainda são o topo
+     (senão: cancela, revoga peekedBy, erro INVALID_PAYLOAD — DOC-031 §3.2.1, invariante 9)
    → aplica: id2 ao fundo; id3 e id1 no topo nessa ordem
    → limpa buffer e peekedBy
    → log: "Arthur fez scry 3 e colocou 1 carta no fundo"   ← contagem é pública, identidade não
@@ -206,6 +213,10 @@ não. "Colocou 1 carta no fundo" é correto; "colocou Sol Ring no fundo" vazaria
 **Timeout do buffer:** 120 s. Se o jogador abandonar o painel, o servidor confirma a ordem original e
 limpa. Buffer eterno travaria o grimório.
 
+**Atalhos de teclado ficam bloqueados com o scry aberto.** O overlay barrava o mouse mas não o
+teclado: `d` comprava e `s` embaralhava por trás do modal, e o scry era cancelado no servidor por um
+grimório que o jogador nem viu mudar.
+
 ---
 
 ## 3. Mão (Hand)
@@ -213,7 +224,7 @@ limpa. Buffer eterno travaria o grimório.
 | #   | Ação                                               | Intenção                                             | Priv.              | Prio  | Fase |
 | --- | -------------------------------------------------- | ---------------------------------------------------- | ------------------ | ----- | ---- |
 | 29  | **Jogar carta** (mão → campo)                      | `INTENT_CHANGE_ZONE {to:BATTLEFIELD}`                | Público            | **M** | MVP  |
-| 30  | Jogar face para baixo                              | `INTENT_CHANGE_ZONE {to:BATTLEFIELD, faceDown:true}` | Semi               | **M** | MVP  |
+| 30  | Jogar face para baixo — _Jogar virada para baixo_  | `INTENT_CHANGE_ZONE {to:BATTLEFIELD, faceDown:true}` | Semi               | **M** | MVP  |
 | 31  | **Revelar uma carta a todos**                      | `INTENT_REVEAL {ids:[...], to:"ALL"}`                | **Público**        | **M** | MVP  |
 | 32  | **Revelar uma carta a um jogador**                 | `INTENT_REVEAL {ids:[...], to:[playerId]}`           | **Dirigido**       | **S** | V1   |
 | 33  | **Revelar a mão toda a todos**                     | `INTENT_REVEAL_ZONE {zone:HAND, to:"ALL"}`           | **Público**        | **S** | V1   |
@@ -223,11 +234,16 @@ limpa. Buffer eterno travaria o grimório.
 | 37  | **Descartar X aleatórias**                         | `INTENT_DISCARD_RANDOM {amount:X}`                   | Público            | **S** | V1   |
 | 38  | Descartar a mão toda                               | `INTENT_DISCARD_ALL`                                 | Público            | S     | V1   |
 | 39  | **Exilar da mão**                                  | `INTENT_CHANGE_ZONE {to:EXILE}`                      | Público            | **M** | MVP  |
-| 40  | Exilar da mão face para baixo                      | `INTENT_CHANGE_ZONE {to:EXILE, faceDown:true}`       | Privado            | S     | V1   |
+| 40  | Exilar da mão face para baixo (§4.2)               | `INTENT_CHANGE_ZONE {to:EXILE, faceDown:true}`       | Privado            | S     | V1   |
 | 41  | Devolver ao grimório (topo/fundo/embaralhar)       | `INTENT_CHANGE_ZONE {to:LIBRARY, position:...}`      | Público (contagem) | **M** | MVP  |
 | 42  | Ordenar a mão                                      | `INTENT_REORDER {zone:HAND}`                         | Privado            | C     | V1   |
 | 43  | **Modo streamer** (esconder a própria mão da tela) | — (só cliente)                                       | —                  | C     | V2   |
 | 44  | Contar cartas na mão                               | — (`handCount` público)                              | Público            | **M** | MVP  |
+
+**Arrastar uma carta dentro da própria mão não a joga.** A condição era "soltou na faixa da mão _e_ a
+carta não está na mão": reordenar a mão, ou um tremor acima dos 3 px do Konva, caía no ramo do campo,
+o clamp trazia a carta para a borda de baixo do campo — e ela entrava em jogo com a face para cima,
+revelada para a mesa. Soltar na faixa da mão agora é ficar na mão.
 
 ### 3.1 Revelação — o modelo `revealedTo`
 
@@ -274,11 +290,11 @@ separada por vírgulas em vez de `ArraySchema`, verificada com `indexOf`.
 | 63  | Destacar / marcar com cor                        | `INTENT_SET_HIGHLIGHT {color}`              | C     | V1   |
 | 64  | Trazer para frente (z-index)                     | `INTENT_BRING_TO_FRONT`                     | **M** | MVP  |
 | 65  | Definir como comandante                          | `INTENT_SET_COMMANDER`                      | **S** | V1   |
-| 66  | **Criar cópia** (token cópia)                    | `INTENT_COPY_CARD`                          | **S** | V1   |
+| 66  | **Clonar** (ficha de quem copia; §4.2)           | `INTENT_COPY_CARD`                          | **S** | V1   |
 | 67  | **Ganhar controle**                              | `INTENT_SET_CONTROLLER`                     | **S** | V1   |
 | 68  | Devolver controle ao dono                        | `INTENT_SET_CONTROLLER {to:owner}`          | **S** | V1   |
 | 69  | Mover para qualquer zona                         | `INTENT_CHANGE_ZONE`                        | **M** | MVP  |
-| 70  | Selecionar várias e agir em lote                 | `INTENT_BATCH_UPDATE`                       | **S** | V1   |
+| 70  | Selecionar várias e agir em lote (laço; §4.3)    | `INTENT_BATCH_UPDATE` / `_CHANGE_ZONE`      | **S** | V1   |
 
 ### 4.1 Face para baixo no campo — armadilha de segurança
 
@@ -294,6 +310,60 @@ if (this.faceDown && this.zone === 'BATTLEFIELD') {
 
 Isto vale igualmente para **exílio face para baixo** (ação 14 e 40) — caso comum em Commander, com
 efeitos de _foretell_, _plot_ e exílio temporário.
+
+### 4.2 Virada para baixo e para o campo de outro jogador — menus e arraste
+
+| Gesto na mesa                                   | De onde                | Intenção                                                              |
+| ----------------------------------------------- | ---------------------- | --------------------------------------------------------------------- |
+| _Jogar virada para baixo_ (ação 30)             | mão                    | `INTENT_CHANGE_ZONE {to:BATTLEFIELD, faceDown:true}`                  |
+| _Exilar virada para baixo_ (ações 40 e 91)      | mão, campo             | `INTENT_CHANGE_ZONE {to:EXILE, faceDown:true}`                        |
+| _Jogar no campo de →_ (submenu por oponente)    | mão                    | `INTENT_CHANGE_ZONE {to:BATTLEFIELD, controllerId}`                   |
+| _Entregar virada para →_ (submenu)              | mão                    | `INTENT_CHANGE_ZONE {to:BATTLEFIELD, controllerId, faceDown:true}`    |
+| _Entregar virada para →_ (submenu)              | campo                  | `INTENT_GIVE_CARD {targetPlayerId, faceDown:true}`                    |
+| _Enviar para a mesa de →_ (virou submenu)       | campo                  | `INTENT_GIVE_CARD {targetPlayerId}`                                   |
+| _Clonar (cópia como ficha)_ (ação 66)           | permanente própria     | `INTENT_COPY_CARD`                                                    |
+| _Clonar para a minha mesa_ (ação 66)            | permanente de oponente | `INTENT_COPY_CARD`                                                    |
+| Arrastar e soltar no **campo** de outro jogador | campo / outras zonas   | `INTENT_GIVE_CARD {x, y}` / `INTENT_CHANGE_ZONE {controllerId, x, y}` |
+
+- **A face vai junto da troca de zona**, no mesmo patch. Antes o morph só existia como "baixe virada
+  para cima e depois vire", e entre os dois gestos a carta ficava visível para a mesa inteira.
+- **O dono nunca muda** — muda o controlador, e é o controlador que decide em que faixa a carta é
+  desenhada. Uma carta entregue virada é vista só por quem a recebeu.
+- **Submenus** porque uma entrada por oponente na raiz, vezes dois gestos, passava de catorze linhas
+  numa mesa de oito e empurrava "Para a mão" para fora da tela.
+- **Clonar** (antes _Copiar_) aparecia só para quem controlava a carta — e o caso mais comum de cópia
+  em Magic (Clone, Spark Double) é copiar a criatura de outro jogador. A cópia é sempre ficha de quem
+  copiou — o rótulo agora diz isso —, e só se copia o que se pode ver: copiar um morph alheio dá uma
+  2/2 virada, sem identidade (`DOC-031` §3.5).
+- **Soltar só no campo alheio** leva a carta para o outro jogador; soltar sobre o cemitério ou o
+  grimório de outra pessoa cai no caminho de sempre, na própria faixa. O `{x, y}` vai em **fração**
+  do campo de destino (0–1), não em pixels.
+- **Soltar no trilho acerta o oponente.** `faixaSobPonto` escolhe a **menor** faixa que contém o
+  ponto: na mesa focada a faixa do foco ocupa a largura inteira, por baixo do trilho, e "a primeira
+  que contém" era sempre ela — soltar no oponente do trilho caía no próprio campo.
+
+### 4.3 Seleção em lote — laço e barra de seleção
+
+| Gesto                                           | Intenção                                           |
+| ----------------------------------------------- | -------------------------------------------------- |
+| Arrastar no fundo da mesa (laço)                | — (só cliente: preenche `selectedCardIds`)         |
+| Shift / Ctrl / ⌘ + laço ou clique               | — (soma à seleção em vez de substituir)            |
+| Barra: _Virar_ / _Desvirar_, _Face ↓_ / _↑_     | `INTENT_BATCH_UPDATE {entityIds, property, value}` |
+| Barra: _+1/+1_, _−1/−1_                         | `INTENT_BATCH_COUNTER`                             |
+| Barra: _Cemitério_, _Mão_, _Exílio_ (e atalhos) | `INTENT_BATCH_CHANGE_ZONE {entityIds, targetZone}` |
+
+- **O laço** existe porque selecionar várias era só Shift/Ctrl + clique, uma por uma — e no celular,
+  sem Shift, não existia: a barra de lote nunca aparecia no tablet. Soltar seleciona as cartas do
+  **próprio campo** que o retângulo **toca** (exigir a carta inteira dentro obrigaria a arrastar até
+  a faixa vizinha). Eventos de **ponteiro**, não de mouse, para o dedo funcionar igual. Menos de 8 px
+  é clique, não laço; Alt (ping) e o modo "escolha o alvo" não abrem laço.
+- **Só cartas que eu controlo.** A barra age só sobre as próprias, mesmo com carta alheia clicada com
+  Shift na seleção — o servidor a ignoraria em silêncio. Sem nenhuma própria, os botões ficam
+  desabilitados.
+- **Uma mensagem para a seleção inteira.** Mover era um `INTENT_CHANGE_ZONE` por carta, e o servidor
+  aceita 30 intenções por segundo: 40 fichas mandadas ao cemitério moviam 30 e deixavam 10 no campo,
+  sem erro. `INTENT_BATCH_CHANGE_ZONE` autoriza carta a carta e registra só a contagem no log (a
+  seleção pode ter carta virada). _Exílio_ entrou ao lado de _Cemitério_ e _Mão_.
 
 ---
 
@@ -356,6 +426,14 @@ Qualquer outro nome é digitado pelo jogador e aparece como _badge_ com texto.
 Os atalhos da ação 79 importam mais do que parecem: fichas de Tesouro e Comida são criadas dezenas de
 vezes por partida. Obrigar busca na Scryfall a cada uma seria atrito constante.
 
+**Criar ficha pelo menu da carta (ação 76).** O gerador só abria pela barra de ações, e lá era
+preciso **buscar** o token: quem joga Avenger of Zendikar digitava "plant" a cada terreno. A Scryfall
+diz quais fichas cada carta cria (`all_parts`, `component: token`), e o catálogo do cliente as guarda
+em `fichas` (`DOC-040` §3.1). O botão direito oferece essas primeiro — _Criar ficha: Plant_ se for uma,
+submenu _Criar ficha_ se forem várias — e o gerador completo como _Outra ficha…_ (_Criar ficha…_
+quando a carta não cria nenhuma). Vale para qualquer carta visível, inclusive de oponente: a ficha
+nasce no campo de **quem clicou**, centralizada (`INTENT_CREATE_TOKEN {scryfallId, name}`).
+
 ---
 
 ## 7. Zonas públicas — cemitério e exílio
@@ -401,12 +479,12 @@ puxar carta de fora do deck durante a partida. Sem isso, essas cartas são injog
 | #   | Ação                                            | Intenção                                     | Prio  | Fase |
 | --- | ----------------------------------------------- | -------------------------------------------- | ----- | ---- |
 | 100 | **Vida** (delta ou absoluto)                    | `INTENT_SET_LIFE`                            | **M** | MVP  |
-| 101 | **Matriz de dano de comandante**                | `INTENT_SET_COMMANDER_DAMAGE`                | **M** | V1   |
-| 102 | **Veneno**                                      | `INTENT_ADD_PLAYER_COUNTER {name:"poison"}`  | **M** | V1   |
-| 103 | **Energia**                                     | `{name:"energy"}`                            | **M** | V1   |
-| 104 | **Experiência**                                 | `{name:"experience"}`                        | **M** | V1   |
-| 105 | **Radiação** (_rad_)                            | `{name:"rad"}`                               | **S** | V1   |
-| 106 | Tickets                                         | `{name:"ticket"}`                            | C     | V2   |
+| 101 | **Dano de comandante**, por comandante          | `INTENT_SET_COMMANDER_DAMAGE {commanderId}`  | **M** | V1   |
+| 102 | **Veneno**                                      | `INTENT_ADD_PLAYER_COUNTER {name:"POISON"}`  | **M** | V1   |
+| 103 | **Energia**                                     | `{name:"ENERGY"}`                            | **M** | V1   |
+| 104 | **Experiência**                                 | `{name:"EXPERIENCE"}`                        | **M** | V1   |
+| 105 | **Radiação** (_rad_)                            | `{name:"RAD"}`                               | **S** | V1   |
+| 106 | Tickets                                         | `{name:"TICKET"}`                            | C     | V2   |
 | 107 | **Monarca**                                     | `INTENT_TOGGLE_DESIGNATION {type:"MONARCH"}` | **M** | V1   |
 | 108 | **Iniciativa**                                  | `{type:"INITIATIVE"}`                        | **M** | V1   |
 | 109 | **Bênção da Cidade** (Ascend)                   | `{type:"CITYS_BLESSING"}`                    | **S** | V1   |
@@ -420,6 +498,15 @@ puxar carta de fora do deck durante a partida. Sem isso, essas cartas são injog
 
 Itens 105 e 109–113 são mecânicas de designação que existem **por jogador** e não caberiam em
 contadores de carta. Todas são marcadores visuais — o sistema não impõe efeito algum (`RN01`).
+
+**Os nomes de contador de jogador são em MAIÚSCULAS** (`PlayerCounter`): o zod recusa `"poison"`,
+que é o que esta tabela mostrava. Radiação e ingressos também não respondiam ao clique (o servidor os
+descartava em silêncio) e não tinham selo — agora têm, visível para a mesa inteira, como veneno e
+energia.
+
+**Dano de comandante (ação 101)** tem uma linha **por comandante**, não por oponente: parceiros contam
+separado (regra 903.10a), e marcar dano também tira vida (`DOC-031` §3.4). No celular a seção não
+existia; agora aparece no **próprio** cartão compacto, o único em que se marca.
 
 ---
 
@@ -487,6 +574,23 @@ descartar por engano. O "desfazer" é o que evita que cada erro se torne uma neg
 
 A exclusão de ações aleatórias e de revelações é o que impede que "desfazer" se torne trapaça.
 
+### 11.4 Quem senta à mesa — remoção por votação e assentos
+
+| Gesto                                                  | Quem                | Intenção                                    |
+| ------------------------------------------------------ | ------------------- | ------------------------------------------- |
+| _Propor remoção_ (no `PlayersModal`)                   | qualquer jogador    | `INTENT_VOTE_KICK {playerId, aceitar:true}` |
+| Painel da votação (`VotacaoDeRemocao`) — _Sim_ / _Não_ | os outros jogadores | `INTENT_VOTE_KICK {playerId, aceitar}`      |
+| Seletor _Assentos_ no lobby                            | anfitrião           | `INTENT_SET_ROOM_CONFIG {maxSeats}`         |
+
+Só o anfitrião removia alguém; numa mesa em que o problema é o próprio anfitrião, os outros não
+tinham resposta além de denunciar. A votação passa quando todos os outros jogadores conectados dizem
+"sim", e quem sai não volta à sala — nem por um passe novo (`DOC-031` §3.7). O painel não é modal:
+uma votação aberta no meio de um combate não trava a mesa.
+
+O número de assentos era fixado na criação (o formulário nasce em 4) e o quinto jogador recebia
+"mesa cheia" sem saída. O seletor oferece a faixa do formato, nunca abaixo de quem já está sentado; o
+servidor aceita `maxSeats` também com a partida em andamento.
+
 ---
 
 ## 12. Resumo de cobertura
@@ -545,5 +649,6 @@ Este catálogo obriga mudanças em quatro lugares:
 - [ ] Setas de alvo implementadas (ação 126 — Must).
 - [ ] Desfazer não cobre ação aleatória nem revelação.
 - [ ] Atalhos de ficha (Tesouro, Comida, Pista, Sangue, Mapa).
+- [ ] Ação em lote numa intenção só (`INTENT_BATCH_*`), nunca uma por carta — o limite é 30/s.
 - [ ] Sideboard acessível durante a partida (ação 99).
 - [ ] Auditoria de pacote (`G1`) estendida a: olhar, revelar dirigido, exílio face para baixo.

@@ -1,5 +1,6 @@
-import { Controller, Post, Body, Param, UseGuards, Request, Get } from '@nestjs/common';
+import { Controller, Post, Body, Param, UseGuards, Request, Get, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { MatchesService } from './matches.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
@@ -9,6 +10,7 @@ import {
   RoomCodeParam,
 } from './matches.dto.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
+import { SEM_LIMITE_GLOBAL } from '../common/limites.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
@@ -62,8 +64,11 @@ export class MatchesController {
   getVoiceToken(
     @Request() req: RequisicaoAutenticada,
     @Param('roomCode', new ZodValidationPipe(RoomCodeParam)) roomCode: string,
+    // O passe da mesa, como prova de que esta conta está NESTA sala. Header, e
+    // não querystring: querystring fica em log de proxy.
+    @Headers('x-passe-de-mesa') passe?: string,
   ) {
-    return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode);
+    return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode, passe);
   }
 }
 
@@ -82,6 +87,10 @@ export class MatchesController {
 @ApiTags('Internal')
 @Controller('internal/matches')
 @UseGuards(InternalApiGuard)
+// Fora do balde global por IP: todas as salas do nó chegam do MESMO endereço,
+// e um 429 aqui era um resumo de partida perdido para sempre — o `onDispose`
+// não tenta de novo. Ver o mesmo pulo em `InternalDecksController`.
+@SkipThrottle(SEM_LIMITE_GLOBAL)
 export class InternalMatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 

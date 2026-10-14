@@ -41,6 +41,7 @@ import {
   useSalasPublicas,
   type FiltrosDeSala,
 } from '@/net/useSalasPublicas';
+import { lembrarDeckDaSala } from '@/cards/deck-da-sala';
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
@@ -203,6 +204,7 @@ export default function DashboardPage() {
         },
       });
 
+      if (selectedDeckId) lembrarDeckDaSala(code, selectedDeckId);
       let destino = `/play/${code}?token=${passe.seatToken}`;
       if (modalAction === 'CREATE') {
         // A querystring continua levando o essencial porque o `onCreate` roda
@@ -321,9 +323,14 @@ export default function DashboardPage() {
             <div className="bg-table-deep border-panel-border mb-4 flex h-12 w-12 items-center justify-center rounded-lg border">
               <Play className="text-primary h-6 w-6" />
             </div>
-            <h2 className="text-text mb-2 text-xl font-bold">Criar Mesa Privada</h2>
+            {/* Era "Criar Mesa Privada — ninguém entra sem o convite", e a
+                visibilidade nasce privada. Quem queria uma mesa na vitrine
+                lia o cartão, não via a escolha no formulário, e a mesa nunca
+                aparecia na lista de abertas. */}
+            <h2 className="text-text mb-2 text-xl font-bold">Criar Mesa</h2>
             <p className="text-text-muted mb-6 flex-1 text-sm">
-              Gere uma sala encriptada para você e seus amigos. Ninguém entra sem o convite.
+              Pública, na lista de mesas abertas, ou privada, só com o código — você escolhe a
+              seguir.
             </p>
             <button className="bg-primary pointer-events-auto w-fit rounded-md px-5 py-2.5 font-medium text-white shadow-md">
               Criar Agora
@@ -398,7 +405,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Busca e filtros */}
-        <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <div className="relative">
             <Search className="text-text-faint pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
             <input
@@ -444,6 +451,23 @@ export default function DashboardPage() {
             {IDIOMAS_DE_MESA.map((i) => (
               <option key={i} value={i}>
                 {NOME_DO_IDIOMA[i]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filtros.nivelDePoder ?? ''}
+            onChange={(e) =>
+              setFiltros((f) => ({
+                ...f,
+                nivelDePoder: e.target.value ? Number(e.target.value) : null,
+              }))
+            }
+            className="bg-table-deep border-panel-border text-text focus:border-primary rounded-md border px-3 py-2 text-sm focus:outline-none"
+          >
+            <option value="">Qualquer nível</option>
+            {NIVEIS_DE_PODER.map((n) => (
+              <option key={n.valor} value={n.valor}>
+                Nível {n.valor} · {n.nome}
               </option>
             ))}
           </select>
@@ -595,7 +619,10 @@ export default function DashboardPage() {
                 <h3 className="text-text mb-1 w-full truncate text-lg font-bold">{deck.name}</h3>
                 <span className="text-text-muted text-sm">
                   Cartas: {deck.cardCount ?? 0}
-                  <span className="text-text-faint uppercase"> · {deck.formatId}</span>
+                  {/* Era `{deck.formatId}` em caixa alta: o id interno
+                      ("DUEL_COMMANDER", "BOOSTER_DRAFT") onde a lista de
+                      grimórios e o próprio deck já mostravam o nome. */}
+                  <span className="text-text-faint"> · {acharFormato(deck.formatId).nome}</span>
                 </span>
               </Link>
             ))}
@@ -898,7 +925,13 @@ export default function DashboardPage() {
                 className="bg-primary hover:bg-primary-hover flex items-center gap-2 rounded-md px-6 py-2 font-medium text-white shadow-md transition-all active:scale-95 disabled:opacity-50"
               >
                 {isConnecting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isConnecting ? 'Conectando...' : 'Entrar na Mesa'}
+                {isConnecting
+                  ? 'Conectando...'
+                  : modalAction === 'CREATE'
+                    ? visibilidade === 'PUBLICA'
+                      ? 'Criar mesa pública'
+                      : 'Criar mesa privada'
+                    : 'Entrar na Mesa'}
               </button>
             </div>
           </div>

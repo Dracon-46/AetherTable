@@ -48,6 +48,8 @@ type Mapa = Record<AcaoDeAtalho, string>;
 
 interface AtalhosState {
   atalhos: Mapa;
+  /** Volta às teclas de fábrica e apaga o mapa da conta que saiu. */
+  esquecerConta: () => void;
   /** Grava a tecla nova. Passar `TECLA_NAO_ATRIBUIDA` desliga a ação. */
   remapear: (acao: AcaoDeAtalho, tecla: string) => void;
   /** Devolve todas as ações às teclas de fábrica. */
@@ -94,6 +96,16 @@ function gravar(atalhos: Mapa): void {
 
 export const useAtalhos = create<AtalhosState>((set, get) => ({
   atalhos: ler(),
+
+  /** Esquece o mapa da conta que saiu — ver `useCosmeticos.esquecerConta`. */
+  esquecerConta: () => {
+    try {
+      window.localStorage.removeItem(CHAVE);
+    } catch {
+      /* sem localStorage: não há o que esquecer */
+    }
+    set({ atalhos: { ...ATALHOS_PADRAO } });
+  },
 
   remapear: (acao, tecla) => {
     if (tecla !== TECLA_NAO_ATRIBUIDA && !ehTeclaDeAtalho(tecla)) return;

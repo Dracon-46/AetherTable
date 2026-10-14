@@ -40,4 +40,9 @@ export class RoomState extends Schema {
   @type('number') public turnoIniciadoEm!: number;
   @type({ map: Espectador }) public espectadores: MapSchema<Espectador> =
     new MapSchema<Espectador>();
+  @type('string') public votacaoAlvo!: string;
+  @type('string') public votacaoAutor!: string;
+  @type('string') public votacaoSim!: string;
+  @type('number') public votacaoExpiraEm!: number;
+  @type('number') public vidaInicial!: number;
 }

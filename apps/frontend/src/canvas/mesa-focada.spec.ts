@@ -48,11 +48,25 @@ describe('mesa focada — a carta é legível', () => {
     expect(grande.faixas[0]!.escala).toBeGreaterThan(pequeno.faixas[0]!.escala);
   });
 
+  /**
+   * O PISO DE LEGIBILIDADE VALE ONDE A TELA PERMITE.
+   *
+   * Este teste pedia `ESCALA_MIN` numa janela de 300 px — e só passava porque
+   * a mesa era montada com 420 px de altura mesmo assim, empurrando a mão para
+   * fora da tela (o celular deitado tem 336 úteis). Entre carta pequena e mão
+   * inalcançável, a mão vence: o piso vale a partir da altura em que ele cabe,
+   * e abaixo dela a invariante passa a ser "tudo dentro da tela".
+   */
   it('a escala respeita piso e teto', () => {
-    const minusculo = montarMesaFocada({ largura: 600, altura: 300, focoId: 'eu' });
+    const pequeno = montarMesaFocada({ largura: 600, altura: 420, focoId: 'eu' });
     const gigante = montarMesaFocada({ largura: 6000, altura: 4000, focoId: 'eu' });
-    expect(minusculo.faixas[0]!.escala).toBeGreaterThanOrEqual(ESCALA_MIN);
+    expect(pequeno.faixas[0]!.escala).toBeGreaterThanOrEqual(ESCALA_MIN);
     expect(gigante.faixas[0]!.escala).toBeLessThanOrEqual(ESCALA_MAX);
+  });
+
+  it('numa tela mais baixa que o piso, a mão continua dentro da tela', () => {
+    const deitado = montarMesaFocada({ largura: 666, altura: 336, focoId: 'eu', oponentes: ['a'] });
+    expect(deitado.mao.topo + deitado.mao.altura).toBeLessThanOrEqual(336);
   });
 
   it('escala 1 exatamente na altura de referência', () => {
@@ -385,12 +399,13 @@ describe('mesa focada — trilho dos oponentes', () => {
 
 describe('mesa focada — coordenadas de permanente continuam válidas', () => {
   it('ida e volta preserva a posição dentro do campo', () => {
+    // A coordenada é FRAÇÃO do campo (ver `posicaoNoCampo`), não pixel.
     const f = montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!;
-    const rel = { x: 200, y: 150 };
+    const rel = { x: 0.25, y: 0.4 };
     const abs = posicaoNoCampo(f, rel.x, rel.y);
     const volta = paraCoordenadaRelativa(f, abs.x, abs.y);
-    expect(volta.x).toBeCloseTo(rel.x, 0);
-    expect(volta.y).toBeCloseTo(rel.y, 0);
+    expect(volta.x).toBeCloseTo(rel.x, 3);
+    expect(volta.y).toBeCloseTo(rel.y, 3);
   });
 
   it('uma permanente nunca sai do campo, por mais longe que a coordenada esteja', () => {
@@ -493,12 +508,25 @@ describe('mesa focada — fator de tamanho de carta', () => {
 
 describe('mesa focada — alinhar à grade', () => {
   const faixa = () => montarMesaFocada({ ...TELA, focoId: 'eu' }).faixas[0]!;
+  /**
+   * A grade é em meia carta (pixel) e a coordenada é fração do campo. Os casos
+   * continuam escritos em pixel — é como se pensa em "meia carta" — e são
+   * convertidos na entrada e na saída.
+   */
+  const fr = (f: ReturnType<typeof faixa>, x: number, y: number) => ({
+    x: x / f.campo.largura,
+    y: y / f.campo.altura,
+  });
+  const px = (f: ReturnType<typeof faixa>, p: { x: number; y: number }) => ({
+    x: p.x * f.campo.largura,
+    y: p.y * f.campo.altura,
+  });
 
   it('encaixa em múltiplos de meia carta', () => {
     const f = faixa();
     const passoX = CARD_W * f.escala * CELULA_DA_GRADE;
     const passoY = CARD_H * f.escala * CELULA_DA_GRADE;
-    const p = encaixarNaGrade(f, { x: 203, y: 147 });
+    const p = px(f, encaixarNaGrade(f, fr(f, 203, 147)));
     /**
      * A distância é até a célula MAIS PRÓXIMA, e não o resto da divisão: um
      * resto de 0,994 está a 0,006 célula da próxima, e reprová-lo seria erro
@@ -517,8 +545,8 @@ describe('mesa focada — alinhar à grade', () => {
     const f = faixa();
     const passoX = CARD_W * f.escala * CELULA_DA_GRADE;
     // Logo depois do meio da célula 3: o encaixe tem de subir para a 4.
-    const p = encaixarNaGrade(f, { x: passoX * 3.6, y: 0 });
-    expect(p.x).toBe(Math.round(passoX * 4));
+    const p = px(f, encaixarNaGrade(f, fr(f, passoX * 3.6, 100)));
+    expect(Math.abs(p.x - passoX * 4)).toBeLessThanOrEqual(0.5);
   });
 
   it('um ponto já alinhado não se move', () => {
@@ -526,7 +554,7 @@ describe('mesa focada — alinhar à grade', () => {
     const passoX = CARD_W * f.escala * CELULA_DA_GRADE;
     const passoY = CARD_H * f.escala * CELULA_DA_GRADE;
     const alvo = { x: Math.round(passoX * 2), y: Math.round(passoY * 2) };
-    const p = encaixarNaGrade(f, alvo);
+    const p = px(f, encaixarNaGrade(f, fr(f, alvo.x, alvo.y)));
     expect(Math.abs(p.x - alvo.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(p.y - alvo.y)).toBeLessThanOrEqual(1);
   });
@@ -534,9 +562,17 @@ describe('mesa focada — alinhar à grade', () => {
   it('duas cartas soltas quase no mesmo lugar terminam na MESMA célula', () => {
     // É o ponto do recurso: o desalinho de 3px que lê como descuido desaparece.
     const f = faixa();
-    const a = encaixarNaGrade(f, { x: 200, y: 150 });
-    const b = encaixarNaGrade(f, { x: 203, y: 147 });
+    const a = encaixarNaGrade(f, fr(f, 200, 150));
+    const b = encaixarNaGrade(f, fr(f, 203, 147));
     expect(a).toEqual(b);
+  });
+
+  /** Encaixar no canto dava (0, 0) — "sem coordenada" — e a carta ia para o centro. */
+  it('encaixar perto do canto não manda a carta para o centro', () => {
+    const f = faixa();
+    const rel = encaixarNaGrade(f, fr(f, 20, 30));
+    const abs = posicaoNoCampo(f, rel.x, rel.y);
+    expect(abs.x).toBeLessThan(f.campo.x + f.campo.largura / 4);
   });
 
   it('o encaixe não empurra a carta para fora do campo', () => {

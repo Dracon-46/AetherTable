@@ -38,14 +38,14 @@ Essa é a fronteira da `RN01`: **restrição física é legítima; julgamento de
 Cada carta instanciada tem uma propriedade `zone`. A zona determina **visibilidade de rede** e
 **regras de movimento**.
 
-| Zona          | Visibilidade          | Estrutura                      | Coordenadas               | Observações                               |
-| ------------- | --------------------- | ------------------------------ | ------------------------- | ----------------------------------------- |
-| `BATTLEFIELD` | **Pública**           | Livre                          | `x`, `y`, `zIndex` exatos | Oponentes veem tudo                       |
-| `COMMAND`     | **Pública**           | Ancorada em painel             | Posição fixa por _slot_   | Exibe `commanderTax`                      |
-| `GRAVEYARD`   | **Pública**           | Array ordenada                 | Não usa `x`/`y`           | Vira lista de UI; último inserido no topo |
-| `EXILE`       | **Pública**           | Array ordenada                 | Não usa `x`/`y`           | Idem                                      |
-| `HAND`        | **Oculta** (dono)     | Array ordenada                 | Não usa `x`/`y`           | `scryfallId` **filtrado**                 |
-| `LIBRARY`     | **Oculta e ordenada** | _Stack_ (topo = último índice) | Não usa `x`/`y`           | Apenas `.length` é público                |
+| Zona          | Visibilidade          | Estrutura                      | Coordenadas                       | Observações                               |
+| ------------- | --------------------- | ------------------------------ | --------------------------------- | ----------------------------------------- |
+| `BATTLEFIELD` | **Pública**           | Livre                          | `x`, `y` em fração (§3), `zIndex` | Oponentes veem tudo                       |
+| `COMMAND`     | **Pública**           | Ancorada em painel             | Posição fixa por _slot_           | Exibe `commanderTax`                      |
+| `GRAVEYARD`   | **Pública**           | Array ordenada                 | Não usa `x`/`y`                   | Vira lista de UI; último inserido no topo |
+| `EXILE`       | **Pública**           | Array ordenada                 | Não usa `x`/`y`                   | Idem                                      |
+| `HAND`        | **Oculta** (dono)     | Array ordenada                 | Não usa `x`/`y`                   | `scryfallId` **filtrado**                 |
+| `LIBRARY`     | **Oculta e ordenada** | _Stack_ (topo = último índice) | Não usa `x`/`y`                   | Apenas `.length` é público                |
 
 ### 2.1 Transições de zona permitidas
 
@@ -71,7 +71,18 @@ Todas as transições são permitidas — é um sandbox. O motor apenas garante 
 | `LIBRARY`                                             | Zera tudo; insere no índice indicado (topo, fundo ou posição)                                        |
 | `GRAVEYARD` / `EXILE`                                 | Zera `isTapped` e `counters`; empilha no fim do array                                                |
 | `COMMAND`                                             | Zera contadores; ancora no _slot_ do dono                                                            |
-| Qualquer zona ≠ `BATTLEFIELD`, sendo `isToken = true` | **Destrói o objeto** — fichas deixam de existir fora do campo                                        |
+| Qualquer zona ≠ `BATTLEFIELD`                         | Limpa o `attachedTo` da carta, **desanexa** as que estavam presas a ela e apaga as setas de/para ela |
+| Qualquer zona ≠ `BATTLEFIELD`, sendo `isToken = true` | **Destrói o objeto** e tira o id da ordem do destino — fichas deixam de existir fora do campo        |
+
+**Fora do campo, nada fica pendurado na carta.** `attachedTo` nunca era limpo: a aura que ia para o
+cemitério voltava "anexada", e o hospedeiro que morria deixava as auras apontando para uma carta no
+cemitério. As setas também sobreviviam — a de uma criatura morta reaparecia quando ela voltava.
+
+**A ficha sai também da lista de ordem.** Quem chama já empurrou o id na ordem do destino; apagar só a
+carta deixava o id órfão, e o topo do cemitério — lido da ordem — mostrava um fantasma vazio. A ficha
+apagada **não é reconciliada**: tirá-la do mapa já a some de todas as views, e reconciliar uma
+instância desanexada lança no Colyseus ("detached instance") — mover uma ficha virada para fora do
+campo respondia `INTERNAL` e abortava o lote inteiro.
 
 ---
 
@@ -107,7 +118,7 @@ export class Card extends Schema {
   @type('string') revealedTo = ''; // 'ALL' | 'sid1,sid2' — persistente até troca de zona
   @type('string') peekedBy = ''; // 'sid1,sid2' — transitório, limpo ao fechar o painel
 
-  @type('number') x = 0;
+  @type('number') x = 0; // FRAÇÃO (0–1) do campo de quem controla; (0, 0) = sem coordenada → centro
   @type('number') y = 0;
   @type('number') rotation = 0; // 0 = normal, 90 = virada, 180 = invertida
   @type('number') zIndex = 0;
@@ -133,6 +144,16 @@ export class Card extends Schema {
 }
 ```
 
+**`x`/`y` no campo são fração, não pixel.** Guardavam pixels do campo de quem controla, no monitor
+dele, e eles não cabiam no campo de quem olhava: no trilho dos oponentes, onde o campo é estreito,
+todo valor passava da borda e o _clamp_ empilhava as permanentes numa coluna só; e dois jogadores com
+telas diferentes viam arranjos diferentes. Agora o arranjo é o mesmo em qualquer tela e só a escala
+muda (`posicaoNoCampo` no cliente). `(0, 0)` continua significando "sem coordenada — centralize", e
+por isso o cliente nunca envia 0 exato (mínimo `0.0001`). Os deslocamentos do servidor seguem a
+mesma unidade: `INTENT_COPY_CARD` +0,03 do original (do centro, se ele não tinha coordenada),
+`INTENT_CREATE_TOKEN` +0,03 por ficha extra, e `INTENT_CAST_COMMANDER` e `INTENT_RESET_MATCH` gravam
+`(0, 0)` — antes, `(960, 620)` de um plano de 1920×1080 que não existe mais.
+
 ### 3.0.1 A função de decisão `podeVer`
 
 Extraída do decorador para poder ser testada isoladamente — é o trecho de código mais crítico do
@@ -153,8 +174,8 @@ export function podeVer(card: Card, sid: string): boolean {
   if (card.peekedBy && contem(card.peekedBy, sid)) return true;
 
   // 3. Face para baixo: a zona é pública, a identidade não.
-  //    Vale para BATTLEFIELD (morph) e EXILE (foretell/plot).
-  if (card.faceDown) return sid === card.controllerId;
+  //    Vale para BATTLEFIELD (morph) e EXILE (foretell/plot) — SÓ em zona pública.
+  if (card.faceDown && ZONA_PUBLICA.has(card.zone)) return sid === card.controllerId;
 
   // 4. Zonas públicas com a face para cima: todos veem.
   if (ZONA_PUBLICA.has(card.zone)) return true;
@@ -184,6 +205,12 @@ function contem(lista: string, sid: string): boolean {
 **Ordem das cláusulas importa.** Revelação e olhada vêm **antes** da checagem de zona, porque são
 exatamente os casos em que a zona diz "oculto" e a concessão explícita diz "este jogador pode".
 
+**A cláusula 3 só vale em zona pública.** Ela valia em qualquer zona e vinha antes da regra do
+grimório: um `INTENT_BATCH_UPDATE` com `faceDown` sobre as cartas do próprio grimório fazia o dono
+passar a vê-las — o grimório inteiro, sem uma linha no log. Virada na mão ou no grimório continua
+governada pela regra da zona, e `INTENT_UPDATE_PROPERTY`/`INTENT_BATCH_UPDATE` ignoram `faceDown`
+fora de `BATTLEFIELD`/`EXILE`.
+
 **A cláusula 7 é a mais importante para segurança:** zona desconhecida **nega**. Se alguém adicionar
 uma zona nova e esquecer de tratá-la aqui, o efeito é a carta ficar invisível — um bug visível e
 inofensivo. O oposto (liberar por padrão) seria um vazamento silencioso. **Falha sempre fechada.**
@@ -205,7 +232,7 @@ export class Player extends Schema {
   @type('string') chatTitle = ''; // Título no log
   @type('number') seat = 0; // 0..3 — posição na mesa
 
-  @type('number') life = 40;
+  @type('number') life = 40; // sobrescrito pela `vidaInicial` do formato (§6.1)
   @type('number') poison = 0;
   @type('number') energy = 0;
   @type('number') experience = 0;
@@ -250,7 +277,7 @@ export class RoomState extends Schema {
   @type('number') nivelDePoder = 0; // 0 = não declarado
 
   // ─── regras de jogo (ajustadas na sala de espera) ──────────────────────
-  @type('string') tipoDeMulligan = 'COMMANDER'; // COMMANDER | LONDON | LIVRE
+  @type('string') tipoDeMulligan = 'COMMANDER'; // COMMANDER | LONDON | LIVRE — padrão do formato (DOC-031 §3.7)
   @type('string') jogadorInicial = ''; // '' = sortear
   @type('boolean') ordemPelosAssentos = false;
   @type('boolean') sideboardPermitido = false;
@@ -260,9 +287,20 @@ export class RoomState extends Schema {
   // ─── plateia ───────────────────────────────────────────────────────────
   @type({ map: Espectador }) espectadores = new MapSchema<Espectador>();
 
+  // ─── votação para remover um jogador (INTENT_VOTE_KICK) ────────────────
+  @type('string') votacaoAlvo = ''; // sessionId do alvo; '' = nenhuma aberta
+  @type('string') votacaoAutor = ''; // sessionId de quem propôs
+  @type('string') votacaoSim = ''; // sessionIds que votaram sim, separados por vírgula
+  @type('number') votacaoExpiraEm = 0; // epoch ms
+  @type('number') vidaInicial = 0; // vida combinada no lobby; 0 = a do formato
+
   // marcadores visuais: dayNight, turnPhase, arrows
 }
 ```
+
+Os quatro campos de votação são **estado, e não mensagem**: quem entra ou reconecta no meio de uma
+votação precisa vê-la correndo, e um evento efêmero já teria passado. Estão no **fim** da classe pela
+regra de §3.0.2. A regra da votação está em `DOC-031` §3.7.
 
 ### 3.0.2 Campo novo vai NO FIM. Sem exceção.
 
@@ -318,6 +356,36 @@ Com `zoneOrder`, comprar uma carta gera: uma mutação em `Card.zone`, uma remo�
 > relação com a identidade da carta. Ainda assim, a ordem de `LIBRARY`/`HAND` **também** deve ser
 > filtrada, para não vazar informação estrutural (quantas cartas foram do topo para o fundo, etc.).
 
+### 3.2 Desfazer: recorte do estado e o que não volta
+
+`INTENT_UNDO` restaura um **recorte** tirado antes da última intenção do jogador
+(`services/undo.ts`): as cartas que ele tinha, as listas de ordem dele e o `Player` dele — que agora
+inclui `decked`, sem o qual desfazer a compra do grimório vazio não revivia o jogador. Quando a carta
+restaurada é de **outro dono**, as listas desse dono são corrigidas **cirurgicamente**: o id sai de
+todas as listas dele e volta só para a da zona restaurada. Antes só as listas de quem desfez voltavam,
+e uma carta alheia mandada ao grimório do dono e desfeita ficava no campo **e** no grimório dele — a
+próxima compra a puxava para a mão. Restaurar a lista inteira do dono apagaria o que ele fez nesses
+dez segundos.
+
+**O desfazer nunca funcionou pela sala.** O `HistoricoDeComandos` apagava a entrada do remetente
+**antes** de executar uma intenção irreversível — e o próprio `INTENT_UNDO` é irreversível: o handler
+perguntava pelo histórico já apagado e todo "desfazer" respondia "nada para desfazer". Os testes
+chamavam `desfazer()` direto e nunca passavam pela sala. Agora executa e **depois** apaga.
+
+**Irreversíveis novos** (`NAO_REVERSIVEIS`), além de aleatoriedade, olhadas e revelações:
+
+| Intenções                                                          | Por que não voltam                                                                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `_DRAW`, `_DRAW_UP_TO`, `_MILL`                                    | Desfazer devolvia ao topo, na mesma ordem, cartas já vistas — uma olhada grátis                        |
+| `_CHANGE_ZONE` / `_BATCH_CHANGE_ZONE` **saindo do `LIBRARY`**      | Idem; decidido **por carta** em `ComandoDeIntencao.reversivel()`, antes do handler rodar               |
+| `_CREATE_TOKEN`, `_COPY_CARD`                                      | O recorte só conhece as cartas que já existiam: as novas ficavam, e o "desfeito" não mudava nada       |
+| `_TOGGLE_DESIGNATION`, `_PASS_TURN`, `_SET_TURN`, `_SET_DAY_NIGHT` | Estado da **mesa**: o recorte restaurava só quem desfez (a mesa ficava sem monarca, a vez não voltava) |
+| `_SCRY_COMMIT`, `_SURVEIL_COMMIT`                                  | Devolveria a ordem antiga sem devolver a sessão (`DOC-031` §3.2.1, invariante 9)                       |
+| `_VOTE_KICK`                                                       | Voto dado é voto dado — e o último já tirou alguém da sala                                             |
+
+Uma ação irreversível também **invalida o passado** do jogador: desfazer "por cima" dela restauraria
+um estado que não existe mais.
+
 ---
 
 ## 4. Visibilidade e filtragem
@@ -331,7 +399,7 @@ Avaliada **na ordem**. A primeira linha que casa decide. Implementação em `pod
 | 1   | `revealedTo === 'ALL'`                                           | ✅ **Sim, a todos**             | `RN13`        |
 | 2   | `sid ∈ revealedTo`                                               | ✅ Sim, aos escolhidos          | `RN13`        |
 | 3   | `sid ∈ peekedBy`                                                 | ✅ Sim, enquanto a olhada durar | `RN13`        |
-| 4   | `faceDown` (qualquer zona)                                       | Só se `sid === controllerId`    | §4.3          |
+| 4   | `faceDown` **e** zona pública                                    | Só se `sid === controllerId`    | §4.3          |
 | 5   | Zona ∈ {`BATTLEFIELD`, `GRAVEYARD`, `EXILE`, `COMMAND`, `STACK`} | ✅ Sim                          | Zona pública  |
 | 6   | Zona = `HAND`                                                    | Só se `sid === ownerId`         | `RN02`        |
 | 7   | Zona = `LIBRARY`                                                 | ❌ **Não — a ninguém**          | §4.4          |
@@ -368,6 +436,12 @@ card.peekedBy = '';
 Sem isso, o vazamento é permanente: uma carta revelada na mão que vai ao campo e volta à mão
 continuaria visível a todos para sempre. **É o erro mais fácil de cometer neste modelo** e o teste `G1`
 tem um caso específico para ele.
+
+**Limpar a concessão da carta não é revogar a permissão da zona.** `INTENT_SHUFFLE`,
+`INTENT_MULLIGAN`, `INTENT_MOVE_TOP_TO_BOTTOM` e `INTENT_RETURN_ZONE` chamam `limparConcessoes` e,
+logo depois, `reaplicarPermissaoDeZona`, que regrava o `revealedTo` a partir do `sharedZones` do
+**dono**. Antes, embaralhar revogava o grimório que o dono tinha compartilhado, embora `sharedZones`
+continuasse dizendo que sim.
 
 ### 4.1.3 Memória de cartas já vistas fica no cliente
 
@@ -497,7 +571,7 @@ testado que `Math.random` **não aparece** em nenhum arquivo de `game-server/src
    ┌──────────┐   alguém volta          │  (mantém sala, zera estado)
    │  PAUSED  │─────────────────────────┘
    └────┬─────┘
-        │  90 s sem ninguém  →  ┌──────────┐  10 min vazia  →  onDispose()
+        │  90 s sem ninguém  →  ┌──────────┐  vazia (§6.2)  →  onDispose()
         └──────────────────────►│ CLOSING  │──────────────────────► destruída
                                 └──────────┘
 ```
@@ -508,6 +582,29 @@ testado que `Math.random` **não aparece** em nenhum arquivo de `game-server/src
 | `PLAYING` | Partida em andamento                                 | Todas              |
 | `PAUSED`  | Todos desconectados, dentro da janela                | Nenhuma            |
 | `CLOSING` | Encerramento anunciado (saída ou drenagem de deploy) | Nenhuma            |
+
+**`INTENT_RESET_MATCH`** volta a vida de todos à `vidaInicial` do formato e, além de veneno, energia,
+experiência, imposto e designações, zera `rad`, `ticket`, `speed`, `ringLevel` e `ringBearerId` e
+devolve `maxHandSize` a 7. Esses campos não eram tocados e atravessavam para a partida seguinte — o
+botão promete "zera vida, contadores".
+
+Ele também reinicia a **mesa**. Antes as cartas ficavam onde estavam: o `INTENT_START_MATCH`
+seguinte via a mão cheia e não servia a inicial, e o mulligan respondia `MULLIGAN_CLOSED` a partida
+inteira, porque havia carta no campo. Agora:
+
+| O quê                | Para onde / como fica                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fichas e cópias      | Apagadas                                                                                                                                         |
+| Comandantes          | `COMMAND`                                                                                                                                        |
+| Reserva              | Fica no `SIDEBOARD`                                                                                                                              |
+| Todo o resto         | `LIBRARY` do dono, **embaralhado**                                                                                                               |
+| Estado de cada carta | Zerado: controle volta ao dono, `x`/`y`/`zIndex`/`rotation`, virada, face, anexos, marcadores, sobreposições de P/T, nota, destaque, concessões… |
+| Mesa                 | Setas apagadas, `dayNight = 'NEITHER'`, `turnPhase = ''`, sessões de scry descartadas                                                            |
+| Jogadores            | `sharedZones` e `topoRevelado` zerados; `handCount`/`libraryCount` recalculados                                                                  |
+
+**Morto que volta reabre a partida.** A morte do penúltimo leva a fase a `CLOSING`; se um eliminado
+volta (vida corrigida, dano desfeito) e há **≥ 2 vivos**, a fase volta a `PLAYING`. Antes ela ficava
+em `CLOSING`, `verificarFimDePartida` saía cedo para sempre e a mesa nunca mais anunciava vencedor.
 
 ### 6.1 Provisionamento inicial de um jogador (`onJoin`)
 
@@ -520,8 +617,60 @@ testado que `Math.random` **não aparece** em nenhum arquivo de `game-server/src
 7. Atualiza `handCount` e `libraryCount`.
 8. Emite log `SYSTEM`: "{Jogador} entrou na mesa".
 
+**A vida inicial é do formato.** O `onJoin`, o `INTENT_START_MATCH` e o `INTENT_RESET_MATCH` gravam
+`Player.life = vidaInicial` do catálogo de formatos. Antes nada mudava os 40 do schema: Modern, Duel
+Commander, Oathbreaker e Brawl começavam com a vida de Commander — o catálogo sempre teve
+`vidaInicial`, e ninguém no servidor lia.
+
+**`INTENT_SET_DECK` com a partida em `PLAYING`** é aceito para quem **ainda não tem carta nenhuma**.
+Entrar pela lista pública manda um passe sem deck, e a recusa ("só antes de a partida começar")
+deixava a pessoa sentada, sem grimório, assistindo a mesa para sempre.
+
+**O provisionamento é versionado por jogador.** Só a resposta do **último** `INTENT_SET_DECK` é
+aplicada, e só se o jogador **ainda estiver sentado**; o deck anterior é limpo **depois** da
+resposta, não antes do `fetch`. Duas escolhas rápidas limpavam as duas vezes e depois empilhavam as
+duas respostas (159 cartas no grimório), e uma resposta que chegava depois de o jogador sair criava
+cartas de um dono que não existe mais. Cada linha do deck é limitada a **99 cópias**: um deck salvo
+antes do limite do backend com "2000000000 Forest" travava o processo do jogo neste laço.
+
 **Custo:** 4 jogadores × ~100 cartas = ~400 objetos `Card` por sala. Dentro do orçamento de 8 MB por
 sala (`NFR-07`) e dos 300–400 sprites de `NFR-01`.
+
+### 6.2 Sala vazia e saída de jogador
+
+**Sobrou um jogador numa partida que começou com dois ou mais: ele venceu.** `verificarFimDePartida`
+exige dois jogadores na mesa (senão a mesa solo terminaria no primeiro clique), e num 1v1 o oponente
+fechar a aba deixava a partida aberta para sempre. `removerJogador` anuncia o vencedor quando sobra
+um e o auge da partida (`augeDeJogadores`) foi de dois ou mais.
+
+O `autoDispose` do Colyseus está **desligado**. Com ele, a sala morria no instante em que o último
+cliente saía — e o criador de uma mesa pública não consegue estar no lobby e na lista na mesma aba:
+voltar à lista para conferir a mesa bastava para ela sumir. Agora a sala **vazia** (sem `players` nem
+`espectadores` no estado — quem caiu e está na janela de reconexão ainda conta) é descartada depois
+de **180 s se `PUBLICA`** e **30 s se `PRIVADA`**; a pública espera mais porque é ela que alguém pode
+achar na vitrine. Qualquer entrada cancela o descarte agendado.
+
+Quando um jogador sai, as cartas **dele** saem com ele, e as cartas **de outros donos** que ele
+controlava voltam ao `ownerId`. Antes elas ficavam com `controllerId` apontando para um jogador
+inexistente: ninguém podia movê-las e nenhuma faixa as desenhava. O resto de `removerJogador`:
+
+| Ao sair um jogador                                                                                                | Por quê                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Se era a vez dele, ela passa a quem herdou o assento (ou ao assento 0)                                            | `activePlayerId` ficava com quem saiu, e `exigirVez` recusava todos com `NOT_YOUR_TURN` até alguém reiniciar a partida |
+| `jogadorInicial` é limpo, se era ele                                                                              | A configuração da sala ficaria apontando para quem não está mais na mesa                                               |
+| Setas dele, ou que apontam para ele ou suas cartas, são apagadas                                                  | Ficavam sem ponta no estado e reapareciam se o id voltasse a valer                                                     |
+| `verificarFimDePartida` roda (agora exportada do `registry.ts`): a saída do último oponente vivo decide a partida | Só a eliminação a chamava: com A vivo, C eliminado e B saindo da sala, a mesa ficava em `PLAYING` para sempre          |
+
+**Expulsar quem está desconectado remove o assento na hora.** O Colyseus já tirou o cliente de
+`this.clients`, então o `leave()` não tinha em quem agir: o expulso seguia ocupando a vaga pela janela
+de reconexão inteira — e a chave de reconexão dele pula o `onAuth`, então ele voltava a sentar apesar
+do bloqueio da conta. Se a aba dele reconectar depois, o `onLeave` a recusa por não ter assento.
+
+**O resumo da partida conta só quem jogou.** Os participantes são as contas sentadas **enquanto a
+fase é `PLAYING`** (registradas no primeiro `START_MATCH` e em quem entra depois dele), e a duração
+conta do primeiro `START_MATCH`, não da criação da sala. Antes quem passava pela sala de espera
+contava: uma mesa pública com entra-e-sai passava de `MAX_PLAYERS` participantes, o backend recusava
+o resumo e a partida não era gravada.
 
 ---
 

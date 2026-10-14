@@ -1,4 +1,6 @@
 import {
+  FORMATOS,
+  acharFormato,
   avaliarLegalidade,
   motivoDeBloqueio,
   type CartaValidavel,
@@ -411,5 +413,313 @@ describe('legalidade — contador desnormalizado', () => {
     expect(legal.total).toBe(100);
     expect(legal.podeEntrarNaMesa).toBe(true);
     expect(legal.achados.find((a) => a.codigo === 'CONTADOR_DESSINCRONIZADO')).toBeDefined();
+  });
+
+  /**
+   * O backend incrementa `cardCount` em TODA escrita de carta, inclusive na
+   * reserva e no maybeboard. O aviso comparava o contador com as cartas que
+   * jogam, e todo deck com reserva aparecia como "uma escrita falhou".
+   */
+  it('não acusa o contador de um deck com reserva e maybeboard — ele conta todos os boards', () => {
+    const cards: CartaValidavel[] = [
+      comandanteLendario,
+      ...enche(99),
+      { scryfallId: 'res', name: 'Reserva', boardType: 'SIDEBOARD', quantity: 10 },
+      { scryfallId: 'talvez', name: 'Talvez', boardType: 'MAYBEBOARD', quantity: 5 },
+    ];
+    const legal = avaliarLegalidade({ formatId: 'commander', cardCount: 115, cards });
+    expect(legal.total).toBe(100);
+    expect(legal.achados.find((a) => a.codigo === 'CONTADOR_DESSINCRONIZADO')).toBeUndefined();
+  });
+
+  it('continua acusando quando a soma de todos os boards diverge', () => {
+    const cards: CartaValidavel[] = [
+      comandanteLendario,
+      ...enche(99),
+      { scryfallId: 'res', name: 'Reserva', boardType: 'SIDEBOARD', quantity: 10 },
+    ];
+    // 100 jogáveis + 10 na reserva = 110; um contador de 100 é o defeito real.
+    const legal = avaliarLegalidade({ formatId: 'commander', cardCount: 100, cards });
+    expect(legal.achados.find((a) => a.codigo === 'CONTADOR_DESSINCRONIZADO')?.mensagem).toMatch(
+      /lista tem 110/,
+    );
+  });
+});
+
+/**
+ * ─── AS CHAVES DE LEGALIDADE QUE A SCRYFALL TEM DE VERDADE ──────────────────
+ *
+ * Conferido na API em outubro de 2026: o Brawl de 60 cartas é `standardbrawl`,
+ * `brawl` é o pool do Historic Brawl, e NÃO existem `historicbrawl` nem
+ * `explorer`. Uma chave inexistente não dá erro nenhum — toda carta cai em
+ * "sem legalities" e o formato simplesmente para de acusar banidas.
+ */
+describe('legalidade — a chave de cada formato existe na Scryfall', () => {
+  /** Legalities reais da Scryfall para uma carta comum de comandante. */
+  const cmdBrawl: CartaValidavel = {
+    ...comandanteLendario,
+    colorIdentity: [],
+    legalities: { brawl: 'legal', standardbrawl: 'legal' },
+  };
+
+  it('Historic Brawl acusa banida pela chave `brawl` (Agent of Treachery)', () => {
+    const cards: CartaValidavel[] = [
+      cmdBrawl,
+      ...enche(98),
+      {
+        name: 'Agent of Treachery',
+        quantity: 1,
+        boardType: 'MAIN',
+        typeLine: 'Creature — Human Rogue',
+        legalities: { brawl: 'banned', standardbrawl: 'not_legal', commander: 'legal' },
+      },
+    ];
+    expect(acharCodigo(cards, 'historic_brawl', 'BANIDA')?.cartas).toEqual(['Agent of Treachery']);
+  });
+
+  it('Brawl (60, Standard) usa `standardbrawl`: Thoughtseize fica fora do pool', () => {
+    const cards: CartaValidavel[] = [
+      cmdBrawl,
+      ...enche(58),
+      {
+        name: 'Thoughtseize',
+        quantity: 1,
+        boardType: 'MAIN',
+        typeLine: 'Sorcery',
+        legalities: { brawl: 'legal', standardbrawl: 'not_legal' },
+      },
+    ];
+    expect(acharCodigo(cards, 'brawl', 'FORA_DO_FORMATO')?.cartas).toEqual(['Thoughtseize']);
+  });
+
+  it('Explorer valida pela chave de Pioneer: Sol Ring fica fora', () => {
+    const solRing: CartaValidavel = {
+      name: 'Sol Ring',
+      quantity: 1,
+      typeLine: 'Artifact',
+      // Sem chave `explorer` — é exatamente a resposta atual da Scryfall.
+      legalities: { pioneer: 'not_legal', commander: 'legal', vintage: 'restricted' },
+    };
+    expect(acharCodigo([...enche(59), solRing], 'explorer', 'FORA_DO_FORMATO')).toBeDefined();
+  });
+
+  it('nenhum formato do catálogo aponta para uma chave que a Scryfall não tem', () => {
+    // As chaves que a Scryfall publica (out/2026). Um preset novo com chave
+    // inventada deixaria o formato inteiro sem banlist, em silêncio.
+    const CHAVES_DA_SCRYFALL = new Set([
+      'standard',
+      'future',
+      'historic',
+      'timeless',
+      'gladiator',
+      'pioneer',
+      'modern',
+      'legacy',
+      'pauper',
+      'vintage',
+      'penny',
+      'commander',
+      'oathbreaker',
+      'standardbrawl',
+      'brawl',
+      'alchemy',
+      'paupercommander',
+      'duel',
+      'oldschool',
+      'premodern',
+      'predh',
+    ]);
+    const invalidas = FORMATOS.filter(
+      (f) => f.deck.chaveDeLegalidade !== null && !CHAVES_DA_SCRYFALL.has(f.deck.chaveDeLegalidade),
+    ).map((f) => `${f.id}→${f.deck.chaveDeLegalidade}`);
+    expect(invalidas).toEqual([]);
+  });
+});
+
+describe('legalidade — Canadian Highlander é mínimo de 100, não exato', () => {
+  it('101 cartas não é erro de tamanho', () => {
+    const legal = avaliarLegalidade({ formatId: 'canlander', cards: enche(101) });
+    expect(legal.achados.find((a) => a.codigo === 'TAMANHO')).toBeUndefined();
+    expect(legal.podeEntrarNaMesa).toBe(true);
+  });
+
+  it('99 cartas continua sendo', () => {
+    expect(acharCodigo(enche(99), 'canlander', 'TAMANHO')?.mensagem).toMatch(/no mínimo 100/i);
+  });
+});
+
+describe('legalidade — o deck construído inclui a reserva (CR 100.4a)', () => {
+  const bolt = (quantity: number, boardType: string): CartaValidavel => ({
+    scryfallId: `bolt-${boardType}`,
+    name: 'Lightning Bolt',
+    typeLine: 'Instant',
+    quantity,
+    boardType,
+  });
+
+  it('4 no main + 2 na reserva passa do limite de 4 cópias', () => {
+    const cards = [...enche(56), bolt(4, 'MAIN'), bolt(2, 'SIDEBOARD')];
+    expect(acharCodigo(cards, 'modern', 'COPIAS')?.mensagem).toMatch(/Lightning Bolt \(6\)/);
+  });
+
+  it('3 no main + 1 na reserva continua legal', () => {
+    const cards = [...enche(57), bolt(3, 'MAIN'), bolt(1, 'SIDEBOARD')];
+    expect(acharCodigo(cards, 'modern', 'COPIAS')).toBeUndefined();
+  });
+
+  it('banida na RESERVA também bloqueia — ela entra na partida na troca', () => {
+    const cards: CartaValidavel[] = [
+      ...enche(60),
+      {
+        name: 'Ragavan, Nimble Pilferer',
+        quantity: 1,
+        boardType: 'SIDEBOARD',
+        typeLine: 'Legendary Creature — Monkey Pirate',
+        legalities: { modern: 'banned' },
+      },
+    ];
+    const legal = avaliarLegalidade({ formatId: 'modern', cards });
+    expect(legal.achados.find((a) => a.codigo === 'BANIDA')?.cartas).toEqual([
+      'Ragavan, Nimble Pilferer',
+    ]);
+    expect(legal.podeEntrarNaMesa).toBe(false);
+  });
+
+  it('em Commander, a reserva é anotação: uma banida lá não bloqueia a mesa', () => {
+    // Formato sem reserva: o que está nela não entra na partida.
+    const cards: CartaValidavel[] = [
+      comandanteLendario,
+      ...enche(99),
+      {
+        name: 'Mana Crypt',
+        quantity: 1,
+        boardType: 'SIDEBOARD',
+        typeLine: 'Artifact',
+        legalities: { commander: 'banned' },
+      },
+    ];
+    expect(acharCodigo(cards, 'commander', 'BANIDA')).toBeUndefined();
+  });
+
+  it('restrita em duas impressões (1 + 1) é acusada no Vintage', () => {
+    const lotus = {
+      name: 'Black Lotus',
+      quantity: 1,
+      boardType: 'MAIN',
+      typeLine: 'Artifact',
+      legalities: { vintage: 'restricted' },
+    };
+    const cards = [...enche(58), { ...lotus, scryfallId: 'lea' }, { ...lotus, scryfallId: 'leb' }];
+    const achado = acharCodigo(cards, 'vintage', 'RESTRITA');
+    expect(achado?.mensagem).toMatch(/Black Lotus \(2\)/);
+    // Uma entrada por NOME, não por impressão.
+    expect(achado?.cartas).toEqual(['Black Lotus']);
+  });
+
+  it('uma única cópia de restrita continua legal', () => {
+    const lotus: CartaValidavel = {
+      name: 'Black Lotus',
+      quantity: 1,
+      typeLine: 'Artifact',
+      legalities: { vintage: 'restricted' },
+    };
+    expect(acharCodigo([...enche(59), lotus], 'vintage', 'RESTRITA')).toBeUndefined();
+  });
+});
+
+describe('legalidade — o comandante que cada formato aceita', () => {
+  it('Brawl aceita planeswalker lendário como comandante', () => {
+    const jace: CartaValidavel = {
+      ...comandanteLendario,
+      name: 'Jace, Wielder of Mysteries',
+      typeLine: 'Legendary Planeswalker — Jace',
+      colorIdentity: ['U'],
+    };
+    expect(acharCodigo([jace, ...enche(59)], 'brawl', 'TIPO_DE_COMANDANTE')).toBeUndefined();
+    expect(
+      acharCodigo([jace, ...enche(99)], 'historic_brawl', 'TIPO_DE_COMANDANTE'),
+    ).toBeUndefined();
+  });
+
+  it('Commander continua avisando sobre planeswalker sem "pode ser seu comandante"', () => {
+    const jace: CartaValidavel = {
+      ...comandanteLendario,
+      typeLine: 'Legendary Planeswalker — Jace',
+    };
+    expect(acharCodigo([jace, ...enche(99)], 'commander', 'TIPO_DE_COMANDANTE')).toBeDefined();
+  });
+
+  it('PDH aceita criatura incomum NÃO lendária como comandante', () => {
+    const murasa: CartaValidavel = {
+      ...comandanteLendario,
+      name: 'Murasa Rootgrazer',
+      typeLine: 'Creature — Elemental',
+      rarity: 'uncommon',
+      colorIdentity: ['G', 'W'],
+    };
+    const legal = avaliarLegalidade({ formatId: 'pdh', cards: [murasa, ...enche(99)] });
+    expect(legal.achados.find((a) => a.codigo === 'TIPO_DE_COMANDANTE')).toBeUndefined();
+  });
+
+  it('PDH ainda avisa quando o comandante não é criatura', () => {
+    const feitico: CartaValidavel = {
+      ...comandanteLendario,
+      name: 'Lightning Bolt',
+      typeLine: 'Instant',
+      rarity: 'uncommon',
+    };
+    expect(acharCodigo([feitico, ...enche(99)], 'pdh', 'TIPO_DE_COMANDANTE')).toBeDefined();
+  });
+
+  it('PDH não acusa o comandante de fora do pool — `paupercommander` descreve as 99', () => {
+    const tatyova: CartaValidavel = {
+      ...comandanteLendario,
+      name: 'Tatyova, Benthic Druid',
+      typeLine: 'Legendary Creature — Merfolk Druid',
+      rarity: 'uncommon',
+      colorIdentity: ['G', 'U'],
+      legalities: { paupercommander: 'not_legal' },
+    };
+    const cards = [tatyova, ...enche(99, { legalities: { paupercommander: 'legal' } })];
+    expect(acharCodigo(cards, 'pdh', 'FORA_DO_FORMATO')).toBeUndefined();
+  });
+
+  it('PDH continua acusando uma carta das 99 fora do pool', () => {
+    const cards: CartaValidavel[] = [
+      { ...comandanteLendario, rarity: 'uncommon' },
+      ...enche(98, { legalities: { paupercommander: 'legal' } }),
+      {
+        name: 'Sol Ring',
+        quantity: 1,
+        typeLine: 'Artifact',
+        legalities: { paupercommander: 'not_legal' },
+      },
+    ];
+    expect(acharCodigo(cards, 'pdh', 'FORA_DO_FORMATO')?.cartas).toEqual(['Sol Ring']);
+  });
+});
+
+describe('legalidade — raridade de Pauper é de QUALQUER impressão', () => {
+  it('Counterspell de MH2 (incomum) com pauper=legal não é acusado', () => {
+    const counterspell: CartaValidavel = {
+      name: 'Counterspell',
+      quantity: 1,
+      typeLine: 'Instant',
+      rarity: 'uncommon',
+      legalities: { pauper: 'legal' },
+    };
+    expect(acharCodigo([...enche(59), counterspell], 'pauper', 'RARIDADE')).toBeUndefined();
+  });
+
+  it('sem a legalidade da Scryfall, a raridade da impressão continua valendo', () => {
+    // Recuo: hidratação parcial não pode transformar "não sei" em "legal".
+    const rara: CartaValidavel = { name: 'Rara', quantity: 1, typeLine: 'Instant', rarity: 'rare' };
+    expect(acharCodigo([...enche(59), rara], 'pauper', 'RARIDADE')).toBeDefined();
+  });
+});
+
+describe('formato — PDH começa com 30 de vida', () => {
+  it('as regras oficiais são 30 de vida, não os 40 de Commander', () => {
+    expect(acharFormato('pdh').vidaInicial).toBe(30);
   });
 });

@@ -113,6 +113,29 @@ Base do cálculo: ~8 MB de RAM por sala (`NFR-07`) e CPU dominada pela serializa
 
 **Ferramenta:** GitHub Actions.
 
+### 3.0 O que roda hoje (`.github/workflows/ci.yml`)
+
+As seções 3.1 e 3.2 são o alvo; isto é o que existe. Dispara em push para `main`,
+`develop`, `release/**`, `hotfix/**`, `feature/**` e `fix/**`, em todo pull request e
+pelo botão **Run workflow** da aba Actions. Três jobs em paralelo — o PR só fica
+verde com os três:
+
+| Job         | O que verifica                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| `qualidade` | Atribuição a ferramenta nos commits, mirror de schema, formatação, paridade de intenções, lint, typecheck           |
+| `testes`    | Jest em matriz — um job por app (`backend-core`, `game-server`, `frontend`), `--ci --maxWorkers=2`, sem `fail-fast` |
+| `build-e2e` | `pnpm build` e o E2E das telas públicas no Chromium; o relatório do Playwright sobe como artefato quando falha      |
+
+Era um job só, em fila: um lint quebrado escondia o resultado dos testes, e a
+falha de um app só aparecia depois de todos os passos anteriores.
+
+O lint do frontend é a CLI do ESLint (`eslint src`) com o plugin do Next declarado
+no `eslint.config.mjs` da raiz. Era `next lint`, que está deprecado (sai no Next 16)
+e nunca tinha carregado o plugin do Next — as regras dele não rodavam.
+
+Fora do CI ainda: testes de integração com banco, auditoria de informação oculta
+(G1), `npm audit`/secret scanning, imagens Docker e deploy (seções abaixo).
+
 ### 3.1 Pipeline de PR
 
 ```

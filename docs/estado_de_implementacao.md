@@ -24,9 +24,9 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 
 ## 2. Cobertura
 
-- Contrato (`IntentPayloadMap`): **96** intenções
-- Implementadas no servidor: **90**
-- Emitidas pelo cliente: **90**
+- Contrato (`IntentPayloadMap`): **101** intenções
+- Implementadas no servidor: **95**
+- Emitidas pelo cliente: **95**
 - Emitidas SEM handler no servidor: **0** (nenhuma — é o que se quer)
 
 ## 3. Tabela
@@ -36,8 +36,10 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_ADD_COUNTER`          |    ✅    |   ✅    |
 | `INTENT_ADD_DAMAGE`           |    ✅    |   ✅    |
 | `INTENT_ADD_PLAYER_COUNTER`   |    ✅    |   ✅    |
+| `INTENT_ARRANGE_PEEKED`       |    ✅    |   ✅    |
 | `INTENT_ARROW`                |    ✅    |   ✅    |
 | `INTENT_ATTACH`               |    ✅    |   ✅    |
+| `INTENT_BATCH_CHANGE_ZONE`    |    ✅    |   ✅    |
 | `INTENT_BATCH_COUNTER`        |    ✅    |   ✅    |
 | `INTENT_BATCH_UPDATE`         |    ✅    |   ✅    |
 | `INTENT_BRING_TO_FRONT`       |    ✅    |   ✅    |
@@ -68,6 +70,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_KEEP_HAND`            |    ✅    |   ✅    |
 | `INTENT_KICK_PLAYER`          |    ✅    |   ✅    |
 | `INTENT_LEAVE`                |    ✅    |   ✅    |
+| `INTENT_MANA_POOL`            |    ✅    |   ✅    |
 | `INTENT_MELD`                 |    —     |    —    |
 | `INTENT_MILL`                 |    ✅    |   ✅    |
 | `INTENT_MOVE_CARD`            |    ✅    |   ✅    |
@@ -79,6 +82,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_PLANESWALK`           |    —     |    —    |
 | `INTENT_RANDOM_CARD`          |    ✅    |   ✅    |
 | `INTENT_RANDOM_PLAYER`        |    ✅    |   ✅    |
+| `INTENT_REACTION`             |    ✅    |   ✅    |
 | `INTENT_RELEASE`              |    ✅    |   ✅    |
 | `INTENT_REORDER`              |    ✅    |   ✅    |
 | `INTENT_REQUEST_VIEW`         |    ✅    |   ✅    |
@@ -129,6 +133,7 @@ justamente o tipo de defeito que não aparece em nenhum teste de unidade.
 | `INTENT_UNTAP_ALL`            |    ✅    |   ✅    |
 | `INTENT_UPDATE_PROPERTY`      |    ✅    |   ✅    |
 | `INTENT_VENTURE`              |    —     |    —    |
+| `INTENT_VOTE_KICK`            |    ✅    |   ✅    |
 
 ## 4. Pendências declaradas
 

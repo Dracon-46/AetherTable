@@ -21,7 +21,13 @@ import {
   ChevronRight,
   Copy,
   Dices,
+  Coins,
   Crosshair,
+  Droplets,
+  Smile,
+  ChevronsRight,
+  Minus,
+  Plus,
   Eye,
   FlipHorizontal,
   Hand,
@@ -44,6 +50,7 @@ import { useGameStore, useUIStore } from '../store/game.store';
 import { useCardCatalog } from '../cards/catalog';
 import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
+import { LISTA_DE_REACOES } from './reacoes';
 
 interface ContextMenuProps {
   room: Room<RoomState>;
@@ -90,6 +97,15 @@ interface Acao {
     max: number;
     executar: (n: number) => void;
   };
+  /**
+   * Pede DOIS números (poder e resistência). O servidor sempre aceitou P/R
+   * exato (`INTENT_SET_PT`), e a interface só sabia somar de um em um: virar
+   * uma criatura em 7/7 eram doze cliques.
+   */
+  pr?: {
+    padrao: [number, number];
+    executar: (p: number, r: number) => void;
+  };
 }
 
 export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
@@ -111,6 +127,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
    */
   const anexosDesativados = useUIStore((s) => s.anexosDesativados);
   const catalogo = useCardCatalog((s) => s.cartas);
+  const toggleModal = useUIStore((s) => s.toggleModal);
 
   const cards = useGameStore((s) => s.cards);
   const players = useGameStore((s) => s.players);
@@ -131,6 +148,9 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   /** Ação esperando um número. `null` = ninguém. */
   const [pedindo, setPedindo] = useState<Acao | null>(null);
   const [qtd, setQtd] = useState(1);
+  const [pr, setPr] = useState<[number, number]>([0, 0]);
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
+  const setManaAberto = useUIStore((s) => s.setManaAberto);
 
   /**
    * Fechar o menu ou trocar de alvo volta para a raiz.
@@ -179,6 +199,114 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   const executar = (fn: () => void) => () => {
     fn();
     fechar();
+  };
+
+  /** Quantas cartas há no grimório do dono — para "posição X a partir do topo". */
+  const tamanhoDoGrimorio = (dono: string) => players[dono]?.libraryCount ?? 0;
+
+  /**
+   * ─── MARCADORES: OS GESTOS QUE ANTES PEDIAM O EDITOR ─────────────────────
+   *
+   * Proliferate, Doubling Season e Vorinclex pedem "mais um em todos" e "o
+   * dobro em todos" — no editor isso era um clique por tipo de marcador. Os
+   * gestos em lote só aparecem quando a carta tem marcador: numa carta limpa
+   * eles não fariam nada.
+   */
+  const menuDeMarcadores = (card: (typeof cards)[string]): Acao[] => {
+    const existentes = Object.entries(card.counters ?? {}).filter(([, v]) => v > 0);
+    const emTodos = (fn: (valor: number) => number) =>
+      executar(() =>
+        existentes.forEach(([nome, v]) => intents.addCounter(room, card.id, nome, fn(v))),
+      );
+    return [
+      {
+        rotulo: 'Marcador +1/+1',
+        icone: <Plus className="h-4 w-4" />,
+        onClick: executar(() => intents.addCounter(room, card.id, '+1/+1', 1)),
+      },
+      {
+        rotulo: 'Marcador −1/−1',
+        icone: <Minus className="h-4 w-4" />,
+        onClick: executar(() => intents.addCounter(room, card.id, '-1/-1', 1)),
+      },
+      {
+        rotulo: 'Outro marcador…',
+        icone: <Sparkles className="h-4 w-4" />,
+        onClick: executar(() => setEditingCard(card.id)),
+      },
+      ...(existentes.length > 0
+        ? [
+            {
+              rotulo: 'Mais um em todos (proliferar)',
+              icone: <Plus className="h-4 w-4" />,
+              onClick: emTodos(() => 1),
+            },
+            {
+              rotulo: 'Menos um em todos',
+              icone: <Minus className="h-4 w-4" />,
+              onClick: emTodos(() => -1),
+            },
+            {
+              rotulo: 'Dobrar todos',
+              icone: <Layers className="h-4 w-4" />,
+              onClick: emTodos((v) => v),
+            },
+            {
+              rotulo: 'Limpar marcadores',
+              icone: <Trash2 className="h-4 w-4" />,
+              perigo: true,
+              onClick: executar(() => intents.clearCounters(room, card.id)),
+            },
+          ]
+        : []),
+    ];
+  };
+
+  /**
+   * P/R atual: o sobreposto, se houver; senão o impresso da face visível.
+   * "*" e campo vazio valem 0 — é o que a carta vale na mesa sem efeito.
+   */
+  const prAtual = (card: (typeof cards)[string]): [number, number] => {
+    if (card.hasPtOverride) return [card.powerOverride, card.toughnessOverride];
+    const meta = card.scryfallId ? catalogo[card.scryfallId] : undefined;
+    const face = meta?.faces[card.isFlipped ? 1 : 0] ?? meta?.faces[0];
+    return [
+      Number(face?.power ?? meta?.power ?? 0) || 0,
+      Number(face?.toughness ?? meta?.toughness ?? 0) || 0,
+    ];
+  };
+
+  const menuDePr = (card: (typeof cards)[string]): Acao[] => {
+    const [p, r] = prAtual(card);
+    const ajustar = (dp: number, dr: number) =>
+      executar(() => intents.setPt(room, card.id, p + dp, r + dr, true));
+    return [
+      {
+        rotulo: `Definir P/R… (agora ${p}/${r})`,
+        icone: <Swords className="h-4 w-4" />,
+        pr: {
+          padrao: [p, r],
+          executar: (np, nr) => intents.setPt(room, card.id, np, nr, true),
+        },
+      },
+      { rotulo: '+1 de poder', icone: <Plus className="h-4 w-4" />, onClick: ajustar(1, 0) },
+      { rotulo: '−1 de poder', icone: <Minus className="h-4 w-4" />, onClick: ajustar(-1, 0) },
+      { rotulo: '+1 de resistência', icone: <Plus className="h-4 w-4" />, onClick: ajustar(0, 1) },
+      {
+        rotulo: '−1 de resistência',
+        icone: <Minus className="h-4 w-4" />,
+        onClick: ajustar(0, -1),
+      },
+      ...(card.hasPtOverride
+        ? [
+            {
+              rotulo: 'Voltar ao P/R impresso',
+              icone: <RotateCcw className="h-4 w-4" />,
+              onClick: executar(() => intents.setPt(room, card.id, 0, 0, false)),
+            },
+          ]
+        : []),
+    ];
   };
 
   let titulo = 'Mesa';
@@ -457,7 +585,83 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
     ];
   } else if (alvo === 'zone') {
     titulo = 'Mesa';
+    /**
+     * ─── O CAMPO VAZIO TAMBÉM É ONDE A MESA "FAZ COISAS" ─────────────────────
+     *
+     * Passar o turno, criar ficha, rolar dado e reagir viviam só na barra de
+     * ações — que nasce recolhida. Quem joga com o mouse na mesa abria o menu
+     * do campo e não achava nada disso. Passar o turno só aparece na sua vez:
+     * fora dela o servidor recusa, e um item que sempre falha é pior que item
+     * nenhum.
+     */
+    const minhaVez = !activePlayerId || activePlayerId === myId;
     acoes = [
+      ...(minhaVez
+        ? [
+            {
+              rotulo: 'Passar o turno',
+              icone: <ChevronsRight className="h-4 w-4" />,
+              onClick: executar(() => intents.passTurn(room)),
+            },
+          ]
+        : []),
+      {
+        rotulo: 'Criar ficha…',
+        icone: <Sparkles className="h-4 w-4" />,
+        onClick: executar(() => toggleModal('tokens')),
+      },
+      {
+        rotulo: 'Rolar dado',
+        icone: <Dices className="h-4 w-4" />,
+        itens: [
+          ...[6, 20].map((lados) => ({
+            rotulo: `D${lados}`,
+            icone: <Dices className="h-4 w-4" />,
+            onClick: executar(() => intents.rollDice(room, lados)),
+          })),
+          {
+            rotulo: 'Vários D6…',
+            icone: <Dices className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantos D6 rolar de uma vez',
+              padrao: 2,
+              min: 1,
+              max: 20,
+              executar: (n: number) => intents.rollDice(room, 6, n),
+            },
+          },
+          {
+            rotulo: 'Outro dado (DX)…',
+            icone: <Dices className="h-4 w-4" />,
+            quantidade: {
+              rotulo: 'Quantos lados tem o dado',
+              padrao: 10,
+              min: 2,
+              max: 1000,
+              executar: (n: number) => intents.rollDice(room, n),
+            },
+          },
+        ],
+      },
+      {
+        rotulo: 'Virar moeda',
+        icone: <Coins className="h-4 w-4" />,
+        onClick: executar(() => intents.flipCoin(room)),
+      },
+      {
+        rotulo: 'Reagir',
+        icone: <Smile className="h-4 w-4" />,
+        itens: LISTA_DE_REACOES.map((r) => ({
+          rotulo: `${r.emoji}  ${r.rotulo}`,
+          icone: <Smile className="h-4 w-4" />,
+          onClick: executar(() => intents.react(room, r.tipo)),
+        })),
+      },
+      {
+        rotulo: 'Rastreador de mana',
+        icone: <Droplets className="h-4 w-4" />,
+        onClick: executar(() => setManaAberto(true)),
+      },
       /**
        * COMPRAR ABRE O MENU DA MESA.
        *
@@ -553,13 +757,183 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
       },
     ];
 
+    /** Os outros assentos, em ordem de mesa — alvo de "enviar" e "entregar". */
+    const oponentes = Object.values(players)
+      .filter((p) => p.id !== myId)
+      .sort((a, b) => a.seat - b.seat);
+
+    /**
+     * CRIAR FICHA A PARTIR DA CARTA.
+     *
+     * O gerador de fichas só abria pelo botão da barra de ações, e lá era
+     * preciso BUSCAR o token: quem joga Avenger of Zendikar digitava "plant" a
+     * cada terreno. A Scryfall diz quais fichas cada carta cria (`all_parts`),
+     * e o catálogo já as guarda — o menu oferece essas primeiro, e o gerador
+     * completo fica como "Outra ficha…".
+     *
+     * Para qualquer carta visível, inclusive de oponente: a ficha é criada no
+     * campo de QUEM clicou (Forsaken Monument não, mas Rite of Replication sim).
+     */
+    const relacionadas = (card.scryfallId && catalogo[card.scryfallId]?.fichas) || [];
+    const criarFicha = (f: { scryfallId: string; name: string }) =>
+      intents.createToken(room, { scryfallId: f.scryfallId, name: f.name, x: 0, y: 0 });
+    if (relacionadas.length === 1) {
+      acoes.push({
+        rotulo: `Criar ficha: ${relacionadas[0]!.name}`,
+        icone: <Sparkles className="h-4 w-4" />,
+        onClick: executar(() => criarFicha(relacionadas[0]!)),
+      });
+    } else if (relacionadas.length > 1) {
+      acoes.push({
+        rotulo: 'Criar ficha',
+        icone: <Sparkles className="h-4 w-4" />,
+        itens: [
+          ...relacionadas.map((f) => ({
+            rotulo: f.name,
+            icone: <Sparkles className="h-4 w-4" />,
+            onClick: executar(() => criarFicha(f)),
+          })),
+          {
+            rotulo: 'Outra ficha…',
+            icone: <Search className="h-4 w-4" />,
+            onClick: executar(() => toggleModal('tokens')),
+          },
+        ],
+      });
+    }
+    // Com várias relacionadas, "Outra ficha…" já está no fim do submenu.
+    if (relacionadas.length <= 1) {
+      acoes.push({
+        rotulo: relacionadas.length ? 'Outra ficha…' : 'Criar ficha…',
+        icone: <Search className="h-4 w-4" />,
+        onClick: executar(() => toggleModal('tokens')),
+      });
+    }
+
+    // COPIAR UMA PERMANENTE DO OPONENTE. A ação só aparecia para quem
+    // controlava a carta — e o caso mais comum de cópia em Magic (Clone,
+    // Spark Double) é justamente copiar a criatura de outro jogador.
+    if (!meu && card.zone === 'BATTLEFIELD') {
+      acoes.push(
+        {
+          rotulo: 'Clonar para a minha mesa',
+          icone: <Copy className="h-4 w-4" />,
+          onClick: executar(() => intents.copyCard(room, card.id)),
+        },
+        {
+          // A habilidade copiada (Strionic Resonator) ou a cópia de uma
+          // permanente alheia que vai para a pilha antes de resolver.
+          rotulo: 'Criar cópia na pilha',
+          icone: <Layers className="h-4 w-4" />,
+          onClick: executar(() => intents.copyCard(room, card.id, 'STACK')),
+        },
+      );
+    }
+
     if (meu) {
+      /**
+       * ─── DA MÃO, COM A FACE PARA BAIXO OU PARA OUTRO CAMPO ──────────────────
+       *
+       * Morph, manifest e disguise só existiam como "baixe virada para cima e
+       * depois vire" — e entre os dois gestos a carta ficava visível para a
+       * mesa inteira. A face agora vai junto da troca de zona, no mesmo patch.
+       */
+      if (card.zone === 'HAND') {
+        acoes.push(
+          {
+            /**
+             * CONJURAR PELA PILHA. Jogar direto no campo pula o momento em que
+             * a mesa responde — e "eu conjuro isto, alguém responde?" é a
+             * conversa mais comum de uma partida. A carta fica na pilha, à
+             * vista de todos, até quem a controla resolvê-la.
+             */
+            rotulo: 'Conjurar (pôr na pilha)',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.changeZone(room, card.id, 'STACK')),
+          },
+          {
+            rotulo: 'Jogar virada para baixo',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() =>
+              intents.changeZone(room, card.id, 'BATTLEFIELD', undefined, undefined, undefined, {
+                faceDown: true,
+              }),
+            ),
+          },
+          {
+            rotulo: 'Exilar virada para baixo',
+            icone: <Ban className="h-4 w-4" />,
+            onClick: executar(() =>
+              intents.changeZone(room, card.id, 'EXILE', undefined, undefined, undefined, {
+                faceDown: true,
+              }),
+            ),
+          },
+        );
+        if (oponentes.length > 0) {
+          acoes.push(
+            {
+              rotulo: 'Jogar no campo de',
+              icone: <Send className="h-4 w-4" />,
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() =>
+                  intents.changeZone(
+                    room,
+                    card.id,
+                    'BATTLEFIELD',
+                    undefined,
+                    undefined,
+                    undefined,
+                    {
+                      controllerId: p.id,
+                    },
+                  ),
+                ),
+              })),
+            },
+            {
+              rotulo: 'Entregar virada para',
+              icone: <Layers className="h-4 w-4" />,
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() =>
+                  intents.changeZone(
+                    room,
+                    card.id,
+                    'BATTLEFIELD',
+                    undefined,
+                    undefined,
+                    undefined,
+                    {
+                      controllerId: p.id,
+                      faceDown: true,
+                    },
+                  ),
+                ),
+              })),
+            },
+          );
+        }
+      }
+
       if (card.zone === 'COMMAND') {
-        acoes.push({
-          rotulo: 'Conjurar comandante',
-          icone: <Sparkles className="h-4 w-4" />,
-          onClick: executar(() => intents.castCommander(room, card.id)),
-        });
+        acoes.push(
+          {
+            rotulo: 'Conjurar comandante',
+            icone: <Sparkles className="h-4 w-4" />,
+            onClick: executar(() => intents.castCommander(room, card.id)),
+          },
+          {
+            // O imposto conta na SAÍDA da zona de comando — para a pilha ou
+            // direto para o campo —, e não de novo quando a pilha resolve.
+            rotulo: 'Conjurar pela pilha',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.changeZone(room, card.id, 'STACK')),
+          },
+        );
       }
       if (card.zone === 'BATTLEFIELD') {
         acoes.push(
@@ -574,19 +948,14 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
             onClick: executar(() => intents.setFaceDown(room, card.id, !card.faceDown)),
           },
           {
-            rotulo: '+1/+1',
+            rotulo: 'Marcadores',
             icone: <Sparkles className="h-4 w-4" />,
-            onClick: executar(() => intents.addCounter(room, card.id, '+1/+1', 1)),
+            itens: menuDeMarcadores(card),
           },
           {
-            rotulo: '−1/−1',
-            icone: <Sparkles className="h-4 w-4" />,
-            onClick: executar(() => intents.addCounter(room, card.id, '-1/-1', 1)),
-          },
-          {
-            rotulo: 'Limpar marcadores',
-            icone: <Trash2 className="h-4 w-4" />,
-            onClick: executar(() => intents.clearCounters(room, card.id)),
+            rotulo: 'Poder / resistência',
+            icone: <Swords className="h-4 w-4" />,
+            itens: menuDePr(card),
           },
           {
             rotulo: 'Trazer para frente',
@@ -636,9 +1005,16 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
           {
             // Cópia de permanente: sai deslocada da original e entra marcada
             // como `isCopy`, para o jogador saber qual sai da mesa no fim.
-            rotulo: 'Copiar para a mesa',
+            rotulo: 'Clonar (cópia como ficha)',
             icone: <Copy className="h-4 w-4" />,
             onClick: executar(() => intents.copyCard(room, card.id)),
+          },
+          {
+            // Uma habilidade ativada ou desencadeada desta permanente, para a
+            // mesa ver o que está esperando para resolver.
+            rotulo: 'Criar cópia na pilha',
+            icone: <Layers className="h-4 w-4" />,
+            onClick: executar(() => intents.copyCard(room, card.id, 'STACK')),
           },
           {
             rotulo: 'Apontar seta para…',
@@ -662,16 +1038,31 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
          * Quem controla passa a desenhar a carta na PRÓPRIA faixa: é isso que
          * faz "dar o controle" e "mandar para a mesa dele" serem a mesma coisa.
          */
-        Object.values(players)
-          .filter((p) => p.id !== myId)
-          .sort((a, b) => a.seat - b.seat)
-          .forEach((p) => {
-            acoes.push({
-              rotulo: `Enviar para a mesa de ${p.name}`,
+        // Viraram submenus: uma entrada por oponente na raiz, vezes dois
+        // gestos ("enviar" e "entregar virada"), passava de catorze linhas
+        // numa mesa de oito e empurrava "Para a mão" para fora da tela.
+        if (oponentes.length > 0) {
+          acoes.push(
+            {
+              rotulo: 'Enviar para a mesa de',
               icone: <Send className="h-4 w-4" />,
-              onClick: executar(() => intents.giveCard(room, card.id, p.id)),
-            });
-          });
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() => intents.giveCard(room, card.id, p.id)),
+              })),
+            },
+            {
+              rotulo: 'Entregar virada para',
+              icone: <Layers className="h-4 w-4" />,
+              itens: oponentes.map((p) => ({
+                rotulo: p.name,
+                icone: <Users className="h-4 w-4" />,
+                onClick: executar(() => intents.giveCard(room, card.id, p.id, true)),
+              })),
+            },
+          );
+        }
       }
 
       acoes.push(
@@ -711,10 +1102,61 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
           icone: <Ban className="h-4 w-4" />,
           onClick: executar(() => intents.changeZone(room, card.id, 'EXILE')),
         },
+        ...(card.zone === 'BATTLEFIELD'
+          ? [
+              {
+                rotulo: 'Exilar virada para baixo',
+                icone: <Ban className="h-4 w-4" />,
+                onClick: executar(() =>
+                  intents.changeZone(room, card.id, 'EXILE', undefined, undefined, undefined, {
+                    faceDown: true,
+                  }),
+                ),
+              },
+            ]
+          : []),
         {
-          rotulo: 'Topo do grimório',
+          // "Topo" era a única entrada para o grimório: o fundo só existia como
+          // atalho de teclado sem tecla de fábrica, e "terceira a partir do
+          // topo" (Hinder, Spin into Myth, Brainstorm ao contrário) não existia.
+          rotulo: 'Para o grimório',
           icone: <ArrowDownToLine className="h-4 w-4" />,
-          onClick: executar(() => intents.changeZone(room, card.id, 'LIBRARY')),
+          itens: [
+            {
+              rotulo: 'Topo do grimório',
+              icone: <ArrowUpDown className="h-4 w-4" />,
+              onClick: executar(() => intents.changeZone(room, card.id, 'LIBRARY')),
+            },
+            {
+              rotulo: 'Fundo do grimório',
+              icone: <ArrowDownToLine className="h-4 w-4" />,
+              // Índice 0 = fundo; o topo é o FIM do array.
+              onClick: executar(() =>
+                intents.changeZone(room, card.id, 'LIBRARY', undefined, undefined, 0),
+              ),
+            },
+            {
+              rotulo: 'Na posição X a partir do topo…',
+              icone: <Layers className="h-4 w-4" />,
+              quantidade: {
+                rotulo: 'Posição a partir do topo (1 = no topo)',
+                padrao: 2,
+                min: 1,
+                max: tamanhoDoGrimorio(card.ownerId) + 1,
+                // Com N cartas, a posição X do topo é o índice N − (X − 1): o
+                // topo é o fim do array, e inserir em N empilha no topo.
+                executar: (x: number) =>
+                  intents.changeZone(
+                    room,
+                    card.id,
+                    'LIBRARY',
+                    undefined,
+                    undefined,
+                    Math.max(0, tamanhoDoGrimorio(card.ownerId) - (x - 1)),
+                  ),
+              },
+            },
+          ],
         },
       );
 
@@ -747,6 +1189,11 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
   };
 
   const abrir = (a: Acao) => {
+    if (a.pr) {
+      setPr(a.pr.padrao);
+      setPedindo(a);
+      return;
+    }
     if (a.quantidade) {
       setQtd(a.quantidade.padrao);
       setPedindo(a);
@@ -780,7 +1227,51 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
         </div>
       )}
 
-      {pedindo?.quantidade ? (
+      {pedindo?.pr ? (
+        <form
+          className="flex flex-col gap-2 p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            // Os limites do schema (`SetPtIntent`): fora deles o servidor recusa.
+            const limitar = (n: number) => Math.max(-99, Math.min(99, Math.round(n) || 0));
+            pedindo.pr!.executar(limitar(pr[0]), limitar(pr[1]));
+            fechar();
+          }}
+        >
+          <label className="text-text-faint text-[10px] leading-snug">Poder / resistência</label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              autoFocus
+              min={-99}
+              max={99}
+              value={pr[0]}
+              onChange={(e) => setPr([Number(e.target.value), pr[1]])}
+              onFocus={(e) => e.target.select()}
+              aria-label="Poder"
+              className="border-panel-border bg-table-deep text-text focus:border-primary w-full rounded-md border px-2 py-1.5 text-center text-sm focus:outline-none"
+            />
+            <span className="text-text-muted">/</span>
+            <input
+              type="number"
+              min={-99}
+              max={99}
+              value={pr[1]}
+              onChange={(e) => setPr([pr[0], Number(e.target.value)])}
+              onFocus={(e) => e.target.select()}
+              aria-label="Resistência"
+              className="border-panel-border bg-table-deep text-text focus:border-primary w-full rounded-md border px-2 py-1.5 text-center text-sm focus:outline-none"
+            />
+            <button
+              type="submit"
+              aria-label="Confirmar"
+              className="bg-primary hover:bg-primary-hover flex shrink-0 items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold text-white transition-colors"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </form>
+      ) : pedindo?.quantidade ? (
         <form
           className="flex flex-col gap-2 p-3"
           onSubmit={(e) => {
@@ -830,7 +1321,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               <span className="min-w-0 flex-1 truncate">{a.rotulo}</span>
               {/* A seta diz que o item ABRE algo em vez de agir. Sem ela, o
                   jogador clica esperando a ação e recebe outra lista. */}
-              {(a.itens || a.quantidade) && (
+              {(a.itens || a.quantidade || a.pr) && (
                 <ChevronRight className="text-text-faint h-3.5 w-3.5 shrink-0" />
               )}
             </button>

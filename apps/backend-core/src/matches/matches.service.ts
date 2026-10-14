@@ -8,6 +8,7 @@ import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { normalizarConfigDeSala, type ConfigDeSala } from '@aethertable/shared-types';
 import type { CriarPartidaDto, ResumoDePartidaDto } from './matches.dto.js';
+import { AUDIENCIA_DA_MESA } from '../auth/passe-de-mesa.js';
 
 @Injectable()
 export class MatchesService {
@@ -116,7 +117,9 @@ export class MatchesService {
   private assinarConfig(roomCode: string, cfg: ConfigDeSala): string {
     return this.jwtService.sign(
       { roomId: roomCode, cfg },
-      { expiresIn: MatchesService.CONFIG_TOKEN_TTL },
+      // Sem audiência, este passe tinha a mesma cara de um access token para
+      // a `JwtStrategy`. Ver `auth/passe-de-mesa.ts`.
+      { expiresIn: MatchesService.CONFIG_TOKEN_TTL, audience: AUDIENCIA_DA_MESA },
     );
   }
 
@@ -195,7 +198,10 @@ export class MatchesService {
         // `RoomState`, e é de lá que o lobby dele a lê.
         ...(cfg ? { cfg } : {}),
       },
-      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
+      // `audience` é o que impede o passe — que viaja na URL da mesa e é
+      // colado no grupo — de valer como sessão da API em nome de quem o gerou.
+      // Ver `auth/passe-de-mesa.ts`.
+      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL, audience: AUDIENCIA_DA_MESA },
     );
 
     return { seatToken, roomCode, config: cfg ?? null };
@@ -235,6 +241,15 @@ export class MatchesService {
     });
     if (jaExiste) return { id: jaExiste.id, duplicado: true };
 
+    // Só contas que AINDA existem. Uma conta excluída de vez entre o começo e o
+    // fim da partida fazia o `createMany` falhar pela chave estrangeira — e o
+    // resumo inteiro se perdia, junto com a partida de todos os outros.
+    const existentes = await this.prisma.user.findMany({
+      where: { id: { in: dto.participantes } },
+      select: { id: true },
+    });
+    const participantes = existentes.map((u) => u.id);
+
     const resumo = await this.prisma.matchSummary.create({
       data: {
         roomCode: dto.roomCode,
@@ -249,7 +264,7 @@ export class MatchesService {
            * fariam a partida contar em dobro para essa pessoa.
            */
           createMany: {
-            data: dto.participantes.map((userId) => ({ userId })),
+            data: participantes.map((userId) => ({ userId })),
             skipDuplicates: true,
           },
         },
@@ -295,7 +310,9 @@ export class MatchesService {
         // configura mesa nenhuma.
         spectator: true,
       },
-      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL },
+      // Mesma audiência do seat token, pelo mesmo motivo: o link de assistir
+      // também é compartilhado, e não pode abrir a conta de quem o gerou.
+      { jwtid: jti, expiresIn: MatchesService.SEAT_TOKEN_TTL, audience: AUDIENCIA_DA_MESA },
     );
 
     return { seatToken, roomCode, spectator: true as const };
@@ -315,9 +332,30 @@ export class MatchesService {
    * como "esta mesa nao tem voz" e monta a partida sem o LiveKit. Um 403 faria
    * a tela mostrar falha de conexao numa mesa que esta perfeitamente jogavel.
    */
-  async getVoiceToken(userId: string, username: string, roomCode: string) {
+  async getVoiceToken(userId: string, username: string, roomCode: string, passe?: string) {
     if (!(await this.sistema.flagLigada(FLAGS.VOZ))) {
       return { token: null, motivo: 'A voz esta temporariamente desativada na plataforma.' };
+    }
+
+    /**
+     * ─── A VOZ ERA DE QUALQUER UM QUE SOUBESSE O CODIGO ──────────────────────
+     *
+     * O passe de voz saia para qualquer conta logada e qualquer codigo de sala
+     * — e a vitrine publica LISTA os codigos. Bastava uma conta para entrar no
+     * canal de voz de uma mesa alheia, ouvir e falar.
+     *
+     * Quem esta na mesa e o game-server quem sabe, mas a prova ja existe deste
+     * lado: o passe da mesa (seat token) que ESTE servico assinou, com o `sub`
+     * da conta e o `roomId` da sala. Exigi-lo aqui nao custa chamada entre
+     * servicos. Passe de espectador ouve e nao fala: plateia nao tem assento
+     * na conversa da mesa.
+     *
+     * Sem passe valido a resposta e `null`, como no kill switch: o cliente
+     * trata isso como "mesa sem voz" e joga normalmente.
+     */
+    const prova = this.lerPasseDaMesa(passe, userId, roomCode);
+    if (!prova) {
+      return { token: null, motivo: 'Entre na mesa para usar a voz dela.' };
     }
 
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
@@ -332,11 +370,33 @@ export class MatchesService {
     at.addGrant({
       room: roomCode,
       roomJoin: true,
-      canPublish: true,
+      canPublish: !prova.espectador,
       canSubscribe: true,
       canPublishData: false, // Dados vão pelo Colyseus
     });
 
     return { token: await at.toJwt() };
+  }
+
+  /**
+   * O passe da mesa, se for desta conta e desta sala. `verify` com a audiencia
+   * da mesa: um access token comum (sem audiencia) nao serve de prova.
+   */
+  private lerPasseDaMesa(
+    passe: string | undefined,
+    userId: string,
+    roomCode: string,
+  ): { espectador: boolean } | null {
+    if (!passe) return null;
+    try {
+      const claims = this.jwtService.verify<{ sub?: string; roomId?: string; spectator?: boolean }>(
+        passe,
+        { audience: AUDIENCIA_DA_MESA },
+      );
+      if (claims.sub !== userId || claims.roomId !== roomCode) return null;
+      return { espectador: claims.spectator === true };
+    } catch {
+      return null;
+    }
   }
 }

@@ -86,6 +86,14 @@ que ecoa parâmetro de query.
 | CORS              | Lista explícita de origens permitidas                                                                                                 |
 | Rotação           | _Refresh_ rotativo; reuso invalida toda a família                                                                                     |
 | TTL curto         | _Access token_ de 15 min limita a janela de um token vazado                                                                           |
+| **Passe de mesa** | Seat token e passe de espectador saem com `aud: 'aethertable-mesa'`; a `JwtStrategy` recusa qualquer token com audiência              |
+
+**O passe da mesa abria a API inteira (crítico, corrigido).** O seat token era assinado com o mesmo
+segredo do _access token_ e carrega `sub`, e a `JwtStrategy` só conferia o `sub`. Esse é o token que
+viaja: ele mora no link `/play/CODE?token=...` colado no grupo, vale um dia, e quem o abrisse podia
+apagar decks e trocar o perfil como a pessoa que o compartilhou. Agora a API recusa token com
+audiência **ou** com as claims que só um passe tem (`roomId`, `spectator`, `cfg` — cobre os passes
+emitidos antes da mudança). Ver `auth/passe-de-mesa.ts`.
 
 **Severidade:** Alta · **Probabilidade após mitigação:** Muito baixa
 
@@ -99,12 +107,17 @@ servidor.
 | **Camada 1 — borda**     | Cloudflare com proteção DDoS; modo "Under Attack" acionável para a página de criação de sala                  |
 | **Camada 2 — API**       | _Rate limiting_ no gateway (NestJS + Redis): **3 criações de sala por hora** por usuário; 5 logins/min por IP |
 | **Camada 3 — WebSocket** | 30 intenções/s por conexão; mensagem acima de 4 KB fecha a conexão                                            |
-| **Camada 4 — recursos**  | Teto de 200 fichas por jogador; descarte de sala vazia em 10 min; teto de salas por nó                        |
+| **Camada 4 — recursos**  | Teto de 200 fichas por jogador; 99 cópias por carta no deck; descarte de sala vazia em 10 min; teto por nó    |
 | **Camada 5 — cadastro**  | Verificação de e-mail para conta local; OAuth reduz contas descartáveis                                       |
 
 **Ponto de atenção específico de WebSocket:** conexão persistente consome memória no servidor mesmo
 sem tráfego. Um atacante pode abrir milhares de conexões inertes. Mitigação: exigir `seatToken` válido
 **antes** de alocar assento, e _heartbeat_ de 15 s com desconexão em 45 s.
+
+**Quantidade sem teto derrubava o nó do jogo.** A API gravava `quantity: 2000000000` numa linha do
+deck, e o game-server travava o processo inteiro — todas as salas do nó — criando cartas no laço de
+provisionamento. Agora a API limita a 99 por carta (adicionar, alterar, juntar, importar) e o
+provisionamento corta cada linha em 99, para os decks salvos antes do teto.
 
 **Severidade:** Alta · **Probabilidade:** Média (ataque barato e comum)
 
@@ -119,8 +132,15 @@ sem tráfego. Um atacante pode abrir milhares de conexões inertes. Mitigação:
 | **Provedor com e-mail não verificado**  | O vínculo por e-mail exige `email_verified` do provedor; ausência conta como não verificado     |
 | Vinculação indevida de provedor         | Vincular Google/Discord a conta existente exige confirmação explícita — **não implementado**    |
 | Sessão persistente após comprometimento | Troca **e redefinição** de senha invalidam todas as sessões (`FR-19`)                           |
+| **Sessão persistente após punição**     | Suspender/banir grava `tokensValidosApos`; a `JwtStrategy` recusa conta suspensa ou excluída    |
 | **Link de redefinição vazado do banco** | A tabela guarda **SHA-256** do token, nunca o texto                                             |
 | **Reuso do link de redefinição**        | Uso único (`used_at`) + validade de 30 min + cada pedido novo invalida os anteriores            |
+| **Corrida no link de redefinição**      | Consumo atômico: `updateMany` com `usedAt: null` e não expirado, na transação que grava a senha |
+
+**Dois furos fechados nesta tabela.** A suspensão e o banimento só eram conferidos no **login**: quem
+já tinha um token seguia jogando e editando decks até ele expirar. E o uso único do link de
+redefinição era checado na leitura, com marcação incondicional — duas requisições simultâneas com o
+mesmo link (a vítima e quem leu a mesma caixa de entrada) passavam as duas, e valia a última senha.
 
 #### O `state` estava neste documento e não existia no código
 
@@ -170,6 +190,20 @@ suspensa e de OAuth. Duas consequências que não são óbvias:
   e-mail, igualmente, então não distingue conta nenhuma — e precisa ser barulhento, porque o
   contrário é uma tela dizendo "enviamos o link" sem ter enviado.
 
+#### O admin pode escolher a senha de outra pessoa — e isso tem custo
+
+`POST /admin/usuarios/:id/redefinir-senha` aceita `novaSenha` opcional (`DOC-030` §6.1). A decisão
+anterior era o servidor sempre gerar, e mudou a pedido do operador. Os riscos que a motivavam
+continuam valendo e ficam registrados aqui:
+
+| Risco                                                   | Mitigação                                                                                                  |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| O admin **conhece** a credencial de outra pessoa        | Campo opcional — o padrão continua sendo a senha gerada; **todas** as sessões da conta caem nos dois casos |
+| Senha fraca, fácil de ditar                             | A **mesma** regra de tamanho do cadastro (8–200); uma regra mais frouxa aqui burlaria a de lá              |
+| A senha trafega no **corpo da requisição**              | TLS; a resposta devolve `senhaTemporaria: null` em vez de ecoá-la; a API nunca loga corpo de autenticação  |
+| A senha cai na auditoria                                | A auditoria grava `escolhidaPeloAdmin: boolean`, **nunca** o valor                                         |
+| O navegador preenche a senha **salva do próprio admin** | O campo do formulário é `type="password"` com `autocomplete="new-password"`                                |
+
 **Severidade:** Alta · **Probabilidade:** Média
 
 ### 2.5 Controle de acesso quebrado (IDOR)
@@ -182,6 +216,20 @@ suspensa e de OAuth. Duas consequências que não são óbvias:
 | Resposta a acesso negado   | **`404`, não `403`** — não revela a existência do recurso                |
 | IDs não sequenciais        | UUID v4, não inteiro incremental                                         |
 | Deck público               | Só acessível por terceiros quando `is_public = true`                     |
+
+#### No painel admin
+
+| Ameaça                                                    | Mitigação                                                                                                |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Cadastrar-se antes do dono com o e-mail do `ADMIN_EMAILS` | Só promove conta com `emailVerifiedAt` (gravado pelo login social); a não confirmada é logada e ignorada |
+| Moderador encerrar a denúncia **contra si**               | `403` ao assumir ou resolver denúncia cujo denunciado é o próprio moderador                              |
+| IP forjado na trilha de auditoria                         | O IP vem de `req.ip` (`trust proxy: 1`), não do primeiro valor do `X-Forwarded-For`                      |
+
+Os três eram abertos. Os endereços de `ADMIN_EMAILS` não são segredo, e o cadastro por senha não
+confirma e-mail: quem se cadastrasse primeiro com um deles virava ADMIN no próximo boot. O proxy do
+Render **acrescenta** o IP real ao `X-Forwarded-For` recebido, então o "IP de origem" da auditoria era
+escrito por quem estava sendo auditado. E uma denúncia engavetada pelo próprio denunciado sumia da
+fila de abertas.
 
 **Severidade:** Média · **Probabilidade após mitigação:** Baixa
 
@@ -267,6 +315,7 @@ ausência de `scryfallId` e `name` de zona oculta. Falha no teste **bloqueia o m
 | Comprar do grimório alheio           | `ownerId !== sessionId` → rejeitado                                                                                          |
 | `INTENT_SET_LIFE { absolute: 9999 }` | **Permitido** — e visível no log para todos. Ajustar vida é ação legítima na mesa; trapaça grosseira é detectada socialmente |
 | Criar 100.000 fichas                 | Teto de 50/intenção e 200/jogador                                                                                            |
+| Carta banida passando na validação   | `scryfallId` normalizado para minúsculas na API — o id em maiúsculas não casava com a lista de banidas e passava             |
 | Estado inventado                     | **Impossível**: o cliente não envia estado, só intenção (`RN07`)                                                             |
 | Campo desconhecido no payload        | Zod em modo estrito descarta                                                                                                 |
 
@@ -309,22 +358,48 @@ o vocabulário do protocolo simplesmente não tem essa frase.
 | Mensagem de erro      | Nome de carta em `error`/`warning`                   | Proibido citar carta de zona oculta                                   |
 | Requisição de imagem  | Buscar a arte revela a carta a um observador de rede | Nenhuma imagem é requisitada para `LIBRARY` (`FR-23`)                 |
 | Métricas / telemetria | Rótulo por `scryfallId`                              | Métricas nunca rotuladas por carta                                    |
+| Cópia de carta        | Copiar o morph alheio revelava a carta               | Só copia o que `podeVer` libera; cópia de virada sem `scryfallId`     |
+| Cópia de carta        | Clonar a carta da mão revelada **só** a quem copia   | Só copia carta em zona **pública**                                    |
+| Carta virada          | `faceDown` no próprio grimório o revelava ao dono    | `faceDown` só dá visão ao controlador em zona pública                 |
 | Tamanho do pacote     | Inferência estatística sobre o volume do _patch_     | Risco residual aceito: o `@filter` produz pacotes de tamanho parecido |
 | Tempo de resposta     | Diferença de latência revelando ramo de código       | Risco residual aceito; irrelevante na prática                         |
+
+**A cópia era um canal.** `INTENT_COPY_CARD` levava o `scryfallId` e o `faceDown` do original para
+uma carta controlada por quem copiou — e carta virada é visível a quem a controla. Agora só se copia
+o que se pode ver, e a cópia de uma carta virada é uma 2/2 virada sem identidade (`DOC-031` §3.5).
+A carta da mão revelada só a quem copia também vazava: virava uma ficha **pública**, de face para
+cima — por isso a cópia exige zona pública.
+
+**A carta virada era uma chave do grimório.** A cláusula de `faceDown` em `podeVer` valia em qualquer
+zona e vinha antes da regra do grimório: um `BATCH_UPDATE faceDown` nas próprias cartas do grimório
+fazia o dono ler o grimório inteiro, sem uma linha no log. Agora a cláusula só vale em zona pública, e
+`UPDATE_PROPERTY`/`BATCH_UPDATE` ignoram `faceDown` fora de `BATTLEFIELD`/`EXILE`.
 
 **Severidade:** Alta · **Probabilidade:** Média (é fácil esquecer o log)
 
 ### 3.6 Sequestro de sala
 
-| Ameaça                       | Mitigação                                                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Adivinhar `roomId`           | 6 caracteres de um alfabeto de 32 → ~10⁹ combinações; senha opcional; _rate limit_ na tentativa de ingresso |
-| Reutilizar `seatToken`       | Uso único, TTL de 60 s, vinculado ao `roomId`                                                               |
-| Entrar na sala de voz alheia | JWT do LiveKit com `room` no claim                                                                          |
-| Força bruta de senha de sala | 3 tentativas e espera de 30 s por IP                                                                        |
-| Sala de jogador bloqueado    | Verificação de bloqueio no ingresso (`F36`)                                                                 |
+| Ameaça                       | Mitigação                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Adivinhar `roomId`           | 6 caracteres de um alfabeto de 32 → ~10⁹ combinações; senha opcional; _rate limit_ na tentativa de ingresso    |
+| Reutilizar `seatToken`       | Uso único (`jti`), validade de 1 dia, vinculado ao `roomId`; não vale como sessão da API (§2.2)                |
+| Entrar na sala de voz alheia | Passe de voz só com o passe da mesa (`X-Passe-De-Mesa`: `sub` e `roomId` conferidos); plateia sem `canPublish` |
+| Força bruta de senha de sala | 3 tentativas e espera de 30 s por IP                                                                           |
+| Sala de jogador bloqueado    | Verificação de bloqueio no ingresso (`F36`)                                                                    |
+| Expulso voltar à mesa        | **Conta** (`sub`) bloqueada pela vida da sala, também como espectador (`PLAYER_BLOCKED`)                       |
+
+**O expulso voltava pelo código da sala.** O bloqueio de quem o anfitrião removia era por
+`sessionId`, e cada entrada pede um seat token novo, com `sessionId` novo. Agora a sala guarda a
+**conta** de quem sai pelo anfitrião ou por votação (`INTENT_VOTE_KICK`), e o `onAuth` a recusa até a
+sala acabar.
 
 **Severidade:** Média · **Probabilidade:** Baixa
+
+**A voz era de qualquer um que soubesse o código.** O `room` no claim do LiveKit limitava o passe à
+sala, mas o passe saía para QUALQUER conta logada e QUALQUER código — e a vitrine pública lista os
+códigos. Uma conta qualquer entrava no canal de voz de uma mesa alheia, ouvia e falava. Agora o
+`GET /matches/:roomCode/voice-token` exige o passe da mesa como prova de assento (ou de plateia, que
+recebe o passe sem direito de falar).
 
 ### 3.7 Abuso e toxicidade
 
@@ -342,22 +417,23 @@ o vocabulário do protocolo simplesmente não tem essa frase.
 
 ## 4. Matriz consolidada de risco
 
-| #   | Ameaça                               | Superfície | Severidade | Prob.       | Risco    | Controle principal                    |
-| --- | ------------------------------------ | ---------- | ---------- | ----------- | -------- | ------------------------------------- |
-| T1  | **Packet sniffing de zona oculta**   | S2         | Crítica    | Baixa*      | **Alto** | `@filter` + teste `G1`                |
-| T2  | Vazamento por log / canal secundário | S2         | Alta       | Média       | **Alto** | `RN09` + revisão                      |
-| T3  | DDoS / exaustão de WebSocket         | S2, S9     | Alta       | Média       | **Alto** | Cloudflare + _rate limit_ + heartbeat |
-| T4  | Tomada de conta                      | S1, S6     | Alta       | Média       | **Alto** | Argon2id + PKCE + _rate limit_        |
-| T5  | Cadeia de suprimentos                | S8         | Crítica    | Baixa       | Médio    | Lockfile + scan + 2FA                 |
-| T6  | Espectador espião (V2)               | S2         | Alta       | Média       | Médio    | Filtro + teste específico             |
-| T7  | Cliente modificado                   | S4         | Alta       | Baixa       | Médio    | Zod + autorização por intenção        |
-| T8  | XSS no chat                          | S1, S4     | Alta       | Baixa       | Médio    | DOMPurify + CSP + sem HTML            |
-| T9  | IDOR em decks                        | S1         | Média      | Baixa       | Baixo    | Filtro por `user_id` + `404`          |
-| T10 | CSRF                                 | S1         | Alta       | Muito baixa | Baixo    | JWT em header + SameSite              |
-| T11 | SSRF                                 | S5         | Alta       | Baixa       | Baixo    | Lista de permissão de domínio         |
-| T12 | Manipulação de RNG                   | S4         | Média      | Muito baixa | Baixo    | CSPRNG no servidor                    |
-| T13 | Toxicidade                           | S3         | Média      | Média       | Médio    | Mute, bloqueio, report                |
-| T14 | SQLi                                 | S1         | Crítica    | Muito baixa | Baixo    | Prisma + Zod                          |
+| #   | Ameaça                               | Superfície | Severidade | Prob.       | Risco    | Controle principal                      |
+| --- | ------------------------------------ | ---------- | ---------- | ----------- | -------- | --------------------------------------- |
+| T1  | **Packet sniffing de zona oculta**   | S2         | Crítica    | Baixa*      | **Alto** | `@filter` + teste `G1`                  |
+| T2  | Vazamento por log / canal secundário | S2         | Alta       | Média       | **Alto** | `RN09` + revisão                        |
+| T3  | DDoS / exaustão de WebSocket         | S2, S9     | Alta       | Média       | **Alto** | Cloudflare + _rate limit_ + heartbeat   |
+| T4  | Tomada de conta                      | S1, S6     | Alta       | Média       | **Alto** | Argon2id + PKCE + _rate limit_          |
+| T5  | Cadeia de suprimentos                | S8         | Crítica    | Baixa       | Médio    | Lockfile + scan + 2FA                   |
+| T6  | Espectador espião (V2)               | S2         | Alta       | Média       | Médio    | Filtro + teste específico               |
+| T7  | Cliente modificado                   | S4         | Alta       | Baixa       | Médio    | Zod + autorização por intenção          |
+| T8  | XSS no chat                          | S1, S4     | Alta       | Baixa       | Médio    | DOMPurify + CSP + sem HTML              |
+| T9  | IDOR em decks                        | S1         | Média      | Baixa       | Baixo    | Filtro por `user_id` + `404`            |
+| T10 | CSRF                                 | S1         | Alta       | Muito baixa | Baixo    | JWT em header + SameSite                |
+| T11 | SSRF                                 | S5         | Alta       | Baixa       | Baixo    | Lista de permissão de domínio           |
+| T12 | Manipulação de RNG                   | S4         | Média      | Muito baixa | Baixo    | CSPRNG no servidor                      |
+| T13 | Toxicidade                           | S3         | Média      | Média       | Médio    | Mute, bloqueio, report                  |
+| T14 | SQLi                                 | S1         | Crítica    | Muito baixa | Baixo    | Prisma + Zod                            |
+| T15 | Passe de mesa usado como sessão      | S1         | Crítica    | Muito baixa | Baixo    | `aud` própria + recusa na `JwtStrategy` |
 
 \* A probabilidade de T1 é baixa **somente enquanto o teste `G1` estiver ativo no CI**. Sem ele, sobe
 para alta — é um erro de uma linha esquecer o `@filter` num campo novo.

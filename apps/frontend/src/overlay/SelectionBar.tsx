@@ -15,7 +15,7 @@
 
 import React from 'react';
 import type { Room } from 'colyseus.js';
-import { RotateCcw, Layers, Plus, Minus, X, Skull, Hand } from 'lucide-react';
+import { RotateCcw, Layers, Plus, Minus, X, Skull, Hand, Ban } from 'lucide-react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
@@ -28,20 +28,25 @@ export function SelectionBar({ room }: SelectionBarProps) {
   const selecionadas = useUIStore((s) => s.selectedCardIds);
   const limpar = useUIStore((s) => s.clearSelection);
   const cards = useGameStore((s) => s.cards);
+  const myId = useGameStore((s) => s.mySessionId);
 
   if (selecionadas.length < 2) return null;
 
   const validas = selecionadas.filter((id) => cards[id]);
   if (validas.length < 2) return null;
 
-  const todasViradas = validas.every((id) => cards[id]?.isTapped);
+  // As ações valem só para o que EU controlo: a seleção pode incluir carta de
+  // oponente clicada com Shift, e o servidor a ignoraria em silêncio.
+  const minhas = validas.filter((id) => cards[id]?.controllerId === myId);
+  const todasViradas = minhas.every((id) => cards[id]?.isTapped);
   // "Face ↓" mandava sempre `true`: dava para virar a seleção inteira para
   // baixo e não havia como desvirá-la em lote — o caminho de volta era carta
   // por carta, ou a tecla F, que ninguém sabia que existia.
-  const todasParaBaixo = validas.every((id) => cards[id]?.faceDown);
+  const todasParaBaixo = minhas.every((id) => cards[id]?.faceDown);
 
   const botao =
-    'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-panel-hover';
+    'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-panel-hover disabled:cursor-not-allowed disabled:opacity-40';
+  const semAcoes = minhas.length === 0;
 
   return (
     // No mobile fica ACIMA do log recolhido; no desktop, dentro da faixa livre
@@ -57,7 +62,8 @@ export function SelectionBar({ room }: SelectionBarProps) {
         </span>
 
         <button
-          onClick={() => intents.batchUpdate(room, validas, 'isTapped', !todasViradas)}
+          disabled={semAcoes}
+          onClick={() => intents.batchUpdate(room, minhas, 'isTapped', !todasViradas)}
           className={`${botao} hover:text-primary`}
         >
           <RotateCcw className="h-4 w-4" />
@@ -65,7 +71,8 @@ export function SelectionBar({ room }: SelectionBarProps) {
         </button>
 
         <button
-          onClick={() => intents.batchCounter(room, validas, '+1/+1', 1)}
+          disabled={semAcoes}
+          onClick={() => intents.batchCounter(room, minhas, '+1/+1', 1)}
           className={`${botao} hover:text-success`}
         >
           <Plus className="h-4 w-4" />
@@ -73,7 +80,8 @@ export function SelectionBar({ room }: SelectionBarProps) {
         </button>
 
         <button
-          onClick={() => intents.batchCounter(room, validas, '-1/-1', 1)}
+          disabled={semAcoes}
+          onClick={() => intents.batchCounter(room, minhas, '-1/-1', 1)}
           className={`${botao} hover:text-danger`}
         >
           <Minus className="h-4 w-4" />
@@ -81,7 +89,8 @@ export function SelectionBar({ room }: SelectionBarProps) {
         </button>
 
         <button
-          onClick={() => intents.batchUpdate(room, validas, 'faceDown', !todasParaBaixo)}
+          disabled={semAcoes}
+          onClick={() => intents.batchUpdate(room, minhas, 'faceDown', !todasParaBaixo)}
           className={`${botao} hover:text-warning`}
         >
           <Layers className="h-4 w-4" />
@@ -90,12 +99,13 @@ export function SelectionBar({ room }: SelectionBarProps) {
 
         <div className="bg-panel-border mx-1 h-5 w-px shrink-0" />
 
-        {/* Mover em lote não tem intenção própria: uma troca de zona por carta
-            é o caminho correto, e 2–60 cartas cabem no limite de 30/s se o
-            jogador não repetir o gesto. */}
+        {/* UMA mensagem para a seleção inteira. Era uma troca de zona por
+            carta, e o servidor aceita 30 intenções por segundo: 40 fichas
+            mandadas ao cemitério moviam 30 e deixavam 10 no campo, sem erro. */}
         <button
+          disabled={semAcoes}
           onClick={() => {
-            validas.forEach((id) => intents.changeZone(room, id, 'GRAVEYARD'));
+            intents.batchChangeZone(room, minhas, 'GRAVEYARD');
             limpar();
           }}
           className={`${botao} hover:text-danger`}
@@ -105,14 +115,27 @@ export function SelectionBar({ room }: SelectionBarProps) {
         </button>
 
         <button
+          disabled={semAcoes}
           onClick={() => {
-            validas.forEach((id) => intents.changeZone(room, id, 'HAND'));
+            intents.batchChangeZone(room, minhas, 'HAND');
             limpar();
           }}
           className={`${botao} hover:text-primary`}
         >
           <Hand className="h-4 w-4" />
           Mão
+        </button>
+
+        <button
+          disabled={semAcoes}
+          onClick={() => {
+            intents.batchChangeZone(room, minhas, 'EXILE');
+            limpar();
+          }}
+          className={`${botao} hover:text-warning`}
+        >
+          <Ban className="h-4 w-4" />
+          Exílio
         </button>
 
         <button

@@ -28,6 +28,7 @@ import {
   User,
   Home,
   LibraryBig,
+  Compass,
   PanelLeftClose,
   PanelLeft,
   ShieldAlert,
@@ -58,6 +59,8 @@ const NAVEGACAO: ItemDeMenu[] = [
   // apagava assim que o usuário abria um grimório — a navegação perdia a
   // referência de onde ele estava justamente na tela mais profunda.
   { href: '/dashboard/decks', rotulo: 'Meus Grimórios', Icone: LibraryBig, prefixo: true },
+  // Decks públicos de outras contas: o outro lado do interruptor "Público".
+  { href: '/dashboard/explorar', rotulo: 'Explorar', Icone: Compass, prefixo: true },
   { href: '/dashboard/profile', rotulo: 'Meu Perfil', Icone: User },
   { href: '/dashboard/settings', rotulo: 'Ajustes', Icone: Settings },
 ];

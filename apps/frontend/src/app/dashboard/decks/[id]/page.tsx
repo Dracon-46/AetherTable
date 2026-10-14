@@ -49,6 +49,8 @@ import {
   Pencil,
   Loader2,
   DollarSign,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ConfirmDialog, ToastHost, useToast } from '../../../../components/Toast';
@@ -58,6 +60,7 @@ import {
   COLUNAS_DA_GALERIA,
   useAparencia,
   type AgrupamentoDeDeck,
+  type OrdenacaoDeDeck,
   type TamanhoDeCarta,
   type VisaoDeDeck,
 } from '../../../../store/aparencia.store';
@@ -67,6 +70,7 @@ import {
   useAlternarComandante,
   useDeck,
   useImportarLista,
+  useMudarBoard,
   useMudarQuantidade,
   useRemoverCarta,
   useRenomearDeck,
@@ -85,6 +89,12 @@ import {
   type AcoesDeCarta,
 } from '../../../../deckbuilder/VistasDoDeck';
 import { PainelDeLegalidade } from '../../../../deckbuilder/PainelDeLegalidade';
+import {
+  BotaoTestar,
+  DescricaoDoDeck,
+  InterruptorPublico,
+  MenuExportar,
+} from '../../../../deckbuilder/AcoesDoDeck';
 import { acharFormato } from '@aethertable/shared-types';
 import { mensagemDaApi } from '@/lib/fetcher';
 import { useQueryClient } from '@tanstack/react-query';
@@ -114,7 +124,17 @@ const AGRUPAMENTOS: Array<{ valor: AgrupamentoDeDeck; rotulo: string }> = [
   { valor: 'tipo', rotulo: 'Agrupar por tipo' },
   { valor: 'cor', rotulo: 'Agrupar por cor' },
   { valor: 'cmc', rotulo: 'Agrupar por custo' },
+  { valor: 'raridade', rotulo: 'Agrupar por raridade' },
   { valor: 'nenhum', rotulo: 'Sem agrupamento' },
+];
+
+const ORDENACOES: Array<{ valor: OrdenacaoDeDeck; rotulo: string }> = [
+  { valor: 'nome', rotulo: 'Ordenar por nome' },
+  { valor: 'cmc', rotulo: 'Ordenar por valor de mana' },
+  { valor: 'preco', rotulo: 'Ordenar por preço' },
+  { valor: 'tipo', rotulo: 'Ordenar por tipo' },
+  { valor: 'raridade', rotulo: 'Ordenar por raridade' },
+  { valor: 'cor', rotulo: 'Ordenar por cor' },
 ];
 
 /**
@@ -172,8 +192,12 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
   const setVisao = useAparencia((s) => s.setVisaoDeDeck);
   const agrupamento = useAparencia((s) => s.agrupamentoDeDeck);
   const setAgrupamento = useAparencia((s) => s.setAgrupamentoDeDeck);
+  const ordenacao = useAparencia((s) => s.ordenacaoDeDeck);
+  const setOrdenacao = useAparencia((s) => s.setOrdenacaoDeDeck);
   const tamanho = useAparencia((s) => s.tamanhoDeCarta);
   const setTamanho = useAparencia((s) => s.setTamanhoDeCarta);
+  const painelRecolhido = useAparencia((s) => s.painelDeBuscaRecolhido);
+  const alternarPainel = useAparencia((s) => s.alternarPainelDeBusca);
 
   // ── Estado local da tela ─────────────────────────────────────────────────
   const [textoDaLista, setTextoDaLista] = useState('');
@@ -187,6 +211,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
   const mudarQuantidade = useMudarQuantidade(id);
   const removerCarta = useRemoverCarta(id);
   const alternarComandante = useAlternarComandante(id);
+  const mudarBoard = useMudarBoard(id);
   const adicionarCarta = useAdicionarCarta(id);
   const renomear = useRenomearDeck(id);
   const importar = useImportarLista(id);
@@ -199,9 +224,12 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
 
   // ── Derivações memoizadas ────────────────────────────────────────────────
   const cartas = deck?.cards ?? SEM_CARTAS;
-  const grupos = useMemo(() => agruparCartas(cartas, agrupamento), [cartas, agrupamento]);
-  const ordenadas = useMemo(() => ordenarParaExibir(cartas), [cartas]);
-  const bracket = useMemo(() => calcularBracket(cartas), [cartas]);
+  const grupos = useMemo(
+    () => agruparCartas(cartas, agrupamento, ordenacao),
+    [cartas, agrupamento, ordenacao],
+  );
+  const ordenadas = useMemo(() => ordenarParaExibir(cartas, ordenacao), [cartas, ordenacao]);
+  const bracket = useMemo(() => calcularBracket(cartas, deck?.formatId), [cartas, deck?.formatId]);
   const preco = useMemo(() => precoTotal(cartas), [cartas]);
 
   /**
@@ -217,6 +245,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             onRemover: null,
             onAlternarComandante: null,
             onTrocarArte: null,
+            onAlternarReserva: null,
           }
         : {
             onMudarQuantidade: (cardId, delta) => mudarQuantidade.mutate({ cardId, delta }),
@@ -224,8 +253,10 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             onAlternarComandante: (cardId, boardType) =>
               alternarComandante.mutate({ cardId, boardType }),
             onTrocarArte: (carta) => setCartaParaArte(carta),
+            onAlternarReserva: (cardId, boardType) =>
+              mudarBoard.mutate({ cardId, para: boardType === 'SIDEBOARD' ? 'MAIN' : 'SIDEBOARD' }),
           },
-    [somenteLeitura, mudarQuantidade, alternarComandante],
+    [somenteLeitura, mudarQuantidade, alternarComandante, mudarBoard],
   );
 
   const aoAdicionarCarta = useCallback(
@@ -381,14 +412,31 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
               Formato:{' '}
               <span className="text-text font-bold">{acharFormato(deck.formatId).nome}</span>
             </span>
-            <span className={`${chip} flex items-center gap-1.5 font-bold ${bracket.color}`}>
-              <Activity className="h-3.5 w-3.5" /> {bracket.label}
-            </span>
+            {/* Só em formato com zona de comando: "Bracket 1" num deck de Modern
+                era uma afirmação sem sentido. */}
+            {bracket && (
+              <span
+                className={`${chip} flex cursor-help items-center gap-1.5 font-bold ${bracket.color}`}
+                title={bracket.dica}
+              >
+                <Activity className="h-3.5 w-3.5" /> {bracket.label}
+              </span>
+            )}
             <span className={`${chip} hidden sm:inline`}>
               Criado em {new Date(deck.createdAt).toLocaleDateString()}
             </span>
           </div>
+
+          {/* O que se faz COM o deck: testar numa mesa solo, levar a lista para
+              outro site, publicar no Explorar. Ver `AcoesDoDeck`. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <BotaoTestar deck={deck} />
+            <MenuExportar cartas={cartas} nome={deck.name} />
+            <InterruptorPublico deck={deck} />
+          </div>
         </header>
+
+        <DescricaoDoDeck deck={deck} somenteLeitura={somenteLeitura} />
 
         {/* ── Barra de exibição ──────────────────────────────────────────── */}
         <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
@@ -429,6 +477,19 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             {AGRUPAMENTOS.map((a) => (
               <option key={a.valor} value={a.valor}>
                 {a.rotulo}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={ordenacao}
+            onChange={(e) => setOrdenacao(e.target.value as OrdenacaoDeDeck)}
+            className="bg-panel border-panel-border text-text focus:border-primary rounded-md border px-3 py-2 text-xs focus:outline-none sm:text-sm"
+            aria-label="Ordem das cartas"
+          >
+            {ORDENACOES.map((o) => (
+              <option key={o.valor} value={o.valor}>
+                {o.rotulo}
               </option>
             ))}
           </select>
@@ -481,12 +542,14 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
 
         {/* ── Corpo: painel de entrada + lista ───────────────────────────── */}
         <div
-          className={`grid gap-5 lg:gap-8 ${somenteLeitura ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'}`}
+          className={`grid gap-5 lg:gap-8 ${
+            somenteLeitura || painelRecolhido ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'
+          }`}
         >
-          {!somenteLeitura && (
+          {!somenteLeitura && !painelRecolhido && (
             <aside className="lg:col-span-1">
               <div className="bg-panel border-panel-border flex h-full flex-col rounded-xl border p-4 shadow-lg sm:p-6">
-                <div className="border-panel-border mb-5 flex gap-2 border-b pb-2">
+                <div className="border-panel-border mb-5 flex items-center gap-2 border-b pb-2">
                   <button
                     onClick={() => setAbaEsquerda('busca')}
                     className={`flex flex-1 items-center justify-center gap-2 rounded-t-md py-2 text-sm font-medium transition-colors ${
@@ -506,6 +569,14 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                     }`}
                   >
                     <Save className="h-4 w-4" /> Importação
+                  </button>
+                  <button
+                    onClick={alternarPainel}
+                    className="text-text-muted hover:text-text hover:bg-table-deep ml-auto shrink-0 rounded p-1.5 transition-colors"
+                    title="Minimizar painel de busca"
+                    aria-label="Minimizar painel de busca"
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -564,7 +635,18 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
             </aside>
           )}
 
-          <section className={somenteLeitura ? '' : 'min-w-0 lg:col-span-2'}>
+          <section className={somenteLeitura || painelRecolhido ? '' : 'min-w-0 lg:col-span-2'}>
+            {/* Botão para reabrir o painel quando está minimizado */}
+            {!somenteLeitura && painelRecolhido && (
+              <button
+                onClick={alternarPainel}
+                className="bg-panel border-panel-border text-text-muted hover:text-text hover:border-primary mb-4 flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+                title="Expandir painel de busca"
+              >
+                <PanelLeft className="h-4 w-4" />
+                Abrir painel de busca
+              </button>
+            )}
             <div className="bg-panel border-panel-border flex h-full min-h-[24rem] flex-col rounded-xl border p-4 shadow-lg sm:p-6">
               {cartas.length === 0 ? (
                 <div className="border-panel-border text-text-muted flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
@@ -587,8 +669,17 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                           )}
                           <span className="truncate">{grupo.nome}</span>
                         </span>
-                        <span className="text-text-muted bg-table-deep shrink-0 rounded px-2 py-0.5 text-xs font-medium">
-                          {grupo.total}
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {/* Quanto custa cada parte do deck: é onde se vê que
+                              a base de mana é metade do preço. */}
+                          {grupo.preco > 0 && (
+                            <span className="text-text-faint text-xs font-normal">
+                              US$ {grupo.preco.toFixed(2)}
+                            </span>
+                          )}
+                          <span className="text-text-muted bg-table-deep rounded px-2 py-0.5 text-xs font-medium">
+                            {grupo.total}
+                          </span>
                         </span>
                       </h3>
 

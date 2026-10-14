@@ -61,16 +61,6 @@ function aplicarNoDocumento(efetivo: TemaEfetivo): void {
   document.documentElement.dataset.tema = efetivo;
 }
 
-function lerLocal(): Tema {
-  if (typeof window === 'undefined') return TEMA_PADRAO;
-  try {
-    const bruto = window.localStorage.getItem(CHAVE);
-    return bruto === 'CLARO' || bruto === 'ESCURO' || bruto === 'SISTEMA' ? bruto : TEMA_PADRAO;
-  } catch {
-    return TEMA_PADRAO;
-  }
-}
-
 interface TemaState {
   tema: Tema;
   /** O que está desenhado agora — `SISTEMA` já resolvido. */
@@ -145,16 +135,3 @@ export const useTema = create<TemaState>((set, get) => ({
     }
   },
 }));
-
-/**
- * Aplica o que o navegador já sabe, ANTES de a conta responder.
- *
- * Sem isto, quem escolheu claro vê a tela escura por uma volta de rede a cada
- * carga — o "flash do tema errado". O `localStorage` é o caminho rápido e a
- * conta é a fonte da verdade entre dispositivos; é o mesmo desenho dos
- * cosméticos, pelo mesmo motivo.
- */
-export function aplicarTemaLocal(): void {
-  const tema = lerLocal();
-  useTema.getState().aplicarDoServidor(tema);
-}

@@ -66,6 +66,10 @@ import { intents } from '../net/intents';
 import { API_URL } from '@/lib/api';
 import type { RoomState } from '../net/schema/RoomState';
 import { esquecerReconexao } from '@/net/reconexao';
+import { lembrarDeckDaSala } from '@/cards/deck-da-sala';
+
+/** Vidas que a mesa pode combinar além da do formato. */
+const VIDAS_INICIAIS = [10, 20, 25, 30, 40, 50, 60, 100] as const;
 
 interface RoomLobbyProps {
   room: Room<RoomState>;
@@ -156,7 +160,9 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
    * estado ainda não chegou e já há três pessoas na lista, mostrar "3/1" seria
    * pior do que arredondar para cima.
    */
-  const lugares = Math.max(room.state?.maxSeats ?? maxClients ?? players.length, players.length, 1);
+  // Do STORE, e não de `room.state`: ler o schema direto não redesenha nada, e
+  // o anfitrião que abria um assento continuava vendo a grade antiga.
+  const lugares = Math.max(config.maxSeats || maxClients || players.length, players.length, 1);
   const codigo = room.state?.roomCode || roomId;
   const formato = room.state?.gameType || gameType || 'COMMANDER';
 
@@ -178,6 +184,8 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   const escolherDeck = (id: string) => {
     setDeckEscolhido(id);
     intents.setDeck(room, id);
+    // O criador de fichas lê daqui para oferecer as fichas do deck inteiro.
+    lembrarDeckDaSala(codigo, id);
   };
 
   /**
@@ -211,7 +219,8 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
   };
 
   const sair = () => {
-    esquecerReconexao(room.roomId);
+    // Pelo código da sala, que é a chave usada ao guardar — ver ActionBar.
+    esquecerReconexao(room.state?.roomCode || room.roomId);
     intents.leave(room);
     room.leave();
     router.push('/dashboard');
@@ -352,6 +361,56 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
 
           {souAnfitriao ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* ASSENTOS. O número era fixado na criação da sala (o formulário
+                  nasce em 4) e nada o mudava depois: o quinto jogador recebia
+                  "mesa cheia" e a única saída era criar outra sala. */}
+              <div>
+                <label className="text-text-muted mb-1.5 block text-xs font-medium">Assentos</label>
+                <select
+                  value={lugares}
+                  aria-label="Número de assentos"
+                  onChange={(e) => ajustarRegra({ maxSeats: Number(e.target.value) })}
+                  className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-3 py-2 text-sm focus:outline-none"
+                >
+                  {Array.from({ length: acharFormato(formato).jogadores.max }, (_, i) => i + 1)
+                    .filter(
+                      (n) => n >= Math.max(acharFormato(formato).jogadores.min, players.length),
+                    )
+                    .map((n) => (
+                      <option key={n} value={n}>
+                        {n} {n === 1 ? 'jogador' : 'jogadores'}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-text-faint mt-1 text-xs">
+                  {acharFormato(formato).nome} aceita até {acharFormato(formato).jogadores.max}.
+                </p>
+              </div>
+
+              {/* VIDA INICIAL. A mesa livre prometia "vida configurável" no
+                  resumo do formato e não havia onde configurar; nenhuma mesa
+                  jogava regra da casa. "Do formato" segue o catálogo. */}
+              <div>
+                <label className="text-text-muted mb-1.5 block text-xs font-medium">
+                  Vida inicial
+                </label>
+                <select
+                  value={config.vidaInicial}
+                  aria-label="Vida inicial"
+                  onChange={(e) => ajustarRegra({ vidaInicial: Number(e.target.value) })}
+                  className="bg-table-deep border-panel-border text-text focus:border-primary w-full rounded-md border px-3 py-2 text-sm focus:outline-none"
+                >
+                  <option value={0}>Do formato ({acharFormato(formato).vidaInicial})</option>
+                  {VIDAS_INICIAIS.filter((v) => v !== acharFormato(formato).vidaInicial).map(
+                    (v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+
               <div>
                 <label className="text-text-muted mb-1.5 block text-xs font-medium">
                   Tipo de mulligan
@@ -457,6 +516,13 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
           ) : (
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               {[
+                {
+                  rotulo: 'Vida inicial',
+                  valor:
+                    config.vidaInicial > 0
+                      ? `${config.vidaInicial} (combinada pela mesa)`
+                      : `${acharFormato(formato).vidaInicial} (do formato)`,
+                },
                 {
                   rotulo: 'Mulligan',
                   valor: REGRA_DO_MULLIGAN[config.tipoDeMulligan as TipoDeMulligan],

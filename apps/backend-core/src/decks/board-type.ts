@@ -17,7 +17,3 @@ export const BOARD_TYPES = [
 ] as const;
 
 export type BoardType = (typeof BOARD_TYPES)[number];
-
-export function ehBoardType(valor: unknown): valor is BoardType {
-  return typeof valor === 'string' && (BOARD_TYPES as readonly string[]).includes(valor);
-}

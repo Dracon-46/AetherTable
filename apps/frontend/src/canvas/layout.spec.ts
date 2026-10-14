@@ -216,12 +216,13 @@ describe('zonaSolta', () => {
 
 describe('coordenadas do campo', () => {
   it('ida e volta preserva a posição dentro do campo', () => {
+    // Fração do campo, não pixel: ver `posicaoNoCampo`.
     const faixa = desktop().faixas[3]!;
-    const absoluta = posicaoNoCampo(faixa, 200, 90);
+    const absoluta = posicaoNoCampo(faixa, 0.3, 0.45);
     const relativa = paraCoordenadaRelativa(faixa, absoluta.x, absoluta.y);
 
-    expect(relativa.x).toBe(200);
-    expect(relativa.y).toBe(90);
+    expect(relativa.x).toBeCloseTo(0.3, 3);
+    expect(relativa.y).toBeCloseTo(0.45, 3);
   });
 
   it('uma carta solta no campo nunca aterrissa sobre a zona de comando', () => {
@@ -404,16 +405,18 @@ describe('montarGrade — a visão "todos" em quadrados', () => {
     // (0,0) fica de fora de propósito: é o caso especial de "carta sem
     // coordenada", que `posicaoNoCampo` CENTRALIZA na célula em vez de encostar
     // no canto. A ida e volta ali não é identidade — e não deve ser.
+    // Frações do campo; a folga tolerada continua sendo uma carta, agora
+    // expressa como fração da largura e da altura da célula.
     for (const ponto of [
-      { x: 40, y: 90 },
-      { x: faixa.campo.largura - CARD_W, y: faixa.campo.altura - CARD_H },
+      { x: 0.15, y: 0.3 },
+      { x: 0.85, y: 0.8 },
     ]) {
       const tela = posicaoNoCampo(faixa, ponto.x, ponto.y);
       expect(tela.x).toBeGreaterThan(faixa.esquerda);
       expect(tela.x).toBeLessThan(faixa.esquerda + faixa.largura);
       const volta = paraCoordenadaRelativa(faixa, tela.x, tela.y);
-      expect(Math.abs(volta.x - ponto.x)).toBeLessThanOrEqual(CARD_W);
-      expect(Math.abs(volta.y - ponto.y)).toBeLessThanOrEqual(CARD_H);
+      expect(Math.abs(volta.x - ponto.x)).toBeLessThanOrEqual(CARD_W / faixa.campo.largura);
+      expect(Math.abs(volta.y - ponto.y)).toBeLessThanOrEqual(CARD_H / faixa.campo.altura);
     }
   });
 

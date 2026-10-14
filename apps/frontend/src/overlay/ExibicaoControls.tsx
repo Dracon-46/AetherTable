@@ -62,6 +62,9 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Sigma,
+  MousePointer2,
+  Volume2,
+  Activity,
 } from 'lucide-react';
 import { useUIStore } from '../store/game.store';
 import {
@@ -263,6 +266,12 @@ export function ExibicaoControls() {
   const setCustoDeManaNaMao = useUIStore((s) => s.setCustoDeManaNaMao);
   const anexosDesativados = useUIStore((s) => s.anexosDesativados);
   const setAnexosDesativados = useUIStore((s) => s.setAnexosDesativados);
+  const previaAoLado = useUIStore((s) => s.previaAoLado);
+  const setPreviaAoLado = useUIStore((s) => s.setPreviaAoLado);
+  const efeitosSonoros = useUIStore((s) => s.efeitosSonoros);
+  const setEfeitosSonoros = useUIStore((s) => s.setEfeitosSonoros);
+  const tremorDoComandante = useUIStore((s) => s.tremorDoComandante);
+  const setTremorDoComandante = useUIStore((s) => s.setTremorDoComandante);
 
   useEffect(() => {
     if (!aberto) return;
@@ -402,6 +411,27 @@ export function ExibicaoControls() {
             ligado={anexosDesativados}
             onAlternar={() => setAnexosDesativados(!anexosDesativados)}
             dica="Esconde 'Anexar a…' do menu de contexto. Desanexar continua disponível em cartas já anexadas — senão a preferência prenderia a carta para sempre."
+          />
+          <Interruptor
+            rotulo="Prévia ao lado da carta"
+            Icone={MousePointer2}
+            ligado={previaAoLado}
+            onAlternar={() => setPreviaAoLado(!previaAoLado)}
+            dica="A carta ampliada acompanha o cursor e troca de lado na metade da tela, em vez de ficar fixa no canto. Ligada, aparece também em telas pequenas."
+          />
+          <Interruptor
+            rotulo="Efeitos sonoros"
+            Icone={Volume2}
+            ligado={efeitosSonoros}
+            onAlternar={() => setEfeitosSonoros(!efeitosSonoros)}
+            dica="Sons curtos para dado, moeda, reação e quando a vez chega a você. Gerados no navegador, sem arquivo para baixar."
+          />
+          <Interruptor
+            rotulo="Tremor na entrada do comandante"
+            Icone={Activity}
+            ligado={tremorDoComandante}
+            onAlternar={() => setTremorDoComandante(!tremorDoComandante)}
+            dica="A tela treme quando qualquer comandante entra no campo. Se o sistema pede menos movimento, o tremor não acontece."
           />
         </div>
       )}

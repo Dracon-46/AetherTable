@@ -168,7 +168,10 @@ export class AdminUsuariosService {
 
     await this.prisma.user.update({
       where: { id },
-      data: { suspendedUntil: ate, suspensionReason: dto.motivo },
+      // `tokensValidosApos` derruba as sessões abertas. Sem ele a suspensão só
+      // valia no próximo login: quem já estava com token seguia jogando e
+      // editando decks por até um dia. Ver `jwt.strategy.ts`.
+      data: { suspendedUntil: ate, suspensionReason: dto.motivo, tokensValidosApos: new Date() },
     });
 
     await this.auditoria.registrar(req, {
@@ -214,7 +217,9 @@ export class AdminUsuariosService {
 
     await this.prisma.user.update({
       where: { id },
-      data: { deletedAt: new Date(), suspensionReason: dto.motivo },
+      // Mesmo corte de sessão da suspensão: banir sem derrubar os tokens
+      // deixava a conta banida usando a API até o token expirar sozinho.
+      data: { deletedAt: new Date(), suspensionReason: dto.motivo, tokensValidosApos: new Date() },
     });
 
     await this.auditoria.registrar(req, {
@@ -469,7 +474,8 @@ export class AdminUsuariosService {
      * colados. `randomBytes` e CSPRNG — uma senha de `Math.random()` seria
      * previsivel a partir de outras geradas na mesma sessao do processo.
      */
-    const senhaTemporaria = randomBytes(18).toString('base64url');
+    const escolhida = dto.novaSenha;
+    const senhaTemporaria = escolhida ?? randomBytes(18).toString('base64url');
     const hash = await argon2.hash(senhaTemporaria, { type: argon2.argon2id });
 
     await this.prisma.user.update({
@@ -485,10 +491,14 @@ export class AdminUsuariosService {
       reason: dto.motivo,
       // A SENHA NAO ENTRA AQUI. A auditoria responde quem fez, em quem e por
       // que; guardar a senha faria o log virar um deposito de credencial.
-      metadata: { sessoesDerrubadas: true },
+      metadata: { sessoesDerrubadas: true, escolhidaPeloAdmin: Boolean(escolhida) },
     });
 
-    return { senhaTemporaria, username: alvo.username };
+    // A senha escolhida NAO volta na resposta: quem a escolheu ja a conhece, e
+    // devolve-la so a faria passar por mais um log de proxy e mais uma tela.
+    return escolhida
+      ? { senhaTemporaria: null, username: alvo.username }
+      : { senhaTemporaria, username: alvo.username };
   }
 
   /**

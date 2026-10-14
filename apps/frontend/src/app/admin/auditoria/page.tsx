@@ -24,25 +24,9 @@ import { AlertCircle, ClipboardList, Loader2, ShieldAlert } from 'lucide-react';
 import { useAuditoria } from '../../../admin/useAdmin';
 import { quando } from '../../../admin/Componentes';
 import { mensagemDaApi } from '@/lib/fetcher';
-
-/** Rótulo em português e cor por gravidade da ação. */
-const ACOES: Record<string, { rotulo: string; tom: 'perigo' | 'alerta' | 'neutro' }> = {
-  USER_SUSPEND: { rotulo: 'Suspendeu conta', tom: 'alerta' },
-  USER_UNSUSPEND: { rotulo: 'Removeu suspensão', tom: 'neutro' },
-  USER_BAN: { rotulo: 'Baniu conta', tom: 'perigo' },
-  USER_RESTORE: { rotulo: 'Restaurou conta', tom: 'neutro' },
-  USER_ROLE_CHANGE: { rotulo: 'Alterou papel', tom: 'perigo' },
-  INVENTORY_GRANT: { rotulo: 'Concedeu cosmético', tom: 'neutro' },
-  INVENTORY_REVOKE: { rotulo: 'Retirou cosmético', tom: 'alerta' },
-  COSMETIC_CREATE: { rotulo: 'Registrou cosmético', tom: 'neutro' },
-  COSMETIC_UPDATE: { rotulo: 'Alterou cosmético', tom: 'neutro' },
-  COSMETIC_DELETE: { rotulo: 'Desregistrou cosmético', tom: 'alerta' },
-  REPORT_CLAIM: { rotulo: 'Assumiu denúncia', tom: 'neutro' },
-  REPORT_RESOLVE: { rotulo: 'Denúncia procedente', tom: 'alerta' },
-  REPORT_DISMISS: { rotulo: 'Denúncia improcedente', tom: 'neutro' },
-  FLAG_CHANGE: { rotulo: 'Mexeu num interruptor', tom: 'perigo' },
-  CARD_CACHE_PURGE: { rotulo: 'Esvaziou o cache de cartas', tom: 'neutro' },
-};
+// Rótulo e gravidade por ação. Mora em `admin/` para ser conferido contra o
+// enum do Prisma — ver `acoesDeAuditoria.ts`.
+import { ACOES_DE_AUDITORIA as ACOES } from '../../../admin/acoesDeAuditoria';
 
 const CLASSE_POR_TOM = {
   perigo: 'border-danger/30 bg-danger/5',

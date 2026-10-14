@@ -331,3 +331,84 @@ describe('configuração de sala', () => {
     expect(claimsDoPasse(seatToken).cfg).toMatchObject({ maxClients: 2 });
   });
 });
+
+describe('getVoiceToken — a voz é de quem está na mesa', () => {
+  /**
+   * O passe de voz saía para qualquer conta e qualquer código, e a vitrine
+   * pública lista os códigos: uma conta qualquer entrava no canal de voz de uma
+   * mesa alheia. O passe da mesa, assinado por este serviço, é a prova.
+   */
+  const { JwtService } = jest.requireActual<typeof import('@nestjs/jwt')>('@nestjs/jwt');
+  const jwt = new JwtService({ secret: 'segredo-de-teste-com-16+' });
+  const sistema = { flagLigada: jest.fn().mockResolvedValue(true) };
+  const svc = new MatchesService(
+    jwt as unknown as ConstructorParameters<typeof MatchesService>[0],
+    {} as unknown as ConstructorParameters<typeof MatchesService>[1],
+    {} as unknown as ConstructorParameters<typeof MatchesService>[2],
+    sistema as unknown as ConstructorParameters<typeof MatchesService>[3],
+  );
+  const podePublicar = (token: string) =>
+    (
+      JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()) as {
+        video: { canPublish: boolean };
+      }
+    ).video.canPublish;
+
+  it('sem passe da mesa, não há voz', async () => {
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123')).token).toBeNull();
+  });
+
+  it('passe de outra sala ou de outra conta não serve', async () => {
+    const outraSala = await svc.spectateMatch('u1', 'Ana', 'ZZZ999');
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraSala.seatToken)).token).toBeNull();
+    const outraConta = await svc.spectateMatch('u2', 'Bia', 'ABC123');
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraConta.seatToken)).token).toBeNull();
+  });
+
+  it('um access token comum, sem a audiência da mesa, não serve', async () => {
+    const sessao = jwt.sign({ sub: 'u1', roomId: 'ABC123' });
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', sessao)).token).toBeNull();
+  });
+
+  it('quem assiste ouve, mas não fala', async () => {
+    const plateia = await svc.spectateMatch('u1', 'Ana', 'ABC123');
+    const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', plateia.seatToken);
+    expect(token).toBeTruthy();
+    expect(podePublicar(token!)).toBe(false);
+  });
+
+  it('quem tem assento fala', async () => {
+    const assento = jwt.sign(
+      { sub: 'u1', username: 'Ana', roomId: 'ABC123' },
+      { audience: 'aethertable-mesa' },
+    );
+    const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', assento);
+    expect(podePublicar(token!)).toBe(true);
+  });
+});
+
+describe('registrarResumo — conta excluída não derruba o resumo', () => {
+  it('grava só as contas que ainda existem', async () => {
+    const criar = jest.fn().mockResolvedValue({ id: 'r1' });
+    const prisma = {
+      matchSummary: { findFirst: jest.fn().mockResolvedValue(null), create: criar },
+      user: { findMany: jest.fn().mockResolvedValue([{ id: 'u1' }, { id: 'u3' }]) },
+    };
+    const svc = new MatchesService(
+      {} as unknown as ConstructorParameters<typeof MatchesService>[0],
+      prisma as unknown as ConstructorParameters<typeof MatchesService>[1],
+      {} as unknown as ConstructorParameters<typeof MatchesService>[2],
+      {} as unknown as ConstructorParameters<typeof MatchesService>[3],
+    );
+
+    await svc.registrarResumo({
+      roomCode: 'ABC123',
+      playerCount: 3,
+      durationSeconds: 600,
+      participantes: ['u1', 'u2-excluida', 'u3'],
+    });
+
+    const dados = criar.mock.calls[0][0].data.participants.createMany.data;
+    expect(dados).toEqual([{ userId: 'u1' }, { userId: 'u3' }]);
+  });
+});

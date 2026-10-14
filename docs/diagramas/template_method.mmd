@@ -1,0 +1,80 @@
+%% AetherTable — DOC-097 — Template Method na familia de sorteio
+%% Fonte: apps/game-server/src/intents/sorteios.ts
+classDiagram
+    direction TB
+
+    class IntentHandler {
+        <<interface>>
+        +schema
+        +autoriza
+        +executa(ctx, payload) void
+    }
+
+    class AcaoDeSorteio~Schema, Resultado~ {
+        <<abstract>>
+        +schema*
+        +autoriza
+        +executa(ctx, payload) void
+        #permitido(ctx, payload) boolean
+        #sortear(ctx, payload)* Resultado
+        #aplicar(ctx, payload, r) void
+        #anunciar(ctx, payload, r) void
+        #narrar(ctx, payload, r)* LogEvent
+    }
+
+    class RolarDado {
+        #sortear() number
+        #anunciar() broadcast dice
+        #narrar() logDado
+    }
+    class GirarMoeda {
+        #sortear() CARA|COROA
+        #anunciar() broadcast coin
+        #narrar() criarLog
+    }
+    class SortearJogador {
+        #sortear() sessionId
+        #narrar() criarLog
+    }
+    class SortearCarta {
+        +autoriza = OWNER_DA_ZONA
+        #sortear() cardId
+        #aplicar() concede peekedBy
+        #anunciar() send revealToOwner
+        #narrar() criarLog
+    }
+    class DescartarAoAcaso {
+        #sortear() cardId[]
+        #aplicar() move ao cemiterio
+        #narrar() logSistema
+    }
+
+    class rng_ts {
+        <<services/rng.ts — RN06>>
+        +rolarDado(sides)
+        +girarMoeda()
+        +sortear(itens)
+        +embaralhar(itens)
+    }
+
+    class REGISTRY {
+        <<tabela de intencoes>>
+        INTENT_ROLL_DICE = new RolarDado()
+        INTENT_FLIP_COIN = new GirarMoeda()
+        INTENT_RANDOM_PLAYER = new SortearJogador()
+        INTENT_RANDOM_CARD = new SortearCarta()
+        INTENT_DISCARD_RANDOM = new DescartarAoAcaso()
+    }
+
+    IntentHandler <|.. AcaoDeSorteio~Schema, Resultado~
+    AcaoDeSorteio~Schema, Resultado~ <|-- RolarDado
+    AcaoDeSorteio~Schema, Resultado~ <|-- GirarMoeda
+    AcaoDeSorteio~Schema, Resultado~ <|-- SortearJogador
+    AcaoDeSorteio~Schema, Resultado~ <|-- SortearCarta
+    AcaoDeSorteio~Schema, Resultado~ <|-- DescartarAoAcaso
+    AcaoDeSorteio~Schema, Resultado~ ..> rng_ts : so no passo sortear
+    REGISTRY o-- RolarDado
+    REGISTRY o-- GirarMoeda
+    REGISTRY o-- SortearJogador
+    REGISTRY o-- SortearCarta
+    REGISTRY o-- DescartarAoAcaso

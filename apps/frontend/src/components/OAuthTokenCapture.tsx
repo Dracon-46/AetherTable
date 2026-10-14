@@ -43,6 +43,27 @@ export function OAuthTokenCapture() {
    * segunda tentar com um token que já não está em lugar nenhum.
    */
   const jaProcessou = useRef(false);
+  /**
+   * ─── O `ativo` LOCAL DO EFEITO MATAVA O LOGIN NO STRICTMODE ──────────────
+   *
+   * A guarda era um `let ativo` do próprio efeito, zerado na limpeza. O
+   * StrictMode monta, LIMPA e monta de novo: a limpeza zerava o `ativo` da
+   * primeira execução — a única que tinha o token —, e a segunda saía cedo pelo
+   * `jaProcessou`. A resposta do `/users/me` chegava, achava `ativo = false` e
+   * descartava a sessão: em desenvolvimento, o login por OAuth nunca concluía.
+   *
+   * Um ref de "montado" sobrevive à remontagem simulada e responde a pergunta
+   * que importa — o componente ainda está na tela? —, em vez de "esta execução
+   * específica do efeito ainda vale?".
+   */
+  const montado = useRef(true);
+
+  useEffect(() => {
+    montado.current = true;
+    return () => {
+      montado.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (jaProcessou.current) return;
@@ -62,14 +83,13 @@ export function OAuthTokenCapture() {
      */
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
-    let ativo = true;
     // Estava com `http://localhost:3333/api/users/me` escrito à mão: em
     // qualquer ambiente que não fosse a máquina do dev, o login por OAuth
     // redirecionava e morria aqui, em silêncio.
     fetch(`${API_URL}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => (res.ok ? res.json() : null))
       .then((userData) => {
-        if (!ativo || !userData || userData.statusCode) return;
+        if (!montado.current || !userData || userData.statusCode) return;
         setAuth(token, userData);
         router.replace('/dashboard');
       })
@@ -77,10 +97,6 @@ export function OAuthTokenCapture() {
         console.error('Falha ao concluir o login OAuth:', err);
         jaProcessou.current = false;
       });
-
-    return () => {
-      ativo = false;
-    };
   }, [setAuth, router]);
 
   return null;

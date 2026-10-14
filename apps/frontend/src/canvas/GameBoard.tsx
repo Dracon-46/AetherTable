@@ -41,7 +41,10 @@ import type { RoomState } from '../net/schema/RoomState';
 import {
   CARD_W,
   CARD_H,
+  cartasNoRetangulo,
   encaixarNaGrade,
+  faixaSobPonto,
+  retanguloEntre,
   escalasDaMesaFocada,
   montarGrade,
   montarMesa,
@@ -109,6 +112,8 @@ interface CardSpriteProps {
   onAlvo: ((cardId: string) => void) | null;
   onSelecionar: (cardId: string, aditivo: boolean) => void;
   onHover: (cardId: string | null) => void;
+  /** Todas as faixas da mesa — para soltar a carta no campo de outro jogador. */
+  faixas: readonly Faixa[];
 }
 
 const CardSprite = React.memo(function CardSprite({
@@ -121,6 +126,7 @@ const CardSprite = React.memo(function CardSprite({
   onAlvo,
   onSelecionar,
   onHover,
+  faixas,
 }: CardSpriteProps) {
   const { card, pos, faixa, arrastavel, frente, face, escala, sleeveId } = item;
   const myId = useGameStore((s) => s.mySessionId);
@@ -238,11 +244,39 @@ const CardSprite = React.memo(function CardSprite({
       setDrag(null);
 
       const minhaFaixa = faixa;
+
+      /**
+       * SOLTAR NO CAMPO DE OUTRO JOGADOR.
+       *
+       * Antes de tudo, porque a checagem de "mão" abaixo olha só a altura, e a
+       * faixa de um oponente no trilho pode estar na mesma altura da minha.
+       * Só o CAMPO alheio recebe: soltar sobre o cemitério ou o grimório de
+       * outra pessoa cai no caminho de sempre, na minha faixa.
+       */
+      const alvo = faixaSobPonto(faixas, x, y);
+      if (alvo && alvo.playerId !== card.controllerId && zonaSolta(alvo, x, y) === 'BATTLEFIELD') {
+        const bruta = paraCoordenadaRelativa(alvo, x, y);
+        const rel = alinharNaGrade ? encaixarNaGrade(alvo, bruta) : bruta;
+        if (card.zone === 'BATTLEFIELD') {
+          intents.giveCard(room, card.id, alvo.playerId, false, rel);
+        } else {
+          intents.changeZone(room, card.id, 'BATTLEFIELD', rel.x, rel.y, undefined, {
+            controllerId: alvo.playerId,
+          });
+        }
+        return;
+      }
+
       // Soltar abaixo da última faixa = faixa de mão.
       const naMao = minhaFaixa ? y > minhaFaixa.topo + minhaFaixa.altura : true;
 
-      if (naMao && card.zone !== 'HAND') {
-        intents.changeZone(room, card.id, 'HAND');
+      // Soltar na faixa da mão É ficar na mão. A condição era `naMao && zona
+      // !== HAND`: uma carta da mão arrastada dentro da própria mão (reordenar,
+      // ou um tremor acima dos 3 px do Konva) caía no ramo do campo, o clamp a
+      // trazia para a borda de baixo do campo — e ela entrava em jogo com a
+      // face para cima, revelada para a mesa.
+      if (naMao) {
+        if (card.zone !== 'HAND') intents.changeZone(room, card.id, 'HAND');
         return;
       }
       if (!minhaFaixa) return;
@@ -272,7 +306,7 @@ const CardSprite = React.memo(function CardSprite({
         intents.changeZone(room, card.id, 'BATTLEFIELD', rel.x, rel.y);
       else intents.release(room, card.id, rel.x, rel.y);
     },
-    [room, card.id, card.zone, faixa, alinharNaGrade],
+    [room, card.id, card.zone, card.controllerId, faixa, faixas, alinharNaGrade],
   );
 
   const handleClick = useCallback(
@@ -377,7 +411,9 @@ const CardSprite = React.memo(function CardSprite({
           um retângulo com "…" e ninguém sabia o que era a carta. */}
       {!imgEl && frente && (
         <Text
-          text={faceMeta?.name ?? '…'}
+          // Ficha sem impressão (criada pelo nome) não tem catálogo: o nome dela
+          // vive na anotação, e era "…" que aparecia no lugar.
+          text={faceMeta?.name ?? (card.isToken && card.note ? card.note : '…')}
           width={w - 10}
           height={h}
           x={5}
@@ -414,6 +450,37 @@ const CardSprite = React.memo(function CardSprite({
           cornerRadius={6}
           listening={false}
         />
+      )}
+
+      {/* ── FICHA E CÓPIA SE PARECIAM COM CARTA DE VERDADE ───────────────
+          O servidor marca `isToken` e `isCopy` desde sempre, e nada na mesa
+          os desenhava: só o menu ("Destruir token") contava a diferença. No
+          fim do turno de um Kiki-Jiki, ou num board wipe, a pergunta "qual
+          destas some?" não tinha resposta olhando para a mesa. Canto
+          superior ESQUERDO porque o direito é do dano. */}
+      {(card.isToken || card.isCopy) && card.zone === 'BATTLEFIELD' && (
+        // Cópia vence ficha no rótulo: a cópia de permanente também nasce como
+        // ficha, e "CÓPIA" diz mais sobre de onde ela veio.
+        <Group x={4 * escala} y={4 * escala} listening={false}>
+          <Rect
+            width={38 * escala}
+            height={13 * escala}
+            fill="rgba(15,23,42,0.88)"
+            stroke={card.isCopy ? '#A78BFA' : '#FBBF24'}
+            strokeWidth={1}
+            cornerRadius={3}
+          />
+          <Text
+            text={card.isCopy ? 'CÓPIA' : 'FICHA'}
+            width={38 * escala}
+            height={13 * escala}
+            align="center"
+            verticalAlign="middle"
+            fontSize={8 * escala}
+            fontStyle="bold"
+            fill={card.isCopy ? '#DDD6FE' : '#FDE68A'}
+          />
+        </Group>
       )}
 
       {/* Marcadores nomeados */}
@@ -1216,6 +1283,61 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
     [toggleSelectedCard, setSelectedCards],
   );
 
+  /**
+   * ─── SELEÇÃO POR RETÂNGULO ───────────────────────────────────────────────
+   *
+   * Selecionar várias cartas só existia com Shift/Ctrl + clique, uma por uma —
+   * e no celular, sem Shift, simplesmente não existia: a barra de ações em lote
+   * nunca aparecia para quem joga no tablet. Arrastar no fundo da mesa desenha
+   * um laço; soltar seleciona as cartas do campo que ele toca. Eventos de
+   * PONTEIRO, e não de mouse, para o dedo funcionar igual.
+   *
+   * Só cartas que EU controlo: a seleção existe para agir em lote, e o servidor
+   * ignora ação sobre carta alheia — selecioná-la seria prometer o que o botão
+   * não cumpre.
+   */
+  const [laco, setLaco] = useState<{
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+    somar: boolean;
+  } | null>(null);
+  /** O `click` do fundo vem logo depois do laço e limparia a seleção recém-feita. */
+  const ignorarCliqueNoFundo = useRef(false);
+
+  const pontoNaMesa = useCallback(
+    (stage: Konva.Stage | null) => {
+      const p = stage?.getPointerPosition();
+      return p ? { x: (p.x - offsetX) / escala, y: (p.y - offsetY) / escala } : null;
+    },
+    [offsetX, offsetY, escala],
+  );
+
+  const terminarLaco = useCallback(() => {
+    if (!laco) return;
+    setLaco(null);
+    const r = retanguloEntre(laco.x0, laco.y0, laco.x1, laco.y1);
+    // Abaixo disto foi um clique com a mão tremendo, não um laço.
+    if (r.largura < 8 && r.altura < 8) return;
+    ignorarCliqueNoFundo.current = true;
+
+    const ids = cartasNoRetangulo(
+      itens
+        .filter((i) => i.card.zone === 'BATTLEFIELD' && i.card.controllerId === myId)
+        .map((i) => ({
+          id: i.card.id,
+          x: i.pos.x,
+          y: i.pos.y,
+          largura: CARD_W * i.escala,
+          altura: CARD_H * i.escala,
+        })),
+      r,
+    );
+    const atuais = useUIStore.getState().selectedCardIds;
+    setSelectedCards(laco.somar ? [...new Set([...atuais, ...ids])] : ids);
+  }, [laco, itens, myId, setSelectedCards]);
+
   const handleAlvo = useCallback(
     (alvoId: string) => {
       if (!arrowSource) return;
@@ -1301,6 +1423,13 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
           style={{ background: 'transparent', touchAction: 'none' }}
           onWheel={(e) => e.evt.preventDefault()}
           onContextMenu={(e) => e.evt.preventDefault()}
+          onPointerMove={(e) => {
+            if (!laco) return;
+            const p = pontoNaMesa(e.target.getStage());
+            if (p) setLaco((l) => (l ? { ...l, x1: p.x, y1: p.y } : l));
+          }}
+          onPointerUp={terminarLaco}
+          onPointerLeave={terminarLaco}
         >
           <Layer scale={{ x: escala, y: escala }} x={offsetX} y={offsetY}>
             {/* Fundo: ping e menu da mesa. Já não arrasta a câmera. */}
@@ -1313,7 +1442,26 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 const p = e.target.getStage()?.getPointerPosition();
                 if (p) openContextMenu('zone', p.x, p.y);
               }}
+              onPointerDown={(e) => {
+                const evt = e.evt as PointerEvent;
+                // Botão principal só, e nunca no meio de "escolha o alvo" nem
+                // com Alt (que é o ping).
+                if (evt.button !== 0 || evt.altKey || arrowSource) return;
+                const p = pontoNaMesa(e.target.getStage());
+                if (!p) return;
+                setLaco({
+                  x0: p.x,
+                  y0: p.y,
+                  x1: p.x,
+                  y1: p.y,
+                  somar: evt.shiftKey || evt.ctrlKey || evt.metaKey,
+                });
+              }}
               onClick={(e) => {
+                if (ignorarCliqueNoFundo.current) {
+                  ignorarCliqueNoFundo.current = false;
+                  return;
+                }
                 const evt = e.evt as MouseEvent;
                 // Konva dispara `click` para todo botão do mouse: sem isto, o
                 // botão direito abria o menu da mesa E limpava a seleção — quer
@@ -1591,8 +1739,28 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 onAlvo={arrowSource ? handleAlvo : null}
                 onSelecionar={handleSelecionar}
                 onHover={handleHover}
+                faixas={mesa.faixas}
               />
             ))}
+
+            {/* ── Laço de seleção ────────────────────────────────────────── */}
+            {laco &&
+              (() => {
+                const r = retanguloEntre(laco.x0, laco.y0, laco.x1, laco.y1);
+                return (
+                  <Rect
+                    x={r.x}
+                    y={r.y}
+                    width={r.largura}
+                    height={r.altura}
+                    stroke="#60a5fa"
+                    strokeWidth={1.5 / escala}
+                    dash={[6 / escala, 4 / escala]}
+                    fill="rgba(96,165,250,0.12)"
+                    listening={false}
+                  />
+                );
+              })()}
 
             {/* ── Setas de alvo ──────────────────────────────────────────── */}
             {Object.values(arrows).map((seta) => {

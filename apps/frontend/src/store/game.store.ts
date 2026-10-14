@@ -93,6 +93,8 @@ export interface PlayerData {
   decked: boolean;
   /** Modo "jogar com o topo do grimório revelado". Ver `Player` no servidor. */
   topoRevelado: boolean;
+  /** Rastreador de mana: `{ R: 3, G: 1 }`. Cor ausente = zero. */
+  manaPool: Record<string, number>;
 }
 
 export interface LogEntry {
@@ -148,6 +150,13 @@ export interface ConfigDaMesa {
   cronometroDeTurno: number;
   /** Epoch ms do início do turno atual. 0 = sem cronômetro rodando. */
   turnoIniciadoEm: number;
+  /** Votação de remoção em andamento. `''` = nenhuma. */
+  votacaoAlvo: string;
+  votacaoAutor: string;
+  votacaoSim: string;
+  votacaoExpiraEm: number;
+  /** Vida inicial combinada no lobby. `0` = a do formato. */
+  vidaInicial: number;
 }
 
 const CONFIG_INICIAL: ConfigDaMesa = {
@@ -163,6 +172,11 @@ const CONFIG_INICIAL: ConfigDaMesa = {
   ordemPelosAssentos: false,
   sideboardPermitido: false,
   cronometroDeTurno: 0,
+  votacaoAlvo: '',
+  votacaoAutor: '',
+  votacaoSim: '',
+  votacaoExpiraEm: 0,
+  vidaInicial: 0,
   turnoIniciadoEm: 0,
 };
 
@@ -514,6 +528,18 @@ interface UIState {
   anexosDesativados: boolean;
   /** Desenha o custo de mana impresso sobre as cartas da própria mão. */
   custoDeManaNaMao: boolean;
+  /** Rastreador de mana (pool W/U/B/R/G/C) aberto na tela. Tecla M. */
+  manaAberto: boolean;
+  /**
+   * A prévia da carta segue o cursor e muda de lado na metade da tela, em vez
+   * de ficar fixa no canto inferior direito. Ligada, ela aparece também em
+   * tela pequena — o canto fixo só existia de `lg` para cima.
+   */
+  previaAoLado: boolean;
+  /** Sons curtos para dado, moeda, reação e "é a sua vez". Desligado por padrão. */
+  efeitosSonoros: boolean;
+  /** A tela treme quando um comandante entra no campo. Desligado por padrão. */
+  tremorDoComandante: boolean;
   /**
    * ─── ESCALA REAL DA MESA, PARA O PAINEL NÃO MENTIR ───────────────────────
    *
@@ -557,6 +583,10 @@ interface UIState {
   setAlinharNaGrade: (v: boolean) => void;
   setAnexosDesativados: (v: boolean) => void;
   setCustoDeManaNaMao: (v: boolean) => void;
+  setManaAberto: (v: boolean) => void;
+  setPreviaAoLado: (v: boolean) => void;
+  setEfeitosSonoros: (v: boolean) => void;
+  setTremorDoComandante: (v: boolean) => void;
   /** Chamado pelo `GameBoard` a cada remontagem da geometria. */
   registrarEscalaDaMesa: (efetiva: number, pedida: number) => void;
 }
@@ -595,6 +625,10 @@ export const useUIStore = create<UIState>()(
       alinharNaGrade: false,
       anexosDesativados: false,
       custoDeManaNaMao: false,
+      manaAberto: false,
+      previaAoLado: false,
+      efeitosSonoros: false,
+      tremorDoComandante: false,
       escalaDaMesa: 1,
       escalaPedida: 1,
 
@@ -671,6 +705,10 @@ export const useUIStore = create<UIState>()(
       setAlinharNaGrade: (alinharNaGrade) => set({ alinharNaGrade }),
       setAnexosDesativados: (anexosDesativados) => set({ anexosDesativados }),
       setCustoDeManaNaMao: (custoDeManaNaMao) => set({ custoDeManaNaMao }),
+      setManaAberto: (manaAberto) => set({ manaAberto }),
+      setPreviaAoLado: (previaAoLado) => set({ previaAoLado }),
+      setEfeitosSonoros: (efeitosSonoros) => set({ efeitosSonoros }),
+      setTremorDoComandante: (tremorDoComandante) => set({ tremorDoComandante }),
       registrarEscalaDaMesa: (escalaDaMesa, escalaPedida) =>
         // Guarda só quando muda de verdade: o `GameBoard` remonta a geometria
         // a cada redimensionamento, e um `set` idêntico aqui viraria uma
@@ -714,6 +752,10 @@ export const useUIStore = create<UIState>()(
         alinharNaGrade: s.alinharNaGrade,
         anexosDesativados: s.anexosDesativados,
         custoDeManaNaMao: s.custoDeManaNaMao,
+        manaAberto: s.manaAberto,
+        previaAoLado: s.previaAoLado,
+        efeitosSonoros: s.efeitosSonoros,
+        tremorDoComandante: s.tremorDoComandante,
       }),
     },
   ),
@@ -742,6 +784,21 @@ export interface PingVisual {
   em: number;
 }
 
+/**
+ * Uma olhada aberta: o que o servidor liberou só para mim, e por quê.
+ *
+ * Era uma lista solta de cartas, gravada por `revealToOwner` e lida por
+ * NINGUÉM — "olhar X do topo" e "olhar o fundo" não mostravam nada. Com o
+ * motivo e a ponta, o painel de olhada sabe o que oferecer: reordenar só faz
+ * sentido numa olhada do grimório; numa carta sorteada, só mover.
+ */
+export interface Olhada {
+  cards: CartaRevelada[];
+  motivo: 'PEEK' | 'RANDOM';
+  zone: string;
+  from: 'TOP' | 'BOTTOM';
+}
+
 export interface SessaoScry {
   mode: 'SCRY' | 'SURVEIL';
   cards: CartaRevelada[];
@@ -756,8 +813,27 @@ export interface SessaoScry {
  * aparece, seja qual for o tipo.
  */
 export type Sorteio =
-  | { tipo: 'DADO'; actorId: string; sides: number; result: number; em: number }
+  | {
+      tipo: 'DADO';
+      actorId: string;
+      sides: number;
+      /** O total. Com um dado só, o próprio resultado. */
+      result: number;
+      /** Cada dado, quando foram vários. */
+      results?: number[];
+      em: number;
+    }
   | { tipo: 'MOEDA'; actorId: string; result: 'CARA' | 'COROA'; em: number };
+
+/** Um balão de reação na tela. Some sozinho em `DURACAO_DA_REACAO_MS`. */
+export interface ReacaoVisual {
+  id: string;
+  actorId: string;
+  tipo: string;
+  em: number;
+}
+
+export const DURACAO_DA_REACAO_MS = 3200;
 
 /** Um pedido de "me deixa ver sua mão", esperando decisão do dono da zona. */
 export interface PedidoDeVista {
@@ -771,19 +847,23 @@ interface TableState {
   /** Último dado ou moeda, para o destaque visual na mesa. */
   ultimoSorteio: Sorteio | null;
   pings: PingVisual[];
-  /** Buffer de olhada/busca: o que o servidor liberou só para mim. */
-  peek: CartaRevelada[];
+  /** Reações recentes, a mais nova no fim. No máximo oito na tela. */
+  reacoes: ReacaoVisual[];
+  /** A olhada aberta no painel. A busca (tutor) usa o inspetor de zona. */
+  peek: Olhada | null;
   scry: SessaoScry | null;
   /** Pedidos recebidos, na ordem de chegada. */
   pedidosDeVista: PedidoDeVista[];
 
-  setDado: (d: { actorId: string; sides: number; result: number }) => void;
+  setDado: (d: { actorId: string; sides: number; result: number; results?: number[] }) => void;
   setMoeda: (m: { actorId: string; result: 'CARA' | 'COROA' }) => void;
   /** Some com o sorteio depois da animação, para não congelar na tela. */
   limparSorteio: () => void;
   addPing: (p: Omit<PingVisual, 'id' | 'em'>) => void;
   expirarPings: () => void;
-  setPeek: (cards: CartaRevelada[]) => void;
+  addReacao: (r: { actorId: string; tipo: string }) => void;
+  expirarReacoes: () => void;
+  setPeek: (olhada: Olhada | null) => void;
   abrirScry: (s: SessaoScry) => void;
   fecharScry: () => void;
   addPedidoDeVista: (p: Omit<PedidoDeVista, 'em'>) => void;
@@ -794,7 +874,8 @@ interface TableState {
 export const useTableStore = create<TableState>((set) => ({
   ultimoSorteio: null,
   pings: [],
-  peek: [],
+  reacoes: [],
+  peek: null,
   scry: null,
   pedidosDeVista: [],
 
@@ -812,6 +893,18 @@ export const useTableStore = create<TableState>((set) => ({
     set((s) => {
       const vivos = s.pings.filter((p) => Date.now() - p.em < 2500);
       return vivos.length === s.pings.length ? s : { pings: vivos };
+    }),
+  addReacao: (r) =>
+    set((s) => ({
+      reacoes: [
+        ...s.reacoes.slice(-7),
+        { ...r, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, em: Date.now() },
+      ],
+    })),
+  expirarReacoes: () =>
+    set((s) => {
+      const vivas = s.reacoes.filter((r) => Date.now() - r.em < DURACAO_DA_REACAO_MS);
+      return vivas.length === s.reacoes.length ? s : { reacoes: vivas };
     }),
   setPeek: (peek) => set({ peek }),
   abrirScry: (scry) => set({ scry }),
@@ -831,5 +924,13 @@ export const useTableStore = create<TableState>((set) => ({
         (x) => !(x.requesterId === requesterId && x.zone === zone),
       ),
     })),
-  reset: () => set({ ultimoSorteio: null, pings: [], peek: [], scry: null, pedidosDeVista: [] }),
+  reset: () =>
+    set({
+      ultimoSorteio: null,
+      pings: [],
+      reacoes: [],
+      peek: null,
+      scry: null,
+      pedidosDeVista: [],
+    }),
 }));

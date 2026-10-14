@@ -33,7 +33,6 @@ COPY apps/game-server/package.json   apps/game-server/
 COPY apps/frontend/package.json      apps/frontend/
 COPY packages/shared-types/package.json    packages/shared-types/
 COPY packages/scryfall-client/package.json packages/scryfall-client/
-COPY packages/ui/package.json              packages/ui/
 
 # `--ignore-scripts`: o postinstall do backend roda `prisma generate`, que
 # precisa do schema — que ainda não foi copiado neste ponto.

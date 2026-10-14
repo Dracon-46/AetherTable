@@ -105,13 +105,13 @@ colocar no fundo é `unshift()`. Escolha arbitrária, mas precisa ser consistent
 
 ### 3.4 Jogador
 
-| Intenção                      | Payload                       | Mutação                                         | Log                       |
-| ----------------------------- | ----------------------------- | ----------------------------------------------- | ------------------------- |
-| `INTENT_SET_LIFE`             | `{ delta }` ou `{ absolute }` | `player.life += delta` (ou `= absolute`)        | `LIFE` com antes → depois |
-| `INTENT_SET_COMMANDER_DAMAGE` | `{ fromPlayerId, delta }`     | `commanderDamage[from] = max(0, atual + delta)` | `CMD_DAMAGE`              |
-| `INTENT_SET_PLAYER_COUNTER`   | `{ type, delta }`             | `poison`/`energy`/`experience`                  | `COUNTER`                 |
-| `INTENT_TOGGLE_DESIGNATION`   | `{ type }`                    | Zera em todos e ativa no remetente              | `SYSTEM`                  |
-| `INTENT_SET_COMMANDER_TAX`    | `{ delta }`                   | `commanderTax = max(0, atual + delta)`          | `SYSTEM`                  |
+| Intenção                      | Payload                                 | Mutação                                                                              | Log                       |
+| ----------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------- |
+| `INTENT_SET_LIFE`             | `{ delta }` ou `{ absolute }`           | `player.life += delta` (ou `= absolute`)                                             | `LIFE` com antes → depois |
+| `INTENT_SET_COMMANDER_DAMAGE` | `{ fromPlayerId, delta, commanderId? }` | `commanderDamage[comandante ou from] = max(0, atual + delta)` e `life -= diferença`  | `CMD_DAMAGE`              |
+| `INTENT_SET_PLAYER_COUNTER`   | `{ type, delta }`                       | `POISON`/`ENERGY`/`EXPERIENCE`/`RAD`/`TICKET` (mesmo helper do `ADD_PLAYER_COUNTER`) | `COUNTER`                 |
+| `INTENT_TOGGLE_DESIGNATION`   | `{ type }`                              | Zera em todos e ativa no remetente                                                   | `SYSTEM`                  |
+| `INTENT_SET_COMMANDER_TAX`    | `{ delta }`                             | `commanderTax = max(0, atual + delta)`                                               | `SYSTEM`                  |
 
 **Vida pode ficar negativa.** O jogo real usa vida negativa como informação; e eliminar alguém seria
 aplicar regra (`RN01`). O motor não impede.

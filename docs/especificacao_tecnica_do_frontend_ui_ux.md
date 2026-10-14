@@ -136,6 +136,12 @@ interface CardDataState {
 | `audioStore` é local, com persistência opcional    | Volume de cada um é escolha individual                 |
 | `cardDataStore` é cache derivado                   | Reconstruível a qualquer momento                       |
 
+**O catálogo de metadados (`cards/catalog.ts`) guarda as fichas de cada carta** — `fichas`, tirado do
+`all_parts` da Scryfall (`component: token`, sem repetir nome) —, que alimentam o _Criar ficha_ do
+menu da carta (`DOC-036` §6). A chave do `localStorage` subiu para `aether-card-catalog-v2`: com a
+antiga, as cartas já em cache chegariam sem o campo e nunca mais seriam pedidas de novo. Campo novo
+no metadado = versão nova na chave.
+
 ### 3.2 Conectando o Colyseus ao `gameStore`
 
 ```ts
@@ -303,18 +309,27 @@ Se `NFR-01` não for atingido, trocar a implementação por PixiJS não deve toc
 
 ## 6. Interação e entrada
 
-| Entrada                              | Ação                         | Observação                               |
-| ------------------------------------ | ---------------------------- | ---------------------------------------- |
-| Arrastar com botão esquerdo em carta | Move a carta                 | Emite `GRAB` → `MOVE` → `RELEASE`        |
-| Arrastar em área vazia               | Caixa de seleção             | Preenche `selectedCardIds`               |
-| Arrastar com botão do meio / espaço  | _Pan_ da câmera              | —                                        |
-| Roda do mouse                        | Zoom centrado no cursor      | Limites 0,4×–2,5×                        |
-| Clique com botão direito em carta    | Menu de contexto             | Tap, marcadores, mover para zona, copiar |
-| `hover` longo (400 ms)               | Zoom no painel lateral       | Carrega qualidade `normal`               |
-| `Alt+clique`                         | Zoom fixado até novo clique  | —                                        |
-| Duplo clique em carta                | Tap/untap                    | Atalho mais usado                        |
-| `Shift+clique`                       | Adiciona à seleção           | —                                        |
-| `Esc`                                | Limpa seleção e fecha modais | —                                        |
+| Entrada                              | Ação                         | Observação                             |
+| ------------------------------------ | ---------------------------- | -------------------------------------- |
+| Arrastar com botão esquerdo em carta | Move a carta                 | Emite `GRAB` → `MOVE` → `RELEASE`      |
+| Arrastar em área vazia               | Laço de seleção              | Cartas do próprio campo que ele toca   |
+| Arrastar com botão do meio / espaço  | _Pan_ da câmera              | —                                      |
+| Roda do mouse                        | Zoom centrado no cursor      | Limites 0,4×–2,5×                      |
+| Clique com botão direito em carta    | Menu de contexto             | Tap, marcadores, zonas, clonar, fichas |
+| `hover` longo (400 ms)               | Zoom no painel lateral       | Carrega qualidade `normal`             |
+| `Alt+clique`                         | Zoom fixado até novo clique  | —                                      |
+| Duplo clique em carta                | Tap/untap                    | Atalho mais usado                      |
+| `Shift+clique`                       | Adiciona à seleção           | Shift/Ctrl + laço também soma          |
+| `Esc`                                | Limpa seleção e fecha modais | —                                      |
+
+**O laço usa eventos de ponteiro** (`onPointerDown` no fundo, `onPointerMove`/`onPointerUp` no
+`Stage`), não de mouse: no tablet, sem Shift, era o único jeito de selecionar várias. O `click` que o
+Konva dispara ao fim do laço é engolido — senão limparia a seleção recém-feita. Regras do gesto e da
+barra de lote em `DOC-036` §4.3.
+
+**Soltar uma carta decide a zona pela faixa sob o ponto:** `faixaSobPonto` escolhe a **menor** faixa
+que o contém (a do foco ocupa a largura inteira por baixo do trilho), e soltar na faixa da mão uma
+carta que já está na mão a mantém lá — antes ela entrava no campo revelada (`DOC-036` §3 e §4.2).
 
 Atalhos de teclado completos e remapeáveis em [guia_de_ui_e_design_system.md](guia_de_ui_e_design_system.md) §6.
 
@@ -332,6 +347,26 @@ Atalhos de teclado completos e remapeáveis em [guia_de_ui_e_design_system.md](g
 
 Motivo: a mesa de Commander tem 4 áreas de jogo simultâneas. Abaixo de ~900 px de largura útil, o
 tamanho da carta cai a ponto de a arte deixar de ser reconhecível — e o produto perde o sentido.
+
+**A posição de uma carta no campo é fração, não pixel.** `Card.x/y` é a fração (0–1) do campo de
+quem a controla; `posicaoNoCampo` multiplica pelo campo desenhado e `paraCoordenadaRelativa` divide
+de volta. Em pixels, o trilho — onde o campo do oponente tem uma fração da largura — recebia valores
+que passavam da borda, e o clamp empilhava as permanentes dele numa coluna; entre telas de tamanhos
+diferentes, a carta deixada no meio aparecia na borda. `(0, 0)` continua sendo "centralize" (por
+isso a conversão nunca devolve 0 exato, nem ao encaixar na grade), e é o que o _Campo_ do
+`ZoneInspector` manda — mandava `(960, 480)` em pixels. Campo mais estreito que uma carta centraliza,
+em vez de devolver um clamp invertido fora do campo.
+
+**Mesa focada em tela pequena (`montarMesaFocada`):**
+
+- **O trilho dos oponentes só abre se sobrar campo de duas cartas.** Sem a conta, numa janela de
+  800 px o campo ficava menor que uma carta, e com 700 px ficava negativo — as permanentes iam parar
+  embaixo do painel de vida.
+- **Sem piso de 420 px de altura.** Num celular deitado (~336 px úteis) a mesa era montada com 420 e
+  a mão ficava abaixo da tela; o teto de escala já garante um campo jogável.
+- **A célula do trilho cabe um campinho de ~3 cartas** além do bloco de três pilhas (escala por
+  `CARD_W × 6`, e a tira do rótulo entra na altura). Com `× 4` o bloco comia a célula e nenhuma
+  permanente cabia lado a lado.
 
 ---
 
@@ -398,7 +433,9 @@ porta de entrada do produto. Fica como o próximo passo de quem mexer nelas.
    (`○` no relatório do `next build`) por causa disso.
 2. **O que veio na URL sai da URL.** Token e código de erro são apagados com `replaceState` assim que
    lidos — um token de redefinição na querystring entra no histórico e no `Referer`, e um erro já
-   lido não deve ressuscitar quando a pessoa recarrega.
+   lido não deve ressuscitar quando a pessoa recarrega. A primeira leitura fica num ref: o
+   StrictMode roda o efeito duas vezes, a segunda achava a URL já limpa e gravava `null` — em
+   desenvolvimento, todo link válido de redefinição abria em "Link incompleto".
 3. **O botão do provedor só aparece se funcionar.** `GET /auth/provedores` diz quais existem no
    servidor. Antes, os dois botões eram desenhados sempre e o aviso de "DUMMY KEYS" era condicionado a
    `NODE_ENV` — ou seja, sumia em produção, que é justo onde as chaves não estavam configuradas e o
@@ -407,6 +444,34 @@ porta de entrada do produto. Fica como o próximo passo de quem mexer nelas.
 O dicionário de mensagens de erro de OAuth vive no **frontend** (`MENSAGEM_DE_OAUTH` em
 `app/page.tsx`), não na URL: desenhar texto arbitrário vindo da querystring transformaria a tela de
 entrada numa página de phishing hospedada no domínio certo.
+
+**O retorno do OAuth chega sem sessão.** O backend conclui em `/dashboard#token=…`, e é esse token
+que cria a sessão — mas o `ProtectedRoute` mandava para `/` antes de o `OAuthTokenCapture` (que só
+existia no layout do painel, atrás do mesmo porteiro) montar, e o fragmento morria no desvio: o login
+por Google/Discord não funcionava para ninguém deslogado. Agora o porteiro repassa o `#token=` (e só
+ele) no redirecionamento, e `/` também monta o `OAuthTokenCapture`. Dentro dele, a guarda de "ainda
+montado" é um ref, não um `let ativo` do efeito: o StrictMode monta, limpa e remonta, e a limpeza
+descartava a resposta do `/users/me` da única execução que tinha o token.
+
+### 8.2 Correções de comportamento em telas e componentes
+
+| Onde                                         | Comportamento                                                                 | Defeito que corrige                                                                    |
+| -------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `app/Providers.tsx`                          | Limpa o cache do `react-query` quando uma conta sai de cena (comparando o id) | As chaves não têm o usuário: a conta B na mesma aba via os grimórios e o admin de A    |
+| `lib/perfil.ts` (Perfil e Ajustes)           | Apelido em branco não vai no corpo; apelido apagado vai `null`                | `displayName: ''` era recusado e derrubava o salvamento inteiro                        |
+| `dashboard/settings`                         | Grava a resposta do servidor no `auth.store`                                  | Os Ajustes reabriam com o apelido antigo, e o próximo salvamento o reenviava           |
+| `lib/fetcher.ts` (`mensagemDoCorpoDeErro`)   | Um 400 mostra "Campo: motivo", do `erros[]` do `ZodValidationPipe`            | Todo 400 dizia só "Dados inválidos." — login, cadastro, perfil, ajustes e `api()`      |
+| `deckbuilder/VistasDoDeck.tsx`               | Controles escondidos sem ponteiro; no toque, o 1º toque na arte os revela     | No celular, tocar a arte acertava "Comandante" ou o "−" de uma cópia, invisíveis       |
+| `deckbuilder/CardSearch.tsx`                 | A quantidade guarda o texto e vira número (1–99) ao sair do campo ou somar    | Apagar e digitar "4" dava "14"                                                         |
+| `CardSearch`, criar deck (`dashboard/decks`) | `catch` na mutação; o aviso fica com o `onError` / `isError`                  | A recusa virava rejeição não tratada ("Uncaught (in promise)")                         |
+| `dashboard/page.tsx` (Taverna)               | Nome do formato nos cartões de deck                                           | Mostrava o id cru em caixa alta (`DUEL_COMMANDER`)                                     |
+| `admin/acoesDeAuditoria.ts`                  | Rótulos de `USER_PASSWORD_RESET` e `USER_PURGE`; testado contra o Prisma      | As duas apareciam cruas, com tom neutro e fora do filtro                               |
+| `admin/usuarios`                             | Botão _Retirar item_                                                          | Diálogo e mutação existiam, nenhum botão os abria                                      |
+| `admin/Componentes.tsx` (`DialogoDeAcao`)    | O erro só aparece depois de confirmar nesta abertura                          | O 403 de uma ação reabria no diálogo da seguinte, antes de qualquer clique             |
+| `admin/cosmeticos`                           | Valor da opção é `tipo:id`; rótulo de `PET`                                   | Dois "nenhum" (título e mascote) tinham o mesmo valor — o segundo não era escolhível   |
+| `store/useHidratarPreferencias.ts`           | A limpeza do efeito devolve a vez se a resposta ainda não chegou              | No StrictMode, tema, cosméticos, atalhos e tier de apoiador nunca eram aplicados       |
+| `overlay/SorteioOverlay.tsx`                 | `key` no instante do sorteio                                                  | Dois giros seguidos reusavam os nós e a animação não reiniciava — o dado ficava parado |
+| `TableMenu`, `ActionBar`, `RoomLobby` (sair) | Esquecem a chave de reconexão pelo **código** da sala                         | A próxima entrada na sala gastava uma tentativa de reconexão que falha                 |
 
 ---
 

@@ -18,6 +18,7 @@
  * envolvê-las em `useMemo` e elas ficam testáveis sem montar React.
  */
 
+import { estimarBracket, rotuloDoBracket } from '@aethertable/shared-types';
 import type { DeckCarta } from './useDecks';
 
 /** Ordem em que os grupos aparecem. O resto vem depois, em ordem alfabética. */
@@ -47,10 +48,40 @@ const ORDEM_DOS_GRUPOS = [
   'Vermelho',
   'Verde',
   'Incolor',
+  // Por raridade, da mais rara para a mais comum.
+  'Mítica',
+  'Rara',
+  'Incomum',
+  'Comum',
+  'Especial',
   // Terreno fecha os três cortes: é o rodapé natural de uma decklist.
   'Terrenos',
   'Outros',
+  // A reserva NÃO é parte do deck que vai à mesa, então fica depois de tudo,
+  // em qualquer critério.
+  'Reserva',
 ];
+
+/**
+ * A reserva vira grupo próprio em QUALQUER critério.
+ *
+ * Mandar uma carta para a reserva só mudava o `boardType`: na lista ela
+ * continuava agrupada com as criaturas do deck principal, e a conta de "quantas
+ * criaturas eu tenho" incluía as que nem vão para a mesa.
+ */
+const naReserva = (carta: DeckCarta) => carta.boardType === 'SIDEBOARD';
+
+const NOME_DA_RARIDADE: Record<string, string> = {
+  mythic: 'Mítica',
+  rare: 'Rara',
+  uncommon: 'Incomum',
+  common: 'Comum',
+};
+
+function grupoPorRaridade(carta: DeckCarta): string {
+  if (carta.boardType === 'COMMANDER') return 'Comandante';
+  return NOME_DA_RARIDADE[carta.rarity ?? ''] ?? 'Especial';
+}
 
 /** Rótulo do grupo por linha de tipo. */
 function grupoPorTipo(carta: DeckCarta): string {
@@ -115,7 +146,41 @@ function grupoPorCmc(carta: DeckCarta): string {
   return `Custo ${cmc}`;
 }
 
-export type Criterio = 'tipo' | 'cor' | 'cmc' | 'nenhum';
+export type Criterio = 'tipo' | 'cor' | 'cmc' | 'raridade' | 'nenhum';
+
+/**
+ * ─── ORDENAR É OUTRA PERGUNTA QUE AGRUPAR ──────────────────────────────────
+ *
+ * A ordem era fixa (comandante, depois alfabética). Agrupar por tipo e querer
+ * ver a curva dentro de cada grupo, ou achar as cartas mais caras para trocar
+ * por versões baratas, pedia exportar a lista para outro site.
+ */
+export type Ordenacao = 'nome' | 'cmc' | 'preco' | 'tipo' | 'raridade' | 'cor';
+
+const PESO_DA_RARIDADE: Record<string, number> = { mythic: 0, rare: 1, uncommon: 2, common: 3 };
+
+const preco = (c: DeckCarta) => parseFloat(String(c.priceUsd ?? 0)) || 0;
+
+function chaveDeOrdem(ordem: Ordenacao): (a: DeckCarta, b: DeckCarta) => number {
+  switch (ordem) {
+    case 'cmc':
+      return (a, b) => (a.cmc ?? 99) - (b.cmc ?? 99);
+    case 'preco':
+      // Mais cara primeiro: é a pergunta "onde está o dinheiro deste deck".
+      return (a, b) => preco(b) - preco(a);
+    case 'tipo':
+      return (a, b) => grupoPorTipo(a).localeCompare(grupoPorTipo(b), 'pt-BR');
+    case 'raridade':
+      return (a, b) =>
+        (PESO_DA_RARIDADE[a.rarity ?? ''] ?? 4) - (PESO_DA_RARIDADE[b.rarity ?? ''] ?? 4);
+    case 'cor':
+      return (a, b) =>
+        (a.colorIdentity ?? []).length - (b.colorIdentity ?? []).length ||
+        grupoPorCor(a).localeCompare(grupoPorCor(b), 'pt-BR');
+    default:
+      return () => 0;
+  }
+}
 
 /**
  * Ordena para exibição SEM mutar a entrada.
@@ -124,12 +189,18 @@ export type Criterio = 'tipo' | 'cor' | 'cmc' | 'nenhum';
  * qualquer outra), depois alfabético. `localeCompare` e não `<`: sem ele,
  * "Ãgua" cai depois de "Zumbi".
  */
-export function ordenarParaExibir(cartas: readonly DeckCarta[]): DeckCarta[] {
+export function ordenarParaExibir(
+  cartas: readonly DeckCarta[],
+  ordem: Ordenacao = 'nome',
+): DeckCarta[] {
+  const porChave = chaveDeOrdem(ordem);
   return [...cartas].sort((a, b) => {
     const comandanteA = a.boardType === 'COMMANDER' ? 0 : 1;
     const comandanteB = b.boardType === 'COMMANDER' ? 0 : 1;
     if (comandanteA !== comandanteB) return comandanteA - comandanteB;
-    return (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR');
+    // O nome desempata qualquer critério: duas cartas de custo 3 saem em
+    // ordem alfabética, e não na ordem em que o servidor as mandou.
+    return porChave(a, b) || (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR');
   });
 }
 
@@ -137,23 +208,34 @@ export function ordenarParaExibir(cartas: readonly DeckCarta[]): DeckCarta[] {
 export function agruparCartas(
   cartas: readonly DeckCarta[],
   criterio: Criterio,
-): Array<{ nome: string; cartas: DeckCarta[]; total: number }> {
-  const ordenadas = ordenarParaExibir(cartas);
+  ordem: Ordenacao = 'nome',
+): Array<{ nome: string; cartas: DeckCarta[]; total: number; preco: number }> {
+  const ordenadas = ordenarParaExibir(cartas, ordem);
+  const somar = (lista: DeckCarta[]) => ({
+    total: lista.reduce((t, c) => t + c.quantity, 0),
+    preco: lista.reduce((t, c) => t + preco(c) * c.quantity, 0),
+  });
 
   if (criterio === 'nenhum') {
-    return ordenadas.length
-      ? [
-          {
-            nome: 'Todas as Cartas',
-            cartas: ordenadas,
-            total: ordenadas.reduce((t, c) => t + c.quantity, 0),
-          },
-        ]
-      : [];
+    const principal = ordenadas.filter((c) => !naReserva(c));
+    const reserva = ordenadas.filter(naReserva);
+    return [
+      ...(principal.length
+        ? [{ nome: 'Todas as Cartas', cartas: principal, ...somar(principal) }]
+        : []),
+      ...(reserva.length ? [{ nome: 'Reserva', cartas: reserva, ...somar(reserva) }] : []),
+    ];
   }
 
-  const rotular =
-    criterio === 'cor' ? grupoPorCor : criterio === 'cmc' ? grupoPorCmc : grupoPorTipo;
+  const porCriterio =
+    criterio === 'cor'
+      ? grupoPorCor
+      : criterio === 'cmc'
+        ? grupoPorCmc
+        : criterio === 'raridade'
+          ? grupoPorRaridade
+          : grupoPorTipo;
+  const rotular = (c: DeckCarta) => (naReserva(c) ? 'Reserva' : porCriterio(c));
 
   const grupos = new Map<string, DeckCarta[]>();
   for (const carta of ordenadas) {
@@ -171,85 +253,70 @@ export function agruparCartas(
 
   return [...grupos.entries()]
     .sort(([a], [b]) => indice(a) - indice(b) || a.localeCompare(b, 'pt-BR'))
-    .map(([nome, lista]) => ({
-      nome,
-      cartas: lista,
-      total: lista.reduce((t, c) => t + c.quantity, 0),
-    }));
+    .map(([nome, lista]) => ({ nome, cartas: lista, ...somar(lista) }));
 }
 
 // ─── Bracket de poder ────────────────────────────────────────────────────────
 
 /**
- * Cartas que definem o teto de poder de um deck de Commander.
+ * O chip de bracket do deckbuilder.
  *
- * `Set` e não `Array.some(includes)`: a versão anterior fazia
- * `cEDH.some((x) => nome.includes(x))` para CADA carta — 100 cartas × 16
- * nomes = 1.600 buscas de substring por render, e ela rodava no corpo do
- * componente. Com casamento exato por nome (o que a lista sempre pretendeu),
- * é uma consulta de hash por carta.
+ * A conta saiu daqui. Isto era uma heurística de pontos com duas listas de
+ * nomes escritas à mão — 25 cartas, das quais só 16 eram Game Changers, três
+ * eram banidas e seis nem estavam na lista oficial — e faixas de pontos que não
+ * correspondiam a regra nenhuma: quatro Game Changers davam "Bracket 3", dez
+ * davam "Bracket 1". A estimativa agora é `estimarBracket`, em shared-types,
+ * pela marcação `game_changer` da Scryfall — a mesma que o backend usa.
  *
- * O casamento exato também corrige um falso positivo real: `includes('Sol
- * Ring')` marcava "Sol Ring" e qualquer carta cujo nome o contivesse.
+ * O que fica aqui é só apresentação.
  */
-const CARTAS_CEDH = new Set([
-  'Mana Crypt',
-  "Gaea's Cradle",
-  'Underworld Breach',
-  "Thassa's Oracle",
-  'Demonic Tutor',
-  'Vampiric Tutor',
-  'Force of Will',
-  'Fierce Guardianship',
-  'Jeweled Lotus',
-  'Mox Diamond',
-  'Chrome Mox',
-  'Dockside Extortionist',
-  'Deflecting Swat',
-  'Imperial Seal',
-  'Timetwister',
-  "Lion's Eye Diamond",
-]);
-
-const CARTAS_FORTES = new Set([
-  'Sol Ring',
-  'Mana Vault',
-  'Rhystic Study',
-  'Mystic Remora',
-  'Sylvan Library',
-  'Cyclonic Rift',
-  'Smothering Tithe',
-  "Teferi's Protection",
-  'Craterhoof Behemoth',
-]);
-
 export interface Bracket {
   label: string;
   color: string;
+  /** Tooltip: quais Game Changers, e o que a estimativa NÃO verifica. */
+  dica: string;
 }
 
-/** Estimativa grosseira de poder, pelas cartas de maior impacto presentes. */
-export function calcularBracket(cartas: readonly DeckCarta[] | undefined): Bracket {
-  if (!cartas || cartas.length === 0) {
-    return { label: 'Desconhecido', color: 'text-text-muted' };
+export function calcularBracket(
+  cartas: readonly DeckCarta[] | undefined,
+  formatId?: string | null,
+): Bracket | null {
+  // Carta pendente ainda não tem a marcação: contá-la como "sem dados" faria o
+  // chip piscar "incompleto" a cada carta adicionada.
+  const e = estimarBracket(
+    (cartas ?? []).filter((c) => !c.pendente),
+    formatId,
+  );
+  if (!e) return null;
+
+  const n = e.gameChangers.length;
+  const ressalva =
+    'Estimativa pela lista oficial de Game Changers. Destruição de terrenos em massa, ' +
+    'turnos extras e combos de duas cartas não são verificados — isso fica com a mesa.';
+  const dica = n
+    ? `${n} Game Changer(s): ${e.gameChangers.join(', ')}.
+
+${ressalva}`
+    : `Nenhum Game Changer.
+
+${ressalva}`;
+
+  if (e.semDados > 0 && e.minimo < 4) {
+    return {
+      label: `${rotuloDoBracket(e)} (incompleto)`,
+      color: 'text-text-muted',
+      dica: `${e.semDados} carta(s) sem dados da Scryfall — o bracket pode ser maior.
+
+${dica}`,
+    };
   }
 
-  let pontos = 0;
-  for (const carta of cartas) {
-    const nome = carta.name;
-    if (!nome) continue;
-    // Nome canônico de dupla face vem como "Frente // Verso"; a lista usa a
-    // frente, que é o que aparece em qualquer decklist.
-    const frente = nome.split(' // ')[0]!;
-    if (CARTAS_CEDH.has(nome) || CARTAS_CEDH.has(frente)) pontos += 3;
-    else if (CARTAS_FORTES.has(nome) || CARTAS_FORTES.has(frente)) pontos += 1;
-  }
-
-  if (pontos >= 10) return { label: 'Bracket 5 (cEDH / Máximo)', color: 'text-[#ef4444]' };
-  if (pontos >= 7) return { label: 'Bracket 4 (High Power)', color: 'text-[#f97316]' };
-  if (pontos >= 4) return { label: 'Bracket 3 (Mid-High)', color: 'text-[#eab308]' };
-  if (pontos >= 2) return { label: 'Bracket 2 (Mid Power)', color: 'text-[#84cc16]' };
-  return { label: 'Bracket 1 (Low Power / Casual)', color: 'text-[#22c55e]' };
+  const sufixo = n ? ` · ${n} GC` : '';
+  if (e.minimo === 4)
+    return { label: `${rotuloDoBracket(e)}${sufixo}`, color: 'text-[#f97316]', dica };
+  if (e.minimo === 3)
+    return { label: `${rotuloDoBracket(e)}${sufixo}`, color: 'text-[#eab308]', dica };
+  return { label: rotuloDoBracket(e), color: 'text-[#22c55e]', dica };
 }
 
 /** Soma do preço em USD, formatada. `priceUsd` chega como texto da Scryfall. */
@@ -258,4 +325,41 @@ export function precoTotal(cartas: readonly DeckCarta[] | undefined): string {
   let total = 0;
   for (const c of cartas) total += (parseFloat(String(c.priceUsd ?? 0)) || 0) * c.quantity;
   return total.toFixed(2);
+}
+
+// ─── Exportar ────────────────────────────────────────────────────────────────
+
+/**
+ * ─── A LISTA SAI EM TEXTO QUE OS OUTROS SITES LEEM ─────────────────────────
+ *
+ * Não existia exportar (DOC-094 I.7): o deck entrava pelo importador e não
+ * saía mais, a não ser copiando carta por carta. O formato é o que Moxfield,
+ * Archidekt, MTGO e o nosso próprio importador entendem — "N Nome" — com as
+ * seções de comandante e reserva separadas por linha em branco, que é como
+ * todos eles distinguem as duas.
+ *
+ * `comEdicao` acrescenta "(SET)": mantém a impressão escolhida ao levar o
+ * deck para outro lugar. Sem o número de colecionador, o Arena pode escolher
+ * outra arte da mesma coleção — ele não vem na resposta que o editor tem.
+ */
+export function exportarLista(
+  cartas: readonly DeckCarta[],
+  opcoes: { comEdicao?: boolean } = {},
+): string {
+  const linha = (c: DeckCarta) =>
+    `${c.quantity} ${c.name ?? 'Desconhecido'}${
+      opcoes.comEdicao && c.set && c.set !== '???' ? ` (${c.set})` : ''
+    }`;
+  const ordenadas = ordenarParaExibir(cartas);
+  const secoes = [
+    { titulo: 'Commander', cartas: ordenadas.filter((c) => c.boardType === 'COMMANDER') },
+    { titulo: 'Deck', cartas: ordenadas.filter((c) => c.boardType === 'MAIN') },
+    { titulo: 'Sideboard', cartas: ordenadas.filter((c) => c.boardType === 'SIDEBOARD') },
+  ].filter((sec) => sec.cartas.length > 0);
+  // Só o deck principal dispensa cabeçalho: uma lista sem comandante nem
+  // reserva sai como a lista pura, que é o que todo importador espera.
+  if (secoes.length === 1 && secoes[0]!.titulo === 'Deck') {
+    return secoes[0]!.cartas.map(linha).join('\n');
+  }
+  return secoes.map((sec) => [sec.titulo, ...sec.cartas.map(linha)].join('\n')).join('\n\n');
 }

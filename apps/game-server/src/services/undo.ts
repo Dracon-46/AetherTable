@@ -1,5 +1,9 @@
 /**
- * undo.ts — janela de arrependimento de 10 s (DOC-036 item 130, RN: DOC-031).
+ * undo.ts — o MEMENTO do padrao Command: o recorte de estado que um comando
+ * guarda para conseguir se desfazer (DOC-036 item 130, RN: DOC-031).
+ *
+ * Quem decide QUANDO capturar e QUANDO restaurar e `intents/comandos.ts`; aqui
+ * ficam o recorte, a janela e a lista do que nao volta atras.
  *
  * O QUE ESTE MODULO NAO FAZ, E POR QUE
  *
@@ -63,6 +67,8 @@ interface JogadorSnapshot {
   isMonarch: boolean;
   hasInitiative: boolean;
   conceded: boolean;
+  /** Desfazer a compra do grimório vazio não revivia o jogador sem isto. */
+  decked: boolean;
   commanderDamage: Array<[string, number]>;
 }
 
@@ -130,6 +136,7 @@ export function capturar(state: RoomState, sid: string, tipo: string): Snapshot 
         isMonarch: p.isMonarch,
         hasInitiative: p.hasInitiative,
         conceded: p.conceded,
+        decked: p.decked,
         commanderDamage: Array.from(p.commanderDamage.entries()),
       }
     : null;
@@ -172,6 +179,36 @@ export function restaurar(state: RoomState, snap: Snapshot): void {
     lista.splice(0, lista.length, ...ids);
   }
 
+  /**
+   * CARTA DE OUTRO DONO: AS LISTAS DELE TAMBEM.
+   *
+   * O recorte só restaurava as listas de quem desfez. Quem controlava a carta
+   * de outra pessoa e a mandava para o grimório DELA, e depois desfazia, via a
+   * carta voltar ao campo com o id ainda no grimório do dono — a próxima compra
+   * dele puxava a carta do campo alheio para a mão. Restaurar a lista inteira
+   * do dono apagaria o que ELE fez nesses dez segundos; por isso o conserto é
+   * cirúrgico: o id sai de todas as listas do dono e volta só para a da zona
+   * restaurada.
+   */
+  const donosAfetados = new Set<string>();
+  for (const [id, s] of snap.cartas) {
+    const c = state.cards.get(id);
+    if (!c || c.ownerId === snap.sid) continue;
+    for (const zona of ZONES) {
+      const lista = state.zoneOrder.get(zoneOrderKey(c.ownerId, zona))?.items;
+      const i = lista ? lista.indexOf(id) : -1;
+      if (lista && i !== -1) lista.splice(i, 1);
+    }
+    state.zoneOrder.get(zoneOrderKey(c.ownerId, s.zone as Zone))?.items.push(id);
+    donosAfetados.add(c.ownerId);
+  }
+  for (const dono of donosAfetados) {
+    const outro = state.players.get(dono);
+    if (!outro) continue;
+    outro.handCount = state.zoneOrder.get(zoneOrderKey(dono, 'HAND'))?.items.length ?? 0;
+    outro.libraryCount = state.zoneOrder.get(zoneOrderKey(dono, 'LIBRARY'))?.items.length ?? 0;
+  }
+
   const p = state.players.get(snap.sid);
   if (p && snap.jogador) {
     const j = snap.jogador;
@@ -189,6 +226,7 @@ export function restaurar(state: RoomState, snap: Snapshot): void {
     p.isMonarch = j.isMonarch;
     p.hasInitiative = j.hasInitiative;
     p.conceded = j.conceded;
+    p.decked = j.decked;
     p.commanderDamage.clear();
     for (const [de, valor] of j.commanderDamage) p.commanderDamage.set(de, valor);
     p.handCount = state.zoneOrder.get(zoneOrderKey(snap.sid, 'HAND'))?.items.length ?? p.handCount;
@@ -213,8 +251,35 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_DISCARD_RANDOM',
   'INTENT_PEEK',
   'INTENT_CLOSE_PEEK',
+  // Mesma razão do commit do scry: reordenar o que se viu (ou embaralhar o
+  // bloco) não volta sem devolver a olhada, e a ordem aleatória não se desfaz.
+  'INTENT_ARRANGE_PEEKED',
   'INTENT_SCRY',
   'INTENT_SURVEIL',
+  // O commit do scry tambem nao volta (DOC-036 §4.2): desfazer devolveria a
+  // ordem antiga sem devolver a sessao, e o jogador ficaria com cartas
+  // reordenadas que ele ja viu e um scry que nao pode mais concluir.
+  'INTENT_SCRY_COMMIT',
+  'INTENT_SURVEIL_COMMIT',
+  // Comprar e moer mostram cartas do grimorio: desfazer as devolvia ao topo na
+  // MESMA ordem, ja conhecidas — uma olhada gratis no topo, contra a regra do
+  // proprio modulo.
+  'INTENT_DRAW',
+  'INTENT_DRAW_UP_TO',
+  'INTENT_MILL',
+  // O recorte e das cartas que o jogador ja POSSUIA: fichas e copias criadas
+  // depois dele nao eram removidas, e o "desfeito" nao mudava nada na mesa.
+  'INTENT_CREATE_TOKEN',
+  'INTENT_COPY_CARD',
+  // Estado da MESA, nao do jogador: desfazer "tomar o Monarca" restaurava so
+  // quem desfez e deixava a mesa sem monarca; desfazer passar o turno
+  // anunciava "desfeito" sem devolver a vez.
+  'INTENT_TOGGLE_DESIGNATION',
+  'INTENT_PASS_TURN',
+  'INTENT_SET_TURN',
+  'INTENT_SET_DAY_NIGHT',
+  // Voto dado e voto dado — e o ultimo voto ja tirou alguem da sala.
+  'INTENT_VOTE_KICK',
   'INTENT_SEARCH_ZONE',
   'INTENT_REVEAL',
   'INTENT_REVEAL_TOP',
@@ -223,6 +288,9 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_SET_ZONE_VISIBILITY',
   'INTENT_CHAT',
   'INTENT_PING',
+  'INTENT_REACTION',
+  // O snapshot de jogador não guarda o pool: desfazer só gastaria o slot.
+  'INTENT_MANA_POOL',
   'INTENT_START_MATCH',
   'INTENT_RESET_MATCH',
   'INTENT_LEAVE',
@@ -260,31 +328,3 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   'INTENT_RESPOND_VIEW',
   'INTENT_REVOKE_VIEW',
 ]);
-
-/** Um snapshot por jogador — o ultimo. Undo nao empilha (DOC-036 item 130). */
-export class JornalUndo {
-  private readonly porJogador = new Map<string, Snapshot>();
-
-  registrar(state: RoomState, sid: string, tipo: string): void {
-    if (NAO_REVERSIVEIS.has(tipo)) {
-      // Uma acao irreversivel invalida o passado: desfazer "por cima" dela
-      // restauraria um estado que nao existe mais.
-      this.porJogador.delete(sid);
-      return;
-    }
-    this.porJogador.set(sid, capturar(state, sid, tipo));
-  }
-
-  desfazer(state: RoomState, sid: string, agora = Date.now()): string | null {
-    const snap = this.porJogador.get(sid);
-    if (!snap) return null;
-    this.porJogador.delete(sid);
-    if (agora - snap.em > JANELA_UNDO_MS) return null;
-    restaurar(state, snap);
-    return snap.tipo;
-  }
-
-  esquecer(sid: string): void {
-    this.porJogador.delete(sid);
-  }
-}

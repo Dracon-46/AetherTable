@@ -3,17 +3,20 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
 import { API_URL } from '@/lib/api';
+import { apelidoParaEnvio } from '@/lib/perfil';
+import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { Settings, Save, Check, Palette, User as UserIcon, Sun, Moon, Monitor } from 'lucide-react';
 import { DESCRICAO_DO_TEMA, TEMAS } from '@aethertable/shared-types';
 import { useTema } from '../../../store/tema.store';
 import { CosmeticPicker } from '../../../components/CosmeticPicker';
 import { TrocarSenha } from './TrocarSenha';
+import { ExcluirConta } from './ExcluirConta';
 
 export default function SettingsPage() {
   const tema = useTema((t) => t.tema);
   const escolherTema = useTema((t) => t.escolher);
 
-  const { user, accessToken } = useAuthStore();
+  const { user, accessToken, setAuth } = useAuthStore();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [language, setLanguage] = useState('pt-BR');
@@ -24,7 +27,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user) {
       setUsername(user.username || '');
-      setDisplayName((user as any).displayName || '');
+      setDisplayName(user.displayName || '');
     }
   }, [user]);
 
@@ -39,16 +42,37 @@ export default function SettingsPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ username, displayName, language }),
+        // Ver `apelidoParaEnvio`: o apelido em branco ia como `''` e o servidor
+        // recusava o formulário inteiro.
+        body: JSON.stringify({
+          username,
+          displayName: apelidoParaEnvio(displayName, user?.displayName),
+          language,
+        }),
       });
 
       const data = await res.json();
       if (res.ok) {
-        setMessage(
-          'Perfil atualizado com sucesso! (Saia e entre novamente para ver o efeito global no cabeçalho)',
-        );
+        /**
+         * ─── SALVAR E VOLTAR DESFAZIA A TROCA ───────────────────────────────
+         *
+         * O formulário é preenchido a partir do store, e o store nunca era
+         * atualizado aqui. Ao voltar para Ajustes o campo mostrava o nome
+         * ANTIGO; qualquer outro salvamento (tema, idioma) mandava esse nome
+         * antigo de volta e revertia a troca sem ninguém perceber. Grava a
+         * resposta do servidor — que é o que de fato ficou salvo.
+         */
+        if (user && accessToken) {
+          setAuth(accessToken, {
+            ...user,
+            username: data.username ?? user.username,
+            displayName: data.displayName ?? null,
+            avatarUrl: data.avatarUrl ?? user.avatarUrl ?? null,
+          });
+        }
+        setMessage('Perfil atualizado com sucesso!');
       } else {
-        setMessage(`Erro: ${data.message || 'Falha ao salvar'}`);
+        setMessage(`Erro: ${mensagemDoCorpoDeErro(data) ?? 'Falha ao salvar'}`);
       }
     } catch {
       setMessage('Erro na conexão com o servidor.');
@@ -212,6 +236,7 @@ export default function SettingsPage() {
           </section>
 
           <TrocarSenha />
+          <ExcluirConta />
         </>
       )}
     </div>

@@ -26,6 +26,7 @@
 
 import React from 'react';
 import {
+  ArrowLeftRight,
   Crown,
   Trash2,
   Plus as PlusIcon,
@@ -42,6 +43,38 @@ export interface AcoesDeCarta {
   onRemover: ((cardId: string) => void) | null;
   onAlternarComandante: ((cardId: string, boardType: string) => void) | null;
   onTrocarArte: ((carta: DeckCarta) => void) | null;
+  /**
+   * Entre o deck principal e a reserva. O backend sempre aceitou qualquer
+   * `boardType`; a tela só sabia alternar comandante, e a reserva só se
+   * preenchia pela importação.
+   */
+  onAlternarReserva?: ((cardId: string, boardType: string) => void) | null;
+}
+
+/** O botão de reserva, igual nas três vistas — muda só o tamanho. */
+function BotaoDeReserva({
+  carta,
+  acoes,
+  className,
+  tamanho = 'h-3.5 w-3.5',
+}: {
+  carta: DeckCarta;
+  acoes: AcoesDeCarta;
+  className: string;
+  tamanho?: string;
+}) {
+  if (!acoes.onAlternarReserva || carta.boardType === 'COMMANDER') return null;
+  const naReserva = carta.boardType === 'SIDEBOARD';
+  return (
+    <button
+      onClick={() => acoes.onAlternarReserva?.(carta.id, carta.boardType)}
+      className={`${className} ${naReserva ? 'text-warning' : ''}`}
+      title={naReserva ? 'Voltar para o deck principal' : 'Mandar para a reserva'}
+      aria-label={naReserva ? 'Voltar para o deck principal' : 'Mandar para a reserva'}
+    >
+      <ArrowLeftRight className={tamanho} />
+    </button>
+  );
 }
 
 /** `true` quando a carta ainda não tem id do servidor — nenhum botão funciona. */
@@ -118,6 +151,11 @@ export const LinhaDeCarta = React.memo(function LinhaDeCarta({
             >
               <Crown className="h-3.5 w-3.5" />
             </button>
+            <BotaoDeReserva
+              carta={carta}
+              acoes={acoes}
+              className="text-text-muted hover:text-primary hover:bg-primary/10 p-1.5 transition-colors"
+            />
             <span className="bg-panel-border mx-0.5 h-4 w-px" />
             <button
               onClick={() => acoes.onMudarQuantidade?.(carta.id, -1)}
@@ -200,7 +238,14 @@ export const LinhaCompacta = React.memo(function LinhaCompacta({
       {podeEditar && (
         // Os controles só aparecem no hover/foco: com cem linhas na tela, seis
         // botões por linha viram seiscentos botões competindo com os nomes.
-        <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        //
+        // ─── INVISÍVEL NÃO É INALCANÇÁVEL ───────────────────────────────────
+        // `opacity-0` esconde e continua recebendo toque: no celular, quem
+        // tocava a linha acertava um "−" que não via e uma cópia única sumia
+        // do deck. `pointer-events-none` fecha isso. E como tela de toque não
+        // tem hover (o `hover:` do Tailwind 4 só vale com `(hover: hover)`),
+        // lá os controles ficam à vista — senão não haveria como alcançá-los.
+        <span className="pointer-events-none flex shrink-0 items-center opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
           <button
             onClick={() => acoes.onMudarQuantidade?.(carta.id, -1)}
             className="text-text-muted hover:text-danger px-1"
@@ -222,6 +267,12 @@ export const LinhaCompacta = React.memo(function LinhaCompacta({
           >
             <Crown className="h-3 w-3" />
           </button>
+          <BotaoDeReserva
+            carta={carta}
+            acoes={acoes}
+            className="text-text-muted hover:text-primary px-1"
+            tamanho="h-3 w-3"
+          />
           <button
             onClick={() => acoes.onRemover?.(carta.id)}
             className="text-text-muted hover:text-danger px-1"
@@ -247,8 +298,40 @@ export const ArteDeCarta = React.memo(function ArteDeCarta({
   const comandante = carta.boardType === 'COMMANDER';
   const podeEditar = Boolean(acoes.onMudarQuantidade) && !semId(carta);
 
+  /**
+   * ─── O TOQUE NA ARTE ACERTAVA BOTÕES QUE NINGUÉM VIA ─────────────────────
+   *
+   * A sobreposição de controles era só `opacity-0`: invisível, mas cobrindo a
+   * carta inteira e recebendo toque. No celular, tocar a arte para olhá-la
+   * acertava "Comandante" (bem no centro) ou o "−" de uma cópia única, e a
+   * carta mudava de zona ou sumia do deck sem a pessoa ter visto botão nenhum.
+   *
+   * Agora a sobreposição não recebe ponteiro enquanto está escondida. Com
+   * mouse, o hover a revela como antes; no toque — que não tem hover — o
+   * primeiro toque na arte a ABRE e só o seguinte age. Teclado continua pelo
+   * `focus-within`. O tipo de ponteiro é lembrado no `pointerdown` porque um
+   * clique de mouse no fundo da sobreposição não deve fixá-la aberta: para o
+   * mouse, quem decide é o hover.
+   */
+  const [aberto, setAberto] = React.useState(false);
+  const ultimoPonteiro = React.useRef<string | null>(null);
+
+  const aoTocarNaArte = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!podeEditar || ultimoPonteiro.current === 'mouse') return;
+    // Toque num botão já é a ação; alternar junto fecharia o painel embaixo
+    // do dedo a cada "+".
+    if ((e.target as HTMLElement).closest('button')) return;
+    setAberto((v) => !v);
+  };
+
   return (
-    <div className="group/card relative">
+    <div
+      className="group/card relative"
+      onPointerDown={(e) => {
+        ultimoPonteiro.current = e.pointerType;
+      }}
+      onClick={aoTocarNaArte}
+    >
       {/* Pelo proxy da API. O `imageNormal` que o backend devolve aponta para
           `cards.scryfall.io` — domínio que a rede do usuário pode bloquear. */}
       <img
@@ -278,7 +361,13 @@ export const ArteDeCarta = React.memo(function ArteDeCarta({
         </span>
       )}
       {podeEditar && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/60 opacity-0 backdrop-blur-[2px] transition-opacity focus-within:opacity-100 group-hover/card:opacity-100">
+        <div
+          className={`absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/60 backdrop-blur-[2px] transition-opacity ${
+            aberto
+              ? 'pointer-events-auto opacity-100'
+              : 'pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100'
+          }`}
+        >
           {/* Quantidade direto na arte: na galeria, o caminho anterior para
               mudar de 1 para 2 era voltar para a vista de lista. */}
           <div className="flex items-center gap-1 rounded-full bg-black/70 px-1">
@@ -308,6 +397,12 @@ export const ArteDeCarta = React.memo(function ArteDeCarta({
           >
             <Crown className="h-3 w-3" /> {comandante ? 'Despromover' : 'Comandante'}
           </button>
+          <BotaoDeReserva
+            carta={carta}
+            acoes={acoes}
+            className="rounded bg-black/80 px-2 py-1.5 text-white shadow-lg transition-colors hover:bg-black"
+            tamanho="h-3 w-3"
+          />
           <div className="flex items-center gap-2">
             <button
               onClick={() => acoes.onRemover?.(carta.id)}

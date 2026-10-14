@@ -101,6 +101,26 @@ describe('INTENT_PASS_TURN', () => {
     expect(state.turn).toBeGreaterThan(turnoInicial);
   });
 
+  /** A vez caía em quem já tinha perdido, e a mesa esperava alguém que saiu do jogo. */
+  it('pula quem já foi eliminado', () => {
+    const state = montarMesa(['a', 'b', 'c'], 'a');
+    state.players.get('b')!.eliminated = true;
+
+    passar(state, 'a');
+
+    expect(state.activePlayerId).toBe('c');
+  });
+
+  it('pular o eliminado por cima do assento 0 também fecha a rodada', () => {
+    const state = montarMesa(['a', 'b', 'c'], 'c');
+    state.players.get('a')!.eliminated = true;
+
+    passar(state, 'c'); // c -> (a fora) -> b
+
+    expect(state.activePlayerId).toBe('b');
+    expect(state.turn).toBe(2);
+  });
+
   it('nao faz nada numa mesa sem jogadores', () => {
     const state = new RoomState();
     expect(() => passar(state, 'fantasma')).not.toThrow();

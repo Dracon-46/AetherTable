@@ -112,9 +112,17 @@ export interface FormatPreset {
 ```
 
 **Nota sobre `legalityKey`:** a Scryfall já devolve `legalities` com chave por formato (`standard`,
-`modern`, `commander`, `pauper`, `vintage`, `brawl`, `oathbreaker`, `duel`, `premodern`, `oldschool`…).
-Reaproveitar essa chave significa que **a banlist vem de graça e sempre atualizada** — nós não mantemos
-lista nenhuma. Ver [integracoes_externas_scryfall.md](integracoes_externas_scryfall.md) §6.2.
+`modern`, `commander`, `pauper`, `vintage`, `standardbrawl`, `brawl`, `oathbreaker`, `duel`, `paupercommander`,
+`premodern`, `oldschool`…). Reaproveitar essa chave significa que **a banlist vem de graça e sempre
+atualizada** — nós não mantemos lista nenhuma. Ver [integracoes_externas_scryfall.md](integracoes_externas_scryfall.md) §6.2.
+
+**A chave não é o id do formato — e nem sempre o nome dele** (conferido na API em out/2026). O Brawl
+de 60 cartas é `standardbrawl`; `brawl` passou a ser o pool do Historic Brawl (`historicbrawl` não
+existe); e não há chave `explorer`. Com uma chave inexistente, toda carta cai em "sem legalities" e
+**nenhuma** banida é acusada. Pelo mesmo motivo, o backend marca `isBanned` por
+`legalities[chaveDeLegalidade]` do preset: era `legalities[formatId]`, que só acertava onde os dois
+coincidem (Commander, Modern) e deixava Duel Commander, PDH, Historic Brawl e Commander 1v1 entrarem
+na mesa com banidas. Formato sem chave (Freeform, Peasant) não marca banida nenhuma.
 
 **Validação continua não bloqueante** em todos os formatos (`RN05`): o sistema **avisa**, nunca impede.
 
@@ -135,39 +143,118 @@ lista nenhuma. Ver [integracoes_externas_scryfall.md](integracoes_externas_scryf
 | `historic`  | **Historic**                      | ≥ 60 | 4                | 0–15      | 20   | 2    | `historic`    | V1   |
 | `timeless`  | **Timeless**                      | ≥ 60 | 4                | 0–15      | 20   | 2    | `timeless`    | V1   |
 | `alchemy`   | **Alchemy**                       | ≥ 60 | 4                | 0–15      | 20   | 2    | `alchemy`     | V1   |
-| `explorer`  | **Explorer**                      | ≥ 60 | 4                | 0–15      | 20   | 2    | `explorer`    | V1   |
+| `explorer`  | **Explorer** (BETA)               | ≥ 60 | 4                | 0–15      | 20   | 2    | `pioneer`     | V1   |
 | `peasant`   | **Peasant** (comuns + 5 incomuns) | ≥ 60 | 4                | 0–15      | 20   | 2    | —             | V2   |
 | `artisan`   | **Artisan** (comuns e incomuns)   | ≥ 60 | 4                | 0–15      | 20   | 2    | —             | V2   |
 
 Zonas: `LIBRARY`, `HAND`, `BATTLEFIELD`, `GRAVEYARD`, `EXILE`, `STACK`, `SIDEBOARD`, `COMPANION`.
 
 **Vintage** é o único com lista de **restritas** (máximo 1 cópia, distinto de banida). A Scryfall marca
-isso como `legalities.vintage === "restricted"`.
+isso como `legalities.vintage === "restricted"`. A contagem é **por nome**, somando impressões e
+reserva: linha a linha, duas impressões de Black Lotus com uma cópia cada passavam.
+
+**Explorer** usa a chave `pioneer`: a Scryfall não tem `explorer`, e com ela o formato não acusava
+nada — nem Sol Ring. Explorer é o Pioneer do Arena, então a banlist e o pool acertam; só passa carta
+de Pioneer que ainda não chegou ao Arena. Por essa aproximação o formato fica em BETA.
+
+**O limite de cópias soma deck e reserva** (CR 100.4a). Contando só o main, quatro Lightning Bolt no
+main e mais duas na reserva passavam sem aviso. A reserva também entra na checagem de banlist — uma
+banida lá entra na partida na primeira troca, e Ragavan na reserva de um Modern passava. Em formato
+sem reserva (Commander), o que está lá não joga e não conta.
+
+**O teto de raridade cede à Scryfall** (Pauper, PDH). A raridade que chega é a da impressão
+escolhida, e a regra é "impressa como comum em alguma coleção": Counterspell de MH2 é incomum e é
+legal em Pauper. Quando a chave do formato diz `legal`, o aviso de raridade não sai. Peasant e
+Artisan, sem chave, ficam só com o teto.
 
 ---
 
 ## 4. Formatos de comandante
 
-| ID                  | Formato                  | Deck                                | Vida                      | Jog.           | Comandante                              | `legalityKey`     | Fase |
-| ------------------- | ------------------------ | ----------------------------------- | ------------------------- | -------------- | --------------------------------------- | ----------------- | ---- |
-| `commander`         | **Commander / EDH**      | 100 exatas, singleton               | **40**                    | 2–8 (padrão 4) | 1 criatura lendária                     | `commander`       | MVP  |
-| `duel_commander`    | **Duel Commander**       | 100, singleton                      | **20**                    | 2              | 1                                       | `duel`            | V1   |
-| `commander_1v1`     | **Commander 1v1** (MTGO) | 100, singleton                      | **30**                    | 2              | 1                                       | `commander`       | V1   |
-| `brawl`             | **Brawl**                | 60, singleton                       | **25** (1v1) / 30 (multi) | 2–4            | 1                                       | `brawl`           | V1   |
-| `historic_brawl`    | **Historic Brawl**       | 100, singleton                      | 25 / 30                   | 2–4            | 1                                       | `historicbrawl`   | V1   |
-| `oathbreaker`       | **Oathbreaker**          | 60, singleton                       | **20**                    | 2–4            | **1 planeswalker + feitiço-assinatura** | `oathbreaker`     | V1   |
-| `pdh`               | **Pauper EDH (PDH)**     | 100, singleton, comuns              | **40**                    | 2–6            | 1 incomum                               | `paupercommander` | V1   |
-| `tiny_leaders`      | **Tiny Leaders**         | 50, singleton, **CMV ≤ 3**          | **25**                    | 2              | 1                                       | —                 | V2   |
-| `canlander`         | **Canadian Highlander**  | 100, singleton, **lista de pontos** | 20                        | 2              | não                                     | —                 | V2   |
-| `commander_2hg`     | **Commander 2HG**        | 100, singleton                      | **30 compartilhada**      | 4 (2v2)        | 1 por jogador                           | `commander`       | V1   |
-| `commander_emperor` | **Commander Emperor**    | 100, singleton                      | 40                        | 6 (3v3)        | 1                                       | `commander`       | V2   |
+| ID                  | Formato                  | Deck                                      | Vida                      | Jog.           | Comandante                              | `legalityKey`     | Fase |
+| ------------------- | ------------------------ | ----------------------------------------- | ------------------------- | -------------- | --------------------------------------- | ----------------- | ---- |
+| `commander`         | **Commander / EDH**      | 100 exatas, singleton                     | **40**                    | 2–8 (padrão 4) | 1 criatura lendária                     | `commander`       | MVP  |
+| `duel_commander`    | **Duel Commander**       | 100, singleton                            | **20**                    | 2              | 1                                       | `duel`            | V1   |
+| `commander_1v1`     | **Commander 1v1** (MTGO) | 100, singleton                            | **30**                    | 2              | 1                                       | `commander`       | V1   |
+| `brawl`             | **Brawl**                | 60, singleton                             | **25** (1v1) / 30 (multi) | 2–4            | 1 criatura **ou planeswalker** lendário | `standardbrawl`   | V1   |
+| `historic_brawl`    | **Historic Brawl**       | 100, singleton                            | 25 / 30                   | 2–4            | 1 criatura **ou planeswalker** lendário | `brawl`           | V1   |
+| `oathbreaker`       | **Oathbreaker**          | 60, singleton                             | **20**                    | 2–4            | **1 planeswalker + feitiço-assinatura** | `oathbreaker`     | V1   |
+| `pdh`               | **Pauper EDH (PDH)**     | 100, singleton, comuns                    | **30**                    | 2–6            | 1 criatura incomum (lendária ou não)    | `paupercommander` | V1   |
+| `tiny_leaders`      | **Tiny Leaders**         | 50, singleton, **CMV ≤ 3**                | **25**                    | 2              | 1                                       | —                 | V2   |
+| `canlander`         | **Canadian Highlander**  | **≥ 100**, singleton, **lista de pontos** | 20                        | 2              | não                                     | —                 | V2   |
+| `commander_2hg`     | **Commander 2HG**        | 100, singleton                            | **30 compartilhada**      | 4 (2v2)        | 1 por jogador                           | `commander`       | V1   |
+| `commander_emperor` | **Commander Emperor**    | 100, singleton                            | 40                        | 6 (3v3)        | 1                                       | `commander`       | V2   |
 
 **Oathbreaker é o caso mais atípico:** o comandante é um **planeswalker**, e há uma segunda carta
 especial — o _feitiço-assinatura_, uma mágica instantânea ou feitiço que também fica na zona de comando
 e só pode ser conjurada se o planeswalker estiver no campo. O preset resolve com
 `commander: { count: 1, cardType: 'planeswalker', signatureSpell: true }`.
 
+**Brawl e Historic Brawl aceitam planeswalker lendário** como comandante (`aceitaPlaneswalker`). Com
+o tipo fixo em criatura, todo Brawl comandado por planeswalker — legal desde o lançamento do formato
+— recebia o aviso de comandante errado.
+
+**PDH** foi corrigido em três pontos:
+
+- O comandante é qualquer criatura **incomum**, lendária ou não (`exigeLendario: false`). A exigência
+  fixa de lendária acusava Murasa Rootgrazer e companhia.
+- A chave `paupercommander` descreve as 99, e o comandante incomum aparece nela como `not_legal` por
+  definição. Na linha de comandante esse `not_legal` é ignorado — `banned` continua acusado.
+- Vida **30**, e não os 40 herdados de Commander (regras da pdhhomebase), e **16** de dano de
+  comandante elimina (`comandante.danoLetal`).
+
+**O dano de comandante letal é do formato** (`RegrasDeComandante.danoLetal`). Era 21 fixo no
+servidor, e a mesa eliminava quem, pelas regras do formato, ainda estava vivo:
+
+| Formato                                | `danoLetal`                        |
+| -------------------------------------- | ---------------------------------- |
+| Commander, Duel Commander, Planechase… | 21                                 |
+| PDH                                    | 16                                 |
+| Brawl, Historic Brawl, Oathbreaker     | `null` — o formato não tem a regra |
+
+O painel de vida usa o mesmo valor para destacar a linha em vermelho.
+
+**Canadian Highlander é mínimo de 100**, não exatamente 100. Herdar o `exato` de `comandante()`
+transformava um deck legal de 101 cartas em `TAMANHO` — um `erro`, dos poucos achados que barram a
+mesa.
+
 Zonas de comandante: as padrão + `COMMAND`.
+
+### 4.1 Estimativa de bracket — pela marcação oficial de Game Changers
+
+O chip de bracket do deckbuilder era uma heurística de **pontos** escrita à mão no frontend: 25
+nomes, 3 deles cartas **banidas** (Mana Crypt, Jeweled Lotus, Dockside), 6 que **não** são Game
+Changers (Sol Ring, Sylvan Library…), e faixas sem relação com a regra oficial. Errava nos dois
+sentidos — quatro Game Changers apareciam como "3", e um deck com dez que não estavam na lista
+aparecia como "Bracket 1".
+
+Agora é `estimarBracket`, em `packages/shared-types/src/bracket.ts`, sobre a marcação
+`game_changer` da Scryfall (o backend hidrata `gameChanger` em cada carta do deck). A lista oficial
+muda; uma lista transcrita envelhece em silêncio, que era exatamente o defeito.
+
+| Game Changers no deck | Estimativa      |
+| --------------------- | --------------- |
+| 0                     | **Bracket 1–2** |
+| 1 a 3                 | **Bracket 3+**  |
+| 4 ou mais             | **Bracket 4–5** |
+
+- Só contam `MAIN`, `COMMANDER` e `SIGNATURE_SPELL`, **deduplicadas por nome** (duas impressões da
+  mesma carta são duas linhas).
+- Carta sem a marcação conta como **"sem dados"**, nunca como "não é Game Changer" — sem a distinção,
+  uma Scryfall fora do ar mostrava "Bracket 1".
+- `null` fora do **Commander multijogador** (`formatoTemBracket`): banlist de Commander
+  (`chaveDeLegalidade === 'commander'`) **e** mesa para mais de dois — Commander, Commander 2HG,
+  Commander Emperor e Planechase. A primeira versão bastava ter zona de comando, e o chip aparecia em
+  Duel Commander, Brawl, PDH e Oathbreaker: banlist própria, só comuns ou duelo, onde "Bracket 4" não
+  descreve mesa nenhuma. Commander 1v1 fica fora pelo mesmo motivo, apesar da mesma banlist.
+  "Bracket 1" num deck de Modern também não significa nada.
+- **Não** verifica destruição de terrenos em massa, turnos extras nem combos de duas cartas: dependem
+  de como o deck joga, e isso fica com a mesa (`RN01`). Por isso é um **piso** e se chama estimativa.
+
+`avaliarLegalidade(deck, formatoDaSala?, nivelDaSala?)` devolve `bracket` e, quando o mínimo
+estimado passa do nível **declarado** pela sala, emite o achado `BRACKET_ACIMA_DA_MESA` com
+gravidade **`aviso`** — nunca `erro`. O nível da sala é uma etiqueta do anfitrião, e a mesa pode
+aceitar o deck mais forte; o que não pode é o jogador descobrir isso só com a partida começada.
 
 ---
 
@@ -363,6 +450,11 @@ function validarDeck(deck: Deck, preset: FormatPreset): Aviso[] {
 ```
 
 Uma função, 40 formatos. É o retorno da tese da §1.
+
+**`CONTADOR_DESSINCRONIZADO`** (aviso) compara `Deck.cardCount` com a soma de **todas** as linhas,
+de todo board (`contarTodasAsLinhas`), e não com o total que joga. O backend incrementa o contador em
+toda escrita de carta, inclusive na reserva e no maybeboard; comparar só com main, comando e feitiço
+acusava "uma escrita falhou" em todo deck com reserva, sem falha nenhuma.
 
 ---
 

@@ -59,6 +59,10 @@ export type AcaoDeAtalho =
   | 'VIRAR_MOEDA'
   | 'GANHAR_VIDA'
   | 'PERDER_VIDA'
+  | 'REAGIR_POLEGAR'
+  | 'REAGIR_PENSANDO'
+  | 'REAGIR_UAU'
+  | 'REAGIR_CHORO'
   // GRIMORIO
   | 'EMBARALHAR'
   | 'OLHAR_TOPO'
@@ -94,7 +98,14 @@ export type AcaoDeAtalho =
   | 'ABRIR_CEMITERIO'
   | 'ABRIR_EXILIO'
   | 'ALTERNAR_LOG'
-  | 'ABRIR_ATALHOS';
+  | 'ABRIR_ATALHOS'
+  | 'ALTERNAR_MANA'
+  | 'FOCAR_JOGADOR_1'
+  | 'FOCAR_JOGADOR_2'
+  | 'FOCAR_JOGADOR_3'
+  | 'FOCAR_JOGADOR_4'
+  | 'FOCAR_JOGADOR_5'
+  | 'FOCAR_JOGADOR_6';
 
 /**
  * Agrupamento do editor.
@@ -127,6 +138,10 @@ export const ACOES_DE_ATALHO: readonly AcaoDeAtalhoMeta[] = [
   { id: 'VIRAR_MOEDA', descricao: 'Virar uma moeda', grupo: 'MESA' },
   { id: 'GANHAR_VIDA', descricao: 'Ganhar 1 ponto de vida', grupo: 'MESA' },
   { id: 'PERDER_VIDA', descricao: 'Perder 1 ponto de vida', grupo: 'MESA' },
+  { id: 'REAGIR_POLEGAR', descricao: 'Reagir: 👍 boa!', grupo: 'MESA' },
+  { id: 'REAGIR_PENSANDO', descricao: 'Reagir: 🤔 pensando', grupo: 'MESA' },
+  { id: 'REAGIR_UAU', descricao: 'Reagir: 😮 uau', grupo: 'MESA' },
+  { id: 'REAGIR_CHORO', descricao: 'Reagir: 😢 choro', grupo: 'MESA' },
 
   { id: 'EMBARALHAR', descricao: 'Embaralhar o grimório', grupo: 'GRIMORIO' },
   { id: 'OLHAR_TOPO', descricao: 'Olhar a carta do topo (só você)', grupo: 'GRIMORIO' },
@@ -183,6 +198,13 @@ export const ACOES_DE_ATALHO: readonly AcaoDeAtalhoMeta[] = [
   { id: 'ABRIR_EXILIO', descricao: 'Abrir o seu exílio', grupo: 'EXIBICAO' },
   { id: 'ALTERNAR_LOG', descricao: 'Abrir / fechar o log da partida', grupo: 'EXIBICAO' },
   { id: 'ABRIR_ATALHOS', descricao: 'Abrir a lista de atalhos', grupo: 'EXIBICAO' },
+  { id: 'ALTERNAR_MANA', descricao: 'Abrir / fechar o rastreador de mana', grupo: 'EXIBICAO' },
+  { id: 'FOCAR_JOGADOR_1', descricao: 'Focar a mesa do jogador do assento 1', grupo: 'EXIBICAO' },
+  { id: 'FOCAR_JOGADOR_2', descricao: 'Focar a mesa do jogador do assento 2', grupo: 'EXIBICAO' },
+  { id: 'FOCAR_JOGADOR_3', descricao: 'Focar a mesa do jogador do assento 3', grupo: 'EXIBICAO' },
+  { id: 'FOCAR_JOGADOR_4', descricao: 'Focar a mesa do jogador do assento 4', grupo: 'EXIBICAO' },
+  { id: 'FOCAR_JOGADOR_5', descricao: 'Focar a mesa do jogador do assento 5', grupo: 'EXIBICAO' },
+  { id: 'FOCAR_JOGADOR_6', descricao: 'Focar a mesa do jogador do assento 6', grupo: 'EXIBICAO' },
 ];
 
 /** Uma ação sem tecla. Existe como valor gravável: "eu quero isto desligado". */
@@ -217,6 +239,12 @@ export const ATALHOS_PADRAO: Readonly<Record<AcaoDeAtalho, string>> = {
   VIRAR_MOEDA: TECLA_NAO_ATRIBUIDA,
   GANHAR_VIDA: TECLA_NAO_ATRIBUIDA,
   PERDER_VIDA: TECLA_NAO_ATRIBUIDA,
+  // 7, 8, 9 e 0 são as teclas de reação do EDHPlay; quem vem de lá já as tem
+  // na mão, e os dígitos estavam todos livres.
+  REAGIR_POLEGAR: '7',
+  REAGIR_PENSANDO: '8',
+  REAGIR_UAU: '9',
+  REAGIR_CHORO: '0',
 
   EMBARALHAR: 's',
   OLHAR_TOPO: TECLA_NAO_ATRIBUIDA,
@@ -253,6 +281,15 @@ export const ATALHOS_PADRAO: Readonly<Record<AcaoDeAtalho, string>> = {
   ABRIR_EXILIO: TECLA_NAO_ATRIBUIDA,
   ALTERNAR_LOG: 'l',
   ABRIR_ATALHOS: '?',
+  ALTERNAR_MANA: 'm',
+  // Assento N na tecla N, como no EDHPlay. Sete e oito ficam sem tecla porque
+  // 7 a 0 já são das reações — mesa de sete ou oito usa o seletor de câmera.
+  FOCAR_JOGADOR_1: '1',
+  FOCAR_JOGADOR_2: '2',
+  FOCAR_JOGADOR_3: '3',
+  FOCAR_JOGADOR_4: '4',
+  FOCAR_JOGADOR_5: '5',
+  FOCAR_JOGADOR_6: '6',
 };
 
 /** Só o formato mínimo de um evento de teclado. Este pacote não vê o DOM. */
@@ -292,7 +329,19 @@ export function normalizarTecla(e: EventoDeTecla): string {
   const nomeada = e.key.length > 1;
   // Tecla nomeada não muda de nome com Shift, então ali o Shift é prefixo.
   // Caractere imprimível já vem deslocado ('P', '+'), e a caixa é preservada.
-  const base = nomeada ? e.key.toLowerCase() : e.key;
+  //
+  // Menos para LETRA: a caixa dela vem também do Caps Lock, e o atalho só pode
+  // depender do Shift. Com o Caps Lock ligado, `a` (+1 marcador) chegava como
+  // `A` — que é o atalho de TIRAR o marcador — e a tecla fazia o oposto do
+  // que dizia, sem nada na tela explicando por quê.
+  const letra = !nomeada && e.key.toLowerCase() !== e.key.toUpperCase();
+  const base = nomeada
+    ? e.key.toLowerCase()
+    : letra
+      ? e.shiftKey
+        ? e.key.toUpperCase()
+        : e.key.toLowerCase()
+      : e.key;
   const partes: string[] = [];
   if (e.ctrlKey || e.metaKey) partes.push('ctrl');
   if (e.altKey) partes.push('alt');

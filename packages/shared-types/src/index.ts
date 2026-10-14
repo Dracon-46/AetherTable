@@ -11,6 +11,7 @@
 export * from './zones';
 export * from './format';
 export * from './legalidade';
+export * from './bracket';
 export * from './card';
 export * from './player';
 export * from './room';

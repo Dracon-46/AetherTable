@@ -45,6 +45,8 @@ const CHAVE = 'aether-cosmeticos-v1';
 interface CosmeticState extends CosmeticosEquipados {
   /** false = todo oponente é desenhado com o visual padrão. */
   cosmeticosDeOponentes: boolean;
+  /** Volta ao padrão e apaga o que este navegador guardou da conta que saiu. */
+  esquecerConta: () => void;
   /**
    * Direito a cosmético de apoiador, vindo do `GET /users/me`.
    *
@@ -112,6 +114,21 @@ function gravar(estado: CosmeticState): void {
 
 export const useCosmeticos = create<CosmeticState>((set, get) => ({
   ...ler(),
+
+  /**
+   * Esquece a conta que saiu. O `localStorage` é do NAVEGADOR, não da conta:
+   * quem entrava depois, num computador compartilhado, herdava sleeve,
+   * playmat e título da conta anterior — e, sem preferência própria salva,
+   * aparecia para a mesa com o visual de outra pessoa.
+   */
+  esquecerConta: () => {
+    try {
+      window.localStorage.removeItem(CHAVE);
+    } catch {
+      /* sem localStorage: não há o que esquecer */
+    }
+    set({ ...COSMETICOS_PADRAO, cosmeticosDeOponentes: true, tier: 'FREE' });
+  },
   // Nasce FREE: o servidor corrige em `useHidratarPreferencias`. Errar para o
   // lado restritivo evita a interface prometer o que a API vai recusar.
   tier: 'FREE',

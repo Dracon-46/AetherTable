@@ -17,7 +17,6 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@aethertable/shared-types": "workspace:*",
     "undici": "^7.2.3"
   },
   "devDependencies": {

@@ -118,8 +118,11 @@ export function useHidratarPreferencias(): void {
     jaBuscou.current = true;
 
     let ativo = true;
+    /** A resposta (ou a falha) já chegou. Ver a limpeza no fim do efeito. */
+    let concluiu = false;
     void api<PreferenciaDaConta>('/users/me')
       .then((eu) => {
+        concluiu = true;
         if (!ativo) return;
         // O tier chega mesmo quando `preference` é nula: uma conta que nunca
         // mexeu em cosmético nenhum ainda pode ser apoiadora.
@@ -152,6 +155,10 @@ export function useHidratarPreferencias(): void {
         pararDeObservar.current = observarPreferenciasDaMesa();
       })
       .catch((erro) => {
+        concluiu = true;
+        // Requisição já descartada pela limpeza: a guarda foi devolvida lá, e
+        // mexer nela aqui abriria a porta para uma terceira busca em paralelo.
+        if (!ativo) return;
         /**
          * Falhar aqui é inofensivo, e por isso não vira toast.
          *
@@ -173,6 +180,18 @@ export function useHidratarPreferencias(): void {
 
     return () => {
       ativo = false;
+      /**
+       * ─── NO STRICTMODE AS PREFERÊNCIAS NUNCA CHEGAVAM ─────────────────────
+       *
+       * O StrictMode monta, limpa e monta de novo. A limpeza zerava o `ativo`
+       * da única requisição em voo — a resposta chegava e era descartada — e o
+       * `jaBuscou` já estava `true`, então a segunda montagem nem pedia de
+       * novo. Resultado em desenvolvimento: tema, cosméticos, atalhos e o tier
+       * de apoiador da conta nunca eram aplicados. Uma limpeza que descarta a
+       * resposta precisa devolver a vez: se ela ainda não chegou, a próxima
+       * execução do efeito busca outra.
+       */
+      if (!concluiu) jaBuscou.current = false;
       pararDeObservar.current?.();
       pararDeObservar.current = null;
     };

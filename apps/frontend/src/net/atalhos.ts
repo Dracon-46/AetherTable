@@ -34,15 +34,21 @@ import { useEffect } from 'react';
 import type { Room } from 'colyseus.js';
 import {
   ACOES_DE_ATALHO,
-  TECLA_NAO_ATRIBUIDA,
   acaoDaTecla,
   normalizarTecla,
   type AcaoDeAtalho,
 } from '@aethertable/shared-types';
-import { useGameStore, useUIStore } from '../store/game.store';
+import { useGameStore, useTableStore, useUIStore } from '../store/game.store';
 import { useAtalhos } from '../store/atalhos.store';
 import { PASSO_DO_FATOR } from '../canvas/layout';
 import { intents } from './intents';
+
+const REACAO_DO_ATALHO = {
+  REAGIR_POLEGAR: 'POLEGAR',
+  REAGIR_PENSANDO: 'PENSANDO',
+  REAGIR_UAU: 'UAU',
+  REAGIR_CHORO: 'CHORO',
+} as const;
 import type { RoomState } from './schema/RoomState';
 
 /**
@@ -136,6 +142,10 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
 
     const onKey = (e: KeyboardEvent) => {
       if (digitando(e.target)) return;
+      // Com o scry aberto, o overlay barra o mouse mas não o teclado: `d`
+      // comprava e `s` embaralhava por trás do modal, e o scry era cancelado
+      // no servidor por um grimório que o jogador nem viu mudar.
+      if (useTableStore.getState().scry) return;
 
       const acao = acaoDaTecla(atalhos, normalizarTecla(e));
       if (!acao) return;
@@ -325,20 +335,25 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
 
         case 'PARA_MAO':
           e.preventDefault();
-          selecao.forEach((id) => intents.changeZone(room, id, 'HAND'));
+          // Em lote: uma intenção por carta estourava o limite de 30/s.
+          intents.batchChangeZone(room, selecao, 'HAND');
           ui.clearSelection();
           break;
 
         case 'PARA_TOPO_DO_GRIMORIO':
           e.preventDefault();
-          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', 0));
+          // Sem índice = fim do array = TOPO. Era `changeZone(..., 0)`, e o
+          // 0 caía no parâmetro `x`: funcionava por acidente.
+          intents.batchChangeZone(room, selecao, 'LIBRARY');
           ui.clearSelection();
           break;
 
         case 'PARA_FUNDO_DO_GRIMORIO':
           e.preventDefault();
-          // `index` negativo é o fundo no contrato de `INTENT_CHANGE_ZONE`.
-          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', -1));
+          // Índice 0 = FUNDO (o topo é o fim do array). Era `-1` na posição
+          // do `x`: o índice nem chegava, a carta ia para o TOPO — e `-1`
+          // como índice o servidor recusaria de qualquer jeito (`min(0)`).
+          selecao.forEach((id) => intents.changeZone(room, id, 'LIBRARY', undefined, undefined, 0));
           ui.clearSelection();
           break;
 
@@ -431,6 +446,38 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
           ui.toggleModal('settings');
           break;
 
+        case 'ALTERNAR_MANA':
+          e.preventDefault();
+          ui.setManaAberto(!ui.manaAberto);
+          break;
+
+        case 'REAGIR_POLEGAR':
+        case 'REAGIR_PENSANDO':
+        case 'REAGIR_UAU':
+        case 'REAGIR_CHORO':
+          e.preventDefault();
+          intents.react(room, REACAO_DO_ATALHO[acao]);
+          break;
+
+        /**
+         * Assento N, não "o N-ésimo da lista de oponentes": o número que o
+         * jogador aperta é o que ele vê no assento, e não muda quando alguém
+         * sai. Assento vazio não faz nada (nem consome a tecla).
+         */
+        case 'FOCAR_JOGADOR_1':
+        case 'FOCAR_JOGADOR_2':
+        case 'FOCAR_JOGADOR_3':
+        case 'FOCAR_JOGADOR_4':
+        case 'FOCAR_JOGADOR_5':
+        case 'FOCAR_JOGADOR_6': {
+          const assento = Number(acao.slice(-1)) - 1;
+          const alvo = Object.values(jogo.players).find((p) => p.seat === assento);
+          if (!alvo) return;
+          e.preventDefault();
+          ui.setBoardView(alvo.id === jogo.mySessionId ? 'ME' : alvo.id);
+          break;
+        }
+
         default:
           break;
       }
@@ -440,5 +487,3 @@ export function useAtalhosDaMesa(room: Room<RoomState> | null, ativo: boolean): 
     return () => window.removeEventListener('keydown', onKey);
   }, [room, ativo, atalhos]);
 }
-
-export { TECLA_NAO_ATRIBUIDA };

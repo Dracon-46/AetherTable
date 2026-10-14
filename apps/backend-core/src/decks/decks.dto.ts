@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { formatoExiste } from '@aethertable/shared-types';
 import { BOARD_TYPES } from './board-type.js';
 
 /**
@@ -29,8 +30,19 @@ import { BOARD_TYPES } from './board-type.js';
  * limite e valor fora de faixa.
  */
 
-/** Scryfall identifica carta por UUID; qualquer outra coisa é lixo. */
-const scryfallId = z.string().uuid('scryfallId precisa ser um UUID da Scryfall');
+/**
+ * Scryfall identifica carta por UUID; qualquer outra coisa é lixo.
+ *
+ * MINÚSCULAS na entrada. UUID não diferencia caixa, mas o banco e o mapa da
+ * hidratação diferenciam: um id em maiúsculas virava uma SEGUNDA linha da mesma
+ * carta (a chave única é por texto) e, na hidratação, não casava com o id que a
+ * Scryfall devolve — a carta vinha sem nome, sem legalidade e com
+ * `isBanned: false`. Era um jeito de entrar na mesa com carta banida.
+ */
+const scryfallId = z
+  .string()
+  .uuid('scryfallId precisa ser um UUID da Scryfall')
+  .transform((s) => s.toLowerCase());
 
 /**
  * Teto do import. 20 KB cobrem com folga um Commander de 100 cartas (~4 KB) e
@@ -42,20 +54,40 @@ const LIMITE_DECKLIST = 20_000;
 
 export const CriarDeckDto = z.object({
   name: z.string().trim().min(1).max(80).optional(),
+  /**
+   * Validado contra o CATÁLOGO, como `gameType` em `CriarPartidaDto`.
+   *
+   * Era `.regex(/^[a-z0-9-]+$/)`, sem sublinhado — e os ids do catálogo têm
+   * sublinhado: `duel_commander`, `commander_1v1`, `historic_brawl`,
+   * `tiny_leaders`. Criar um deck nesses formatos voltava 400 "Dados
+   * inválidos", e a regex ainda deixava passar qualquer id inventado.
+   */
   formatId: z
     .string()
     .trim()
     .toLowerCase()
-    .min(2)
-    .max(24)
-    .regex(/^[a-z0-9-]+$/)
+    .max(64)
+    .refine(formatoExiste, 'Formato desconhecido.')
     .optional(),
 });
 export type CriarDeckDto = z.infer<typeof CriarDeckDto>;
 
-export const AtualizarDeckDto = z.object({
-  name: z.string().trim().min(1).max(80),
-});
+/**
+ * Atualização PARCIAL do deck: cada campo é opcional, e um corpo vazio é
+ * recusado. Era só `name` — e `description`, `isFavorite` e `isPublic`
+ * existiam na tabela sem nenhum caminho para serem escritos.
+ */
+export const AtualizarDeckDto = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(2000).optional(),
+    isFavorite: z.boolean().optional(),
+    isPublic: z.boolean().optional(),
+  })
+  .strict()
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
+    message: 'Nada para atualizar',
+  });
 export type AtualizarDeckDto = z.infer<typeof AtualizarDeckDto>;
 
 export const ImportarDeckDto = z.object({

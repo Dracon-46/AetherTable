@@ -146,11 +146,11 @@ Nesta ordem, e a ordem importa:
 
 ## 6. Onde a bateria roda sozinha
 
-| Momento                       | O quê                                 | Onde                       |
-| ----------------------------- | ------------------------------------- | -------------------------- |
-| `git commit`                  | ESLint + Prettier nos arquivos staged | `.husky/pre-commit`        |
-| `git push`                    | A bateria completa                    | `.husky/pre-push`          |
-| PR e push em `main`/`develop` | Bateria + build + E2E público         | `.github/workflows/ci.yml` |
+| Momento                                            | O quê                                                 | Onde                       |
+| -------------------------------------------------- | ----------------------------------------------------- | -------------------------- |
+| `git commit`                                       | ESLint + Prettier nos arquivos staged                 | `.husky/pre-commit`        |
+| `git push`                                         | A bateria completa                                    | `.husky/pre-push`          |
+| PR, push em `main`/`develop`/`feature/**`/`fix/**` | Bateria + build + E2E público, em três jobs paralelos | `.github/workflows/ci.yml` |
 
 O hook de push existe porque o CI descobre tarde: o custo de um push quebrado
 é o tempo de todo mundo que puxou a branch nesse meio-tempo. Ele é o mesmo

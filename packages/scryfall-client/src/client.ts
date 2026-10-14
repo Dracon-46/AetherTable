@@ -69,6 +69,14 @@ export interface ScryfallCard {
   rarity?: string;
   legalities?: Record<string, string>;
   /**
+   * Se a carta está na lista oficial de Game Changers do Commander.
+   *
+   * A estimativa de bracket usava duas listas de nomes escritas à mão no
+   * frontend, e elas envelheceram: três cartas banidas contavam, 37 Game
+   * Changers não. A Scryfall mantém a marcação junto da lista oficial.
+   */
+  game_changer?: boolean;
+  /**
    * Precos, em texto, como a Scryfall devolve (`"12.34"`) ou `null`.
    *
    * Estava faltando na interface e o campo JA VINHA na resposta: quem quisesse

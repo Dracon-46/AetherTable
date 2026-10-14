@@ -232,7 +232,8 @@ export class UsersService {
     id: string,
     data: {
       username?: string;
-      displayName?: string;
+      /** `null` apaga o nome de exibição — o DTO converte `''` em `null`. */
+      displayName?: string | null;
       language?: string;
       /** Tema da interface, em portugues. Convertido para o enum do Prisma. */
       tema?: Tema;

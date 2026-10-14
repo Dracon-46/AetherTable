@@ -129,13 +129,28 @@ export function SorteioOverlay() {
   const autor = players[sorteio.actorId];
   const nome = sorteio.actorId === myId ? 'Você' : (autor?.name ?? 'Alguém');
 
+  /**
+   * Vários dados na mesma rolagem: cada um aparece, e a legenda leva o total.
+   * Mostrar só a soma esconderia o que Delina e companhia precisam ler ("quantos
+   * deram 6"); mostrar só os dados obrigaria a mesa a somar de cabeça.
+   */
+  const varios = sorteio.tipo === 'DADO' && (sorteio.results?.length ?? 0) > 1;
   const legenda =
-    sorteio.tipo === 'DADO' ? `${nome} rolou d${sorteio.sides}` : `${nome} girou a moeda`;
+    sorteio.tipo === 'DADO'
+      ? varios
+        ? `${nome} rolou ${sorteio.results!.length}d${sorteio.sides} · total`
+        : `${nome} rolou d${sorteio.sides}`
+      : `${nome} girou a moeda`;
 
   return (
     // `pointer-events-none`: o sorteio passa por cima da mesa, mas nunca rouba
     // um clique — quem está no meio de um arrasto não pode ser interrompido.
+    // `key={em}`: sem ela, o segundo giro com o primeiro ainda na tela reusava os
+    // MESMOS nós — a classe de animação não mudava, e o CSS não reinicia uma
+    // animação que já terminou. O dado aparecia parado com o número novo, que
+    // é exatamente "a animação não aparece" para quem rola duas vezes seguidas.
     <div
+      key={em}
       className={`pointer-events-none absolute inset-0 z-40 flex items-center justify-center ${
         saindo ? 'animate-sorteio-saida' : 'animate-sorteio-entrada'
       }`}
@@ -144,7 +159,21 @@ export function SorteioOverlay() {
     >
       <div className="flex flex-col items-center gap-3">
         <div style={{ perspective: '600px' }}>
-          {sorteio.tipo === 'DADO' ? (
+          {varios && sorteio.tipo === 'DADO' ? (
+            <div className="flex max-w-[80vw] flex-wrap items-center justify-center gap-2">
+              {sorteio.results!.map((r, i) => (
+                <div
+                  key={i}
+                  className="animate-dado-rolar flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-slate-100 to-slate-300 shadow-[0_8px_24px_rgba(0,0,0,0.5)] ring-2 ring-white/70"
+                  style={{ transformStyle: 'preserve-3d', animationDelay: `${i * 60}ms` }}
+                >
+                  <span className="font-mono text-2xl font-black tabular-nums text-slate-900">
+                    {r}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : sorteio.tipo === 'DADO' ? (
             <div
               className="animate-dado-rolar flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-100 to-slate-300 shadow-[0_10px_40px_rgba(0,0,0,0.55)] ring-2 ring-white/70"
               style={{ transformStyle: 'preserve-3d' }}

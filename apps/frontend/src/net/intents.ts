@@ -6,12 +6,17 @@
  */
 
 import type { Room } from 'colyseus.js';
-import type { SetRoomConfigPayload } from '@aethertable/shared-types';
+import type {
+  CorDeMana,
+  PlayerCounter,
+  Reacao,
+  SetRoomConfigPayload,
+} from '@aethertable/shared-types';
 
 let moveCardLastSent = 0;
 const MOVE_THROTTLE_MS = 50; // 20/s
 
-export function sendIntent(room: Room, type: string, payload?: object) {
+function sendIntent(room: Room, type: string, payload?: object) {
   room.send(type, payload ?? {});
 }
 
@@ -42,7 +47,12 @@ export const intents = {
     x?: number,
     y?: number,
     index?: number,
-  ) => sendIntent(room, 'INTENT_CHANGE_ZONE', { entityId, targetZone, x, y, index }),
+    opcoes?: { faceDown?: boolean; controllerId?: string },
+  ) => sendIntent(room, 'INTENT_CHANGE_ZONE', { entityId, targetZone, x, y, index, ...opcoes }),
+
+  /** Uma mensagem para a seleção inteira — N mensagens estouram o limite de 30/s. */
+  batchChangeZone: (room: Room, entityIds: string[], targetZone: string) =>
+    sendIntent(room, 'INTENT_BATCH_CHANGE_ZONE', { entityIds, targetZone }),
 
   bringToFront: (room: Room, entityId: string) =>
     sendIntent(room, 'INTENT_BRING_TO_FRONT', { entityId }),
@@ -58,6 +68,10 @@ export const intents = {
     sendIntent(room, 'INTENT_PEEK', { zone, amount, from }),
 
   closePeek: (room: Room) => sendIntent(room, 'INTENT_CLOSE_PEEK'),
+
+  /** Rearruma cartas que estou olhando. `ids[0]` é a ponta (topo ou fundo). */
+  arrangePeeked: (room: Room, ids: string[], destino: 'TOP' | 'BOTTOM', aleatorio = false) =>
+    sendIntent(room, 'INTENT_ARRANGE_PEEKED', { ids, destino, aleatorio }),
 
   mill: (
     room: Room,
@@ -218,7 +232,8 @@ export const intents = {
   // Cópia de permanente (Kiki-Jiki, clones, "copie a magia"). O handler já
   // existia no servidor desde a rodada 2, mas nenhuma tela emitia a intenção:
   // era a única ação implementada e inalcançável do catálogo.
-  copyCard: (room: Room, entityId: string) => sendIntent(room, 'INTENT_COPY_CARD', { entityId }),
+  copyCard: (room: Room, entityId: string, destino: 'BATTLEFIELD' | 'STACK' = 'BATTLEFIELD') =>
+    sendIntent(room, 'INTENT_COPY_CARD', { entityId, destino }),
 
   clearTokens: (room: Room) => sendIntent(room, 'INTENT_CLEAR_TOKENS'),
 
@@ -227,10 +242,14 @@ export const intents = {
   setLife: (room: Room, delta?: number, absolute?: number) =>
     sendIntent(room, 'INTENT_SET_LIFE', delta !== undefined ? { delta } : { absolute }),
 
-  setCommanderDamage: (room: Room, fromPlayerId: string, delta: number) =>
-    sendIntent(room, 'INTENT_SET_COMMANDER_DAMAGE', { fromPlayerId, delta }),
+  setCommanderDamage: (room: Room, fromPlayerId: string, delta: number, commanderId?: string) =>
+    sendIntent(room, 'INTENT_SET_COMMANDER_DAMAGE', {
+      fromPlayerId,
+      delta,
+      ...(commanderId ? { commanderId } : {}),
+    }),
 
-  addPlayerCounter: (room: Room, name: string, amount: number) =>
+  addPlayerCounter: (room: Room, name: PlayerCounter, amount: number) =>
     sendIntent(room, 'INTENT_ADD_PLAYER_COUNTER', { name, amount }),
 
   setPlayerCounter: (
@@ -276,9 +295,20 @@ export const intents = {
 
   // ─── Aleatório e comunicação ──────────────────────────────────────────────
 
-  rollDice: (room: Room, sides: number) => sendIntent(room, 'INTENT_ROLL_DICE', { sides }),
+  /** `amount` dados de `sides` lados (2–1000), num pedido e numa linha de log. */
+  rollDice: (room: Room, sides: number, amount = 1) =>
+    sendIntent(room, 'INTENT_ROLL_DICE', { sides, amount }),
 
   flipCoin: (room: Room) => sendIntent(room, 'INTENT_FLIP_COIN'),
+
+  /** Balão de reação para a mesa. Efêmero: não entra no log. */
+  react: (room: Room, tipo: Reacao) => sendIntent(room, 'INTENT_REACTION', { tipo }),
+
+  /** Soma `delta` a uma cor do PRÓPRIO pool de mana (0–99). */
+  ajustarMana: (room: Room, cor: CorDeMana, delta: number) =>
+    sendIntent(room, 'INTENT_MANA_POOL', { acao: 'AJUSTAR', cor, delta }),
+
+  limparMana: (room: Room) => sendIntent(room, 'INTENT_MANA_POOL', { acao: 'LIMPAR' }),
 
   randomPlayer: (room: Room) => sendIntent(room, 'INTENT_RANDOM_PLAYER'),
 
@@ -333,6 +363,10 @@ export const intents = {
   kickPlayer: (room: Room, playerId: string) =>
     sendIntent(room, 'INTENT_KICK_PLAYER', { playerId }),
 
+  /** Propõe remover alguém, ou vota na votação aberta. */
+  voteKick: (room: Room, playerId: string, aceitar: boolean) =>
+    sendIntent(room, 'INTENT_VOTE_KICK', { playerId, aceitar }),
+
   /** Fecha a própria janela de mulligan. */
   keepHand: (room: Room) => sendIntent(room, 'INTENT_KEEP_HAND'),
 
@@ -348,8 +382,19 @@ export const intents = {
     sendIntent(room, 'INTENT_REVOKE_VIEW', { viewerId, zone }),
 
   /** Manda uma permanente própria para a MESA de outro jogador. */
-  giveCard: (room: Room, entityId: string, targetPlayerId: string) =>
-    sendIntent(room, 'INTENT_GIVE_CARD', { entityId, targetPlayerId }),
+  giveCard: (
+    room: Room,
+    entityId: string,
+    targetPlayerId: string,
+    faceDown?: boolean,
+    posicao?: { x: number; y: number },
+  ) =>
+    sendIntent(room, 'INTENT_GIVE_CARD', {
+      entityId,
+      targetPlayerId,
+      ...(faceDown ? { faceDown } : {}),
+      ...(posicao ?? {}),
+    }),
 
   /** Sai da fase WAITING e começa a partida. Só o anfitrião (assento 0). */
   startMatch: (room: Room) => sendIntent(room, 'INTENT_START_MATCH'),

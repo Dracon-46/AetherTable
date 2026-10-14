@@ -168,17 +168,35 @@ export class RecuperacaoService {
      * e a coluna no schema). Aqui isso não é opcional: a razão número um para
      * alguém redefinir a senha é ter perdido o controle da conta, e uma
      * redefinição que deixa a sessão do invasor de pé não redefine nada.
+     *
+     * ─── O CONSUMO DO TOKEN É CONDICIONAL, E VEM PRIMEIRO ─────────────────
+     *
+     * A checagem de uso único acontecia na LEITURA, lá em cima, e a marcação
+     * era um `update` incondicional. Duas requisições com o mesmo link — dois
+     * cliques, ou a vítima e o invasor que leu a mesma caixa de entrada —
+     * passavam juntas pela leitura (as duas viam `usedAt` nulo) e as duas
+     * gravavam senha: valia a do último, e o link "de uso único" tinha sido
+     * usado duas vezes.
+     *
+     * O `updateMany` com `usedAt: null` no WHERE é o consumo atômico: o
+     * Postgres trava a linha, e a segunda requisição reavalia a condição
+     * depois que a primeira grava — vê `usedAt` preenchido e conta zero. Só
+     * quem consumiu (`count === 1`) troca a senha, na mesma transação.
      */
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    const agora = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      const consumido = await tx.passwordResetToken.updateMany({
+        where: { tokenHash: linha.tokenHash, usedAt: null, expiresAt: { gt: agora } },
+        data: { usedAt: agora },
+      });
+      if (consumido.count !== 1) {
+        throw new TokenDeRedefinicaoInvalido('token consumido por outra requisição');
+      }
+      await tx.user.update({
         where: { id: linha.userId },
-        data: { passwordHash: hash, tokensValidosApos: new Date() },
-      }),
-      this.prisma.passwordResetToken.update({
-        where: { tokenHash: linha.tokenHash },
-        data: { usedAt: new Date() },
-      }),
-    ]);
+        data: { passwordHash: hash, tokensValidosApos: agora },
+      });
+    });
 
     await this.expurgarVencidos();
   }

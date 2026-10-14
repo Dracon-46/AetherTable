@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
@@ -298,7 +299,11 @@ export class AuthService {
     }
 
     const confere = await argon2.verify(user.passwordHash, senhaAtual);
-    if (!confere) throw new UnauthorizedException('A senha atual não confere.');
+    // 400, e não 401. O `fetcher` do frontend trata TODO 401 como sessão
+    // expirada e faz logout: errar a senha atual nos Ajustes derrubava a
+    // pessoa para o login com "Sua sessão expirou". A sessão está ótima — o
+    // que está errado é um campo do formulário.
+    if (!confere) throw new BadRequestException('A senha atual não confere.');
 
     const hash = await this.hashPassword(novaSenha);
     await this.prisma.user.update({
@@ -323,6 +328,56 @@ export class AuthService {
     return { accessToken, expiresIn: this.ttlSegundos };
   }
 
+  /**
+   * ─── EXCLUIR A PRÓPRIA CONTA ─────────────────────────────────────────────
+   *
+   * `UsersService.softDelete` existia sem rota nenhuma (DOC-094 II.16): a única
+   * forma de sair do produto era pedir a um administrador. A LGPD dá ao titular
+   * o direito de pedir a eliminação, e o caminho precisa estar ao alcance dele.
+   *
+   * É o mesmo soft delete do banimento: a conta some de todo lugar na hora
+   * (login, perfil público, busca — todos filtram `deletedAt: null`) e TODAS as
+   * sessões caem (`tokensValidosApos`), inclusive a de quem pediu. A remoção
+   * física é ação de administrador, sob pedido, como a política de privacidade
+   * publicada diz; prometer aqui um apagamento automático seria mentir, porque
+   * o projeto não tem agendador.
+   *
+   * O último administrador não se exclui: sem administrador, o painel só volta
+   * por acesso direto ao banco — a mesma trava do banimento.
+   */
+  async excluirConta(userId: string, confirmacao: string, senha?: string): Promise<void> {
+    const user = await this.usersService.findForAuthById(userId);
+    if (!user) throw new NotFoundException('Conta não encontrada.');
+
+    if (confirmacao.trim() !== user.username) {
+      throw new BadRequestException(
+        `Para confirmar, digite o seu nome de usuário exato: ${user.username}.`,
+      );
+    }
+    if (user.passwordHash) {
+      // 400 e não 401, como na troca de senha: o `fetcher` trata todo 401
+      // como sessão expirada e deslogaria a pessoa por um campo errado.
+      const confere = senha ? await argon2.verify(user.passwordHash, senha) : false;
+      if (!confere) throw new BadRequestException('A senha não confere.');
+    }
+    if (user.role === 'ADMIN') {
+      const outros = await this.prisma.user.count({
+        where: { role: 'ADMIN', deletedAt: null, id: { not: user.id } },
+      });
+      if (outros === 0) {
+        throw new ForbiddenException(
+          'Você é o último administrador ativo. Promova outra conta antes de excluir a sua.',
+        );
+      }
+    }
+
+    const agora = new Date();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { deletedAt: agora, tokensValidosApos: agora },
+    });
+  }
+
   async register(email: string, username: string, pass: string) {
     /**
      * O INTERRUPTOR DE CADASTRO (DOC-061 §5).
@@ -340,12 +395,29 @@ export class AuthService {
       );
     }
 
-    // Verifica unicidade
+    // Verifica unicidade.
+    //
+    // O corpo era só `{ error: 'EMAIL_IN_USE' }`, sem `message` — e a tela de
+    // cadastro mostra `message`. A pessoa via "Falha ao registrar" sem saber
+    // se o problema era o e-mail, o nome ou o servidor. O código de máquina
+    // continua no corpo para quem já o lia.
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
-    if (existingEmail) throw new ConflictException({ error: 'EMAIL_IN_USE' });
+    if (existingEmail) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Este e-mail já está cadastrado.',
+        error: 'EMAIL_IN_USE',
+      });
+    }
 
     const existingUsername = await this.prisma.user.findUnique({ where: { username } });
-    if (existingUsername) throw new ConflictException({ error: 'USERNAME_TAKEN' });
+    if (existingUsername) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Este nome de usuário já está em uso.',
+        error: 'USERNAME_TAKEN',
+      });
+    }
 
     const hashedPassword = await this.hashPassword(pass);
 

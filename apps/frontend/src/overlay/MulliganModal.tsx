@@ -20,7 +20,7 @@
 import React from 'react';
 import type { Room } from 'colyseus.js';
 import { useGameStore } from '../store/game.store';
-import { Check, Repeat, X } from 'lucide-react';
+import { Check, Eye, Repeat, X } from 'lucide-react';
 import { intents } from '../net/intents';
 import {
   REGRA_DO_MULLIGAN,
@@ -51,6 +51,13 @@ export function MulliganModal({ room }: MulliganModalProps) {
   const [decidiu, setDecidiu] = React.useState(true);
   const [isSelectingBottom, setIsSelectingBottom] = React.useState(false);
   const [selectedCards, setSelectedCards] = React.useState<string[]>([]);
+  /**
+   * "Ver a mesa" sem decidir. O único jeito de olhar o tabuleiro com o modal
+   * aberto era o X — que REGISTRA "fiquei com a mão". Quem queria só conferir o
+   * comandante do oponente antes de decidir perdia o mulligan.
+   */
+  const [espiando, setEspiando] = React.useState(false);
+  const activePlayerId = useGameStore((s) => s.activePlayerId);
 
   const eu = myId ? players[myId] : undefined;
   const keptHandNoServidor = eu?.keptHand;
@@ -166,6 +173,25 @@ export function MulliganModal({ room }: MulliganModalProps) {
     registrarDecisao();
   };
 
+  if (espiando) {
+    return (
+      <button
+        onClick={() => setEspiando(false)}
+        className="z-60 bg-primary hover:bg-primary-hover pointer-events-auto fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold text-white shadow-2xl"
+      >
+        <Repeat className="h-4 w-4" />
+        Voltar à mão inicial
+      </button>
+    );
+  }
+
+  /** Quem joga primeiro — sorteado ou combinado na sala, vem do estado. */
+  const quemComeca = activePlayerId
+    ? activePlayerId === myId
+      ? 'Você começa'
+      : `${players[activePlayerId]?.name ?? 'Outro jogador'} começa`
+    : null;
+
   return (
     <div className="z-60 pointer-events-auto fixed inset-0 flex flex-col items-center justify-center overflow-y-auto bg-black/90 p-4 backdrop-blur-sm">
       {/* Saída sempre disponível: sem isto, um estado inesperado travava a mesa. */}
@@ -179,6 +205,11 @@ export function MulliganModal({ room }: MulliganModalProps) {
       </button>
 
       <div className="mb-6 text-center">
+        {quemComeca && (
+          <p className="text-warning mb-1 text-xs font-black uppercase tracking-[0.2em] sm:text-sm">
+            {quemComeca}
+          </p>
+        )}
         <h1 className="mb-2 text-3xl font-bold text-white drop-shadow-lg sm:text-5xl">
           {/* Era "London Mulligan" fixo, na mesma mesa de Commander que o
               parágrafo abaixo já corrigia. O título diz o que a tela FAZ. */}
@@ -276,6 +307,14 @@ export function MulliganModal({ room }: MulliganModalProps) {
             >
               <Repeat className="h-6 w-6" />
               Mulligan {mulliganCount > 0 ? `(${mulliganCount})` : ''}
+            </button>
+            <button
+              onClick={() => setEspiando(true)}
+              className="border-panel-border bg-panel/80 text-text hover:border-primary flex items-center gap-3 rounded-xl border px-6 py-3 text-base font-bold transition-all active:scale-95 sm:text-xl"
+              title="Olhar a mesa sem decidir ainda"
+            >
+              <Eye className="h-6 w-6" />
+              Ver a mesa
             </button>
           </>
         )}
