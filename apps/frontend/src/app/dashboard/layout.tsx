@@ -30,6 +30,7 @@ import {
   LibraryBig,
   Compass,
   History,
+  Megaphone,
   PanelLeftClose,
   PanelLeft,
   ShieldAlert,
@@ -45,6 +46,7 @@ import { OAuthTokenCapture } from '../../components/OAuthTokenCapture';
 import { useSouAdmin } from '../../admin/useAdmin';
 import { useHidratarPreferencias } from '../../store/useHidratarPreferencias';
 import { api } from '@/lib/fetcher';
+import { Sino } from '../../notificacoes/Sino';
 
 interface ItemDeMenu {
   href: string;
@@ -65,6 +67,7 @@ const NAVEGACAO: ItemDeMenu[] = [
   // As partidas jogadas: resumo de cada mesa (RN12, revista em 14/10/2026).
   { href: '/dashboard/historico', rotulo: 'Histórico', Icone: History },
   { href: '/dashboard/profile', rotulo: 'Meu Perfil', Icone: User },
+  { href: '/dashboard/novidades', rotulo: 'Novidades', Icone: Megaphone },
   { href: '/dashboard/settings', rotulo: 'Ajustes', Icone: Settings },
 ];
 
@@ -151,6 +154,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* ── Cabeçalho do celular ───────────────────────────────────────── */}
         <header className="border-panel-border bg-panel/95 absolute top-0 z-30 flex h-16 w-full items-center justify-between border-b px-4 backdrop-blur md:hidden">
           <span className="text-text text-lg font-bold">AetherTable</span>
+          <Sino className="ml-auto mr-1" />
           <button
             onClick={() => setGavetaAberta((v) => !v)}
             className="text-text hover:bg-panel-hover rounded-md p-2 transition-colors"
@@ -200,7 +204,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   Conectado
                 </span>
               </div>
+              {/* No celular o sino fica no cabeçalho; aqui, só com o menu largo. */}
+              {!recolhido && <Sino className="ml-auto hidden md:inline-flex" />}
             </div>
+            {/* Recolhido, a trilha de 64 px não cabe avatar e sino lado a lado. */}
+            {recolhido && (
+              <div className="border-panel-border hidden justify-center border-b py-2 md:flex">
+                <Sino />
+              </div>
+            )}
 
             <nav className="mt-3 space-y-1 p-2 md:mt-4 md:space-y-2 md:p-4">
               {NAVEGACAO.map((item) => {

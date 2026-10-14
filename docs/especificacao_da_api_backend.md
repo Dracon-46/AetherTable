@@ -437,6 +437,23 @@ pediu a exclusão já fez o pedido.
 Nome errado ou senha errada são `400` (não `401`, pelo mesmo motivo da troca de senha). O último
 administrador ativo recebe `403`. Conta banida não chega aqui: ela não loga.
 
+### 2.16 `GET /notificacoes`
+
+Os avisos do sino, dos últimos 30 dias, mais recentes primeiro (até 30):
+
+```json
+[
+  { "tipo": "CURTIDAS", "em": "…", "deckId": "…", "nomeDoDeck": "Atraxa", "quantas": 3 },
+  { "tipo": "DENUNCIA_ANALISADA", "em": "…", "denunciaId": "…", "desfecho": "DISMISSED" }
+]
+```
+
+Não há tabela de notificações: cada aviso é lido da fonte (`deck_likes`, `reports`) na hora, e por
+isso nunca diverge do fato. As curtidas vêm **agregadas por deck e sem nomes**, porque o Explorar só
+mostra quantas curtidas um deck tem, nunca quem curtiu. A própria curtida não conta. Da denúncia sai
+só o desfecho (`RESOLVED` houve medida, `DISMISSED` não houve), nunca a anotação do moderador. "Lido"
+é estado do cliente: o sino guarda a data da última vez que foi aberto.
+
 ---
 
 ## 3. Gestão de decks
