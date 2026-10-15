@@ -115,7 +115,7 @@ export class CardsController {
   @Get('search')
   @Throttle(LIMITE_BUSCA)
   @ApiOperation({ summary: 'Busca na Scryfall pela API (fila e User-Agent nossos)' })
-  search(
+  async search(
     @Query('q') q: string,
     @Query('unique') unique?: string,
     @Query('page') page?: string,
@@ -135,7 +135,24 @@ export class CardsController {
       throw new BadRequestException('Página inválida.');
     }
 
-    return this.cards.search(query, unique, pagina, order, dir);
+    /**
+     * ─── BUSCA SEM RESULTADO É LISTA VAZIA, NÃO 404 ─────────────────────────
+     *
+     * A Scryfall responde 404 a uma busca que não acha nada, e a rota repassava.
+     * Para quem chama, "nenhuma carta" não é erro — a grade dos Desafios testa
+     * cruzamentos que podem não ter resposta, e cada um virava uma linha
+     * vermelha no console do navegador. Só a ROTA traduz: quem usa o
+     * `CardsService` por dentro (gerador, sugestões, idioma) continua recebendo
+     * o 404 que já trata.
+     */
+    try {
+      return await this.cards.search(query, unique, pagina, order, dir);
+    } catch (erro) {
+      if (erro instanceof NotFoundException) {
+        return { object: 'list', total_cards: 0, has_more: false, data: [] };
+      }
+      throw erro;
+    }
   }
 
   /** `GET /cards/autocomplete?q=...` — até 20 nomes. */
