@@ -225,7 +225,7 @@ CORS_ORIGINS="http://localhost:3030"
 
 ```env
 NEXT_PUBLIC_API_URL="http://localhost:3333/api/v1"
-NEXT_PUBLIC_WS_URL="ws://localhost:2567"
+NEXT_PUBLIC_GAME_WS_URL="ws://localhost:2567"
 NEXT_PUBLIC_LIVEKIT_URL="ws://localhost:7880"
 ```
 
@@ -426,7 +426,7 @@ Nunca chame `api.scryfall.com` direto de um service: passaria por cima da fila d
 | **`Invalid seat token` ao entrar na sala**  | `JWT_SECRET` diferente entre `backend-core` e `game-server`      | Igualar os dois `.env`                                                                                         |
 | `ECONNREFUSED 5432`                         | Postgres não subiu                                               | `docker compose up -d` e conferir `docker compose ps`                                                          |
 | `Prisma migrate` falha                      | Banco inexistente ou credenciais erradas                         | Conferir `DATABASE_URL`; `pnpm db:reset`                                                                       |
-| Frontend não conecta ao WS                  | `NEXT_PUBLIC_WS_URL` errado                                      | Deve ser `ws://localhost:2567`                                                                                 |
+| Frontend não conecta ao WS                  | `NEXT_PUBLIC_GAME_WS_URL` errado                                 | Deve ser `ws://localhost:2567`                                                                                 |
 | Cartas sem imagem                           | `SCRYFALL_USER_AGENT` vazio ou _rate limit_                      | Preencher o `User-Agent`; aguardar                                                                             |
 | Mesa toda em branco, sem erro no console    | A rede bloqueia `scryfall.io` — e o **backend** também está nela | Apontar `SCRYFALL_API_URL`/`SCRYFALL_IMAGE_URL` para um espelho liberado, ou rodar a API fora da rede filtrada |
 | `429` da Scryfall                           | Fila de 100 ms sendo ignorada                                    | Verificar se a chamada passa pelo `scryfall-client`                                                            |

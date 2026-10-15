@@ -40,6 +40,7 @@ import {
 import { useFlags, useLimparCacheDeCartas, useMudarFlag } from '../../../admin/useAdmin';
 import { DialogoDeAcao, quando } from '../../../admin/Componentes';
 import { mensagemDaApi } from '@/lib/fetcher';
+import { GAME_HTTP_URL } from '@/lib/api';
 
 const DESCRICAO: Record<
   string,
@@ -229,7 +230,7 @@ export default function SistemaPage() {
                 subir em produção sem a senha configurada.
               </p>
               <a
-                href={`${process.env.NEXT_PUBLIC_WS_URL?.replace(/^ws/, 'http') ?? ''}/colyseus`}
+                href={`${GAME_HTTP_URL}/colyseus`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-primary mt-2 inline-flex items-center gap-1.5 hover:underline"
