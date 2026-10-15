@@ -133,11 +133,21 @@ app.get('/metrics', async (_req, res) => {
  * é uma vitrine pública — mas o custo de ser explícito é uma variável de
  * ambiente que o deploy já configura para a outra ponta.
  */
-const ORIGENS = new Set(
-  config.CORS_ORIGINS.split(',')
+/**
+ * O site oficial entra SEMPRE, além do que `CORS_ORIGINS` disser. O servidor
+ * de jogo de produção subiu sem essa variável apontando para a Vercel, e a
+ * vitrine ficava vazia com erro de CORS — sem nada no log que dissesse por
+ * quê. A origem oficial não é segredo nem configuração de ambiente: é o
+ * produto.
+ */
+const ORIGEM_DO_SITE = 'https://aether-table-frontend.vercel.app';
+
+const ORIGENS = new Set([
+  ...config.CORS_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
-);
+  ORIGEM_DO_SITE,
+]);
 
 app.use('/salas', (req, res, next) => {
   const origem = req.headers.origin;

@@ -12,8 +12,26 @@
  */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3333/api/v1';
 
-/** URL do WebSocket do game server. */
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:2567';
+/**
+ * URL do WebSocket do game server.
+ *
+ * ─── O ENDEREÇO DE PRODUÇÃO MORA NO CÓDIGO ─────────────────────────────────
+ *
+ * Era só `NEXT_PUBLIC_WS_URL`, e a variável da Vercel ficou apontando para um
+ * game server antigo (`aethertable-ws`, sem deploy há um mês): a lista de salas
+ * dava erro de CORS e a mesa conectava num processo com código velho. A Vercel
+ * passou a avisar contra variável pública e não deixava trocar o valor.
+ *
+ * Endereço de servidor não é segredo. O de produção fica aqui; a variável muda
+ * de nome (`NEXT_PUBLIC_GAME_WS_URL`) para a antiga deixar de valer sem
+ * ninguém precisar mexer no painel, e continua servindo para apontar outro
+ * ambiente quando alguém quiser.
+ */
+const WS_DE_PRODUCAO = 'wss://aethertable-game.onrender.com';
+
+export const WS_URL =
+  process.env.NEXT_PUBLIC_GAME_WS_URL ??
+  (process.env.NODE_ENV === 'production' ? WS_DE_PRODUCAO : 'ws://localhost:2567');
 
 /**
  * O mesmo game server, pelo lado HTTP.

@@ -142,7 +142,7 @@ API. É idempotente — aplica só o que está pendente.
 
 ```env
 NEXT_PUBLIC_API_URL=https://aethertable-api.onrender.com/api/v1
-NEXT_PUBLIC_WS_URL=wss://aethertable-game.onrender.com
+NEXT_PUBLIC_GAME_WS_URL=wss://aethertable-game.onrender.com
 ```
 
 > `wss://`, não `ws://`. Em página servida por HTTPS o navegador **bloqueia** WebSocket inseguro, e o
@@ -205,15 +205,15 @@ problema está em `NEXT_PUBLIC_API_URL` no build da Vercel.
 
 ## 4. Matriz de variáveis por ambiente
 
-| Variável              | Dev local                                                      | Free tier                       |
-| --------------------- | -------------------------------------------------------------- | ------------------------------- |
-| `PORT` (api)          | `3333`                                                         | Injetada pelo host              |
-| `PORT` (game)         | `2567`                                                         | Injetada pelo host              |
-| `DATABASE_URL`        | `postgresql://postgres:password@localhost:5432/aethertable_db` | Neon pooled + `sslmode=require` |
-| `USE_REDIS`           | `false`                                                        | `false`                         |
-| `CORS_ORIGINS`        | `http://localhost:3030`                                        | URL da Vercel                   |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:3333/api/v1`                                 | `https://…onrender.com/api/v1`  |
-| `NEXT_PUBLIC_WS_URL`  | `ws://localhost:2567`                                          | `wss://…onrender.com`           |
+| Variável                  | Dev local                                                      | Free tier                       |
+| ------------------------- | -------------------------------------------------------------- | ------------------------------- |
+| `PORT` (api)              | `3333`                                                         | Injetada pelo host              |
+| `PORT` (game)             | `2567`                                                         | Injetada pelo host              |
+| `DATABASE_URL`            | `postgresql://postgres:password@localhost:5432/aethertable_db` | Neon pooled + `sslmode=require` |
+| `USE_REDIS`               | `false`                                                        | `false`                         |
+| `CORS_ORIGINS`            | `http://localhost:3030`                                        | URL da Vercel                   |
+| `NEXT_PUBLIC_API_URL`     | `http://localhost:3333/api/v1`                                 | `https://…onrender.com/api/v1`  |
+| `NEXT_PUBLIC_GAME_WS_URL` | `ws://localhost:2567`                                          | `wss://…onrender.com`           |
 
 > **Portas 3000–3020 são reservadas neste projeto** e não devem ser usadas por nenhum serviço. Por
 > isso o frontend roda em **3030**, e não na 3000 convencional do Next.
