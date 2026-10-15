@@ -123,6 +123,16 @@ serviços já configurados.
 As migrations rodam sozinhas: o `CMD` da imagem executa `prisma migrate deploy` antes de subir a
 API. É idempotente — aplica só o que está pendente.
 
+> **A migração usa a conexão DIRETA do Neon.** O `DATABASE_URL` aponta para o pooler (`-pooler` no
+> host), e o `CMD` troca o host pelo direto (o mesmo, sem `-pooler`) só para o `migrate deploy`. O
+> Prisma serializa migrações concorrentes com um advisory lock de sessão, que não segura através do
+> PgBouncer: na v0.9.0, dois starts simultâneos aplicaram a mesma migração, um deles falhou, e com
+> uma falha registrada o `migrate deploy` recusa tudo — o container não sobe.
+>
+> Se acontecer de novo (`prisma migrate status` acusa uma migração com falha), confira no banco se o
+> que ela faz já está aplicado. Se estiver, `prisma migrate resolve --rolled-back <nome>` marca o
+> registro da tentativa que falhou, e o próximo start sobe normalmente.
+
 ### Passo 3 — Frontend na Vercel
 
 1. **Add New → Project**, aponte para o repositório.
