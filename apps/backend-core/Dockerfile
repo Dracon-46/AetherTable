@@ -95,4 +95,17 @@ EXPOSE 3333
 # `prisma migrate deploy` roda a cada start: é idempotente — aplica só as
 # migrations pendentes — e evita depender de um passo manual de release, que o
 # free tier do Render não oferece.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/src/main.js"]
+#
+# ─── A MIGRAÇÃO VAI PELA CONEXÃO DIRETA, NÃO PELO POOLER ───────────────────
+#
+# Dois starts simultâneos (v0.9.0, 14/10/2026) rodaram a MESMA migração ao
+# mesmo tempo: uma aplicou, a outra falhou com "enum label already exists" e
+# ficou registrada como falha — e com uma falha registrada o `migrate deploy`
+# recusa tudo, o container não sobe e a API inteira sai do ar.
+#
+# O Prisma impede isso com um advisory lock do Postgres, que é de SESSÃO. O
+# `DATABASE_URL` do Neon aponta para o pooler (`-pooler` no host, PgBouncer em
+# modo transação): cada comando pode cair numa conexão diferente, e o lock não
+# segura nada. Só a migração usa o host direto (o mesmo sem `-pooler`); o app
+# continua no pooler, que é o que aguenta as conexões do dia a dia.
+CMD ["sh", "-c", "DATABASE_URL=\"$(printf '%s' \"$DATABASE_URL\" | sed 's/-pooler\\././')\" node_modules/.bin/prisma migrate deploy && exec node dist/src/main.js"]
