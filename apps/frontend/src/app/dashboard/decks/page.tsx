@@ -409,24 +409,37 @@ export default function DecksPage() {
             {visiveis.map((deck) => {
               const comandante = nomeDoComandante(deck);
               return (
+                /*
+                  ─── O MENU "⋮" ERA CORTADO PELO PRÓPRIO CARTÃO ───────────────
+                  O cartão e a faixa da arte tinham `overflow-hidden` (para
+                  arredondar os cantos e recortar a imagem), e o menu, que abre
+                  para baixo a partir da faixa de 96 px, ficava recortado nela:
+                  só "Renomear" aparecia. Agora só a IMAGEM é recortada, e o
+                  cartão com o menu aberto sobe acima dos vizinhos da grade —
+                  senão o cartão de baixo, desenhado depois, cobriria o menu.
+                */
                 <article
                   key={deck.id}
-                  className="bg-panel border-panel-border hover:border-primary group relative flex flex-col overflow-hidden rounded-xl border shadow-md transition-all"
+                  className={`bg-panel border-panel-border hover:border-primary group relative flex flex-col rounded-xl border shadow-md transition-all ${
+                    menuDe === deck.id ? 'z-20' : ''
+                  }`}
                 >
                   {/* A arte do comandante dá rosto ao deck. Sem comandante
                       (Modern, Pauper), sobra o fundo do painel. */}
-                  <div className="relative h-24 shrink-0 overflow-hidden">
-                    {deck.commanderId ? (
-                      <img
-                        src={cardImageUrl(deck.commanderId, 'art_crop')}
-                        alt=""
-                        className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-100"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="bg-table-deep h-full w-full" />
-                    )}
-                    <div className="from-panel absolute inset-0 bg-gradient-to-t to-transparent" />
+                  <div className="relative h-24 shrink-0">
+                    <div className="absolute inset-0 overflow-hidden rounded-t-xl">
+                      {deck.commanderId ? (
+                        <img
+                          src={cardImageUrl(deck.commanderId, 'art_crop')}
+                          alt=""
+                          className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-100"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="bg-table-deep h-full w-full" />
+                      )}
+                      <div className="from-panel absolute inset-0 bg-gradient-to-t to-transparent" />
+                    </div>
                     <button
                       onClick={() =>
                         atualizar.mutate({
@@ -458,7 +471,7 @@ export default function DecksPage() {
                       {menuDe === deck.id && (
                         <div
                           role="menu"
-                          className="border-panel-border bg-panel absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-lg border py-1 shadow-xl"
+                          className="border-panel-border bg-panel absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border py-1 shadow-xl"
                         >
                           <button
                             role="menuitem"
