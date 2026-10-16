@@ -24,10 +24,25 @@ const schema = z.object({
    * em restart loop. Normalizar aqui é mais barato do que exigir que quem faz
    * o deploy lembre de digitar o https:// à mão.
    */
+  /**
+   * ─── NOME INTERNO DO RENDER VIRA O ENDEREÇO PÚBLICO ─────────────────────
+   *
+   * O `render.yaml` preenche isto com `fromService: property: host` — o nome
+   * INTERNO do serviço (`aethertable-api`, sem domínio). No plano gratuito do
+   * Render um serviço não recebe tráfego pela rede interna, então o game server
+   * não alcançava a API: o grimório não carregava e o resumo da partida não
+   * chegava. Um host sem ponto (e que não seja localhost) é esse nome interno, e
+   * vira o público, `https://<nome>.onrender.com`.
+   */
   BACKEND_CORE_URL: z
     .string()
     .default('http://localhost:3333')
-    .transform((v) => (/^https?:\/\//i.test(v) ? v : `https://${v}`))
+    .transform((v) => {
+      if (/^https?:\/\//i.test(v)) return v;
+      const host = v.split('/')[0]!.split(':')[0]!;
+      const interno = !host.includes('.') && host !== 'localhost';
+      return interno ? `https://${host}.onrender.com` : `https://${v}`;
+    })
     .pipe(z.string().url()),
   /**
    * Segredo das rotas maquina-a-maquina da API Core. `GET /internal/decks/:id`
@@ -91,6 +106,9 @@ if (!parsed.success) {
 }
 
 export const config = parsed.data;
+
+/** O esquema, para o teste conferir as transformações campo a campo. */
+export const esquemaDaConfig = schema;
 export const isProd = config.NODE_ENV === 'production';
 
 /**

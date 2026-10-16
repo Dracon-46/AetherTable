@@ -542,8 +542,22 @@ export class MatchesService {
       return { token: null, motivo: 'Entre na mesa para usar a voz dela.' };
     }
 
-    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
-    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+    /**
+     * ─── SEM CHAVE DE VERDADE, SEM VOZ ──────────────────────────────────────
+     *
+     * Era `LIVEKIT_API_KEY || 'devkey'` em qualquer ambiente: em produção sem
+     * LiveKit configurado, a API assinava passes com a chave de exemplo do
+     * servidor de desenvolvimento, o navegador tentava conectar e o console se
+     * enchia de "invalid API key" a cada mesa aberta. As chaves de exemplo só
+     * valem fora de produção (o `livekit-server --dev` local usa exatamente
+     * elas); em produção, faltar chave é "esta mesa não tem voz".
+     */
+    const producao = process.env.NODE_ENV === 'production';
+    const apiKey = process.env.LIVEKIT_API_KEY || (producao ? '' : 'devkey');
+    const apiSecret = process.env.LIVEKIT_API_SECRET || (producao ? '' : 'secret');
+    if (!apiKey || !apiSecret || (producao && apiKey === 'devkey')) {
+      return { token: null, motivo: 'A voz não está configurada neste servidor.' };
+    }
 
     const at = new AccessToken(apiKey, apiSecret, {
       identity: userId,

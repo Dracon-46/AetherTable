@@ -385,6 +385,41 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
     const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', assento);
     expect(podePublicar(token!)).toBe(true);
   });
+
+  /**
+   * Em produção sem LiveKit configurado, a API assinava com a chave de exemplo
+   * (`devkey`) e o navegador enchia o console de "invalid API key".
+   */
+  describe('em produção', () => {
+    const ambiente = { ...process.env };
+    afterEach(() => {
+      process.env = { ...ambiente };
+    });
+    const assento = () =>
+      jwt.sign({ sub: 'u1', username: 'Ana', roomId: 'ABC123' }, { audience: 'aethertable-mesa' });
+
+    it('sem chave do LiveKit, a mesa fica sem voz em vez de receber passe inválido', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.LIVEKIT_API_KEY;
+      delete process.env.LIVEKIT_API_SECRET;
+      const r = await svc.getVoiceToken('u1', 'Ana', 'ABC123', assento());
+      expect(r.token).toBeNull();
+    });
+
+    it('a chave de exemplo do servidor de desenvolvimento também não vale', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.LIVEKIT_API_KEY = 'devkey';
+      process.env.LIVEKIT_API_SECRET = 'secret';
+      expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', assento())).token).toBeNull();
+    });
+
+    it('com chave de verdade, a voz funciona', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.LIVEKIT_API_KEY = 'APIchaveDeVerdade';
+      process.env.LIVEKIT_API_SECRET = 'segredo-de-verdade-com-tamanho';
+      expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', assento())).token).toBeTruthy();
+    });
+  });
 });
 
 describe('registrarResumo — conta excluída não derruba o resumo', () => {
