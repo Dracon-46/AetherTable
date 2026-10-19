@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { AdminAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import type { RequisicaoAdmin } from './papeis.js';
@@ -27,7 +27,8 @@ import type { RequisicaoAdmin } from './papeis.js';
  * auditoria estiver indisponível, a alternativa seria recusar a suspensão de
  * uma conta abusiva — trocar "a ação ficou sem registro" por "a ação não
  * aconteceu". Numa emergência de moderação, a segunda é pior. A falha aparece
- * no log da aplicação, alto.
+ * no log da aplicação, alto. A exceção é o que não tem volta — ver
+ * `registrarOuFalhar`.
  */
 
 /** O que a ação atingiu. String e não enum: novos alvos não pedem migração. */
@@ -53,24 +54,53 @@ export class AuditoriaService {
    */
   async registrar(req: RequisicaoAdmin, entrada: EntradaDeAuditoria): Promise<void> {
     try {
-      await this.prisma.auditLog.create({
-        data: {
-          actorId: req.autor.id,
-          actorLabel: req.autor.username,
-          action: entrada.action,
-          targetType: entrada.targetType,
-          targetId: entrada.targetId ?? null,
-          targetLabel: entrada.targetLabel ?? null,
-          reason: entrada.reason ?? null,
-          metadata: entrada.metadata ?? {},
-          ip: ipDaRequisicao(req),
-        },
-      });
+      await this.gravar(req, entrada);
     } catch (erro) {
-      this.logger.error(
-        `FALHA AO AUDITAR ${entrada.action} sobre ${entrada.targetType}:${entrada.targetId} por ${req.autor.username}: ${String(erro)}`,
+      this.logarFalha(req, entrada, erro);
+    }
+  }
+
+  /**
+   * ─── PARA O QUE NÃO TEM VOLTA, SEM REGISTRO NÃO HÁ AÇÃO ───────────────────
+   *
+   * O raciocínio de `registrar` — melhor a ação sem registro do que nenhuma
+   * ação — vale para suspender uma conta abusiva, que se desfaz num clique. Não
+   * vale para o expurgo, que apaga a linha e tudo em cascata: ali, "a conta
+   * sumiu e ninguém sabe quem a apagou" é o pior resultado possível, e um
+   * expurgo adiado não machuca ninguém. Esta variante PROPAGA a falha, e quem
+   * chama não segue sem o registro.
+   */
+  async registrarOuFalhar(req: RequisicaoAdmin, entrada: EntradaDeAuditoria): Promise<void> {
+    try {
+      await this.gravar(req, entrada);
+    } catch (erro) {
+      this.logarFalha(req, entrada, erro);
+      throw new ServiceUnavailableException(
+        'A trilha de auditoria não respondeu, e esta ação não pode acontecer sem registro. Nada foi feito; tente de novo em instantes.',
       );
     }
+  }
+
+  private async gravar(req: RequisicaoAdmin, entrada: EntradaDeAuditoria): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: req.autor.id,
+        actorLabel: req.autor.username,
+        action: entrada.action,
+        targetType: entrada.targetType,
+        targetId: entrada.targetId ?? null,
+        targetLabel: entrada.targetLabel ?? null,
+        reason: entrada.reason ?? null,
+        metadata: entrada.metadata ?? {},
+        ip: ipDaRequisicao(req),
+      },
+    });
+  }
+
+  private logarFalha(req: RequisicaoAdmin, entrada: EntradaDeAuditoria, erro: unknown): void {
+    this.logger.error(
+      `FALHA AO AUDITAR ${entrada.action} sobre ${entrada.targetType}:${entrada.targetId} por ${req.autor.username}: ${String(erro)}`,
+    );
   }
 
   /**

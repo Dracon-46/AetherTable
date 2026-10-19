@@ -13,7 +13,8 @@ import {
   type ConfigDeSala,
 } from '@aethertable/shared-types';
 import type { CriarPartidaDto, FiltrosDoHistoricoDto, ResumoDePartidaDto } from './matches.dto.js';
-import { AUDIENCIA_DA_MESA } from '../auth/passe-de-mesa.js';
+import { AUDIENCIA_DA_MESA, AUDIENCIA_DA_VOZ } from '../auth/passe-de-mesa.js';
+import { ALGORITMOS_ACEITOS } from '../auth/segredo-do-jwt.js';
 
 @Injectable()
 export class MatchesService {
@@ -144,6 +145,7 @@ export class MatchesService {
     try {
       const claims = this.jwtService.verify<{ roomId?: string; cfg?: Partial<ConfigDeSala> }>(
         configToken,
+        { audience: AUDIENCIA_DA_MESA, algorithms: ALGORITMOS_ACEITOS },
       );
       if (claims.roomId !== roomCode || !claims.cfg) return undefined;
       // Renormaliza mesmo vindo assinado: o catálogo de formatos pode ter mudado
@@ -174,8 +176,12 @@ export class MatchesService {
   ) {
     if (deckId) {
       // `getDeckById` hidrata cada carta com dados da Scryfall — daí `name` e
-      // `isBanned`, que não existem no registro cru do Prisma.
-      const deck = await this.decksService.getDeckById(userId, deckId);
+      // `isBanned`, que não existem no registro cru do Prisma. Aqui a
+      // hidratação é OBRIGATÓRIA: sem ela todo `isBanned` sai falso, e uma
+      // Scryfall fora do ar aprovaria deck com carta banida.
+      const deck = await this.decksService.getDeckById(userId, deckId, {
+        exigirHidratacao: true,
+      });
       validarDeckParaFormato(deck);
     }
 
@@ -516,7 +522,7 @@ export class MatchesService {
    * como "esta mesa nao tem voz" e monta a partida sem o LiveKit. Um 403 faria
    * a tela mostrar falha de conexao numa mesa que esta perfeitamente jogavel.
    */
-  async getVoiceToken(userId: string, username: string, roomCode: string, passe?: string) {
+  async getVoiceToken(userId: string, username: string, roomCode: string, passeDeVoz?: string) {
     if (!(await this.sistema.flagLigada(FLAGS.VOZ))) {
       return { token: null, motivo: 'A voz esta temporariamente desativada na plataforma.' };
     }
@@ -528,16 +534,22 @@ export class MatchesService {
      * — e a vitrine publica LISTA os codigos. Bastava uma conta para entrar no
      * canal de voz de uma mesa alheia, ouvir e falar.
      *
-     * Quem esta na mesa e o game-server quem sabe, mas a prova ja existe deste
-     * lado: o passe da mesa (seat token) que ESTE servico assinou, com o `sub`
-     * da conta e o `roomId` da sala. Exigi-lo aqui nao custa chamada entre
-     * servicos. Passe de espectador ouve e nao fala: plateia nao tem assento
-     * na conversa da mesa.
+     * ─── E O PASSE DA MESA NAO PROVAVA PRESENCA ─────────────────────────────
+     *
+     * A primeira correcao exigia o seat token. So que `POST /join` assina um
+     * para QUALQUER codigo, sem saber se a sala existe nem se a pessoa entrou:
+     * pedir um passe e usa-lo na voz era a mesma porta, com um passo a mais.
+     *
+     * Quem sabe que a conta esta sentada e o game-server, e e ele quem atesta:
+     * depois de aceitar a entrada, assina um passe de VOZ (audiencia propria,
+     * mesmo segredo, 6 h) com `sub`, `roomId` e `spectator`. Conferi-lo aqui
+     * continua sem custar chamada entre servicos. Passe de espectador ouve e
+     * nao fala: plateia nao tem assento na conversa da mesa.
      *
      * Sem passe valido a resposta e `null`, como no kill switch: o cliente
      * trata isso como "mesa sem voz" e joga normalmente.
      */
-    const prova = this.lerPasseDaMesa(passe, userId, roomCode);
+    const prova = this.lerPasseDeVoz(passeDeVoz, userId, roomCode);
     if (!prova) {
       return { token: null, motivo: 'Entre na mesa para usar a voz dela.' };
     }
@@ -577,10 +589,11 @@ export class MatchesService {
   }
 
   /**
-   * O passe da mesa, se for desta conta e desta sala. `verify` com a audiencia
-   * da mesa: um access token comum (sem audiencia) nao serve de prova.
+   * O passe de voz que o game-server assinou, se for desta conta e desta sala.
+   * `verify` com a audiencia da VOZ: o seat token (audiencia da mesa) e um
+   * access token comum (sem audiencia) nao servem de prova.
    */
-  private lerPasseDaMesa(
+  private lerPasseDeVoz(
     passe: string | undefined,
     userId: string,
     roomCode: string,
@@ -589,7 +602,7 @@ export class MatchesService {
     try {
       const claims = this.jwtService.verify<{ sub?: string; roomId?: string; spectator?: boolean }>(
         passe,
-        { audience: AUDIENCIA_DA_MESA },
+        { audience: AUDIENCIA_DA_VOZ, algorithms: ALGORITMOS_ACEITOS },
       );
       if (claims.sub !== userId || claims.roomId !== roomCode) return null;
       return { espectador: claims.spectator === true };

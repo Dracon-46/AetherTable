@@ -15,8 +15,9 @@
  * duas cartas dentro estaria testando o mundo antigo.
  */
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { MatchesService } from './matches.service.js';
+import { AUDIENCIA_DA_VOZ } from '../auth/passe-de-mesa.js';
 
 interface Carta {
   scryfallId: string;
@@ -193,6 +194,30 @@ describe('joinMatch — travas que já existiam', () => {
     await expect(entrar(svc)).rejects.toThrow(/banidas.*Black Lotus/i);
   });
 
+  /**
+   * A hidratação é o que traz `isBanned`. Ela era opcional: com a Scryfall
+   * fora do ar, o deck voltava com toda carta "legal" e entrava na mesa com
+   * banida e tudo.
+   */
+  it('exige a hidratação: sem a Scryfall, a entrada é recusada em vez de aprovada', async () => {
+    const decksService = {
+      getDeckById: jest
+        .fn()
+        .mockRejectedValue(new ServiceUnavailableException('Provedor de cartas indisponível.')),
+    };
+    const svc = new MatchesService(
+      { sign: jest.fn() } as unknown as ConstructorParameters<typeof MatchesService>[0],
+      {} as unknown as ConstructorParameters<typeof MatchesService>[1],
+      decksService as unknown as ConstructorParameters<typeof MatchesService>[2],
+      {} as unknown as ConstructorParameters<typeof MatchesService>[3],
+    );
+
+    await expect(entrar(svc)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(decksService.getDeckById).toHaveBeenCalledWith('u1', 'deck-1', {
+      exigirHidratacao: true,
+    });
+  });
+
   it('a contagem é conferida ANTES do comandante', async () => {
     // Um deck de 40 cartas sem comandante erra nas duas coisas. A mensagem útil
     // é a do tamanho: é o problema maior e o que o jogador resolve primeiro.
@@ -340,7 +365,9 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
   /**
    * O passe de voz saía para qualquer conta e qualquer código, e a vitrine
    * pública lista os códigos: uma conta qualquer entrava no canal de voz de uma
-   * mesa alheia. O passe da mesa, assinado por este serviço, é a prova.
+   * mesa alheia. A primeira correção aceitava o seat token como prova — mas
+   * `POST /join` emite um para QUALQUER código. A prova agora é o passe de voz
+   * que o game-server assina depois de aceitar a entrada na sala.
    */
   const { JwtService } = jest.requireActual<typeof import('@nestjs/jwt')>('@nestjs/jwt');
   const jwt = new JwtService({ secret: 'segredo-de-teste-com-16+' });
@@ -358,35 +385,57 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
       }
     ).video.canPublish;
 
-  it('sem passe da mesa, não há voz', async () => {
+  /** O passe como o game-server o assina — o contrato combinado entre os dois. */
+  const passeDeVoz = (sub: string, roomId: string, spectator = false) =>
+    jwt.sign(
+      { sub, roomId, spectator },
+      { audience: AUDIENCIA_DA_VOZ, algorithm: 'HS256', expiresIn: '6h' },
+    );
+
+  it('sem passe de voz, não há voz', async () => {
     expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123')).token).toBeNull();
   });
 
-  it('passe de outra sala ou de outra conta não serve', async () => {
-    const outraSala = svc.spectateMatch('u1', 'Ana', 'ZZZ999');
-    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraSala.seatToken)).token).toBeNull();
-    const outraConta = svc.spectateMatch('u2', 'Bia', 'ABC123');
-    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraConta.seatToken)).token).toBeNull();
+  it('o seat token não serve mais: a API o emite para qualquer código', async () => {
+    const { seatToken } = await svc.joinMatch('u1', 'Ana', 'ABC123');
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', seatToken)).token).toBeNull();
+    const plateia = svc.spectateMatch('u1', 'Ana', 'ABC123');
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', plateia.seatToken)).token).toBeNull();
   });
 
-  it('um access token comum, sem a audiência da mesa, não serve', async () => {
+  it('passe de outra sala ou de outra conta não serve', async () => {
+    const outraSala = passeDeVoz('u1', 'ZZZ999');
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraSala)).token).toBeNull();
+    const outraConta = passeDeVoz('u2', 'ABC123');
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraConta)).token).toBeNull();
+  });
+
+  it('um access token comum, sem a audiência da voz, não serve', async () => {
     const sessao = jwt.sign({ sub: 'u1', roomId: 'ABC123' });
     expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', sessao)).token).toBeNull();
   });
 
+  it('passe assinado com outro algoritmo não serve, mesmo com o segredo certo', async () => {
+    const hs512 = jwt.sign(
+      { sub: 'u1', roomId: 'ABC123', spectator: false },
+      { audience: AUDIENCIA_DA_VOZ, algorithm: 'HS512' },
+    );
+    expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', hs512)).token).toBeNull();
+  });
+
   it('quem assiste ouve, mas não fala', async () => {
-    const plateia = svc.spectateMatch('u1', 'Ana', 'ABC123');
-    const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', plateia.seatToken);
+    const { token } = await svc.getVoiceToken(
+      'u1',
+      'Ana',
+      'ABC123',
+      passeDeVoz('u1', 'ABC123', true),
+    );
     expect(token).toBeTruthy();
     expect(podePublicar(token!)).toBe(false);
   });
 
   it('quem tem assento fala', async () => {
-    const assento = jwt.sign(
-      { sub: 'u1', username: 'Ana', roomId: 'ABC123' },
-      { audience: 'aethertable-mesa' },
-    );
-    const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', assento);
+    const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', passeDeVoz('u1', 'ABC123'));
     expect(podePublicar(token!)).toBe(true);
   });
 
@@ -399,8 +448,7 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
     afterEach(() => {
       process.env = { ...ambiente };
     });
-    const assento = () =>
-      jwt.sign({ sub: 'u1', username: 'Ana', roomId: 'ABC123' }, { audience: 'aethertable-mesa' });
+    const assento = () => passeDeVoz('u1', 'ABC123');
 
     it('sem chave do LiveKit, a mesa fica sem voz em vez de receber passe inválido', async () => {
       process.env.NODE_ENV = 'production';

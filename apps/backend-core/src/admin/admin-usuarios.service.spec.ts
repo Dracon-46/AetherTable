@@ -11,7 +11,8 @@
  * O Prisma é um duplo: estes testes fixam o que é ESCRITO, sem tocar banco.
  */
 
-import { Role } from '@prisma/client';
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { Prisma, Role } from '@prisma/client';
 import { AdminUsuariosService } from './admin-usuarios.service.js';
 import type { RequisicaoAdmin } from './papeis.js';
 
@@ -30,18 +31,38 @@ function montar() {
         supporterTier: 'FREE',
       }),
       update: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
       count: jest.fn().mockResolvedValue(1),
     },
+    $transaction: jest.fn(
+      async (fn: (tx: unknown) => Promise<unknown>, _opcoes?: unknown): Promise<unknown> =>
+        fn(transacao),
+    ),
   };
-  const auditoria = { registrar: jest.fn().mockResolvedValue(undefined) };
+  // A transação recebe o próprio duplo como `tx`, como o Prisma faz.
+  const transacao: unknown = prisma;
+  const auditoria = {
+    registrar: jest.fn().mockResolvedValue(undefined),
+    registrarOuFalhar: jest.fn().mockResolvedValue(undefined),
+  };
   const svc = new AdminUsuariosService(prisma as never, auditoria as never);
   const req: RequisicaoAdmin = {
     user: { sub: MODERADOR, username: 'mod' },
     autor: { id: MODERADOR, username: 'mod', role: Role.ADMIN },
     headers: {},
   };
-  return { svc, prisma, req };
+  return { svc, prisma, req, auditoria };
 }
+
+/** O alvo como ADMIN — o caso em que a trava do último administrador vale. */
+const alvoAdmin = {
+  id: ALVO,
+  username: 'alvo',
+  email: 'alvo@exemplo.com',
+  role: Role.ADMIN,
+  deletedAt: null,
+  supporterTier: 'FREE',
+};
 
 describe('AdminUsuariosService — punições derrubam as sessões abertas', () => {
   it('suspender grava o corte de sessão junto da suspensão', async () => {
@@ -104,5 +125,83 @@ describe('AdminUsuariosService.mudarTier — rebaixar tira a placa de apoiador',
       where: { userId: ALVO },
       data: { borderId: null, nameplateId: null },
     });
+  });
+});
+
+/**
+ * ─── A TRAVA DO ÚLTIMO ADMINISTRADOR TINHA UMA JANELA DE CORRIDA ────────────
+ *
+ * A contagem de "outros administradores" e a escrita eram duas consultas
+ * soltas. Dois administradores despromovendo um ao outro ao mesmo tempo viam,
+ * cada um, o outro ativo, e os dois seguiam: a plataforma ficava sem nenhum.
+ * Contar e escrever na mesma transação SERIALIZÁVEL é o que o Postgres precisa
+ * para derrubar uma das duas.
+ */
+describe('AdminUsuariosService — trava do último administrador numa transação serializável', () => {
+  const serializavel = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable };
+
+  it('despromover um ADMIN conta e escreve dentro da mesma transação serializável', async () => {
+    const { svc, prisma, req } = montar();
+    prisma.user.findUnique.mockResolvedValue(alvoAdmin);
+    const ordem: string[] = [];
+    prisma.user.count.mockImplementation(async () => {
+      ordem.push(`count:${prisma.$transaction.mock.calls.length}`);
+      return 1;
+    });
+    prisma.user.update.mockImplementation(async () => {
+      ordem.push(`update:${prisma.$transaction.mock.calls.length}`);
+      return {};
+    });
+
+    await svc.mudarPapel(req, ALVO, { papel: Role.MOD, motivo: 'troca de função' });
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), serializavel);
+    // As duas aconteceram com a transação já aberta.
+    expect(ordem).toEqual(['count:1', 'update:1']);
+  });
+
+  it('o último ADMIN não é banido, e nada é escrito', async () => {
+    const { svc, prisma, req } = montar();
+    prisma.user.findUnique.mockResolvedValue(alvoAdmin);
+    prisma.user.count.mockResolvedValue(0);
+
+    await expect(svc.banir(req, ALVO, { motivo: 'teste da trava' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('alvo que não é ADMIN não abre transação', async () => {
+    const { svc, prisma, req } = montar();
+    await svc.banir(req, ALVO, { motivo: 'conduta' });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.user.update).toHaveBeenCalled();
+  });
+});
+
+/**
+ * O expurgo registrava a auditoria com `registrar`, que engole a falha: com a
+ * tabela fora do ar, a conta sumia sem o registro que a ordem "auditar antes
+ * de apagar" existe para garantir.
+ */
+describe('AdminUsuariosService.excluirDefinitivamente — sem auditoria, sem expurgo', () => {
+  it('se a auditoria falha, a conta NÃO é apagada', async () => {
+    const { svc, prisma, req, auditoria } = montar();
+    auditoria.registrarOuFalhar.mockRejectedValue(new ServiceUnavailableException());
+
+    await expect(
+      svc.excluirDefinitivamente(req, ALVO, { confirmacao: 'alvo', motivo: 'pedido LGPD' }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(prisma.user.delete).not.toHaveBeenCalled();
+    expect(auditoria.registrar).not.toHaveBeenCalled();
+  });
+
+  it('com a auditoria gravada, apaga', async () => {
+    const { svc, prisma, req, auditoria } = montar();
+
+    await svc.excluirDefinitivamente(req, ALVO, { confirmacao: 'alvo', motivo: 'pedido LGPD' });
+
+    expect(auditoria.registrarOuFalhar).toHaveBeenCalled();
+    expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: ALVO } });
   });
 });

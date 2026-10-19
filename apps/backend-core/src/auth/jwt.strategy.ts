@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { RevogacaoService } from './revogacao.service.js';
 import { naoEhSessaoDaApi } from './passe-de-mesa.js';
+import { ALGORITMOS_ACEITOS, segredoDoJwt } from './segredo-do-jwt.js';
 
 export interface JwtPayload {
   sub: string; // ID do usuário
@@ -41,8 +42,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // Rejeita automaticamente se o token passou da data de expiração
       ignoreExpiration: false,
 
-      // Chave secreta super segura (gerada aleatoriamente no .env)
-      secretOrKey: configService.get<string>('JWT_SECRET')!,
+      secretOrKey: segredoDoJwt(configService),
+      // Só HS256: o algoritmo não fica a critério do cabeçalho do token.
+      // Ver `segredo-do-jwt.ts`.
+      algorithms: ALGORITMOS_ACEITOS,
     });
   }
 

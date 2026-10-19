@@ -51,6 +51,15 @@ describe('FiltroDeErrosDoPrisma', () => {
     await request(app.getHttpServer()).get('/falha/P2025').expect(404);
   });
 
+  it('P2034 (conflito numa transação serializável) vira 409 "tente de novo"', async () => {
+    // A trava do último administrador conta e escreve numa transação
+    // serializável; quando duas colidem, o Postgres derruba uma. Isso é
+    // conflito do pedido, não falha do servidor.
+    const r = await request(app.getHttpServer()).get('/falha/P2034');
+    expect(r.status).toBe(409);
+    expect(r.body.message).toMatch(/tente de novo/);
+  });
+
   it('código sem tradução segura continua 500 — traduzir o desconhecido esconderia defeito', async () => {
     await request(app.getHttpServer()).get('/falha/P2003').expect(500);
   });

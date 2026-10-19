@@ -57,11 +57,14 @@ export class DenunciasController {
     return this.denuncias.criar(req.user.sub, dto);
   }
 
-  /** Interruptores globais, para o cliente saber o que está desligado. */
+  /**
+   * Interruptores globais, para o cliente saber o que está desligado. Só
+   * chave e estado — quem mexeu e a nota interna ficam no painel.
+   */
   @Get('flags')
   @Throttle({ curto: { limit: 20, ttl: 5_000 }, longo: { limit: 120, ttl: 60_000 } })
   @ApiOperation({ summary: 'Interruptores globais de plataforma (leitura pública)' })
   flags() {
-    return this.sistema.listarFlags();
+    return this.sistema.flagsPublicas();
   }
 }

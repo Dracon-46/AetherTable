@@ -30,7 +30,20 @@
 /** Audiência dos passes emitidos para o game-server. */
 export const AUDIENCIA_DA_MESA = 'aethertable-mesa';
 
-/** Claims que só existem num passe de mesa — nunca num access token. */
+/**
+ * Audiência do passe de VOZ, que o game-server assina depois de aceitar a
+ * entrada na sala, e esta API confere antes de emitir o token do LiveKit.
+ *
+ * O passe da mesa servia de prova para a voz, e não provava nada: `POST
+ * /matches/:code/join` emite seat token para QUALQUER código, sem saber se a
+ * sala existe ou se a pessoa entrou. Quem sabe que a conta está sentada é o
+ * game-server, então é ele quem atesta. Audiência própria para que um passe
+ * não sirva no lugar do outro — nem como sessão da API, que recusa qualquer
+ * token com `aud` (ver `naoEhSessaoDaApi`).
+ */
+export const AUDIENCIA_DA_VOZ = 'aethertable-voz';
+
+/** Claims que só existem num passe de mesa ou de voz — nunca num access token. */
 const CLAIMS_DE_MESA = ['roomId', 'spectator', 'cfg'] as const;
 
 /**

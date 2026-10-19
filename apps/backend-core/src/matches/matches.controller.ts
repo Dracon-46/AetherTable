@@ -95,11 +95,13 @@ export class MatchesController {
   getVoiceToken(
     @Request() req: RequisicaoAutenticada,
     @Param('roomCode', new ZodValidationPipe(RoomCodeParam)) roomCode: string,
-    // O passe da mesa, como prova de que esta conta está NESTA sala. Header, e
-    // não querystring: querystring fica em log de proxy.
-    @Headers('x-passe-de-mesa') passe?: string,
+    // O passe de voz que o game-server assinou ao aceitar a entrada: a prova
+    // de que esta conta está NESTA sala. O seat token não serve mais — a API
+    // o emite para qualquer código. Header, e não querystring: querystring
+    // fica em log de proxy.
+    @Headers('x-passe-de-voz') passeDeVoz?: string,
   ) {
-    return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode, passe);
+    return this.matchesService.getVoiceToken(req.user.sub, req.user.username, roomCode, passeDeVoz);
   }
 }
 

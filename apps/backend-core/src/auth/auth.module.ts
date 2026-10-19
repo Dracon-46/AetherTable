@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ttlEmSegundos } from './ttl.js';
+import { ALGORITMOS_ACEITOS, ALGORITMO_DO_JWT, segredoDoJwt } from './segredo-do-jwt.js';
 import { AuthService } from './auth.service.js';
 import { RevogacaoService } from './revogacao.service.js';
 import { RecuperacaoService } from './recuperacao.service.js';
@@ -73,7 +74,9 @@ function estrategiasDeOAuth(): Provider[] {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
+        // Em produção, segredo curto derruba o boot aqui. Ver `segredo-do-jwt.ts`.
+        secret: segredoDoJwt(configService),
+        verifyOptions: { algorithms: ALGORITMOS_ACEITOS },
         /**
          * VIDA DO ACCESS TOKEN.
          *
@@ -89,10 +92,13 @@ function estrategiasDeOAuth(): Provider[] {
          * a renove. Doze horas é o meio-termo honesto — cobre uma noite de
          * jogo inteira e reduz a janela de um roubo de token de 168 h para 12 h.
          *
-         * `JWT_ACCESS_TTL` e `JWT_REFRESH_TTL` existem no .env e no render.yaml
-         * e NUNCA foram lidos por nada. Agora o primeiro é de verdade.
+         * `JWT_ACCESS_TTL` existia no .env e no render.yaml e NUNCA foi lido
+         * por nada. Agora é de verdade.
          */
-        signOptions: { expiresIn: ttlEmSegundos(configService.get<string>('JWT_ACCESS_TTL')) },
+        signOptions: {
+          algorithm: ALGORITMO_DO_JWT,
+          expiresIn: ttlEmSegundos(configService.get<string>('JWT_ACCESS_TTL')),
+        },
       }),
     }),
   ],

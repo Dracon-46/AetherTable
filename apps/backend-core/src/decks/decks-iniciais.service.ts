@@ -14,6 +14,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { DECKS_INICIAIS, FONTE_DOS_DECKS_INICIAIS } from './decks-iniciais.dados.js';
+import { exigirVagaDeDeck } from './limites-de-conta.js';
 
 /** A descrição que marca o deck como cópia de um inicial — e o reencontra. */
 const descricaoDe = (d: (typeof DECKS_INICIAIS)[number]) =>
@@ -49,6 +50,8 @@ export class DecksIniciaisService {
       where: { userId, name: inicial.nome, description: descricao },
     });
     if (existente) return existente;
+    // Só quando vai criar: reencontrar a cópia que já existe não ocupa vaga.
+    await exigirVagaDeDeck(this.prisma, userId);
 
     return this.prisma.$transaction(async (tx) => {
       const novo = await tx.deck.create({

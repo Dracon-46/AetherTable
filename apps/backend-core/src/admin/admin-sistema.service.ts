@@ -183,6 +183,19 @@ export class AdminSistemaService {
     });
   }
 
+  /**
+   * O que a rota PÚBLICA `GET /flags` mostra: chave e estado, e nada mais.
+   *
+   * Ela devolvia `listarFlags` inteiro — o nome de quem mexeu (`updatedBy`),
+   * quando, e a nota interna ("SFU estourou o orçamento", "ataque de contas
+   * falsas em curso"). Para qualquer visitante, sem login: o username de cada
+   * administrador e o diário de incidentes da plataforma.
+   */
+  async flagsPublicas(): Promise<{ key: string; enabled: boolean }[]> {
+    const flags = await this.listarFlags();
+    return flags.map(({ key, enabled }) => ({ key, enabled }));
+  }
+
   /** `true`/`false` de uma flag. Consultado por outros módulos e pelo cliente. */
   async flagLigada(key: string): Promise<boolean> {
     const f = await this.prisma.platformFlag.findUnique({ where: { key } });

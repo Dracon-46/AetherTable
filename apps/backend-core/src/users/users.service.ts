@@ -255,7 +255,13 @@ export class UsersService {
     const { username, displayName, language } = data;
 
     if (username) {
-      const existing = await this.prisma.user.findFirst({ where: { username, id: { not: id } } });
+      // Sem diferenciar maiúsculas, como no cadastro: "Gaspare" não pode
+      // virar o nome de outra pessoa porque "gaspare" já existe com outra
+      // grafia. A própria conta fica de fora — trocar só a caixa é permitido.
+      const existing = await this.prisma.user.findFirst({
+        where: { username: { equals: username, mode: 'insensitive' }, id: { not: id } },
+        select: { id: true },
+      });
       if (existing) throw new BadRequestException('Username já em uso');
     }
 

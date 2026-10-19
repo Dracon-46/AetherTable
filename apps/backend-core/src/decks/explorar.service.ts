@@ -17,6 +17,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { DecksService } from './decks.service.js';
+import { exigirVagaDeDeck } from './limites-de-conta.js';
 import type { FiltrosDoExplorar } from './explorar.dto.js';
 
 /** Cartões por página. Uma grade de 4 colunas × 6 linhas. */
@@ -94,7 +95,9 @@ export class ExplorarService {
       select: { userId: true },
     });
     // O `userId` do dono não sai: quem vê o deck precisa do nome, não do id.
-    const { userId: _dono, ...publico } = completo;
+    // A pasta e o favorito também não: são a organização PRIVADA do dono
+    // ("Para testar", "Proxies") e nada dizem sobre o deck publicado.
+    const { userId: _dono, folder: _pasta, isFavorite: _favorito, ...publico } = completo;
     return { ...publico, dono: deck.user.username, curtido: Boolean(curtida) };
   }
 
@@ -148,6 +151,7 @@ export class ExplorarService {
       include: { cards: true },
     });
     if (!original) throw new NotFoundException('Deck não encontrado');
+    await exigirVagaDeDeck(this.prisma, userId);
 
     return this.prisma.$transaction(async (tx) => {
       const novo = await tx.deck.create({

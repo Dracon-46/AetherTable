@@ -109,3 +109,55 @@ describe('placa de nome no PATCH /users/me', () => {
     expect(apoiador.prisma.userPreference.upsert).toHaveBeenCalled();
   });
 });
+
+/**
+ * O nome de usuário não diferencia maiúsculas na checagem de disponibilidade.
+ *
+ * A consulta era `{ username }` exato: com "gaspare" cadastrado, outra conta
+ * trocava o próprio nome para "Gaspare" e aparecia na mesa como a primeira.
+ */
+describe('UsersService.updateUser — username disponível sem diferenciar maiúsculas', () => {
+  it('a checagem compara sem caixa e deixa a própria conta de fora', async () => {
+    const prisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({ id: 'u1', username: 'Gaspare' }),
+      },
+      userPreference: { upsert: jest.fn() },
+    };
+    const svc = new UsersService(prisma as never);
+
+    await svc.updateUser('u1', AtualizarPerfilDto.parse({ username: 'Gaspare' }));
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { username: { equals: 'Gaspare', mode: 'insensitive' }, id: { not: 'u1' } },
+      }),
+    );
+  });
+
+  it('"Gaspare" é recusado quando "gaspare" já é de outra conta', async () => {
+    const prisma = {
+      user: {
+        // O duplo responde como o Postgres com `mode: 'insensitive'`.
+        findFirst: jest.fn(
+          async ({ where }: { where: { username: { equals: string; mode?: string } } }) =>
+            where.username.mode === 'insensitive' &&
+            where.username.equals.toLowerCase() === 'gaspare'
+              ? { id: 'outra' }
+              : null,
+        ),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      userPreference: { upsert: jest.fn() },
+    };
+    const svc = new UsersService(prisma as never);
+
+    await expect(
+      svc.updateUser('u1', AtualizarPerfilDto.parse({ username: 'Gaspare' })),
+    ).rejects.toThrow(/em uso/);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});

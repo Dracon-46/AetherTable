@@ -12,6 +12,7 @@
  * nosso proxy viu, e não o que o cliente declarou.
  */
 
+import { ServiceUnavailableException } from '@nestjs/common';
 import { AdminAction, Role } from '@prisma/client';
 import { AuditoriaService } from './auditoria.service.js';
 import type { RequisicaoAdmin } from './papeis.js';
@@ -52,5 +53,31 @@ describe('AuditoriaService — IP de origem', () => {
     });
 
     expect(ipGravado(prisma)).toBeNull();
+  });
+});
+
+describe('AuditoriaService — registrar engole, registrarOuFalhar propaga', () => {
+  const entrada = { action: AdminAction.USER_PURGE, targetType: 'user' as const, targetId: 'x' };
+
+  it('registrar segue sem lançar quando a tabela falha', async () => {
+    const { svc, prisma } = montar();
+    prisma.auditLog.create.mockRejectedValue(new Error('banco fora do ar'));
+    await expect(svc.registrar(req({}), entrada)).resolves.toBeUndefined();
+  });
+
+  it('registrarOuFalhar lança — quem chama não segue sem o registro', async () => {
+    const { svc, prisma } = montar();
+    prisma.auditLog.create.mockRejectedValue(new Error('banco fora do ar'));
+    await expect(svc.registrarOuFalhar(req({}), entrada)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it('registrarOuFalhar grava a mesma linha que registrar', async () => {
+    const { svc, prisma } = montar();
+    await svc.registrarOuFalhar(req({ ip: '203.0.113.7' }), entrada);
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: AdminAction.USER_PURGE, ip: '203.0.113.7' }),
+    });
   });
 });

@@ -12,6 +12,7 @@
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ExplorarService } from './explorar.service.js';
+import { MAXIMO_DE_DECKS_POR_CONTA } from './limites-de-conta.js';
 
 const DONO = 'dono-1';
 const EU = 'eu-1';
@@ -55,6 +56,8 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
         if (data.likeCount.decrement) deck.likeCount -= data.likeCount.decrement;
         return { likeCount: deck.likeCount };
       }),
+      // Decks de quem copia. Um só por padrão; o teste de teto sobe o número.
+      count: jest.fn().mockResolvedValue(1),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const novo = { id: 'deck-novo', ...data };
         criados.push(novo);
@@ -94,7 +97,16 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
   };
 
   ref.tx = prisma;
-  const decks = { getDeckById: jest.fn(async () => ({ id: DECK, userId: DONO, cards: [] })) };
+  // O deck como `getDeckById` o devolve: com a pasta e o favorito do DONO.
+  const decks = {
+    getDeckById: jest.fn(async () => ({
+      id: DECK,
+      userId: DONO,
+      folder: 'Proxies para testar',
+      isFavorite: true,
+      cards: [],
+    })),
+  };
   const svc = new ExplorarService(prisma as never, decks as never);
   return { svc, prisma, deck, criados, linhasCriadas, curtidas: () => likes.size };
 }
@@ -142,6 +154,17 @@ describe('ExplorarService.ver', () => {
     expect(deck.dono).toBe('gaspare');
     expect(deck).not.toHaveProperty('userId');
   });
+
+  /**
+   * A pasta e o favorito são a organização privada do dono. Saíam na resposta
+   * porque `ver` devolvia o deck inteiro menos o `userId`.
+   */
+  it('não mostra a pasta nem o favorito do dono', async () => {
+    const banco = bancoFalso();
+    const deck = (await banco.svc.ver(EU, DECK)) as Record<string, unknown>;
+    expect(deck).not.toHaveProperty('folder');
+    expect(deck).not.toHaveProperty('isFavorite');
+  });
 });
 
 describe('ExplorarService.copiar', () => {
@@ -154,5 +177,13 @@ describe('ExplorarService.copiar', () => {
     expect(String(novo.name)).toContain('de gaspare');
     expect(banco.linhasCriadas).toHaveLength(2);
     expect(banco.linhasCriadas.every((l) => l.deckId === 'deck-novo')).toBe(true);
+  });
+
+  it(`no teto de ${MAXIMO_DE_DECKS_POR_CONTA} decks, a cópia não nasce`, async () => {
+    const banco = bancoFalso();
+    banco.prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA);
+
+    await expect(banco.svc.copiar(EU, DECK)).rejects.toBeInstanceOf(BadRequestException);
+    expect(banco.criados).toHaveLength(0);
   });
 });

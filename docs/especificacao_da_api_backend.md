@@ -119,6 +119,14 @@ segredo do `InternalApiGuard`. `@SkipThrottle()` sem argumento só pula o balde 
 existe aqui — por isso `common/limites.ts` define os baldes **e** o pulo que nomeia `curto` e
 `longo`, derivado da mesma lista.
 
+`GET /internal/decks/:id` exige `?ownerId=<uuid da conta>` e só devolve o deck se ele for dessa
+conta; sem `ownerId`, responde `400`. Antes o parâmetro era opcional, e um passe de mesa sem conta
+(`sub` ausente) fazia o game-server pedir o deck sem dono — a rota devolvia o decklist de qualquer
+jogador, inclusive de deck privado.
+
+`GET /flags` é público e devolve só `{ key, enabled }` de cada interruptor. Quem mudou a flag e a
+nota interna ficam no painel de administração.
+
 Headers em toda resposta: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
 ### 1.5 O que a API aceita como sessão
@@ -918,13 +926,26 @@ voz está desligada na plataforma: o cliente já trata token ausente como "esta
 mesa não tem voz" e monta a partida sem o LiveKit. Um 403 faria a tela mostrar
 falha de conexão numa mesa perfeitamente jogável.
 
-**Exige o passe da mesa no header `X-Passe-De-Mesa`.** O passe de voz saía
+**Exige o passe de voz no header `X-Passe-De-Voz`.** O passe do LiveKit saía
 para qualquer conta e qualquer código, e a vitrine pública LISTA os códigos:
 uma conta qualquer entrava no canal de voz de uma mesa alheia, ouvia e falava.
-O passe da mesa (seat token ou passe de espectador) é verificado com a
-audiência `aethertable-mesa` e precisa ter `sub` = a conta e `roomId` = a
-sala; sem isso a resposta é `{ token: null }`. Passe de espectador recebe
-`canPublish: false` — a plateia ouve e não fala.
+
+O seat token **não serve mais** de prova: `POST /matches/:roomCode/join` o emite
+para qualquer código, sem saber se a sala existe nem se a pessoa entrou. Quem
+sabe que a conta está sentada é o game-server, e é ele quem atesta:
+
+- depois de aceitar a entrada na sala, o game-server assina, com o mesmo
+  `JWT_SECRET`, um passe com as claims `{ sub, roomId, spectator }`,
+  `aud: "aethertable-voz"`, `alg: HS256` e validade de **6 h**, e o envia ao
+  cliente;
+- o cliente o manda nesta rota no header `X-Passe-De-Voz`;
+- a API o verifica com a audiência `aethertable-voz` e só o algoritmo `HS256`,
+  e exige `sub` = a conta da sessão e `roomId` = o `:roomCode` da rota.
+
+Sem passe válido a resposta é `{ token: null, motivo }`, como no kill switch.
+Passe com `spectator: true` recebe `canPublish: false` — a plateia ouve e não
+fala. O passe de voz, como o da mesa, **não vale como sessão** da API (§1.5):
+a `JwtStrategy` recusa todo token com `aud`.
 
 ### 5.5 `GET /salas` — **no game-server, não nesta API**
 
