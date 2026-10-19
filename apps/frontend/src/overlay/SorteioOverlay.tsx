@@ -36,7 +36,7 @@ const DURACAO_MS = 2600;
 const SAIDA_MS = 350;
 
 /** Pontos das faces de um d6, em grade 3x3. Só o d6 ganha pips. */
-const PIPS: Record<number, Array<[number, number]>> = {
+const PIPS: Record<number, [number, number][]> = {
   1: [[1, 1]],
   2: [
     [0, 0],

@@ -1,0 +1,24 @@
+Copyright (c) 2026 Falkyria. Todos os direitos reservados.
+
+AetherTable é software proprietário da Falkyria.
+
+Este repositório é público apenas para consulta. A visibilidade do código-fonte
+NÃO concede licença de uso, cópia, modificação, fusão, publicação, distribuição,
+sublicenciamento, venda ou criação de obras derivadas, total ou parcial. Nenhum
+desses direitos é concedido sem autorização prévia e por escrito da Falkyria.
+
+O SOFTWARE É FORNECIDO "NO ESTADO EM QUE SE ENCONTRA", SEM GARANTIA DE QUALQUER
+ESPÉCIE, EXPRESSA OU IMPLÍCITA. EM NENHUMA HIPÓTESE A FALKYRIA SERÁ RESPONSÁVEL
+POR QUALQUER REIVINDICAÇÃO, DANO OU OUTRA RESPONSABILIDADE DECORRENTE DO
+SOFTWARE OU DO SEU USO.
+
+---
+
+Marcas e conteúdo de terceiros
+
+Magic: The Gathering é marca registrada da Wizards of the Coast LLC, que não
+patrocina, endossa nem tem qualquer vínculo com este projeto. Os dados de carta
+vêm da API pública da Scryfall (https://scryfall.com); nenhuma imagem ou texto
+de carta é redistribuído por este repositório.
+
+As dependências de terceiros continuam sob as próprias licenças.

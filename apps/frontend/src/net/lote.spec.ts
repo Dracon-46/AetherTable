@@ -45,7 +45,7 @@ function relogioManual() {
 
 function montar() {
   const { relogio, avancarQuadro, quadrosAgendados } = relogioManual();
-  const aplicacoes: Array<LoteDeCartas<{ x?: number }>> = [];
+  const aplicacoes: LoteDeCartas<{ x?: number }>[] = [];
   const coalescedor = criarCoalescedor<{ x?: number }>((lote) => aplicacoes.push(lote), relogio);
   return { coalescedor, aplicacoes, avancarQuadro, quadrosAgendados };
 }
@@ -169,7 +169,7 @@ describe('coalescedor de mudanças', () => {
     // O store pode disparar um render que produz mudanças novas. Se elas
     // caíssem na coleção que está sendo consumida, seriam perdidas.
     const { relogio, avancarQuadro } = relogioManual();
-    const aplicacoes: Array<LoteDeCartas<{ x?: number }>> = [];
+    const aplicacoes: LoteDeCartas<{ x?: number }>[] = [];
     const coalescedor = criarCoalescedor<{ x?: number }>((lote) => {
       aplicacoes.push(lote);
       if (aplicacoes.length === 1) coalescedor.alterar('reentrante', { x: 99 });

@@ -90,7 +90,7 @@ const TIPOS_DO_FILTRO: Record<Exclude<Filtro, 'ALL'>, ReadonlySet<string>> = {
   DADOS: new Set(['DICE']),
 };
 
-const ABAS: Array<{ id: Filtro; rotulo: string; Icone: typeof List }> = [
+const ABAS: { id: Filtro; rotulo: string; Icone: typeof List }[] = [
   { id: 'ALL', rotulo: 'Tudo', Icone: List },
   { id: 'CHAT', rotulo: 'Chat', Icone: MessageSquare },
   { id: 'CARTAS', rotulo: 'Cartas', Icone: Layers },

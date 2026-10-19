@@ -729,20 +729,20 @@ function SenhaTemporaria({
  */
 function FichaExtra({ dados }: { dados: Record<string, unknown> }) {
   const contagens = dados._count as Record<string, number> | undefined;
-  const decks = (dados.decks ?? []) as Array<{ id: string; name: string; cardCount: number }>;
-  const denuncias = (dados.denuncias ?? []) as Array<{
+  const decks = (dados.decks ?? []) as { id: string; name: string; cardCount: number }[];
+  const denuncias = (dados.denuncias ?? []) as {
     id: string;
     reason: string;
     status: string;
     createdAt: string;
-  }>;
-  const historico = (dados.historico ?? []) as Array<{
+  }[];
+  const historico = (dados.historico ?? []) as {
     id: string;
     action: string;
     actorLabel: string;
     reason: string | null;
     createdAt: string;
-  }>;
+  }[];
 
   return (
     <div className="space-y-4 text-xs">

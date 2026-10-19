@@ -59,8 +59,8 @@ function encher(state: RoomState, dono: string, zona: Zone, quantos: number) {
 }
 
 function ctxDe(state: RoomState, sid = 'p1') {
-  const enviados: Array<{ evento: string; payload: unknown }> = [];
-  const transmitidos: Array<{ evento: string; payload: unknown }> = [];
+  const enviados: { evento: string; payload: unknown }[] = [];
+  const transmitidos: { evento: string; payload: unknown }[] = [];
   const logs: LogEvent[] = [];
   const ctx = {
     state,
@@ -224,7 +224,7 @@ describe('sorteio de carta', () => {
 
     expect(transmitidos).toHaveLength(0);
     expect(enviados[0]!.evento).toBe('revealToOwner');
-    const cartas = (enviados[0]!.payload as { cards: Array<{ id: string }> }).cards;
+    const cartas = (enviados[0]!.payload as { cards: { id: string }[] }).cards;
     expect(ids).toContain(cartas[0]!.id);
     // O log é público e por isso é neutro: diz a zona, nunca a carta.
     expect(logs[0]!.text).not.toContain(cartas[0]!.id);

@@ -369,7 +369,7 @@ function desenharPlaymat(p: Playmat, cachear: boolean): HTMLCanvasElement | null
  * Silhueta do mascote, em coordenadas de -1..1. O componente do canvas aplica
  * escala, posição e a animação — aqui só a forma.
  */
-export function caminhoDoPet(pet: Pet): Array<[number, number]> | null {
+export function caminhoDoPet(pet: Pet): [number, number][] | null {
   switch (pet.forma) {
     case 'slime':
       return [
@@ -473,7 +473,7 @@ export function estiloCssDaPlaca(placa: Nameplate): CSSProperties | null {
 export interface PlacaNoCanvas {
   fillLinearGradientStartPoint: { x: number; y: number };
   fillLinearGradientEndPoint: { x: number; y: number };
-  fillLinearGradientColorStops: Array<number | string>;
+  fillLinearGradientColorStops: (number | string)[];
   stroke: string;
   texto: string;
   shadowColor?: string;

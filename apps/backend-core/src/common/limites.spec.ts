@@ -29,6 +29,9 @@ import { MatchesService } from '../matches/matches.service.js';
 
 const SEGREDO = 'segredo-interno-de-teste';
 const DECK = '7d2e8a10-4b6c-4f1e-9a3b-2c5d7e9f1a2b';
+const DONO = '0b6c1f9e-3a5d-4c2b-9e8f-1a2b3c4d5e6f';
+/** O deck de um formato sem regra de tamanho: passa pela validação da rota. */
+const DECK_VALIDO = { id: DECK, formatId: 'freeform', cardCount: 0, cards: [] };
 /** Acima dos 10 do balde curto, com folga. */
 const RAJADA = 15;
 
@@ -39,6 +42,8 @@ class RotaComum {
     return { ok: true };
   }
 }
+
+const getDeckById = jest.fn().mockResolvedValue(DECK_VALIDO);
 
 describe('rate limit — rotas internas ficam fora do balde global por IP', () => {
   let app: INestApplication;
@@ -51,7 +56,7 @@ describe('rate limit — rotas internas ficam fora do balde global por IP', () =
         { provide: APP_GUARD, useClass: ThrottlerGuard },
         {
           provide: DecksService,
-          useValue: { getDeckForServer: jest.fn().mockResolvedValue({ id: DECK, cards: [] }) },
+          useValue: { getDeckById: getDeckById },
         },
         {
           provide: MatchesService,
@@ -78,7 +83,7 @@ describe('rate limit — rotas internas ficam fora do balde global por IP', () =
     const status: number[] = [];
     for (let i = 0; i < RAJADA; i++) {
       const r = await request(app.getHttpServer())
-        .get(`/internal/decks/${DECK}`)
+        .get(`/internal/decks/${DECK}?ownerId=${DONO}`)
         .set('x-internal-token', SEGREDO);
       status.push(r.status);
     }
@@ -98,7 +103,34 @@ describe('rate limit — rotas internas ficam fora do balde global por IP', () =
   });
 
   it('o segredo continua sendo exigido', async () => {
-    await request(app.getHttpServer()).get(`/internal/decks/${DECK}`).expect(401);
+    await request(app.getHttpServer()).get(`/internal/decks/${DECK}?ownerId=${DONO}`).expect(401);
+  });
+
+  /**
+   * `ownerId` era opcional, e sem ele a rota devolvia o deck de qualquer dono
+   * por um caminho que nem hidratava as cartas. O game-server passou a mandá-lo
+   * sempre; sem ele (ou fora do formato), é 400.
+   */
+  it('sem ownerId, ou com ownerId que não é UUID, é 400', async () => {
+    getDeckById.mockClear();
+    await request(app.getHttpServer())
+      .get(`/internal/decks/${DECK}`)
+      .set('x-internal-token', SEGREDO)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`/internal/decks/${DECK}?ownerId=qualquer`)
+      .set('x-internal-token', SEGREDO)
+      .expect(400);
+    expect(getDeckById).not.toHaveBeenCalled();
+  });
+
+  it('com ownerId, confere o dono e exige a hidratação das cartas', async () => {
+    getDeckById.mockClear();
+    await request(app.getHttpServer())
+      .get(`/internal/decks/${DECK}?ownerId=${DONO}`)
+      .set('x-internal-token', SEGREDO)
+      .expect(200);
+    expect(getDeckById).toHaveBeenCalledWith(DONO, DECK, { exigirHidratacao: true });
   });
 
   it('controle: uma rota comum leva 429 depois de 10 em 5 s', async () => {

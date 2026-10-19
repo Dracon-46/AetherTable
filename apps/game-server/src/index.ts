@@ -6,13 +6,16 @@ import express from 'express';
 import { Server, matchMaker } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { monitor } from '@colyseus/monitor';
-import { playground } from '@colyseus/playground';
+import type * as Playground from '@colyseus/playground';
+import type { RedisPresence as TipoRedisPresence } from '@colyseus/redis-presence';
+import type { RedisDriver as TipoRedisDriver } from '@colyseus/redis-driver';
 import { AETHER_ROOM, REALTIME_LIMITS } from '@aethertable/shared-types';
 
 import { config, isProd } from './config';
 import { AetherRoom } from './rooms/AetherRoom';
 import { registry } from './metrics';
 import { iniciarSincronizacaoDoCatalogo } from './services/catalogo-de-cosmeticos';
+import { limitarCorpoDoMatchmake, restringirMatchmaker, senhaDoBasic } from './borda-http';
 import { Encoder } from '@colyseus/schema';
 
 /**
@@ -98,11 +101,9 @@ function autenticarOperacao(
   // assim em producao (ver a checagem cruzada em config.ts).
   if (!config.ADMIN_PANEL_PASSWORD) return next();
 
-  const cabecalho = req.headers.authorization ?? '';
-  const [tipo, credencial] = cabecalho.split(' ');
+  const senha = senhaDoBasic(req.headers.authorization);
 
-  if (tipo === 'Basic' && credencial) {
-    const [, senha = ''] = Buffer.from(credencial, 'base64').toString('utf8').split(':');
+  if (senha !== null) {
     const recebida = Buffer.from(senha);
     const esperada = Buffer.from(config.ADMIN_PANEL_PASSWORD);
     // `timingSafeEqual` exige o mesmo comprimento; o teste de tamanho antes
@@ -116,13 +117,27 @@ function autenticarOperacao(
   res.status(401).send('Autenticacao necessaria.');
 }
 
+/**
+ * O monitor é uma página que mostra a mão de todo mundo: emoldurado num iframe
+ * de outro site, um clique "inocente" do operador logado podia ser sequestrado
+ * (clickjacking). Os dois cabeçalhos dizem a mesma coisa para navegadores de
+ * gerações diferentes, e valem também para o 401 — por isso vêm antes da auth.
+ */
+app.use('/colyseus', (_req, res, next) => {
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Content-Security-Policy', "frame-ancestors 'none'");
+  next();
+});
 app.use('/colyseus', autenticarOperacao);
 app.use('/metrics', autenticarOperacao);
 
-app.get('/metrics', async (_req, res) => {
-  res.set('Content-Type', registry.contentType);
-  res.end(await registry.metrics());
-});
+app.get(
+  '/metrics',
+  assincrono(async (_req, res) => {
+    res.set('Content-Type', registry.contentType);
+    res.end(await registry.metrics());
+  }),
+);
 
 /**
  * Origens autorizadas a ler a vitrine do navegador.
@@ -151,11 +166,14 @@ const ORIGENS = new Set([
 
 app.use('/salas', (req, res, next) => {
   const origem = req.headers.origin;
+  // SEMPRE, e não só quando a origem é aceita: a resposta varia por origem dos
+  // dois lados do `if`. Com o `Vary` só na resposta "com CORS", um cache no
+  // caminho podia guardar a resposta SEM o cabeçalho (pedida por uma origem de
+  // fora, ou sem `Origin`) e servi-la ao site oficial, que veria a vitrine
+  // vazia com erro de CORS.
+  res.set('Vary', 'Origin');
   if (origem && ORIGENS.has(origem)) {
     res.set('Access-Control-Allow-Origin', origem);
-    // A resposta varia por origem: sem isto, um proxy no caminho pode servir a
-    // resposta de uma origem para outra e o navegador recusar a segunda.
-    res.set('Vary', 'Origin');
   }
   res.set('Access-Control-Allow-Methods', 'GET,OPTIONS');
   // Sem preflight de verdade: um GET sem cabeçalho customizado é requisição
@@ -188,49 +206,52 @@ app.use('/salas', (req, res, next) => {
  * de uma sala e o que o criador escolheu publicar ao marca-la como publica.
  * Entrar continua exigindo o `seatToken`, que so a API Core emite.
  */
-app.get('/salas', async (_req, res) => {
-  try {
-    const salas = await matchMaker.query({ name: AETHER_ROOM });
+app.get(
+  '/salas',
+  assincrono(async (_req, res) => {
+    try {
+      const salas = await matchMaker.query({ name: AETHER_ROOM });
 
-    const publicas = salas
-      .filter((sala) => {
-        const meta = (sala.metadata ?? {}) as Record<string, unknown>;
-        // `locked` cobre a sala que o Colyseus fechou por lotacao ou por
-        // `lock()` explicito. Ela sai da lista de ENTRAR, mas nao some: vira
-        // conteudo assistivel — e o que mantem a vitrine viva quando ha poucas
-        // mesas abertas.
-        return meta.visibilidade === 'PUBLICA';
-      })
-      .map((sala) => {
-        const meta = sala.metadata as Record<string, unknown>;
-        const ocupacao = Number(meta.ocupacao ?? sala.clients ?? 0);
-        const maxSeats = Number(meta.maxSeats ?? sala.maxClients ?? 0);
-        return {
-          roomCode: String(meta.roomCode ?? ''),
-          nome: String(meta.nome ?? ''),
-          gameType: String(meta.gameType ?? ''),
-          comunicacao: String(meta.comunicacao ?? 'QUALQUER'),
-          idioma: String(meta.idioma ?? 'pt-BR'),
-          /** 0 = o anfitriao nao declarou. Nunca e calculado. */
-          nivelDePoder: Number(meta.nivelDePoder ?? 0),
-          ocupacao,
-          maxSeats,
-          emPartida: Boolean(meta.emPartida),
-          /** Sala cheia OU trancada pelo Colyseus: da para assistir, nao entrar. */
-          cheia: sala.locked === true || (maxSeats > 0 && ocupacao >= maxSeats),
-        };
-      })
-      .filter((sala) => sala.roomCode.length > 0);
+      const publicas = salas
+        .filter((sala) => {
+          const meta = (sala.metadata ?? {}) as Record<string, unknown>;
+          // `locked` cobre a sala que o Colyseus fechou por lotacao ou por
+          // `lock()` explicito. Ela sai da lista de ENTRAR, mas nao some: vira
+          // conteudo assistivel — e o que mantem a vitrine viva quando ha poucas
+          // mesas abertas.
+          return meta.visibilidade === 'PUBLICA';
+        })
+        .map((sala) => {
+          const meta = sala.metadata as Record<string, unknown>;
+          const ocupacao = Number(meta.ocupacao ?? sala.clients ?? 0);
+          const maxSeats = Number(meta.maxSeats ?? sala.maxClients ?? 0);
+          return {
+            roomCode: texto(meta.roomCode, ''),
+            nome: texto(meta.nome, ''),
+            gameType: texto(meta.gameType, ''),
+            comunicacao: texto(meta.comunicacao, 'QUALQUER'),
+            idioma: texto(meta.idioma, 'pt-BR'),
+            /** 0 = o anfitriao nao declarou. Nunca e calculado. */
+            nivelDePoder: Number(meta.nivelDePoder ?? 0),
+            ocupacao,
+            maxSeats,
+            emPartida: Boolean(meta.emPartida),
+            /** Sala cheia OU trancada pelo Colyseus: da para assistir, nao entrar. */
+            cheia: sala.locked === true || (maxSeats > 0 && ocupacao >= maxSeats),
+          };
+        })
+        .filter((sala) => sala.roomCode.length > 0);
 
-    res.json({ salas: publicas });
-  } catch (erro) {
-    // Uma vitrine que falha nao pode derrubar a Taverna: o painel trata lista
-    // ausente como "nenhuma sala publica agora" e continua oferecendo criar e
-    // entrar por codigo, que sao os dois caminhos que sempre funcionaram.
-    console.error('[game-server] GET /salas falhou:', erro);
-    res.status(503).json({ salas: [], erro: 'A lista de salas está indisponível.' });
-  }
-});
+      res.json({ salas: publicas });
+    } catch (erro) {
+      // Uma vitrine que falha nao pode derrubar a Taverna: o painel trata lista
+      // ausente como "nenhuma sala publica agora" e continua oferecendo criar e
+      // entrar por codigo, que sao os dois caminhos que sempre funcionaram.
+      console.error('[game-server] GET /salas falhou:', erro);
+      res.status(503).json({ salas: [], erro: 'A lista de salas está indisponível.' });
+    }
+  }),
+);
 
 // Painel de inspecao de salas. A auth esta montada acima, em
 // `autenticarOperacao` — e o boot recusa subir em producao sem a senha.
@@ -239,6 +260,10 @@ app.use('/colyseus', monitor());
 // Playground: dispara intencoes a mao e inspeciona o estado sem passar pelo
 // frontend. E a ferramenta mais util para desenvolver o motor.
 if (!isProd) {
+  // `require` tardio: o playground (e o @colyseus/auth que vem com ele) é
+  // dependência de desenvolvimento e não entra na imagem de produção.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- carga condicional, só fora de produção
+  const { playground } = require('@colyseus/playground') as typeof Playground;
   app.use('/playground', playground());
 }
 
@@ -260,20 +285,41 @@ const gameServer = new Server({
 
 gameServer.define(AETHER_ROOM, AetherRoom).filterBy(['roomCode']);
 
+/**
+ * ─── O MATCHMAKER SÓ FAZ O QUE O FRONTEND USA ───────────────────────────────
+ *
+ * Depois do `new Server`: é ele que instala o desvio de `/matchmake` no
+ * servidor HTTP, e o limite de corpo precisa embrulhar justamente esse desvio.
+ * As origens são as MESMAS da vitrine (`CORS_ORIGINS` + o site oficial): a
+ * vitrine e a entrada na mesa são chamadas pela mesma página, e uma lista
+ * diferente para cada uma quebraria a entrada no deploy que esquecesse uma.
+ * Ver `borda-http.ts`.
+ */
+restringirMatchmaker(ORIGENS, ORIGEM_DO_SITE);
+limitarCorpoDoMatchmake(httpServer);
+
 // Bind explícito em 0.0.0.0: hosts gerenciados (Render, Fly, Koyeb) fazem o
 // health check de fora do container. Ligar só em localhost derruba o deploy.
-gameServer.listen(config.PORT, '0.0.0.0').then(() => {
-  // Depois do listen, nao antes: o catalogo autoral e opcional para servir
-  // partidas, e uma API Core lenta nao pode atrasar a subida do servidor de
-  // jogo. Ate o primeiro ciclo terminar, vale o catalogo do bundle.
-  iniciarSincronizacaoDoCatalogo();
+gameServer
+  .listen(config.PORT, '0.0.0.0')
+  .then(() => {
+    // Depois do listen, nao antes: o catalogo autoral e opcional para servir
+    // partidas, e uma API Core lenta nao pode atrasar a subida do servidor de
+    // jogo. Ate o primeiro ciclo terminar, vale o catalogo do bundle.
+    iniciarSincronizacaoDoCatalogo();
 
-  console.log(`[game-server] escutando em ws://localhost:${config.PORT}`);
-  console.log(`[game-server] monitor:    http://localhost:${config.PORT}/colyseus`);
-  if (!isProd) {
-    console.log(`[game-server] playground: http://localhost:${config.PORT}/playground`);
-  }
-});
+    console.log(`[game-server] escutando em ws://localhost:${config.PORT}`);
+    console.log(`[game-server] monitor:    http://localhost:${config.PORT}/colyseus`);
+    if (!isProd) {
+      console.log(`[game-server] playground: http://localhost:${config.PORT}/playground`);
+    }
+  })
+  .catch((erro: unknown) => {
+    // Porta ocupada, Redis fora do ar: o processo cai com código de erro, e o
+    // host marca o deploy como quebrado em vez de manter um servidor surdo.
+    console.error('[game-server] falha ao subir:', erro);
+    process.exit(1);
+  });
 
 /**
  * Carrega presence/driver do Redis apenas quando pedido. O require e tardio de
@@ -281,8 +327,12 @@ gameServer.listen(config.PORT, '0.0.0.0').then(() => {
  */
 function carregarRedis() {
   /* eslint-disable @typescript-eslint/no-require-imports */
-  const { RedisPresence } = require('@colyseus/redis-presence');
-  const { RedisDriver } = require('@colyseus/redis-driver');
+  const { RedisPresence } = require('@colyseus/redis-presence') as {
+    RedisPresence: typeof TipoRedisPresence;
+  };
+  const { RedisDriver } = require('@colyseus/redis-driver') as {
+    RedisDriver: typeof TipoRedisDriver;
+  };
   /* eslint-enable @typescript-eslint/no-require-imports */
   return {
     presence: new RedisPresence(config.REDIS_URL),
@@ -297,4 +347,22 @@ for (const sinal of ['SIGINT', 'SIGTERM'] as const) {
     console.log(`[game-server] ${sinal} recebido, drenando salas...`);
     void gameServer.gracefullyShutdown().then(() => process.exit(0));
   });
+}
+
+/**
+ * O Express 4 não espera promessa: a rejeição de um handler `async` vira
+ * `unhandledRejection` e a requisição fica pendurada até o cliente desistir.
+ * Este embrulho entrega a falha ao `next`, que responde 500.
+ */
+function assincrono(
+  handler: (req: express.Request, res: express.Response) => Promise<void>,
+): express.RequestHandler {
+  return (req, res, next) => {
+    handler(req, res).catch(next);
+  };
+}
+
+/** Metadado de sala chega como `unknown`: só string passa; o resto vira o padrão. */
+function texto(valor: unknown, padrao: string): string {
+  return typeof valor === 'string' ? valor : padrao;
 }

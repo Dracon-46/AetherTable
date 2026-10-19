@@ -54,6 +54,16 @@ export function httpDoWebSocket(url: string): string {
 /** Base HTTP do game server, para `GET /salas`. */
 export const GAME_HTTP_URL = httpDoWebSocket(WS_URL);
 
+/**
+ * Servidor de voz (LiveKit). Vazio = a mesa roda sem voz.
+ *
+ * Não há endereço padrão de propósito: o antigo
+ * `wss://aether-livekit-mock.livekit.cloud` era um domínio de terceiro, e a
+ * mesa entregava a ele a credencial de voz de quem jogava num ambiente sem a
+ * variável.
+ */
+export const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || '';
+
 /** Monta os headers de uma chamada autenticada. */
 export function authHeaders(token: string | null): Record<string, string> {
   return {

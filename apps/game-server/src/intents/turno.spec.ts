@@ -36,7 +36,7 @@ function contexto(state: RoomState, sessionId: string, enviados: Enviado[]): Int
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: (event, payload) => enviados.push({ event, payload }),
     broadcast: () => {},
     log: () => {},
@@ -192,7 +192,7 @@ describe('acoes reservadas ao anfitriao', () => {
 describe('INTENT_SET_TURN', () => {
   const ajustar = (state: RoomState, sid: string, payload: object) => {
     const enviados: Enviado[] = [];
-    REGISTRY.INTENT_SET_TURN.executa(contexto(state, sid, enviados), payload as never);
+    REGISTRY.INTENT_SET_TURN.executa(contexto(state, sid, enviados), payload);
     return enviados;
   };
 

@@ -60,7 +60,7 @@ let jaSincronizou = false;
 
 interface RespostaDoCatalogo {
   versao: number;
-  itens: Array<{ familia: unknown; item: CosmeticoAutoralBruto }>;
+  itens: { familia: unknown; item: CosmeticoAutoralBruto }[];
 }
 
 /**

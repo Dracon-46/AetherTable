@@ -58,7 +58,7 @@ const STATUS_LEGIVEL: Record<StatusDeDenuncia, { rotulo: string; classe: string 
   },
 };
 
-const FILTROS: Array<{ valor: StatusDeDenuncia | ''; rotulo: string }> = [
+const FILTROS: { valor: StatusDeDenuncia | ''; rotulo: string }[] = [
   { valor: 'OPEN', rotulo: 'Abertas' },
   { valor: 'REVIEWING', rotulo: 'Em análise' },
   { valor: 'RESOLVED', rotulo: 'Resolvidas' },

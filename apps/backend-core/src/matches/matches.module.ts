@@ -6,6 +6,7 @@ import { MatchesService } from './matches.service.js';
 import { DecksModule } from '../decks/decks.module.js';
 // Criar mesa consulta o interruptor MATCHMAKING_ENABLED (DOC-061 §5).
 import { AdminModule } from '../admin/admin.module.js';
+import { ALGORITMOS_ACEITOS, ALGORITMO_DO_JWT, segredoDoJwt } from '../auth/segredo-do-jwt.js';
 
 @Module({
   imports: [
@@ -13,8 +14,10 @@ import { AdminModule } from '../admin/admin.module.js';
     AdminModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
+      useFactory: (configService: ConfigService) => ({
+        secret: segredoDoJwt(configService),
+        signOptions: { algorithm: ALGORITMO_DO_JWT },
+        verifyOptions: { algorithms: ALGORITMOS_ACEITOS },
       }),
       inject: [ConfigService],
     }),

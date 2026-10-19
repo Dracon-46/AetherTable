@@ -2,15 +2,32 @@ import React from 'react';
 import { API_URL } from '@/lib/api';
 import { User, Trophy, Calendar, Ghost } from 'lucide-react';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import type { UserRole } from '@aethertable/shared-types';
+import { usernameValido } from '@/lib/perfil';
+
+/** O que `GET /users/:username` devolve. Sem e-mail: o perfil é público. */
+interface PerfilPublico {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  role: UserRole;
+  /** ISO 8601: data vem como texto no JSON. */
+  createdAt: string;
+  _count?: { participions: number };
+}
 
 async function getProfile(username: string) {
   try {
-    const res = await fetch(`${API_URL}/users/${username}`, { next: { revalidate: 60 } });
+    const res = await fetch(`${API_URL}/users/${encodeURIComponent(username)}`, {
+      next: { revalidate: 60 },
+    });
     if (!res.ok) {
       if (res.status === 404) return null;
       throw new Error('Falha ao carregar perfil');
     }
-    return res.json();
+    return res.json() as Promise<PerfilPublico>;
   } catch (error) {
     console.error(error);
     return null;
@@ -23,7 +40,10 @@ export default async function PublicProfilePage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const profile = await getProfile(username);
+  // Um nome que o backend recusaria não vira requisição: `/u/..%2Fadmin`
+  // montava outro caminho da API, renderizado no servidor.
+  if (!usernameValido(username)) notFound();
+  const profile = await getProfile(username.trim());
 
   if (!profile) {
     return (
@@ -88,7 +108,7 @@ export default async function PublicProfilePage({
             </div>
             <div>
               <p className="text-text-muted text-sm font-medium">Partidas Jogadas</p>
-              <p className="text-3xl font-bold text-white">{profile._count?.participions || 0}</p>
+              <p className="text-3xl font-bold text-white">{profile._count?.participions ?? 0}</p>
             </div>
           </div>
 

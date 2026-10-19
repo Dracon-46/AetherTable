@@ -23,7 +23,8 @@ import type { ConfigService } from '@nestjs/config';
 import { JwtStrategy, type JwtPayload } from './jwt.strategy.js';
 import type { RevogacaoService } from './revogacao.service.js';
 import { MatchesService } from '../matches/matches.service.js';
-import { AUDIENCIA_DA_MESA } from './passe-de-mesa.js';
+import { AUDIENCIA_DA_MESA, AUDIENCIA_DA_VOZ } from './passe-de-mesa.js';
+import { TAMANHO_MINIMO_DO_SEGREDO, segredoDoJwt } from './segredo-do-jwt.js';
 
 const SEGREDO = 'segredo-de-teste-com-tamanho-suficiente';
 const USUARIO = '0b6c1f9e-3a5d-4c2b-9e8f-1a2b3c4d5e6f';
@@ -71,7 +72,7 @@ describe('JwtStrategy — passe de mesa não é sessão da API', () => {
 
   it('recusa o passe de espectador', async () => {
     const { jwt, estrategia, matches } = montar();
-    const { seatToken } = await matches.spectateMatch(USUARIO, 'gaspare', 'ABC123');
+    const { seatToken } = matches.spectateMatch(USUARIO, 'gaspare', 'ABC123');
     await expect(estrategia.validate(jwt.verify(seatToken))).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -156,5 +157,75 @@ describe('JwtStrategy — a situação da conta vale em toda requisição', () =
       deletedAt: null,
     });
     await expect(estrategia.validate(sessao())).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('JwtStrategy — passe de voz não é sessão', () => {
+  it('recusa o passe de voz que o game-server assina', async () => {
+    const { jwt, estrategia } = montar();
+    // Exatamente como o game-server o emite (ver `AUDIENCIA_DA_VOZ`).
+    const passe = jwt.sign(
+      { sub: USUARIO, roomId: 'ABC123', spectator: false },
+      { audience: AUDIENCIA_DA_VOZ, algorithm: 'HS256', expiresIn: '6h' },
+    );
+    await expect(
+      estrategia.validate(jwt.verify(passe, { audience: AUDIENCIA_DA_VOZ })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+/**
+ * Nenhum `verify` fixava o algoritmo: o `jsonwebtoken` aceitava o que o
+ * cabeçalho do token declarasse. A estratégia agora só aceita HS256. O teste
+ * passa pelo `authenticate` do Passport de verdade, que é onde a assinatura é
+ * conferida — `validate` só vê o payload já aceito.
+ */
+describe('JwtStrategy — só HS256', () => {
+  const autenticar = (estrategia: JwtStrategy, token: string) =>
+    new Promise<'aceito' | 'recusado'>((resolve) => {
+      const passaporte = estrategia as unknown as {
+        success: () => void;
+        fail: () => void;
+        error: () => void;
+        authenticate: (req: object) => void;
+      };
+      passaporte.success = () => resolve('aceito');
+      passaporte.fail = () => resolve('recusado');
+      passaporte.error = () => resolve('recusado');
+      passaporte.authenticate({ headers: { authorization: `Bearer ${token}` } });
+    });
+
+  it('a sessão HS256 passa', async () => {
+    const { jwt, estrategia } = montar();
+    const token = jwt.sign({ username: 'gaspare', sub: USUARIO }, { algorithm: 'HS256' });
+    await expect(autenticar(estrategia, token)).resolves.toBe('aceito');
+  });
+
+  it('a mesma sessão assinada em HS512, com o segredo certo, é recusada', async () => {
+    const { jwt, estrategia } = montar();
+    const token = jwt.sign({ username: 'gaspare', sub: USUARIO }, { algorithm: 'HS512' });
+    await expect(autenticar(estrategia, token)).resolves.toBe('recusado');
+  });
+});
+
+describe('segredoDoJwt — segredo curto não sobe em produção', () => {
+  const leitor = (valores: Record<string, string | undefined>) => ({
+    get: <T = string>(chave: string) => valores[chave] as T | undefined,
+  });
+
+  it('em produção, menos de 32 caracteres derruba o boot', () => {
+    expect(() =>
+      segredoDoJwt(leitor({ NODE_ENV: 'production', JWT_SECRET: 'curto-demais' })),
+    ).toThrow(/32 caracteres/);
+    expect(() => segredoDoJwt(leitor({ NODE_ENV: 'production' }))).toThrow(/32 caracteres/);
+  });
+
+  it(`em produção, ${TAMANHO_MINIMO_DO_SEGREDO} caracteres passam`, () => {
+    const segredo = 'x'.repeat(TAMANHO_MINIMO_DO_SEGREDO);
+    expect(segredoDoJwt(leitor({ NODE_ENV: 'production', JWT_SECRET: segredo }))).toBe(segredo);
+  });
+
+  it('fora de produção, segue como antes', () => {
+    expect(segredoDoJwt(leitor({ NODE_ENV: 'development', JWT_SECRET: 'dev' }))).toBe('dev');
   });
 });

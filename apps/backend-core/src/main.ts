@@ -17,6 +17,17 @@ async function bootstrap() {
   app.useLogger(logger);
 
   /**
+   * SEM ISTO, O `onModuleDestroy` NÃO RODA.
+   *
+   * O Nest só escuta SIGTERM/SIGINT quando pedido. O Render manda SIGTERM a
+   * cada deploy e a cada reinício, e o processo morria sem chamar o
+   * `PrismaService.onModuleDestroy`: as conexões ficavam abertas do lado do
+   * Postgres até o timeout — e o plano gratuito do Neon tem poucas para
+   * desperdiçar com processos que já não existem.
+   */
+  app.enableShutdownHooks();
+
+  /**
    * SEM ISTO O RATE LIMIT NÃO PROTEGE NADA.
    *
    * Atrás do proxy do Render (e de qualquer PaaS), o `req.ip` que o Express vê
@@ -96,4 +107,10 @@ async function bootstrap() {
   logger.log(`🚀 AetherTable Backend-Core rodando na porta: ${port}`);
 }
 
-bootstrap();
+// Falha na subida (porta ocupada, banco fora do ar) derruba o processo com
+// código de erro: é o que faz o Render marcar o deploy como quebrado em vez de
+// deixar um processo vivo que não atende ninguém.
+bootstrap().catch((erro: unknown) => {
+  console.error('[backend-core] falha ao subir:', erro);
+  process.exit(1);
+});

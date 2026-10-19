@@ -1,9 +1,13 @@
-// Config raiz (flat config, ESLint 9). Cada app estende esta base.
+// Config raiz (flat config, ESLint 9). Cada pacote roda `eslint src` e herda
+// esta base; a raiz roda `eslint tools` (ver `lint:raiz` no package.json).
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 import reactHooks from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
+
+/** Specs e E2E: o que roda no Jest e no Playwright, não em produção. */
+const TESTES = ['**/*.spec.{ts,tsx}', '**/e2e/**/*.ts'];
 
 export default tseslint.config(
   {
@@ -16,11 +20,34 @@ export default tseslint.config(
       '**/*.d.ts',
       // Configs CommonJS de ferramentas: `module.exports` não é erro aqui.
       '**/jest.config.js',
+      '**/jest.setup.js',
       '**/*.config.cjs',
     ],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  // ─── LINT COM TIPOS ─────────────────────────────────────────────────────────
+  //
+  // O preset `recommended` sem tipos olha cada arquivo isolado e não sabe o que
+  // uma expressão devolve. Por isso ele não via a classe de defeito mais cara
+  // deste projeto: a promessa que ninguém espera. Um `fetch` sem `await` num
+  // handler, um `async` passado onde se esperava `void` — o erro vira rejeição
+  // sem dono e some, sem log e sem teste vermelho.
+  //
+  // Com o `projectService`, cada arquivo é lido pelo `tsconfig.json` do próprio
+  // pacote, e as regras sabem o tipo de verdade: `no-floating-promises`,
+  // `no-misused-promises`, `no-base-to-string` ("[object Object]" na tela),
+  // `no-unsafe-*` (o `any` que vaza de um ponto para o resto do código).
+  //
+  // O preset `stylistic` entra junto para o código ter UM jeito de escrever a
+  // mesma coisa (`T[]` e não `Array<T>`, `a?.b` e não `a && a.b`), e quem revisa
+  // não gastar atenção com isso.
+  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.stylisticTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+  },
   prettier,
   {
     rules: {
@@ -28,26 +55,52 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
-      '@typescript-eslint/consistent-type-imports': 'warn',
+      '@typescript-eslint/consistent-type-imports': 'error',
       eqeqeq: ['error', 'smart'],
       'no-console': 'off',
+      // `onClick={async () => …}` é o jeito do React de disparar uma ação
+      // assíncrona; o atributo JSX descarta o retorno de propósito. Fora do
+      // JSX — `setTimeout(async …)`, `.forEach(async …)`, `app.get(…, async)` —
+      // a regra continua valendo inteira.
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: { attributes: false } },
+      ],
+      // `||` em string é deliberado neste código: variável de ambiente VAZIA e
+      // nome de exibição em branco precisam cair no padrão, e `??` deixaria a
+      // string vazia passar. Para número, objeto e booleano a regra vale.
+      '@typescript-eslint/prefer-nullish-coalescing': [
+        'error',
+        { ignorePrimitives: { string: true } },
+      ],
+      // `() => {}` é o "não faça nada" explícito de callback e de `.catch`; uma
+      // função ou método vazio continua sendo acusado.
+      '@typescript-eslint/no-empty-function': ['error', { allow: ['arrowFunctions'] }],
     },
   },
   {
-    // DÍVIDA TÉCNICA CONSCIENTE — não é supressão, é priorização.
+    // JavaScript não tem tipos para as regras com tipos lerem. Fica DEPOIS do
+    // bloco acima porque configurar uma regra religa a regra.
+    files: ['**/*.{js,mjs,cjs}'],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    // TESTES: o dublê é `any` por natureza.
     //
-    // A camada de sincronia do Colyseus (net/useRoomSync.ts, canvas/GameBoard)
-    // recebe objetos de Schema cujo tipo só existe em runtime, e `Room<any>` é
-    // o uso idiomático da colyseus.js quando não há tipos de schema gerados.
-    // Tipar isso direito significa gerar/escrever os mapeadores Schema -> store,
-    // que é trabalho de design, não correção de bug.
-    //
-    // Como AVISO, `pnpm lint` continua reportando os ~40 casos e eles seguem
-    // visíveis; como ERRO, bloqueavam `next build` e portanto o deploy.
-    // Ao gerar os tipos de schema, remova este bloco.
-    files: ['apps/frontend/**/*.{ts,tsx}'],
+    // `jest.fn()` devolve `any`, e um mock de PrismaService com quarenta métodos
+    // não ganha nada sendo tipado método a método. As regras `no-unsafe-*` só
+    // acusariam o próprio dublê. `unbound-method` acusa o idioma
+    // `expect(obj.metodo).toHaveBeenCalled()`, e `require-await` acusa o mock que
+    // é `async` para imitar a assinatura do método real.
+    files: TESTES,
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/require-await': 'off',
     },
   },
   {
@@ -72,7 +125,9 @@ export default tseslint.config(
         __filename: 'readonly',
         // Node 22 tem `fetch` global (undici) — o mesmo que os serviços usam.
         fetch: 'readonly',
+        URL: 'readonly',
         setTimeout: 'readonly',
+        setInterval: 'readonly',
         clearTimeout: 'readonly',
       },
     },
@@ -115,7 +170,7 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
   {
@@ -137,6 +192,14 @@ export default tseslint.config(
       // Regra do roteador `pages/`. O projeto é App Router: sem a pasta, a regra
       // só emitia "Pages directory cannot be found" a cada execução.
       '@next/next/no-html-link-for-pages': 'off',
+      // ARTE DE CARTA NÃO PASSA PELO OTIMIZADOR DO NEXT, DE PROPÓSITO.
+      //
+      // Toda imagem de carta vem de `GET /api/v1/cards/img/:id`, que já serve a
+      // versão no tamanho certo da CDN da Scryfall. O `next/image` poria o
+      // otimizador da Vercel no meio: cada carta de cada deck viraria uma
+      // "transformação", e a cota do plano gratuito acaba numa tarde de
+      // deckbuilding. O `<img loading="lazy">` é a ferramenta certa aqui.
+      '@next/next/no-img-element': 'off',
     },
   },
   {

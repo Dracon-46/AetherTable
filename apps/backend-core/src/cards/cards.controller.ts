@@ -10,8 +10,10 @@ import {
   Query,
   Req,
   Res,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { pendingCount } from '@aethertable/scryfall-client';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { CardsService } from './cards.service.js';
@@ -60,6 +62,27 @@ const LIMITE_BUSCA = {
   curto: { limit: 20, ttl: 5_000 },
   longo: { limit: 200, ttl: 60_000 },
 };
+
+/**
+ * ─── A FILA DA SCRYFALL É UMA SÓ, E ESTAS ROTAS SÃO PÚBLICAS ────────────────
+ *
+ * O `ScryfallClient` serializa TODA chamada do servidor com 100 ms entre
+ * inícios — a hidratação do deck na entrada da mesa, o gerador, as sugestões,
+ * e estas rotas. O limite por IP não protege a fila: vinte IPs dentro do
+ * próprio limite empilham centenas de buscas, e a entrada na mesa de quem
+ * está jogando passa a esperar atrás delas por minutos.
+ *
+ * Passado este tamanho (dois segundos de fila), as rotas públicas recusam na
+ * hora em vez de entrar no fim dela. Quem está dentro do servidor (a mesa, o
+ * deckbuilder salvando) segue pela fila normalmente.
+ */
+export const FILA_MAXIMA_DA_SCRYFALL = 20;
+
+function exigirFilaLivre(): void {
+  if (pendingCount() > FILA_MAXIMA_DA_SCRYFALL) {
+    throw new ServiceUnavailableException('Muitas buscas agora; tente em instantes.');
+  }
+}
 
 @ApiTags('Cards')
 @Controller('cards')
@@ -134,6 +157,7 @@ export class CardsController {
     if (pagina !== undefined && (!Number.isInteger(pagina) || pagina < 1 || pagina > 100)) {
       throw new BadRequestException('Página inválida.');
     }
+    exigirFilaLivre();
 
     /**
      * ─── BUSCA SEM RESULTADO É LISTA VAZIA, NÃO 404 ─────────────────────────
@@ -161,6 +185,7 @@ export class CardsController {
   autocomplete(@Query('q') q: string) {
     const query = (q ?? '').trim();
     if (query.length < 2) throw new BadRequestException('Informe pelo menos 2 caracteres.');
+    exigirFilaLivre();
     return this.cards.autocomplete(query.slice(0, 200));
   }
 
@@ -169,6 +194,7 @@ export class CardsController {
   @Throttle(LIMITE_BUSCA)
   @ApiOperation({ summary: 'Metadados de até 75 cartas de uma vez' })
   collection(@Body(new ZodValidationPipe(ColecaoDto)) dto: ColecaoDto) {
+    exigirFilaLivre();
     return this.cards.collection(dto.identifiers);
   }
 

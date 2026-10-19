@@ -7,6 +7,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma, ReportStatus, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { UsersService } from '../users/users.service.js';
@@ -32,7 +33,7 @@ export class AuthService {
    * de uma semana. Ler da mesma fonte é o que impede os dois de divergirem
    * outra vez.
    */
-  private readonly ttlSegundos = ttlEmSegundos(process.env['JWT_ACCESS_TTL']);
+  private readonly ttlSegundos = ttlEmSegundos(process.env.JWT_ACCESS_TTL);
 
   /**
    * Valida e/ou cria o usuário via OAuth
@@ -122,9 +123,32 @@ export class AuthService {
     if (existente) {
       this.exigirContaLiberada(existente);
       if (!existente.emailVerifiedAt) {
+        /**
+         * ─── A SENHA DE QUEM NUNCA PROVOU O E-MAIL NÃO SOBREVIVE AO VÍNCULO ──
+         *
+         * O cadastro por senha não confirma o endereço. Então uma conta assim,
+         * ainda sem `emailVerifiedAt`, pode ter sido criada por QUALQUER pessoa
+         * que soubesse o e-mail — inclusive antes do dono. Vincular o Google a
+         * ela sem mexer na senha entregava a conta ao dono E mantinha o
+         * invasor dentro: ele seguia entrando com a senha dele e com as
+         * sessões que já tinha, agora numa conta "confirmada" — que o
+         * `admin-bootstrap` promove a ADMIN se o e-mail estiver em
+         * `ADMIN_EMAILS`.
+         *
+         * Quem provou a posse agora é o provedor; a senha anterior não provou
+         * nada. Ela é apagada e todas as sessões caem, na MESMA escrita que
+         * confirma o e-mail — separadas, uma falha entre as duas deixaria a
+         * conta confirmada com a senha do invasor. Se a senha era do próprio
+         * dono, ele cria outra pelo "Esqueci a senha": o link chega na caixa
+         * de entrada dele, que é a prova que faltava ao cadastro.
+         */
+        const agora = new Date();
         await this.prisma.user.update({
           where: { id: existente.id },
-          data: { emailVerifiedAt: new Date() },
+          data: {
+            emailVerifiedAt: agora,
+            ...(existente.passwordHash ? { passwordHash: null, tokensValidosApos: agora } : {}),
+          },
         });
       }
     }
@@ -162,9 +186,12 @@ export class AuthService {
    * o sufixo longo de CSPRNG não colide na prática.
    */
   private async usernameLivre(desejado: string): Promise<string> {
+    // Sem diferenciar maiúsculas, como no cadastro por senha.
     const livre = async (nome: string) =>
-      (await this.prisma.user.findUnique({ where: { username: nome }, select: { id: true } })) ===
-      null;
+      (await this.prisma.user.findFirst({
+        where: { username: { equals: nome, mode: 'insensitive' } },
+        select: { id: true },
+      })) === null;
 
     if (await livre(desejado)) return desejado;
 
@@ -189,6 +216,27 @@ export class AuthService {
   }
 
   /**
+   * Hash de uma senha que ninguém conhece, para o login sem conta gastar o
+   * mesmo tempo que o login com conta (ver `login`).
+   *
+   * Calculada UMA vez, na primeira tentativa que precisar dela, e com os
+   * mesmos parâmetros de `hashPassword` — parâmetros diferentes dariam um
+   * tempo diferente, e o tempo é justamente o que ela existe para igualar.
+   */
+  private static hashFicticiaEmCurso: Promise<string> | null = null;
+
+  private static hashFicticia(): Promise<string> {
+    AuthService.hashFicticiaEmCurso ??= argon2
+      .hash(randomBytes(32).toString('hex'), { type: argon2.argon2id })
+      .catch((erro: unknown) => {
+        // Uma falha não pode ficar guardada: a próxima tentativa recalcula.
+        AuthService.hashFicticiaEmCurso = null;
+        throw erro;
+      });
+    return AuthService.hashFicticiaEmCurso;
+  }
+
+  /**
    * Valida o login e retorna os tokens se a senha for válida.
    * Emite erro 401 genérico em caso de falha (evita enumeração de usuários).
    */
@@ -196,7 +244,19 @@ export class AuthService {
     const user = await this.usersService.findForAuthByEmail(email);
 
     // Se não encontrou o usuário ou ele não tem senha (login via OAuth apenas)
-    if (!user || !user.passwordHash) {
+    if (!user?.passwordHash) {
+      /**
+       * ─── A MESMA DEMORA PARA E-MAIL QUE EXISTE E QUE NÃO EXISTE ──────────
+       *
+       * A mensagem já era igual nos dois casos, mas o TEMPO não: com conta, a
+       * resposta esperava um `argon2.verify` (dezenas de milissegundos, de
+       * propósito); sem conta, voltava na hora. Medir a resposta bastava para
+       * saber quais e-mails têm cadastro. Conferir a senha contra uma hash
+       * fictícia gasta o mesmo trabalho e descarta o resultado.
+       */
+      await AuthService.hashFicticia()
+        .then((hash) => argon2.verify(hash, pass))
+        .catch(() => false);
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
@@ -288,13 +348,13 @@ export class AuthService {
      * Conta de OAuth não tem senha para conferir.
      *
      * Deixar passar criaria uma senha do nada para quem entra pelo Google — e
-     * qualquer um com o token faria isso. A saída certa é "defina uma senha",
-     * que é outro fluxo e ainda não existe; até lá, a recusa é explícita em vez
-     * de um erro genérico de credencial.
+     * qualquer um com o token faria isso. Criar a primeira senha é o "Esqueci
+     * a senha": o link vai para a caixa de entrada, que é a prova de posse que
+     * um token de sessão não é. A mensagem aponta para lá.
      */
     if (!user?.passwordHash) {
       throw new BadRequestException(
-        'Esta conta entra por Google ou Discord e não tem senha para trocar.',
+        'Esta conta entra por Google ou Discord e ainda não tem senha. Para criar uma, use "Esqueci a senha" na tela de entrada.',
       );
     }
 
@@ -355,6 +415,15 @@ export class AuthService {
    *
    * O último administrador não se exclui: sem administrador, o painel só volta
    * por acesso direto ao banco — a mesma trava do banimento.
+   *
+   * ─── DENÚNCIA EM ABERTO SEGURA A EXCLUSÃO ───────────────────────────────
+   *
+   * As denúncias CONTRA a conta caem em CASCADE junto com ela. Sem esta
+   * trava, quem foi denunciado apagava a própria conta, levava junto a fila
+   * de moderação inteira sobre si — evidência congelada incluída — e voltava
+   * no mesmo minuto com o mesmo e-mail, ficha limpa. Enquanto houver denúncia
+   * aberta ou em análise, a exclusão espera a moderação concluir; depois
+   * dela, o direito de sair continua inteiro.
    */
   async excluirConta(userId: string, confirmacao: string, senha?: string): Promise<void> {
     const user = await this.usersService.findForAuthById(userId);
@@ -371,18 +440,45 @@ export class AuthService {
       const confere = senha ? await argon2.verify(user.passwordHash, senha) : false;
       if (!confere) throw new BadRequestException('A senha não confere.');
     }
-    if (user.role === 'ADMIN') {
-      const outros = await this.prisma.user.count({
-        where: { role: 'ADMIN', deletedAt: null, id: { not: user.id } },
-      });
-      if (outros === 0) {
-        throw new ForbiddenException(
-          'Você é o último administrador ativo. Promova outra conta antes de excluir a sua.',
-        );
-      }
+
+    const denunciasPendentes = await this.prisma.report.count({
+      where: {
+        reportedId: user.id,
+        status: { in: [ReportStatus.OPEN, ReportStatus.REVIEWING] },
+      },
+    });
+    if (denunciasPendentes > 0) {
+      throw new ConflictException(
+        'Há denúncias em análise sobre esta conta. Ela poderá ser excluída assim que a moderação concluir.',
+      );
     }
 
-    await this.prisma.user.delete({ where: { id: user.id } });
+    if (user.role !== Role.ADMIN) {
+      await this.prisma.user.delete({ where: { id: user.id } });
+      return;
+    }
+
+    /**
+     * Contar e apagar na MESMA transação serializável. Lidos separados, dois
+     * administradores excluindo as próprias contas ao mesmo tempo viam um ao
+     * outro na contagem e os dois seguiam — e a plataforma ficava sem nenhum.
+     * Serializável, o Postgres derruba um dos dois (ver o P2034 em
+     * `filtro-de-erros-do-prisma.ts`).
+     */
+    await this.prisma.$transaction(
+      async (tx) => {
+        const outros = await tx.user.count({
+          where: { role: Role.ADMIN, deletedAt: null, id: { not: user.id } },
+        });
+        if (outros === 0) {
+          throw new ForbiddenException(
+            'Você é o último administrador ativo. Promova outra conta antes de excluir a sua.',
+          );
+        }
+        await tx.user.delete({ where: { id: user.id } });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async register(email: string, username: string, pass: string) {
@@ -417,7 +513,13 @@ export class AuthService {
       });
     }
 
-    const existingUsername = await this.prisma.user.findUnique({ where: { username } });
+    // Sem diferenciar maiúsculas: "Gaspare" e "gaspare" são o mesmo nome para
+    // quem lê a mesa, e aceitar os dois abre espaço para se passar pelo outro.
+    // A coluna continua com o índice único exato; esta checagem é a regra.
+    const existingUsername = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
+      select: { id: true },
+    });
     if (existingUsername) {
       throw new ConflictException({
         statusCode: 409,

@@ -71,7 +71,9 @@ export function cardImageUrl(
   quality: Quality = 'small',
   face: Face = 'front',
 ): string {
-  return `${API_URL}/cards/img/${scryfallId}?quality=${quality}&face=${face}`;
+  // O id vem do estado da sala, e o estado é escrito por outros clientes: uma
+  // barra ou um `?` ali mudaria o caminho pedido à API.
+  return `${API_URL}/cards/img/${encodeURIComponent(scryfallId)}?quality=${quality}&face=${face}`;
 }
 
 /**
@@ -110,6 +112,23 @@ export function getTexture(
   img.crossOrigin = 'anonymous';
   img.src = cardImageUrl(scryfallId, quality, face);
   cache.set(cacheKey, img);
+
+  /**
+   * ─── UMA FALHA NÃO PODE FICAR GUARDADA ──────────────────────────────────
+   *
+   * Uma imagem que falhou (rede caiu, a API respondeu 5xx) ficava no cache
+   * como imagem "pronta" e quebrada: toda carta com aquele id voltava a recebê-
+   * la, e a arte nunca mais era pedida até recarregar a página. Sair do cache
+   * faz o próximo pedido tentar de novo. Só sai se ainda for ELA a entrada — o
+   * descarte do LRU pode já ter posto outra no lugar.
+   */
+  img.addEventListener(
+    'error',
+    () => {
+      if (cache.get(cacheKey) === img) cache.delete(cacheKey);
+    },
+    { once: true },
+  );
 
   /**
    * Descarta as mais antigas até caber.

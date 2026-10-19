@@ -14,9 +14,10 @@
  * toca o banco de verdade.
  */
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { BoardType, Prisma } from '@prisma/client';
 import { DecksService } from './decks.service.js';
+import { MAXIMO_DE_DECKS_POR_CONTA, MAXIMO_DE_LINHAS_POR_DECK } from './limites-de-conta.js';
 
 const USUARIO = '0b6c1f9e-3a5d-4c2b-9e8f-1a2b3c4d5e6f';
 const DECK = '7d2e8a10-4b6c-4f1e-9a3b-2c5d7e9f1a2b';
@@ -26,13 +27,13 @@ const SOL_RING = '6ad8011d-3471-4369-9d68-b264cc027487';
 const FOREST_ZNR = 'b2d1a5a5-8a5e-4f5a-9b38-4f7f2d6f0f0a';
 const FOREST_M21 = 'c3e2b6b6-9b6f-4a6b-8c49-5a8a3e7a1b1b';
 
-type Linha = {
+interface Linha {
   id: string;
   deckId: string;
   scryfallId: string;
   quantity: number;
   boardType: BoardType;
-};
+}
 
 const erroDoPrisma = (code: string) =>
   new Prisma.PrismaClientKnownRequestError(`falso ${code}`, { code, clientVersion: 'teste' });
@@ -52,7 +53,7 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
     isPublic: false,
     cardCount: inicial.reduce((s, l) => s + l.quantity, 0),
   };
-  const criados: Array<Record<string, unknown>> = [];
+  const criados: Record<string, unknown>[] = [];
   let sequencia = 0;
 
   const porChave = (w: { deckId: string; scryfallId: string; boardType: BoardType }) =>
@@ -85,11 +86,13 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
           // vieram — é o que o Prisma faz com um valor absoluto.
           Object.assign(deck, resto);
           if (typeof c === 'number') deck.cardCount = c;
-          else if (c?.['increment'] !== undefined) deck.cardCount += c['increment'];
-          else if (c?.['decrement'] !== undefined) deck.cardCount -= c['decrement'];
+          else if (c?.increment !== undefined) deck.cardCount += c.increment;
+          else if (c?.decrement !== undefined) deck.cardCount -= c.decrement;
           return { ...deck };
         },
       ),
+      // Decks da conta. Um só por padrão; os testes de teto sobem o número.
+      count: jest.fn().mockResolvedValue(1),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const novo = { id: `deck-novo-${criados.length + 1}`, ...data };
         criados.push(novo);
@@ -113,6 +116,10 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
         );
         return l ? { ...l } : null;
       }),
+      count: jest.fn(
+        async ({ where }: { where: { deckId: string } }) =>
+          [...linhas.values()].filter((l) => l.deckId === where.deckId).length,
+      ),
       create: jest.fn(async ({ data }: { data: Omit<Linha, 'id'> }) => inserir(data)),
       update: jest.fn(
         async ({
@@ -582,5 +589,83 @@ describe('DecksService — clonar, atualizar em parte e o resumo da lista', () =
     await svc.getDeckById(USUARIO, DECK);
     // `updatedAt` é @updatedAt: regravar o mesmo resumo reordenaria a lista.
     expect(banco.prisma.deck.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A hidratação engolia a falha da Scryfall e devolvia o deck com `isBanned:
+ * false` em toda carta — e a mesa aprovava deck com banida. Quem julga a
+ * legalidade pede `exigirHidratacao`; o editor continua recebendo o deck cru.
+ */
+describe('DecksService.getDeckById — hidratação obrigatória para quem julga a legalidade', () => {
+  const comScryfallFora = () => {
+    const banco = bancoFalso([{ id: 'l1', scryfallId: SOL_RING, quantity: 1, boardType: 'MAIN' }]);
+    const cards = { collection: jest.fn().mockRejectedValue(new Error('ECONNRESET')) };
+    return new DecksService(banco.prisma as never, cards as never);
+  };
+
+  it('com `exigirHidratacao`, a falha da Scryfall vira 503 em vez de deck "legal"', async () => {
+    await expect(
+      comScryfallFora().getDeckById(USUARIO, DECK, { exigirHidratacao: true }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('sem a opção, o editor ainda recebe o deck — só sem nome e legalidade', async () => {
+    const deck = await comScryfallFora().getDeckById(USUARIO, DECK);
+    expect(deck.cards).toHaveLength(1);
+  });
+});
+
+describe('DecksService — teto por conta e por deck', () => {
+  it(`criar o deck número ${MAXIMO_DE_DECKS_POR_CONTA + 1} é recusado, e nada é gravado`, async () => {
+    const banco = bancoFalso();
+    banco.prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA);
+    const { svc } = montar(banco);
+
+    await expect(svc.createDeck(USUARIO, 'Mais um')).rejects.toBeInstanceOf(BadRequestException);
+    expect(banco.prisma.deck.create).not.toHaveBeenCalled();
+  });
+
+  it('clonar também conta: no teto, o clone não nasce', async () => {
+    const banco = bancoFalso([{ id: 'l1', scryfallId: SOL_RING, quantity: 1, boardType: 'MAIN' }]);
+    banco.prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA);
+    const { svc } = montar(banco);
+
+    await expect(svc.clonarDeck(USUARIO, DECK)).rejects.toBeInstanceOf(BadRequestException);
+    expect(banco.criados).toHaveLength(0);
+  });
+
+  it(`abaixo do teto, criar segue normal`, async () => {
+    const banco = bancoFalso();
+    banco.prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA - 1);
+    const { svc } = montar(banco);
+    await expect(svc.createDeck(USUARIO, 'Último')).resolves.toBeDefined();
+  });
+
+  const cheio = () =>
+    Array.from({ length: MAXIMO_DE_LINHAS_POR_DECK }, (_, i) => ({
+      id: `l${i}`,
+      scryfallId: `carta-${i}`,
+      quantity: 1,
+      boardType: BoardType.MAIN,
+    }));
+
+  it(`uma carta NOVA num deck com ${MAXIMO_DE_LINHAS_POR_DECK} linhas é recusada`, async () => {
+    const banco = bancoFalso(cheio());
+    const { svc } = montar(banco);
+
+    await expect(svc.addCard(USUARIO, DECK, SOL_RING, 1)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(banco.linhas()).toHaveLength(MAXIMO_DE_LINHAS_POR_DECK);
+  });
+
+  it('mais cópias de uma carta que já está no deck cheio continuam aceitas', async () => {
+    const banco = bancoFalso(cheio());
+    const { svc } = montar(banco);
+
+    await svc.addCard(USUARIO, DECK, 'carta-0', 2);
+
+    expect(banco.linhas().find((l) => l.id === 'l0')?.quantity).toBe(3);
   });
 });

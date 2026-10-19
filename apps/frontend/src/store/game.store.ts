@@ -344,7 +344,7 @@ export const useGameStore = create<GameState>((set) => ({
        * inteira. A comparação é O(n) contra um render de tabuleiro: barata.
        */
       const atual = s.zoneOrder[chave];
-      if (atual && atual.length === ids.length && atual.every((id, i) => id === ids[i])) return s;
+      if (atual?.length === ids.length && atual.every((id, i) => id === ids[i])) return s;
       return { zoneOrder: { ...s.zoneOrder, [chave]: ids } };
     }),
 

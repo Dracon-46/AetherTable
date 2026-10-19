@@ -28,7 +28,7 @@ export interface CartaSugerida {
 export interface SugestoesDeCartas {
   comandantes: string[];
   temas: string[];
-  grupos: Array<{ papel: string; nome: string; cartas: CartaSugerida[] }>;
+  grupos: { papel: string; nome: string; cartas: CartaSugerida[] }[];
 }
 
 export function useSugestoes(deckId: string, comandantes: string) {

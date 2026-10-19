@@ -1,5 +1,12 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
+import { MAXIMO_DE_LINHAS_POR_DECK, exigirVagaDeDeck } from './limites-de-conta.js';
 import { CardsService } from '../cards/cards.service.js';
 import { BoardType, type DeckCard } from '@prisma/client';
 import type { ScryfallCard } from '@aethertable/scryfall-client';
@@ -48,7 +55,8 @@ export class DecksService {
     private cards: CardsService,
   ) {}
 
-  async createDeck(userId: string, name: string, formatId: string = 'commander') {
+  async createDeck(userId: string, name: string, formatId = 'commander') {
+    await exigirVagaDeDeck(this.prisma, userId);
     return this.prisma.deck.create({
       data: {
         userId,
@@ -65,7 +73,16 @@ export class DecksService {
     });
   }
 
-  async getDeckById(userId: string, deckId: string) {
+  /**
+   * O deck da conta, com as cartas hidratadas pela Scryfall.
+   *
+   * `exigirHidratacao` é para quem DECIDE algo a partir do resultado — a
+   * entrada na mesa e a escolha do grimório na sala de espera. Sem ela, uma
+   * Scryfall fora do ar devolve o deck com `isBanned: false` em toda carta, e
+   * a trava de banidas aprova o que não deveria. Para a tela do editor, o
+   * deck sem nome e sem legalidade ainda é melhor que nenhum deck.
+   */
+  async getDeckById(userId: string, deckId: string, opcoes: { exigirHidratacao?: boolean } = {}) {
     const deck = await this.prisma.deck.findFirst({
       where: { id: deckId, userId },
       include: { cards: true },
@@ -112,10 +129,7 @@ export class DecksService {
             // de Modern ou Pauper: cartas legais no formato do deck vinham
             // marcadas como banidas e o `join` bloqueava a entrada na mesa.
             // Formato sem chave (freeform, peasant) não tem banlist a consultar.
-            isBanned:
-              extra && chave
-                ? (extra.legalities as Record<string, string> | undefined)?.[chave] === 'banned'
-                : false,
+            isBanned: extra && chave ? extra.legalities?.[chave] === 'banned' : false,
             imageNormal:
               extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
             priceUsd: extra?.prices?.usd || 0,
@@ -161,52 +175,20 @@ export class DecksService {
             gameChanger: typeof extra?.game_changer === 'boolean' ? extra.game_changer : undefined,
           };
         });
-        await this.sincronizarResumo(
-          deck,
-          deck.cards as unknown as Array<{
-            scryfallId: string;
-            boardType: BoardType;
-            colorIdentity?: string[];
-          }>,
-        );
+        await this.sincronizarResumo(deck, deck.cards);
       } catch (erro) {
         // A hidratação é enriquecimento: se a Scryfall cair, o deck ainda
-        // precisa ser devolvido — só sem nome, set e legalidade.
+        // precisa ser devolvido — só sem nome, set e legalidade. Menos para
+        // quem vai julgar a legalidade com ele (ver `exigirHidratacao`).
         this.logger.error(`Falha ao hidratar cartas na Scryfall: ${String(erro)}`);
+        if (opcoes.exigirHidratacao) {
+          throw new ServiceUnavailableException(
+            'Não deu para conferir as cartas do deck agora: o provedor de cartas não respondeu. Tente de novo em instantes.',
+          );
+        }
       }
     }
 
-    return deck;
-  }
-
-  /**
-   * Deck completo SEM checagem de dono — só para o game-server provisionar a
-   * partida. A rota que expõe isto é protegida pelo `InternalApiGuard`; até a
-   * auditoria de 31/08 ela era pública, e o controller alcançava `this.prisma`
-   * por dentro do serviço com um `as any`.
-   */
-  /**
-   * Deck completo para o game-server.
-   *
-   * `ownerId` e OPCIONAL por compatibilidade com o fluxo antigo (o deck vinha
-   * dentro do seat token, ja validado em `MatchesService.joinMatch`), e
-   * OBRIGATORIO no fluxo novo: desde que o grimorio passou a ser escolhido
-   * dentro da sala de espera, o id chega numa intencao do cliente. Sem a
-   * checagem de dono aqui, qualquer jogador podia pedir `INTENT_SET_DECK` com o
-   * id do deck de outra pessoa e entrar na mesa jogando com o baralho alheio —
-   * lendo, de quebra, a lista inteira dele.
-   *
-   * Devolve `null` quando o deck nao existe OU nao e de quem pediu: as duas
-   * respostas sao iguais de proposito, para o endpoint nao virar um oraculo que
-   * confirma a existencia de ids alheios.
-   */
-  async getDeckForServer(deckId: string, ownerId?: string) {
-    const deck = await this.prisma.deck.findUnique({
-      where: { id: deckId },
-      include: { cards: true },
-    });
-    if (!deck) return null;
-    if (ownerId && deck.userId !== ownerId) return null;
     return deck;
   }
 
@@ -265,6 +247,7 @@ export class DecksService {
       include: { cards: true },
     });
     if (!original) throw new NotFoundException('Deck não encontrado');
+    await exigirVagaDeDeck(this.prisma, userId);
 
     const nome = `${original.name} (cópia)`.slice(0, 80);
     return this.prisma.$transaction(async (tx) => {
@@ -314,7 +297,7 @@ export class DecksService {
       partnerId: string | null;
       colorIdentity: string[];
     },
-    cartas: Array<{ scryfallId: string; boardType: BoardType; colorIdentity?: string[] }>,
+    cartas: { scryfallId: string; boardType: BoardType; colorIdentity?: string[] }[],
   ): Promise<void> {
     const comandantes = cartas.filter((c) => c.boardType === BoardType.COMMANDER);
     const commanderId = comandantes[0]?.scryfallId.toLowerCase() ?? null;
@@ -347,7 +330,7 @@ export class DecksService {
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
     const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
-    if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
+    if (card?.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
 
     // As duas escritas numa transação só. Separadas, uma falha de conexão
     // entre elas — o Neon do plano gratuito autossuspende — apagava a carta e
@@ -390,7 +373,7 @@ export class DecksService {
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
     const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
-    if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
+    if (card?.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
 
     if (delta === 0) return { success: true };
 
@@ -427,7 +410,7 @@ export class DecksService {
     userId: string,
     deckId: string,
     scryfallId: string,
-    quantity: number = 1,
+    quantity = 1,
     boardType: BoardType = BoardType.MAIN,
   ) {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });
@@ -446,6 +429,24 @@ export class DecksService {
      * ou os dois tentavam `create` e o segundo estourava a chave única em 500.
      */
     await this.prisma.$transaction(async (tx) => {
+      /**
+       * Teto de linhas DISTINTAS (ver `limites-de-conta.ts`). Só conta quando
+       * a linha é nova: somar cópias a uma carta que já está no deck não cria
+       * linha, e recusar isso num deck que já está no teto travaria o `+1`.
+       */
+      const jaExiste = await tx.deckCard.findUnique({
+        where: { deckId_scryfallId_boardType: { deckId, scryfallId: id, boardType } },
+        select: { id: true },
+      });
+      if (!jaExiste) {
+        const linhas = await tx.deckCard.count({ where: { deckId } });
+        if (linhas >= MAXIMO_DE_LINHAS_POR_DECK) {
+          throw new BadRequestException(
+            `O deck já tem ${MAXIMO_DE_LINHAS_POR_DECK} cartas diferentes, o máximo por deck.`,
+          );
+        }
+      }
+
       const linha = await tx.deckCard.upsert({
         where: { deckId_scryfallId_boardType: { deckId, scryfallId: id, boardType } },
         create: { deckId, scryfallId: id, quantity, boardType },

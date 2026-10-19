@@ -44,19 +44,31 @@ Cliente                              Servidor
 
 ```
 wss://game-node-02.aethertable.app
-   → joinById("K7M2QX", { seatToken, deckId })
+   → joinOrCreate("aether", { roomCode: "K7M2QX", seatToken, maxClients, gameType })
 ```
 
-| Etapa            | Detalhe                                                                                                         |
-| ---------------- | --------------------------------------------------------------------------------------------------------------- |
-| 1. Obter destino | O cliente **não escolhe** o nó. `POST /rooms` ou `/rooms/:id/join` devolve `wsUrl` + `seatToken` (`DOC-030` §5) |
-| 2. Conectar      | `client.joinById(roomId, { seatToken, deckId })`                                                                |
-| 3. Validar       | `onAuth` verifica assinatura, expiração (60 s), uso único e vínculo `roomId`↔token (`FR-20`)                    |
-| 4. Provisionar   | `onJoin` carrega o deck, embaralha a `LIBRARY` com CSPRNG e serve 7 cartas à `HAND`                             |
-| 5. Sincronizar   | O cliente recebe o **estado completo** filtrado, depois só deltas                                               |
+| Etapa              | Detalhe                                                                                                                                                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Obter o passe   | `POST /matches/:code/join` (ou `/spectate`) devolve o `seatToken` (`DOC-030` §5)                                                                                                          |
+| 2. Matchmake       | `client.joinOrCreate(AETHER_ROOM, { roomCode, seatToken, ... })`. F5 tenta antes `client.reconnect(chave)` (`net/reconexao.ts`). São os **dois únicos** métodos do matchmaker expostos    |
+| 3. Validar o passe | `onAuth` **estático**, antes de procurar, criar ou reservar sala: assinatura HS256, `aud: 'aethertable-mesa'`, `sub`, `jti`, `roomId` e `exp` obrigatórios, e `roomCode === roomId`       |
+| 4. Admitir         | No começo do `onJoin` (`admitir`): passe já usado, conta bloqueada, assento duplicado, lotação. Só então o `jti` é consumido                                                              |
+| 5. Passe de voz    | O servidor manda `passe-de-voz` ao cliente admitido (§4.2)                                                                                                                                |
+| 6. Sincronizar     | O cliente recebe o **estado completo** filtrado, depois só deltas. O grimório é provisionado já embaralhado, pela escolha na sala de espera (`INTENT_SET_DECK`) ou pelo `deckId` do passe |
 
 **Rejeições possíveis no handshake:** `INVALID_TOKEN`, `TOKEN_EXPIRED`, `TOKEN_ALREADY_USED`,
 `ROOM_FULL`, `ROOM_CLOSED`, `PLAYER_BLOCKED`, `ALREADY_SEATED`.
+
+**Onde cada uma chega.** `INVALID_TOKEN` e `TOKEN_EXPIRED` saem do `onAuth` estático, na resposta HTTP
+do matchmake (`{ code, error }`, com o código no `error`) — antes de existir sala ou reserva. As demais
+saem de `admitir`, no `onJoin`, como erro da conexão WebSocket. Nos dois casos o código vem dentro da
+mensagem, que é o que `mensagemDeConexao` no cliente procura. `ROOM_FULL` ainda pode chegar do próprio
+Colyseus ("... is already full") quando `maxClients` (assentos + plateia) está tomado.
+
+**O que o matchmaker deixou de aceitar.** `create`, `join` e `joinById` não estão mais expostos
+(`MATCHMAKE_NO_HANDLER`). O corpo do POST acima de 8 KB é recusado com `413`, e os cabeçalhos CORS só
+refletem as origens da plataforma (`CORS_ORIGINS` + o site oficial). A vaga reservada pelo matchmake
+espera o WebSocket por 8 s (eram 15).
 
 | Código               | Quando                                                                                                                                                                                                                                                                |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -403,9 +415,9 @@ de mulligan da partida que ainda ia começar.
 #### A plateia tem teto próprio
 
 `maxClients` é assentos + plateia (`MAX_PLAYERS + MAX_ESPECTADORES`), e com a
-mesa ainda sem jogadores a sala aceitava dezoito espectadores. O `onAuth`
-recusa com `ROOM_FULL` o passe de espectador quando já há
-`MAX_ESPECTADORES` (10) assistindo.
+mesa ainda sem jogadores a sala aceitava dezoito espectadores. A admissão
+(`admitir`, no `onJoin`) recusa com `ROOM_FULL` o passe de espectador quando já
+há `MAX_ESPECTADORES` (10) assistindo.
 
 #### A votação vencida é encerrada pelo servidor
 
@@ -425,6 +437,10 @@ A barreira não está em `verificarAutorizacao` porque ela devolve `null` na hor
 para `QUALQUER_JOGADOR`, sem checar se o remetente é mesmo um jogador — o nome
 da regra sempre foi uma promessa que ninguém verificava, e não precisava ser
 verificada enquanto todo mundo na sala tinha assento.
+
+A regra agora é positiva (`barreiraDoRemetente`): intenção de mesa exige estar
+em `players`. Quem não é jogador nem plateia — a aba antiga de quem voltou por
+um passe novo, no intervalo até ser derrubada — recebe `NOT_AUTHORIZED`.
 
 #### `INTENT_VOTE_KICK` — remover por votação
 
@@ -448,14 +464,19 @@ não tinham saída.
 | Um "não" encerra                                                         | "Todos concordam" sem virar maioria                                          |
 | O alvo não vota                                                          | O voto dele é sempre "não" — contá-lo seria dar veto ao próprio alvo         |
 | Todos os votantes disseram "sim" → o alvo sai pelo mesmo caminho do kick | E a **conta** fica bloqueada na sala (`PLAYER_BLOCKED`, §2.1)                |
+| Pelo menos **dois** votantes para abrir e para concluir                  | Com um só, a "votação" era a decisão de uma pessoa (ver abaixo)              |
 
 O estado da votação vive no `RoomState` (`votacaoAlvo`, `votacaoAutor`,
 `votacaoSim`, `votacaoExpiraEm` — `DOC-032` §3), e não numa mensagem: quem
 reconecta no meio precisa ver a votação que está correndo.
 
-**Decisão registrada:** numa mesa de dois, o único votante é quem propôs, e a
-votação passa na hora. É a leitura literal de "todos os outros concordam", e é
-o mesmo que a mesa de dois já podia fazer saindo da sala.
+**Decisão revista:** numa mesa de dois, o único votante era quem propunha, e a
+votação passava na hora — a leitura literal de "todos os outros concordam". Na
+prática, isso dava a qualquer convidado o poder do anfitrião: o segundo jogador
+tirava o dono da sala com um clique, e a conta dele ficava bloqueada. Agora a
+votação só abre com dois votantes ou mais (recusa com `INVALID_PAYLOAD`), e só
+conclui se ainda houver dois — alguém pode cair no meio. Com menos, quem remove é
+o anfitrião (`INTENT_KICK_PLAYER`).
 
 ### 3.7.1 Intenções restantes por família
 
@@ -629,22 +650,55 @@ room.state.players.onChange((player, id) => ui.updatePanel(id, player));
 
 Coisas que **não** fazem parte do estado durável da mesa:
 
-| Evento                                     | Payload                                         | Uso                                                                      |
-| ------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------ |
-| `log`                                      | `{ id, timestamp, type, actorId, text }`        | Entrada no painel de log/chat                                            |
-| `chat`                                     | `{ id, timestamp, actorId, text }`              | Mensagem de usuário                                                      |
-| `dice`                                     | `{ actorId, sides, result, amount?, results? }` | Dispara a animação do dado. `result` é o total; `results` traz cada dado |
-| `reaction`                                 | `{ actorId, tipo }`                             | Balão de reação. Não entra no log                                        |
-| `ping`                                     | `{ actorId, x, y, targetId? }`                  | Marcador visual efêmero                                                  |
-| `revealToOwner`                            | `{ cards: [{ id, scryfallId }], motivo: "PEEK"  | "SEARCH"                                                                 | "RANDOM", zone, from? }` | Resultado de olhar, buscar ou sortear — **enviado só ao dono**. Só `PEEK` e `RANDOM` abrem o painel de olhada; a busca é do inspetor de zona |
-| `warning`                                  | `{ code, message }`                             | Ex.: `RATE_LIMITED` por excesso de intenções                             |
-| `error`                                    | `{ code, message, intent? }`                    | Intenção rejeitada                                                       |
-| `playerJoined` / `playerLeft`              | `{ playerId, name }`                            | Notificação de presença                                                  |
-| `playerDisconnected` / `playerReconnected` | `{ playerId }`                                  | Estado de conexão                                                        |
-| `roomClosing`                              | `{ reason, inSeconds }`                         | Aviso de encerramento ou drenagem para deploy                            |
+| Evento                                     | Payload                                         | Uso                                                                            |
+| ------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| `log`                                      | `{ id, timestamp, type, actorId, text }`        | Entrada no painel de log/chat                                                  |
+| `chat`                                     | `{ id, timestamp, actorId, text }`              | Mensagem de usuário                                                            |
+| `dice`                                     | `{ actorId, sides, result, amount?, results? }` | Dispara a animação do dado. `result` é o total; `results` traz cada dado       |
+| `reaction`                                 | `{ actorId, tipo }`                             | Balão de reação. Não entra no log                                              |
+| `ping`                                     | `{ actorId, x, y, targetId? }`                  | Marcador visual efêmero                                                        |
+| `revealToOwner`                            | `{ cards: [{ id, scryfallId }], motivo: "PEEK"  | "SEARCH"                                                                       | "RANDOM", zone, from? }` | Resultado de olhar, buscar ou sortear — **enviado só ao dono**. Só `PEEK` e `RANDOM` abrem o painel de olhada; a busca é do inspetor de zona |
+| `warning`                                  | `{ code, message }`                             | Ex.: `RATE_LIMITED` por excesso de intenções — no máximo um por janela de 10 s |
+| `error`                                    | `{ code, message, intent? }`                    | Intenção rejeitada. `LIMIT` = teto da mesa (fichas, cartas, contadores, setas) |
+| `passe-de-voz`                             | `{ token }`                                     | Passe de voz desta sala — **só ao próprio cliente**, ver abaixo                |
+| `playerJoined` / `playerLeft`              | `{ playerId, name }`                            | Notificação de presença                                                        |
+| `playerDisconnected` / `playerReconnected` | `{ playerId }`                                  | Estado de conexão                                                              |
+| `roomClosing`                              | `{ reason, inSeconds }`                         | Aviso de encerramento ou drenagem para deploy                                  |
 
 **Por que separar de estado:** um dado rolado não é estado da mesa — é um acontecimento. Colocá-lo no
 `Schema` obrigaria a decidir quando removê-lo e geraria _patches_ inúteis.
+
+#### `passe-de-voz` — o servidor atesta quem está na sala
+
+```ts
+// servidor → um cliente só (client.send), nunca broadcast
+interface PasseDeVoz {
+  token: string; // JWT HS256, assinado com JWT_SECRET
+}
+// claims do token
+interface ClaimsDoPasseDeVoz {
+  sub: string; // conta (o `sub` do passe da mesa)
+  roomId: string; // código da sala (`state.roomCode`)
+  spectator: boolean; // plateia: entra na voz sem falar
+  aud: 'aethertable-voz';
+  jti: string; // aleatório, um por emissão
+  exp: number; // 6 h depois da emissão
+}
+```
+
+| Quando                                     | Para quem                                                                    |
+| ------------------------------------------ | ---------------------------------------------------------------------------- |
+| Logo depois de `admitir` aceitar a entrada | O jogador ou espectador que entrou                                           |
+| Depois de cada reconexão bem-sucedida      | O jogador que voltou (um passe novo; o anterior continua valendo até vencer) |
+
+O passe da mesa é de uso único e vive na URL: ele prova que alguém **podia** entrar, não que entrou.
+Quem sabe que a conta está nesta sala é o servidor que a admitiu. O cliente apresenta este passe à
+API, que o troca pelo passe do LiveKit (contrato combinado com a API Core). A audiência própria
+(`aethertable-voz`) impede que ele valha como passe de mesa ou como sessão da API.
+
+**O cliente precisa registrar `room.onMessage('passe-de-voz', ...)` no mesmo tick em que
+`joinOrCreate`/`reconnect` resolve.** A mensagem sai na fila do JOIN, logo depois do estado inicial, e o
+`colyseus.js` descarta mensagem sem _handler_ registrado.
 
 ### 4.3 Catálogo de mensagens de log
 
@@ -724,16 +778,21 @@ recebe — mas o teste de auditoria deve cobrir isso explicitamente.
 
 ## 6. Tratamento de erros e limites
 
-| Situação                                       | Comportamento                                                           |
-| ---------------------------------------------- | ----------------------------------------------------------------------- |
-| _Payload_ inválido (Zod)                       | Descarta; envia `error { code: "INVALID_PAYLOAD" }` ao remetente        |
-| Intenção sobre entidade inexistente            | Descarta; `error { code: "ENTITY_NOT_FOUND" }`                          |
-| Intenção sem permissão (`controllerId` alheio) | Descarta; `error { code: "NOT_AUTHORIZED" }` + log de auditoria         |
-| Intenção durante _lock_ de outro jogador       | Descarta **silenciosamente** (é disputa normal, não erro)               |
-| Mais de 30 intenções/s                         | Descarta excedente; `warning { code: "RATE_LIMITED" }`                  |
-| Mensagem acima de 4 KB                         | Fecha a conexão — só código malicioso faz isso                          |
-| Intenção de jogador desconectado               | Descarta                                                                |
-| Erro não tratado no _handler_                  | Captura, loga com `roomId`, envia `error` genérico. **A sala não cai.** |
+| Situação                                         | Comportamento                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| _Payload_ inválido (Zod)                         | Descarta; envia `error { code: "INVALID_PAYLOAD" }` ao remetente                   |
+| Intenção sobre entidade inexistente              | Descarta; `error { code: "ENTITY_NOT_FOUND" }`                                     |
+| Intenção sem permissão (`controllerId` alheio)   | Descarta; `error { code: "NOT_AUTHORIZED" }` + log de auditoria                    |
+| Intenção durante _lock_ de outro jogador         | Descarta **silenciosamente** (é disputa normal, não erro)                          |
+| Mais de 30 intenções/s                           | Descarta excedente; `warning { code: "RATE_LIMITED" }` (um por janela)             |
+| Mais de 10 mensagens sociais em 10 s             | Chat, ping, pedido de vista e votação: descarta o excedente                        |
+| Mais de 300 descartes em 10 s                    | Fecha a conexão com 4002; o assento fica pela janela de reconexão                  |
+| Mais de uma escolha de grimório em 2 s           | Uma busca à API por janela; a última escolha sai quando a janela abre              |
+| Teto da mesa (fichas, cartas, contadores, setas) | Recusa; `error { code: "LIMIT" }`                                                  |
+| Mensagem acima de 4 KB                           | Fecha a conexão — só código malicioso faz isso                                     |
+| Intenção de quem não tem assento                 | Descarta; `error { code: "NOT_AUTHORIZED" }` (plateia: `SPECTATOR`, menos no chat) |
+| Intenção de jogador desconectado                 | Descarta                                                                           |
+| Erro não tratado no _handler_                    | Captura, loga com `roomId`, envia `error` genérico. **A sala não cai.**            |
 
 **Princípio:** uma intenção malformada nunca deve derrubar a sala dos outros três jogadores.
 
@@ -758,7 +817,10 @@ Expostas em `/metrics` (`NFR-11`):
 
 ## 8. Checklist de implementação
 
-- [ ] `onAuth` valida `seatToken` (assinatura, expiração, uso único, vínculo com `roomId`).
+- [ ] `onAuth` **estático** valida `seatToken` (HS256, `aud: 'aethertable-mesa'`, `sub`/`jti`/`roomId`/`exp`
+      obrigatórios, `roomCode === roomId`); `admitir` checa uso único, bloqueio e lotação no `onJoin`.
+- [ ] Matchmaker só com `joinOrCreate` e `reconnect`; corpo ≤ 8 KB; CORS só das origens da plataforma.
+- [ ] `passe-de-voz` enviado depois da admissão e de cada reconexão.
 - [ ] Toda intenção tem _schema_ Zod e está no `registry.ts`.
 - [ ] Nenhum _handler_ faz I/O (banco/HTTP) no caminho crítico (`DOC-021` §7).
 - [ ] _Lock_ de arraste com TTL de 5 s e liberação em desconexão.

@@ -14,7 +14,7 @@ export interface DeckInicial {
   comandantes: string[];
   nomesDosComandantes: string[];
   cores: string[];
-  cartas: Array<{ scryfallId: string; quantity: number; boardType: 'COMMANDER' | 'MAIN' }>;
+  cartas: { scryfallId: string; quantity: number; boardType: 'COMMANDER' | 'MAIN' }[];
 }
 
 export const FONTE_DOS_DECKS_INICIAIS = 'MTGJSON 5.3.0+20261013 (licença MIT)';

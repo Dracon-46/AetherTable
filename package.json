@@ -1,8 +1,17 @@
 {
   "name": "aethertable",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "private": true,
   "description": "AetherTable — plataforma web sandbox multiformato para Magic: The Gathering. Nao existe motor de regras: o sistema move pecas, sincroniza estado e esconde informacao.",
+  "author": "Falkyria",
+  "homepage": "https://github.com/Dracon-46/AetherTable#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Dracon-46/AetherTable.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dracon-46/AetherTable/issues"
+  },
   "license": "UNLICENSED",
   "packageManager": "pnpm@9.15.4",
   "engines": {
@@ -18,8 +27,9 @@
     "verificar": "node tools/verificar.mjs",
     "test:watch": "turbo run test:watch",
     "test:e2e": "pnpm --filter frontend test:e2e",
-    "lint": "turbo run lint",
-    "lint:fix": "turbo run lint -- --fix",
+    "lint": "turbo run lint && pnpm lint:raiz",
+    "lint:raiz": "eslint tools --max-warnings=0",
+    "lint:fix": "turbo run lint -- --fix && eslint tools --fix",
     "typecheck": "turbo run typecheck",
     "schema:sync": "node tools/schema-sync.mjs",
     "schema:check": "node tools/schema-sync.mjs --check",
@@ -59,7 +69,13 @@
   },
   "pnpm": {
     "overrides": {
-      "@colyseus/greeting-banner": "^3.0.8"
+      "@colyseus/greeting-banner": "^3.0.8",
+      "proxy-addr@<2.0.8": "^2.0.8",
+      "qs@<6.16.0": "^6.16.0",
+      "js-yaml@>=5 <5.4.1": "^5.4.1",
+      "next>postcss": "^8.5.31",
+      "next>sharp": "^0.35.5",
+      "source-map-js@<1.2.2": "^1.2.2"
     }
   }
 }

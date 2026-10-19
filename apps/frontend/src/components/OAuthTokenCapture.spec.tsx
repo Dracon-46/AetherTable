@@ -9,6 +9,10 @@
  * E, em desenvolvimento, a captura em si também falhava: o `ativo` local do
  * efeito era zerado pela remontagem do StrictMode e a resposta do `/users/me`
  * era descartada. Os testes rodam sob `<React.StrictMode>` por isso.
+ *
+ * E o `#token=` só vale se ESTA aba começou o login (a marca de
+ * `lib/oauth.ts`): sem isso, um link com o token de outra conta abria a sessão
+ * dela no navegador da vítima.
  */
 
 import React from 'react';
@@ -56,7 +60,24 @@ function respostaJson(corpo: unknown, status = 200) {
   };
 }
 
+const MARCA = 'aethertable:oauth-iniciado';
+
+function renderizarLogin() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <React.StrictMode>
+      <QueryClientProvider client={client}>
+        <LoginPage />
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+}
+
+const pedidosDoPerfil = () =>
+  (global.fetch as jest.Mock).mock.calls.filter(([url]) => String(url).endsWith('/users/me'));
+
 beforeEach(() => {
+  sessionStorage.clear();
   replace.mockReset();
   push.mockReset();
   useAuthStore.setState({ accessToken: null, user: null });
@@ -101,21 +122,49 @@ describe('ProtectedRoute sem sessão', () => {
 
 describe('tela de login com #token= na URL', () => {
   it('captura o token, cria a sessão e segue para o painel', async () => {
+    sessionStorage.setItem(MARCA, String(Date.now()));
     window.history.replaceState(null, '', '/#token=abc');
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-    render(
-      <React.StrictMode>
-        <QueryClientProvider client={client}>
-          <LoginPage />
-        </QueryClientProvider>
-      </React.StrictMode>,
-    );
+    renderizarLogin();
 
     await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('abc'));
     expect(useAuthStore.getState().user?.id).toBe(USUARIO.id);
     expect(replace).toHaveBeenCalledWith('/dashboard');
     // O fragmento sai da barra de endereço assim que é lido.
     expect(window.location.hash).toBe('');
+    // A marca vale para um retorno só.
+    expect(sessionStorage.getItem(MARCA)).toBeNull();
+  });
+
+  it('sem a marca de início, o token de um link de fora é recusado', async () => {
+    window.history.replaceState(null, '', '/#token=token-do-atacante');
+
+    renderizarLogin();
+
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    expect(pedidosDoPerfil()).toHaveLength(0);
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+
+  it('marca de mais de dez minutos não vale', async () => {
+    sessionStorage.setItem(MARCA, String(Date.now() - 11 * 60_000));
+    window.history.replaceState(null, '', '/#token=abc');
+
+    renderizarLogin();
+
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    expect(pedidosDoPerfil()).toHaveLength(0);
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+
+  it('`#token=%` não derruba a página e sai da URL', async () => {
+    sessionStorage.setItem(MARCA, String(Date.now()));
+    window.history.replaceState(null, '', '/#token=%');
+
+    renderizarLogin();
+
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    expect(pedidosDoPerfil()).toHaveLength(0);
+    expect(useAuthStore.getState().accessToken).toBeNull();
   });
 });

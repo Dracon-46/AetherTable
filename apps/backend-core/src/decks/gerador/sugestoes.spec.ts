@@ -53,7 +53,7 @@ describe('SugestoesDeCartasService', () => {
   });
   const SOL = carta('sol', { name: 'Sol Ring', oracle_id: 'o-sol' });
 
-  function montar(cartasDoDeck: Array<{ scryfallId: string; boardType: string }> | null) {
+  function montar(cartasDoDeck: { scryfallId: string; boardType: string }[] | null) {
     const prisma = {
       deck: { findFirst: jest.fn().mockResolvedValue(cartasDoDeck && { cards: cartasDoDeck }) },
     };

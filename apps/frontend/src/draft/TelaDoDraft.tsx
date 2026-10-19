@@ -52,7 +52,7 @@ const NOME_DA_COR: Record<string, string> = {
  * ÍNDICES: a mesma carta pode vir em dois pacotes, e é o índice que distingue
  * uma cópia da outra.
  */
-function porCor(cartas: readonly CartaDeDraft[]): Array<[string, number[]]> {
+function porCor(cartas: readonly CartaDeDraft[]): [string, number[]][] {
   const grupos = new Map<string, number[]>();
   cartas.forEach((c, i) => {
     const cs = coresDe(c);

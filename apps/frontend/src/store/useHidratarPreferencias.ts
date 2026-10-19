@@ -101,29 +101,42 @@ export function useHidratarPreferencias(): void {
   const aplicarAtalhos = useAtalhos((s) => s.aplicarDoServidor);
   const definirTier = useCosmeticos((s) => s.definirTier);
   const aplicarTema = useTema((s) => s.aplicarDoServidor);
+  /** Cancela a assinatura das preferências de mesa. Ver o efeito abaixo. */
+  const pararDeObservar = useRef<(() => void) | null>(null);
   /**
-   * Guarda de execução única.
+   * O pedido em voo e o token dele. O StrictMode monta, limpa e monta de novo:
+   * a segunda montagem do MESMO token aproveita o pedido da primeira em vez de
+   * abrir outro, e a resposta é aplicada uma vez, pela montagem que ficou.
+   */
+  const emVoo = useRef<{ token: string; pedido: Promise<PreferenciaDaConta> } | null>(null);
+
+  /**
+   * ─── UMA HIDRATAÇÃO POR TOKEN ──────────────────────────────────────────
    *
    * `token` entra nas dependências porque a reidratação do zustand o preenche
    * DEPOIS do primeiro render — sem ele, o efeito rodaria com `null` e
-   * desistiria para sempre. Mas com ele, um `logout`/`login` na mesma sessão
-   * dispararia de novo, e um re-render qualquer que trocasse a referência do
-   * token faria uma requisição a mais. O ref fecha isso.
+   * desistiria para sempre.
+   *
+   * Havia também uma guarda `jaBuscou` que só era devolvida quando a resposta
+   * ainda não tinha chegado. Trocar a senha troca o token (o servidor corta as
+   * outras sessões e devolve um novo): a limpeza desligava o observador das
+   * preferências de mesa, e a guarda impedia o token novo de buscar e religá-
+   * lo. Dali em diante, nada do que a pessoa mudasse na mesa chegava à conta.
+   * Token novo é sessão nova — inclusive no login de outra conta na mesma aba
+   * —, e ela hidrata e observa de novo.
    */
-  const jaBuscou = useRef(false);
-  /** Cancela a assinatura das preferências de mesa. Ver o efeito abaixo. */
-  const pararDeObservar = useRef<(() => void) | null>(null);
-
   useEffect(() => {
-    if (!token || jaBuscou.current) return;
-    jaBuscou.current = true;
+    if (!token) return;
 
     let ativo = true;
-    /** A resposta (ou a falha) já chegou. Ver a limpeza no fim do efeito. */
-    let concluiu = false;
-    void api<PreferenciaDaConta>('/users/me')
+    const pedido =
+      emVoo.current?.token === token ? emVoo.current.pedido : api<PreferenciaDaConta>('/users/me');
+    emVoo.current = { token, pedido };
+    void pedido
+      .finally(() => {
+        if (emVoo.current?.pedido === pedido) emVoo.current = null;
+      })
       .then((eu) => {
-        concluiu = true;
         if (!ativo) return;
         // O tier chega mesmo quando `preference` é nula: uma conta que nunca
         // mexeu em cosmético nenhum ainda pode ser apoiadora.
@@ -157,9 +170,7 @@ export function useHidratarPreferencias(): void {
         pararDeObservar.current = observarPreferenciasDaMesa();
       })
       .catch((erro) => {
-        concluiu = true;
-        // Requisição já descartada pela limpeza: a guarda foi devolvida lá, e
-        // mexer nela aqui abriria a porta para uma terceira busca em paralelo.
+        // Requisição já descartada pela limpeza: nada a avisar.
         if (!ativo) return;
         /**
          * Falhar aqui é inofensivo, e por isso não vira toast.
@@ -170,7 +181,6 @@ export function useHidratarPreferencias(): void {
          * nada. A próxima sessão tenta de novo.
          */
         console.warn('[preferencias] não foi possível hidratar da conta:', erro);
-        jaBuscou.current = false;
         /**
          * Sem resposta do servidor NÃO se observa.
          *
@@ -181,19 +191,9 @@ export function useHidratarPreferencias(): void {
       });
 
     return () => {
+      // A resposta desta execução não é mais aplicada por ELA; se o token não
+      // mudou, a próxima execução reaproveita o mesmo pedido (ver `emVoo`).
       ativo = false;
-      /**
-       * ─── NO STRICTMODE AS PREFERÊNCIAS NUNCA CHEGAVAM ─────────────────────
-       *
-       * O StrictMode monta, limpa e monta de novo. A limpeza zerava o `ativo`
-       * da única requisição em voo — a resposta chegava e era descartada — e o
-       * `jaBuscou` já estava `true`, então a segunda montagem nem pedia de
-       * novo. Resultado em desenvolvimento: tema, cosméticos, atalhos e o tier
-       * de apoiador da conta nunca eram aplicados. Uma limpeza que descarta a
-       * resposta precisa devolver a vez: se ela ainda não chegou, a próxima
-       * execução do efeito busca outra.
-       */
-      if (!concluiu) jaBuscou.current = false;
       pararDeObservar.current?.();
       pararDeObservar.current = null;
     };

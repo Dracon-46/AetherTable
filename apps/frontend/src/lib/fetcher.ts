@@ -88,7 +88,7 @@ export function mensagemDoCorpoDeErro(corpo: unknown): string | null {
   if (!corpo || typeof corpo !== 'object') return null;
   const { message, erros } = corpo as {
     message?: unknown;
-    erros?: Array<{ campo?: unknown; erro?: unknown }>;
+    erros?: { campo?: unknown; erro?: unknown }[];
   };
 
   const primeiro = Array.isArray(erros) ? erros[0] : undefined;
@@ -125,7 +125,7 @@ export async function api<T = unknown>(caminho: string, opcoes: OpcoesApi = {}):
 
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (!publica && token) headers['Authorization'] = `Bearer ${token}`;
+  if (!publica && token) headers.Authorization = `Bearer ${token}`;
 
   let res: Response;
   try {

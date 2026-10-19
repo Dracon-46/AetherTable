@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { CenaDoDragao, useDragao } from './CenaDoDragao';
-import { useAuthStore } from '../store/auth.store';
+import { useAuthStore, type SessaoDaApi } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { api, mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
 import { OAuthTokenCapture } from '../components/OAuthTokenCapture';
+import { iniciarOAuth } from '../lib/oauth';
 import { IDIOMAS_DA_INTERFACE, useLangDoDocumento, useT } from '../i18n/i18n';
 import { useAparencia } from '../store/aparencia.store';
 
@@ -102,7 +103,13 @@ export default function LoginPage() {
     const codigo = new URLSearchParams(window.location.search).get('erro');
     if (!codigo) return;
 
-    setErroDeOAuth(MENSAGEM_DE_OAUTH[codigo] ?? MENSAGEM_DE_OAUTH.falhou!);
+    // `hasOwn`, e não `dicionario[codigo]`: `?erro=__proto__` (ou `constructor`)
+    // devolvia um objeto herdado, e desenhá-lo derrubava a página de login.
+    setErroDeOAuth(
+      Object.hasOwn(MENSAGEM_DE_OAUTH, codigo)
+        ? MENSAGEM_DE_OAUTH[codigo]!
+        : MENSAGEM_DE_OAUTH.falhou!,
+    );
     // Tira o `?erro=` da barra de endereço: recarregar a página não deve
     // ressuscitar um erro que a pessoa já leu.
     window.history.replaceState(null, '', window.location.pathname);
@@ -136,7 +143,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as SessaoDaApi;
 
       if (!response.ok) {
         // Um 400 de validação (e-mail malformado) dizia só "Dados inválidos.";
@@ -147,8 +154,8 @@ export default function LoginPage() {
       // Sucesso! A API retorna accessToken (camelCase)
       setAuth(data.accessToken, data.user);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : null);
       setIsLoggingIn(false);
     } finally {
       setEstadoServidor(null);
@@ -298,7 +305,7 @@ export default function LoginPage() {
             aqui é a promessa de que aquele caminho funciona. Sem provedor
             nenhum, some também o separador: um "ou continue com" seguido de
             nada é pior que nada. */}
-        {(provedores?.google || provedores?.discord) && (
+        {(!!provedores?.google || !!provedores?.discord) && (
           <>
             <div className="mt-4 flex items-center justify-between">
               <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
@@ -308,31 +315,26 @@ export default function LoginPage() {
               <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
             </div>
 
+            {/* Ícones servidos pelo próprio site (public/icones). Vinham do
+                svgrepo.com: cada visita à tela de entrada entregava o IP do
+                visitante a um terceiro, e a CSP (img-src) os bloquearia. */}
             <div className="mt-4 flex flex-col gap-2">
               {provedores.google && (
                 <button
-                  onClick={() => (window.location.href = `${API_URL}/auth/google`)}
+                  onClick={() => iniciarOAuth(`${API_URL}/auth/google`)}
                   className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
                 >
-                  <img
-                    src="https://www.svgrepo.com/show/475656/google-color.svg"
-                    alt=""
-                    className="h-5 w-5"
-                  />
+                  <img src="/icones/google.svg" alt="" className="h-5 w-5" />
                   Google
                 </button>
               )}
 
               {provedores.discord && (
                 <button
-                  onClick={() => (window.location.href = `${API_URL}/auth/discord`)}
+                  onClick={() => iniciarOAuth(`${API_URL}/auth/discord`)}
                   className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
                 >
-                  <img
-                    src="https://www.svgrepo.com/show/353655/discord-icon.svg"
-                    alt=""
-                    className="h-5 w-5"
-                  />
+                  <img src="/icones/discord.svg" alt="" className="h-5 w-5" />
                   Discord
                 </button>
               )}

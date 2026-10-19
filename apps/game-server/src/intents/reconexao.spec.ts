@@ -23,7 +23,7 @@ import { RoomState } from '../schema/RoomState';
 import { Player } from '../schema/Player';
 import { REALTIME_LIMITS } from '@aethertable/shared-types';
 
-function mesa(assentos: number, jogadores: Array<{ id: string; connected: boolean }>) {
+function mesa(assentos: number, jogadores: { id: string; connected: boolean }[]) {
   const state = new RoomState();
   state.maxSeats = assentos;
   for (const [indice, j] of jogadores.entries()) {

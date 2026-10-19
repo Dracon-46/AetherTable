@@ -33,11 +33,11 @@ async function montar(onAddCard: (id: string, qtd: number) => Promise<void>) {
   );
   fireEvent.change(screen.getByPlaceholderText(/Buscar carta/), { target: { value: 'sol' } });
   // Debounce de 300 ms + a query: o campo só existe depois do resultado.
-  return (await screen.findByLabelText(
+  return await screen.findByLabelText<HTMLInputElement>(
     'Quantidade de Sol Ring',
     {},
     { timeout: 5000 },
-  )) as HTMLInputElement;
+  );
 }
 
 describe('quantidadeValida', () => {

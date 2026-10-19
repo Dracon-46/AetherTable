@@ -91,10 +91,14 @@ export abstract class AcaoDeSorteio<
   protected abstract sortear(ctx: IntentContext, payload: z.infer<Schema>): Resultado | null;
 
   /** Gancho. Muta o estado a partir do resultado. Padrao: nada a mutar. */
-  protected aplicar(_ctx: IntentContext, _payload: z.infer<Schema>, _r: Resultado): void {}
+  protected aplicar(_ctx: IntentContext, _payload: z.infer<Schema>, _r: Resultado): void {
+    // Sem estado a mudar: o sorteio só narra.
+  }
 
   /** Gancho. Transmite. Padrao: nada a transmitir — o log ja e publico. */
-  protected anunciar(_ctx: IntentContext, _payload: z.infer<Schema>, _r: Resultado): void {}
+  protected anunciar(_ctx: IntentContext, _payload: z.infer<Schema>, _r: Resultado): void {
+    // Sem transmissão própria: o log já é público.
+  }
 
   /** Obrigatorio: nao existe sorteio fora do log. */
   protected abstract narrar(ctx: IntentContext, payload: z.infer<Schema>, r: Resultado): LogEvent;
@@ -102,7 +106,10 @@ export abstract class AcaoDeSorteio<
 
 // ─── Dado ────────────────────────────────────────────────────────────────────
 
-type PedidoDeDado = { sides: number; amount?: number };
+interface PedidoDeDado {
+  sides: number;
+  amount?: number;
+}
 
 export class RolarDado extends AcaoDeSorteio<typeof S.RollDiceIntent, number[]> {
   readonly schema = S.RollDiceIntent;

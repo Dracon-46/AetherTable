@@ -68,6 +68,8 @@ export class CatalogoDeCosmeticosService implements OnModuleInit {
   /** Assinatura do conteúdo atual, para não incrementar a versão à toa. */
   private assinatura = '';
   private carregando: Promise<void> | null = null;
+  /** Alguém pediu recarga enquanto uma já estava lendo o banco. */
+  private pendente = false;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -89,14 +91,35 @@ export class CatalogoDeCosmeticosService implements OnModuleInit {
     void this.recarregar();
   }
 
-  async recarregar(): Promise<void> {
-    // Duas escritas seguidas disparam duas recargas; a segunda espera a
-    // primeira em vez de correr com ela e gravar um resultado mais velho.
-    if (this.carregando) return this.carregando;
-    this.carregando = this.executarRecarga().finally(() => {
+  /**
+   * ─── A SEGUNDA INVALIDAÇÃO NÃO PODE SE PERDER ────────────────────────────
+   *
+   * Duas escritas seguidas disparam duas recargas, e elas não podem correr
+   * juntas (a mais lenta gravaria o resultado mais velho). Mas a segunda
+   * simplesmente devolvia a promessa da primeira — e a primeira já tinha
+   * LIDO o banco antes da segunda escrita. Criar dois cosméticos em sequência
+   * publicava só o primeiro, até a próxima recarga que viesse.
+   *
+   * Agora o pedido que chega durante uma recarga marca `pendente`, e o laço lê
+   * o banco de novo ao terminar. Quantos pedidos chegarem no meio, uma releitura
+   * só os cobre, e quem espera a promessa só é liberado depois dela.
+   */
+  recarregar(): Promise<void> {
+    if (this.carregando) {
+      this.pendente = true;
+      return this.carregando;
+    }
+    this.carregando = this.recarregarAteFicarEmDia().finally(() => {
       this.carregando = null;
     });
     return this.carregando;
+  }
+
+  private async recarregarAteFicarEmDia(): Promise<void> {
+    do {
+      this.pendente = false;
+      await this.executarRecarga();
+    } while (this.pendente);
   }
 
   private async executarRecarga(): Promise<void> {

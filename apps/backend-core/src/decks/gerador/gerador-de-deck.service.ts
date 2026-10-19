@@ -20,6 +20,7 @@ import { randomInt } from 'node:crypto';
 import type { ScryfallCard } from '@aethertable/scryfall-client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { CardsService } from '../../cards/cards.service.js';
+import { exigirVagaDeDeck } from '../limites-de-conta.js';
 import { temasDoComandante } from './temas.js';
 import { descreverDeck, montarDeck, type Basicos, type Candidata } from './montagem.js';
 
@@ -54,6 +55,8 @@ export class GeradorDeDeckService {
   ) {}
 
   async gerar(userId: string) {
+    // Antes das ~11 buscas na Scryfall: sem vaga, não vale gastá-las.
+    await exigirVagaDeDeck(this.prisma, userId);
     const comandante = await this.sortearComandante();
     const cores = WUBRG.filter((c) => comandante.color_identity?.includes(c));
     // Comandante incolor (Karn, Kozilek…): `id<=` de nada não é sintaxe válida.
@@ -146,7 +149,7 @@ export class GeradorDeDeckService {
       const resposta = (await this.cards.search(consulta, 'cards', pagina, 'edhrec')) as {
         data?: ScryfallCard[];
       };
-      return (resposta.data ?? []) as Candidata[];
+      return resposta.data ?? [];
     } catch (erro) {
       // A Scryfall responde 404 a uma busca sem resultado (um tema raro numa
       // cor só, por exemplo). Para o gerador isso é "nenhuma candidata".

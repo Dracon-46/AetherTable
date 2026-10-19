@@ -56,7 +56,11 @@ import type { Request } from 'express';
  * O encaixe com o tipo real é ESTRUTURAL: se a assinatura mudar lá, a atribuição
  * de `store` em `google.strategy.ts` para de compilar. É o aviso que importa.
  */
-type MetadadosOAuth = { authorizationURL: string; tokenURL: string; clientID: string };
+interface MetadadosOAuth {
+  authorizationURL: string;
+  tokenURL: string;
+  clientID: string;
+}
 type CallbackDeStore = (erro: Error | null, estado: string) => void;
 type CallbackDeVerify = (erro: Error | null, ok: boolean, info: unknown) => void;
 

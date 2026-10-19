@@ -83,7 +83,7 @@ function Segmentado<T extends string>({
 }: {
   rotulo: string;
   valor: T;
-  opcoes: Array<{ valor: T; texto: string; Icone?: typeof Grid2x2; dica?: string }>;
+  opcoes: { valor: T; texto: string; Icone?: typeof Grid2x2; dica?: string }[];
   onEscolher: (v: T) => void;
 }) {
   return (

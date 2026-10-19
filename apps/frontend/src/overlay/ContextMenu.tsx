@@ -1189,7 +1189,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
 
   const lista = submenu?.itens ?? acoes;
   const cabecalho = pedindo?.rotulo ?? submenu?.rotulo ?? titulo;
-  const podeVoltar = Boolean(submenu || pedindo);
+  const podeVoltar = Boolean(submenu ?? pedindo);
 
   const voltar = () => {
     // Do prompt de quantidade volta-se para o submenu que o continha, e não
@@ -1331,7 +1331,7 @@ export function ContextMenu({ room, setModoAnexar }: ContextMenuProps) {
               <span className="min-w-0 flex-1 truncate">{a.rotulo}</span>
               {/* A seta diz que o item ABRE algo em vez de agir. Sem ela, o
                   jogador clica esperando a ação e recebe outra lista. */}
-              {(a.itens || a.quantidade || a.pr) && (
+              {(a.itens ?? a.quantidade ?? a.pr) && (
                 <ChevronRight className="text-text-faint h-3.5 w-3.5 shrink-0" />
               )}
             </button>

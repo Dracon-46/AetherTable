@@ -72,7 +72,7 @@ export interface CardMeta {
    * token`). É o que o menu de botão direito oferece como "Criar ficha": o
    * gerador genérico obrigava a buscar "zombie" a cada Gravecrawler.
    */
-  fichas: Array<{ scryfallId: string; name: string }>;
+  fichas: { scryfallId: string; name: string }[];
 }
 
 // v2: `fichas` entrou no metadado. Com a chave antiga, as cartas já em cache
@@ -90,7 +90,7 @@ interface CatalogState {
   /** Ids que a Scryfall não reconheceu — não adianta pedir de novo. */
   ausentes: Record<string, true>;
   carregando: boolean;
-  hidratar: (ids: Array<string | undefined | null>) => void;
+  hidratar: (ids: (string | undefined | null)[]) => void;
 }
 
 // ─── Fila de hidratação ──────────────────────────────────────────────────────
@@ -101,8 +101,8 @@ let agendado: ReturnType<typeof setTimeout> | null = null;
 let drenando = false;
 
 interface RespostaScryfall {
-  data?: Array<Record<string, unknown>>;
-  not_found?: Array<{ id?: string }>;
+  data?: Record<string, unknown>[];
+  not_found?: { id?: string }[];
 }
 
 function texto(v: unknown): string {
@@ -145,7 +145,7 @@ const LAYOUTS_COM_VERSO = new Set([
 
 function normalizar(bruto: Record<string, unknown>): CardMeta {
   const facesBrutas = Array.isArray(bruto.card_faces)
-    ? (bruto.card_faces as Array<Record<string, unknown>>)
+    ? (bruto.card_faces as Record<string, unknown>[])
     : [];
   const id = texto(bruto.id);
   const layout = texto(bruto.layout);
@@ -202,7 +202,7 @@ function fichasDe(bruto: Record<string, unknown>, id: string): CardMeta['fichas'
   if (!Array.isArray(bruto.all_parts)) return [];
   const vistas = new Set<string>();
   const saida: CardMeta['fichas'] = [];
-  for (const parte of bruto.all_parts as Array<Record<string, unknown>>) {
+  for (const parte of bruto.all_parts as Record<string, unknown>[]) {
     const pid = texto(parte.id);
     const nome = texto(parte.name);
     if (parte.component !== 'token' || !pid || pid === id || vistas.has(nome)) continue;
@@ -254,7 +254,17 @@ export const useCardCatalog = create<CatalogState>((set, get) => ({
       pendentes.add(id);
       novos += 1;
     }
-    if (novos === 0) return;
+    /**
+     * ─── IDS PRESOS DEPOIS DE UMA FALHA DE REDE ─────────────────────────
+     *
+     * A drenagem que falha para no meio, e o que ela não chegou a pedir fica
+     * em `pendentes`. Sair só por "nenhum id novo" deixava esses ids presos
+     * para sempre: quem os pedia de novo caía no `pendentes.has` acima, não
+     * contava como novo, e nada voltava a agendar a drenagem. As cartas ficavam
+     * sem nome até recarregar a página. Sem id novo, só sai se não há o que
+     * drenar ou se uma drenagem já está a caminho.
+     */
+    if (novos === 0 && (pendentes.size === 0 || agendado !== null || drenando)) return;
 
     if (agendado) clearTimeout(agendado);
     agendado = setTimeout(() => {
@@ -311,8 +321,9 @@ async function drenar(
         set({ cartas, ausentes: { ...get().ausentes, ...naoAchados } });
         gravarCache(cartas);
       } catch (erro) {
-        // Falha de rede não pode virar loop: os ids voltam para a fila UMA vez
-        // e a drenagem para. O próximo `hidratar` tenta de novo.
+        // Falha de rede não pode virar loop: a drenagem para, o lote que falhou
+        // fica livre para ser pedido de novo e o resto espera em `pendentes`.
+        // O próximo `hidratar` retoma.
         console.warn('[catalog] Falha ao hidratar cartas:', erro);
         lote.forEach((id) => emVoo.delete(id));
         break;
@@ -347,7 +358,7 @@ export function useCardMeta(scryfallId?: string | null): CardMeta | null {
 }
 
 /** Hidrata um conjunto de ids. Seguro para chamar a cada render. */
-export function useHidratarCartas(ids: Array<string | undefined | null>): void {
+export function useHidratarCartas(ids: (string | undefined | null)[]): void {
   const hidratar = useCardCatalog((s) => s.hidratar);
   // A chave estável evita reexecutar quando só a ordem do array muda.
   const chave = ids.filter(Boolean).sort().join(',');

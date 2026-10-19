@@ -101,9 +101,14 @@ export const ArrangePeekedIntent = z.object({
   aleatorio: z.boolean().default(false),
 });
 
+/**
+ * `to` são sessionIds: teto de tamanho como o das outras revelações. Sem ele,
+ * sete strings de qualquer tamanho iam parar em `revealedTo`, que viaja em todo
+ * patch da carta. O handler ainda filtra quem existe na mesa.
+ */
 export const RevealIntent = z.object({
   ids: z.array(entityId).min(1).max(100),
-  to: z.union([z.literal('ALL'), z.array(z.string().min(1)).min(1).max(7)]),
+  to: z.union([z.literal('ALL'), z.array(z.string().min(1).max(64)).min(1).max(7)]),
 });
 
 export const UnrevealIntent = z.object({ ids: z.array(entityId).min(1).max(100) });
@@ -140,11 +145,17 @@ export const AddCounterIntent = z.object({
   amount: z.number().int().min(-99).max(99),
 });
 
+/**
+ * Os quatro textos da ficha iam para o estado sem teto: um `name` de 4 KB ou
+ * um `scryfallId` arbitrário (que o cliente usa para buscar imagem) a cada
+ * ficha, vinte fichas por intenção. `scryfallId` é o id da Scryfall, sempre
+ * uuid; P/T de ficha cabe em quatro caracteres (`*`, `1+*`, `X`).
+ */
 export const CreateTokenIntent = z.object({
-  scryfallId: z.string().optional(),
-  name: z.string().optional(),
-  power: z.string().optional(),
-  toughness: z.string().optional(),
+  scryfallId: z.string().uuid().optional(),
+  name: z.string().max(120).optional(),
+  power: z.string().max(4).optional(),
+  toughness: z.string().max(4).optional(),
   amount: z.number().int().min(1).max(20).default(1),
   x: coord,
   y: coord,

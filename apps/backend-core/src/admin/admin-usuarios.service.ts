@@ -213,14 +213,19 @@ export class AdminUsuariosService {
   async banir(req: RequisicaoAdmin, id: string, dto: MotivoDto) {
     const alvo = await this.exigirAlvo(req, id);
     if (alvo.deletedAt) throw new BadRequestException('Esta conta já está banida.');
-    await this.exigirOutroAdminRestante(alvo);
 
-    await this.prisma.user.update({
-      where: { id },
-      // Mesmo corte de sessão da suspensão: banir sem derrubar os tokens
-      // deixava a conta banida usando a API até o token expirar sozinho.
-      data: { deletedAt: new Date(), suspensionReason: dto.motivo, tokensValidosApos: new Date() },
-    });
+    await this.comTravaDoUltimoAdmin(alvo, (tx) =>
+      tx.user.update({
+        where: { id },
+        // Mesmo corte de sessão da suspensão: banir sem derrubar os tokens
+        // deixava a conta banida usando a API até o token expirar sozinho.
+        data: {
+          deletedAt: new Date(),
+          suspensionReason: dto.motivo,
+          tokensValidosApos: new Date(),
+        },
+      }),
+    );
 
     await this.auditoria.registrar(req, {
       action: AdminAction.USER_BAN,
@@ -261,11 +266,12 @@ export class AdminUsuariosService {
     if (alvo.role === dto.papel) {
       throw new BadRequestException(`A conta já é ${dto.papel}.`);
     }
-    if (alvo.role === Role.ADMIN && dto.papel !== Role.ADMIN) {
-      await this.exigirOutroAdminRestante(alvo);
-    }
 
-    await this.prisma.user.update({ where: { id }, data: { role: dto.papel } });
+    // Promover não tira admin de ninguém; só despromover passa pela trava.
+    // `comTravaDoUltimoAdmin` não faz nada a mais quando o alvo não é ADMIN.
+    await this.comTravaDoUltimoAdmin(alvo, (tx) =>
+      tx.user.update({ where: { id }, data: { role: dto.papel } }),
+    );
 
     await this.auditoria.registrar(req, {
       action: AdminAction.USER_ROLE_CHANGE,
@@ -546,14 +552,19 @@ export class AdminUsuariosService {
     await this.exigirOutroAdminRestante(alvo);
 
     /**
-     * A auditoria e registrada ANTES do delete.
+     * A auditoria e registrada ANTES do delete — e, se ela falhar, o delete
+     * nao acontece.
      *
      * Depois seria tarde: se o `delete` falhar no meio (uma FK inesperada, uma
      * queda de conexao), o log ja existe e diz o que se tentou fazer. O
      * inverso — apagar e so entao registrar — deixa a possibilidade de a conta
      * sumir sem nenhum registro de quem a apagou.
+     *
+     * Era `registrar`, que engole a falha: com a tabela de auditoria fora do
+     * ar, o expurgo seguia e a conta sumia exatamente sem o registro que esta
+     * ordem existe para garantir. `registrarOuFalhar` propaga.
      */
-    await this.auditoria.registrar(req, {
+    await this.auditoria.registrarOuFalhar(req, {
       action: AdminAction.USER_PURGE,
       targetType: 'user',
       targetId: id,
@@ -562,7 +573,7 @@ export class AdminUsuariosService {
       metadata: { email: alvo.email },
     });
 
-    await this.prisma.user.delete({ where: { id } });
+    await this.comTravaDoUltimoAdmin(alvo, (tx) => tx.user.delete({ where: { id } }));
 
     return { sucesso: true, username: alvo.username };
   }
@@ -609,10 +620,41 @@ export class AdminUsuariosService {
     return alvo;
   }
 
+  /**
+   * Trava 3 aplicada a uma escrita: contar os outros administradores e
+   * escrever na MESMA transação serializável.
+   *
+   * Contados fora da transação, dois administradores despromovendo (ou
+   * banindo) um ao outro ao mesmo tempo viam, cada um, o outro ainda ativo — e
+   * os dois seguiam. A plataforma terminava sem administrador nenhum, que é o
+   * resultado que esta trava existe para impedir. Serializável, o Postgres
+   * percebe que cada transação leu o que a outra escreveu e derruba uma delas
+   * (P2034, que o filtro global traduz em 409 "tente de novo").
+   *
+   * Alvo que não é ADMIN não tira admin de ninguém: escreve direto, sem
+   * transação.
+   */
+  private async comTravaDoUltimoAdmin<T>(
+    alvo: { id: string; role: Role },
+    escrever: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    if (alvo.role !== Role.ADMIN) return escrever(this.prisma);
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.exigirOutroAdminRestante(alvo, tx);
+        return escrever(tx);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
   /** Trava 3: a plataforma nunca fica sem administrador. */
-  private async exigirOutroAdminRestante(alvo: { id: string; role: Role }) {
+  private async exigirOutroAdminRestante(
+    alvo: { id: string; role: Role },
+    prisma: Prisma.TransactionClient = this.prisma,
+  ) {
     if (alvo.role !== Role.ADMIN) return;
-    const outros = await this.prisma.user.count({
+    const outros = await prisma.user.count({
       where: { role: Role.ADMIN, deletedAt: null, id: { not: alvo.id } },
     });
     if (outros === 0) {

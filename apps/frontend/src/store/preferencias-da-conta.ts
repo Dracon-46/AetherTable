@@ -72,7 +72,7 @@ export function lerPreferenciasDaMesa(): PreferenciasDeMesa {
  */
 export function aplicarPreferenciasDaMesa(salvas: unknown): void {
   if (!salvas || typeof salvas !== 'object') return;
-  if (Object.keys(salvas as Record<string, unknown>).length === 0) return;
+  if (Object.keys(salvas).length === 0) return;
   const p = normalizarPreferenciasDeMesa(salvas);
   useUIStore.setState({
     fatorCarta: p.fatorCarta,

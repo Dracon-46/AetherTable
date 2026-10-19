@@ -32,7 +32,7 @@ export interface CartaDoDesafio {
   released_at?: string;
   edhrec_rank?: number;
   prices?: { usd?: string | null; usd_foil?: string | null };
-  card_faces?: Array<{
+  card_faces?: {
     name?: string;
     type_line?: string;
     oracle_text?: string;
@@ -40,7 +40,7 @@ export interface CartaDoDesafio {
     colors?: string[];
     power?: string;
     toughness?: string;
-  }>;
+  }[];
 }
 
 export type Sorteador = () => number;

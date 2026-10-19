@@ -51,6 +51,13 @@ function traduzirErroDoPrisma(erro: Prisma.PrismaClientKnownRequestError): HttpE
       return new ConflictException('Já existe um registro com estes dados.');
     case 'P2025':
       return new NotFoundException('O registro não existe mais.');
+    // Conflito de escrita numa transação serializável: o Postgres derrubou
+    // esta para a outra seguir (é o que a trava do último administrador usa).
+    // Tentar de novo resolve, e quem tenta de novo é a pessoa.
+    case 'P2034':
+      return new ConflictException(
+        'Outra alteração aconteceu ao mesmo tempo que esta. Confira o estado atual e tente de novo.',
+      );
     default:
       return null;
   }

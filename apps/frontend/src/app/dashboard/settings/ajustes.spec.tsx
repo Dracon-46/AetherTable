@@ -28,6 +28,7 @@ function resposta(status: number, corpo: unknown) {
     status,
     headers: { get: () => null },
     json: async () => corpo,
+    text: async () => JSON.stringify(corpo),
   };
 }
 
@@ -69,6 +70,18 @@ describe('Ajustes → salvar perfil', () => {
     const corpo = JSON.parse(chamadas()[0][1].body as string);
     expect(corpo).not.toHaveProperty('displayName');
     expect(corpo.username).toBe('antigo');
+  });
+
+  it('sessão vencida (401) desloga e diz por quê', async () => {
+    global.fetch = jest.fn(async () =>
+      resposta(401, { message: 'Unauthorized' }),
+    ) as unknown as typeof fetch;
+
+    render(<SettingsPage />);
+    fireEvent.submit(screen.getByDisplayValue('antigo').closest('form')!);
+
+    expect(await screen.findByText('Erro: Sua sessão expirou. Entre de novo.')).toBeInTheDocument();
+    expect(useAuthStore.getState().accessToken).toBeNull();
   });
 
   it('a recusa do servidor mostra o campo e o motivo, não "Dados inválidos."', async () => {

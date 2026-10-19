@@ -10,13 +10,14 @@
  *     mesmo deck de novo REENCONTRA a cópia em vez de criar outra.
  */
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DecksIniciaisService } from './decks-iniciais.service.js';
+import { MAXIMO_DE_DECKS_POR_CONTA } from './limites-de-conta.js';
 import { DECKS_INICIAIS } from './decks-iniciais.dados.js';
 
 function bancoFalso() {
-  const decks: Array<Record<string, unknown>> = [];
-  const linhas: Array<Record<string, unknown>> = [];
+  const decks: Record<string, unknown>[] = [];
+  const linhas: Record<string, unknown>[] = [];
   const ref: { tx?: unknown } = {};
   const prisma = {
     deck: {
@@ -24,10 +25,14 @@ function bancoFalso() {
         async ({ where }: { where: { userId: string; name: string; description: string } }) =>
           decks.find(
             (d) =>
-              d['userId'] === where.userId &&
-              d['name'] === where.name &&
-              d['description'] === where.description,
+              d.userId === where.userId &&
+              d.name === where.name &&
+              d.description === where.description,
           ) ?? null,
+      ),
+      count: jest.fn(
+        async ({ where }: { where: { userId: string } }) =>
+          decks.filter((d) => d.userId === where.userId).length,
       ),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const novo = { id: `deck-${decks.length + 1}`, ...data };
@@ -36,7 +41,7 @@ function bancoFalso() {
       }),
     },
     deckCard: {
-      createMany: jest.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+      createMany: jest.fn(async ({ data }: { data: Record<string, unknown>[] }) => {
         linhas.push(...data);
         return { count: data.length };
       }),
@@ -46,7 +51,7 @@ function bancoFalso() {
     ),
   };
   ref.tx = prisma;
-  return { svc: new DecksIniciaisService(prisma as never), decks, linhas };
+  return { svc: new DecksIniciaisService(prisma as never), prisma, decks, linhas };
 }
 
 describe('os dados dos decks iniciais', () => {
@@ -101,6 +106,27 @@ describe('DecksIniciaisService', () => {
 
     expect(segundo.id).toBe(primeiro.id);
     expect(decks).toHaveLength(1);
+  });
+
+  it(`no teto de ${MAXIMO_DE_DECKS_POR_CONTA} decks, a cópia nova não nasce`, async () => {
+    const { svc, prisma, decks } = bancoFalso();
+    prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA);
+
+    await expect(svc.usar('conta-1', DECKS_INICIAIS[0]!.codigo)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(decks).toHaveLength(0);
+  });
+
+  it('reencontrar a cópia que já existe não depende de vaga', async () => {
+    const { svc, prisma } = bancoFalso();
+    const codigo = DECKS_INICIAIS[0]!.codigo;
+    const primeiro = (await svc.usar('conta-1', codigo)) as { id: string };
+
+    prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA);
+    const segundo = (await svc.usar('conta-1', codigo)) as { id: string };
+
+    expect(segundo.id).toBe(primeiro.id);
   });
 
   it('código que não existe é 404', async () => {

@@ -12,6 +12,7 @@
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ExplorarService } from './explorar.service.js';
+import { MAXIMO_DE_DECKS_POR_CONTA } from './limites-de-conta.js';
 
 const DONO = 'dono-1';
 const EU = 'eu-1';
@@ -21,8 +22,8 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
   const publico = opcoes.publico ?? true;
   let likes = new Set<string>();
   const deck = { id: DECK, userId: DONO, likeCount: 0 };
-  const criados: Array<Record<string, unknown>> = [];
-  const linhasCriadas: Array<Record<string, unknown>> = [];
+  const criados: Record<string, unknown>[] = [];
+  const linhasCriadas: Record<string, unknown>[] = [];
 
   // A transação recebe o próprio falso como `tx`, como o Prisma faz. Declarado
   // antes para o tipo do objeto não depender dele mesmo.
@@ -51,10 +52,12 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
           : {}),
       })),
       update: jest.fn(async ({ data }: { data: { likeCount: Record<string, number> } }) => {
-        if (data.likeCount['increment']) deck.likeCount += data.likeCount['increment'];
-        if (data.likeCount['decrement']) deck.likeCount -= data.likeCount['decrement'];
+        if (data.likeCount.increment) deck.likeCount += data.likeCount.increment;
+        if (data.likeCount.decrement) deck.likeCount -= data.likeCount.decrement;
         return { likeCount: deck.likeCount };
       }),
+      // Decks de quem copia. Um só por padrão; o teste de teto sobe o número.
+      count: jest.fn().mockResolvedValue(1),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const novo = { id: 'deck-novo', ...data };
         criados.push(novo);
@@ -62,7 +65,7 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
       }),
     },
     deckLike: {
-      createMany: jest.fn(async ({ data }: { data: Array<{ userId: string }> }) => {
+      createMany: jest.fn(async ({ data }: { data: { userId: string }[] }) => {
         const antes = likes.size;
         for (const d of data) likes.add(d.userId);
         return { count: likes.size - antes };
@@ -74,7 +77,7 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
       findUnique: jest.fn(async () => null),
     },
     deckCard: {
-      createMany: jest.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+      createMany: jest.fn(async ({ data }: { data: Record<string, unknown>[] }) => {
         linhasCriadas.push(...data);
         return { count: data.length };
       }),
@@ -94,7 +97,16 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
   };
 
   ref.tx = prisma;
-  const decks = { getDeckById: jest.fn(async () => ({ id: DECK, userId: DONO, cards: [] })) };
+  // O deck como `getDeckById` o devolve: com a pasta e o favorito do DONO.
+  const decks = {
+    getDeckById: jest.fn(async () => ({
+      id: DECK,
+      userId: DONO,
+      folder: 'Proxies para testar',
+      isFavorite: true,
+      cards: [],
+    })),
+  };
   const svc = new ExplorarService(prisma as never, decks as never);
   return { svc, prisma, deck, criados, linhasCriadas, curtidas: () => likes.size };
 }
@@ -139,8 +151,19 @@ describe('ExplorarService.ver', () => {
   it('mostra o nome do dono e esconde o id dele', async () => {
     const banco = bancoFalso();
     const deck = (await banco.svc.ver(EU, DECK)) as Record<string, unknown>;
-    expect(deck['dono']).toBe('gaspare');
+    expect(deck.dono).toBe('gaspare');
     expect(deck).not.toHaveProperty('userId');
+  });
+
+  /**
+   * A pasta e o favorito são a organização privada do dono. Saíam na resposta
+   * porque `ver` devolvia o deck inteiro menos o `userId`.
+   */
+  it('não mostra a pasta nem o favorito do dono', async () => {
+    const banco = bancoFalso();
+    const deck = (await banco.svc.ver(EU, DECK)) as Record<string, unknown>;
+    expect(deck).not.toHaveProperty('folder');
+    expect(deck).not.toHaveProperty('isFavorite');
   });
 });
 
@@ -149,10 +172,18 @@ describe('ExplorarService.copiar', () => {
     const banco = bancoFalso();
     const novo = (await banco.svc.copiar(EU, DECK)) as Record<string, unknown>;
 
-    expect(novo['userId']).toBe(EU);
+    expect(novo.userId).toBe(EU);
     expect(novo).not.toHaveProperty('isPublic', true);
-    expect(String(novo['name'])).toContain('de gaspare');
+    expect(String(novo.name)).toContain('de gaspare');
     expect(banco.linhasCriadas).toHaveLength(2);
-    expect(banco.linhasCriadas.every((l) => l['deckId'] === 'deck-novo')).toBe(true);
+    expect(banco.linhasCriadas.every((l) => l.deckId === 'deck-novo')).toBe(true);
+  });
+
+  it(`no teto de ${MAXIMO_DE_DECKS_POR_CONTA} decks, a cópia não nasce`, async () => {
+    const banco = bancoFalso();
+    banco.prisma.deck.count.mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA);
+
+    await expect(banco.svc.copiar(EU, DECK)).rejects.toBeInstanceOf(BadRequestException);
+    expect(banco.criados).toHaveLength(0);
   });
 });

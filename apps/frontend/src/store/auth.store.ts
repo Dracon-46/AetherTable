@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { armazenamentoSeguro } from './storage';
 
-interface UserData {
+export interface UserData {
   id: string;
   username: string;
   email?: string;
@@ -13,6 +13,12 @@ interface UserData {
    * trocar o apelido, os Ajustes reabriam com o ANTIGO e o reenviavam.
    */
   displayName?: string | null;
+}
+
+/** O que `POST /auth/login` e `POST /auth/register` devolvem quando dão certo. */
+export interface SessaoDaApi {
+  accessToken: string;
+  user: UserData;
 }
 
 interface AuthState {

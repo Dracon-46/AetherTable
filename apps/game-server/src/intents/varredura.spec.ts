@@ -56,7 +56,7 @@ function ctx(state: RoomState, sid: string, historico?: HistoricoDeComandos): In
   return {
     state,
     client: { sessionId: sid } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: () => {},
     broadcast: () => {},
     log: () => {},
@@ -200,7 +200,7 @@ describe('anexos, setas e contadores', () => {
       entityIds: [c.id],
       name: '+1/+1',
       amount: -1,
-    } as never);
+    });
     expect(c.counters.has('+1/+1')).toBe(false);
   });
 
@@ -281,30 +281,37 @@ describe('partida', () => {
     const ficha = poe(state, U(21), 'a', 'BATTLEFIELD', { isToken: true });
     const cmd = poe(state, U(22), 'a', 'GRAVEYARD', { isCommander: true });
 
-    REGISTRY.INTENT_RESET_MATCH.executa(ctx(state, 'a'), {} as never);
+    REGISTRY.INTENT_RESET_MATCH.executa(ctx(state, 'a'), {});
 
     expect(state.cards.has(ficha.id)).toBe(false);
-    expect(lista(state, 'a', 'LIBRARY').sort()).toEqual([campo.id, mao.id].sort());
+    // As mesmas CARTAS voltam ao grimório, com ids novos: a partida anterior
+    // mostrou quase todas, e o reset embaralha (`renovarIds`).
+    const grimorio = lista(state, 'a', 'LIBRARY');
+    expect(grimorio.map((id) => state.cards.get(id)!.scryfallId).sort()).toEqual(
+      [campo.scryfallId, mao.scryfallId].sort(),
+    );
+    expect(state.cards.has(campo.id) || state.cards.has(mao.id)).toBe(false);
+    expect(grimorio.every((id) => !state.cards.get(id)!.isTapped)).toBe(true);
+    // O comandante não é embaralhado: volta ao comando com o mesmo id.
     expect(lista(state, 'a', 'COMMAND')).toEqual([cmd.id]);
     expect(lista(state, 'a', 'BATTLEFIELD')).toEqual([]);
-    expect(campo.isTapped).toBe(false);
     expect(state.players.get('a')!.handCount).toBe(0);
     expect(state.players.get('a')!.libraryCount).toBe(2);
   });
 
   it('ordem de turno com id repetido é recusada', () => {
     const state = montarMesa(['a', 'b', 'c']);
-    REGISTRY.INTENT_SET_TURN_ORDER.executa(ctx(state, 'a'), { order: ['b', 'c', 'c'] } as never);
+    REGISTRY.INTENT_SET_TURN_ORDER.executa(ctx(state, 'a'), { order: ['b', 'c', 'c'] });
     const assentos = new Set(Array.from(state.players.values()).map((p) => p.seat));
     expect(assentos.size).toBe(3);
   });
 
   it('quem volta dos mortos depois do fim reabre a partida', () => {
     const state = montarMesa(['a', 'b']);
-    REGISTRY.INTENT_SET_LIFE.executa(ctx(state, 'b'), { absolute: 0 } as never);
+    REGISTRY.INTENT_SET_LIFE.executa(ctx(state, 'b'), { absolute: 0 });
     expect(state.phase).toBe('CLOSING');
 
-    REGISTRY.INTENT_SET_LIFE.executa(ctx(state, 'b'), { absolute: 5 } as never);
+    REGISTRY.INTENT_SET_LIFE.executa(ctx(state, 'b'), { absolute: 5 });
     expect(state.phase).toBe('PLAYING');
   });
 });

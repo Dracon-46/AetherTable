@@ -2,15 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
-import { API_URL } from '@/lib/api';
-import { apelidoParaEnvio } from '@/lib/perfil';
-import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
+import { apelidoParaEnvio, type PerfilDaConta, type PerfilSalvo } from '@/lib/perfil';
+import { api, mensagemDaApi } from '@/lib/fetcher';
 import { User, Save, Loader2, Trophy, Clock } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProfilePage() {
   const { accessToken, setAuth, user: sessionUser } = useAuthStore();
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<PerfilDaConta | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const [displayName, setDisplayName] = useState('');
@@ -22,22 +21,20 @@ export default function ProfilePage() {
     async function fetchProfile() {
       if (!accessToken) return;
       try {
-        const res = await fetch(`${API_URL}/users/me`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data);
-          setDisplayName(data.displayName || '');
-          setUsername(data.username || '');
-        }
+        // Pelo `api()`, e não por `fetch` cru: um 401 aqui desloga, em vez de
+        // deixar a tela de perfil vazia com uma sessão que já não vale.
+        const data = await api<PerfilDaConta>('/users/me');
+        setProfile(data);
+        setDisplayName(data.displayName || '');
+        setUsername(data.username || '');
       } catch (err) {
         console.error(err);
       } finally {
         setIsLoading(false);
       }
     }
-    fetchProfile();
+    // A falha já é tratada (e registrada) dentro de `fetchProfile`.
+    void fetchProfile();
   }, [accessToken]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -46,46 +43,31 @@ export default function ProfilePage() {
     setMessage({ text: '', type: '' });
 
     try {
-      const res = await fetch(`${API_URL}/users/me`, {
+      const updatedUser = await api<PerfilSalvo>('/users/me', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
         // Ver `apelidoParaEnvio`: o apelido em branco ia como `''` e o servidor
         // recusava o formulário inteiro, inclusive a troca de nome de usuário.
-        body: JSON.stringify({
+        body: {
           username,
           displayName: apelidoParaEnvio(displayName, profile?.displayName),
-        }),
+        },
       });
+      setProfile((p) => ({ ...p, ...updatedUser }));
+      setMessage({ text: 'Perfil atualizado com sucesso!', type: 'success' });
 
-      if (res.ok) {
-        const updatedUser = await res.json();
-        setProfile((p: any) => ({ ...p, ...updatedUser }));
-        setMessage({ text: 'Perfil atualizado com sucesso!', type: 'success' });
-
-        // Atualiza a sessão
-        if (sessionUser && accessToken) {
-          setAuth(accessToken, {
-            ...sessionUser,
-            username: updatedUser.username,
-            displayName: updatedUser.displayName ?? null,
-            avatarUrl: updatedUser.avatarUrl || '',
-          });
-        }
-      } else {
-        const err = await res.json();
-        // `err.message` de um 400 de validação é sempre "Dados inválidos.";
-        // o campo e o motivo vêm em `erros[]`. Ver `mensagemDoCorpoDeErro`.
-        setMessage({
-          text: mensagemDoCorpoDeErro(err) ?? 'Erro ao atualizar perfil.',
-          type: 'error',
+      // Atualiza a sessão
+      if (sessionUser && accessToken) {
+        setAuth(accessToken, {
+          ...sessionUser,
+          username: updatedUser.username,
+          displayName: updatedUser.displayName ?? null,
+          avatarUrl: updatedUser.avatarUrl || '',
         });
       }
     } catch (err) {
-      console.error(err);
-      setMessage({ text: 'Falha na conexão.', type: 'error' });
+      // O 400 de validação traz o campo e o motivo (`mensagemDoCorpoDeErro`,
+      // aplicado pelo `api()`); o 401 já deslogou; sem rede, falha de conexão.
+      setMessage({ text: mensagemDaApi(err), type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -202,7 +184,7 @@ export default function ProfilePage() {
                 <div>
                   <p className="text-text-muted text-sm">Partidas Jogadas</p>
                   <p className="text-text text-2xl font-bold">
-                    {profile?._count?.participions || 0}
+                    {profile?._count?.participions ?? 0}
                   </p>
                 </div>
               </div>

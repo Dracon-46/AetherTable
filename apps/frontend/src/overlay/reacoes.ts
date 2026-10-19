@@ -17,5 +17,5 @@ export const ROTULO_DA_REACAO: Readonly<Record<Reacao, { emoji: string; rotulo: 
   GG: { emoji: '🤝', rotulo: 'GG' },
 };
 
-export const LISTA_DE_REACOES: ReadonlyArray<{ tipo: Reacao; emoji: string; rotulo: string }> =
+export const LISTA_DE_REACOES: readonly { tipo: Reacao; emoji: string; rotulo: string }[] =
   REACOES.map((tipo) => ({ tipo, ...ROTULO_DA_REACAO[tipo] }));

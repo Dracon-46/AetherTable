@@ -100,14 +100,14 @@ export interface DenunciaDetalhada extends Denuncia {
   snapshot: LinhaDoSnapshot[];
   abertasContraEle: number;
   totalContraEle: number;
-  outrasDenuncias: Array<{
+  outrasDenuncias: {
     id: string;
     reason: string;
     status: StatusDeDenuncia;
     createdAt: string;
     roomCode: string | null;
     reporter: { id: string; username: string };
-  }>;
+  }[];
 }
 
 export interface Auditoria {

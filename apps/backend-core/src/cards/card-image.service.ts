@@ -49,6 +49,20 @@ const ORCAMENTO_BYTES = Math.max(8, ORCAMENTO_MB) * 1024 * 1024;
  */
 const MAX_SIMULTANEAS = 8;
 
+/**
+ * Teto da fila de ESPERA por um dos oito downloads.
+ *
+ * A rota é pública e cada UUID aleatório vira um download novo (o cache e a
+ * deduplicação só valem para ids repetidos). Sem teto, quem pedisse milhares
+ * de ids inventados empilhava promessas sem fim — memória que cresce e uma
+ * espera que a arte da mesa de quem está jogando passa a dividir. 256 cobre
+ * com folga o primeiro render de duas ou três mesas cheias ao mesmo tempo.
+ *
+ * Passado o teto, a resposta é a mesma de "imagem indisponível": o cliente já
+ * desenha o verso no lugar, e o próximo render pede de novo.
+ */
+export const MAX_NA_FILA = 256;
+
 /** Uma carta de face única devolve 404 em `/back/`. Não vale repetir a pergunta. */
 const TTL_NEGATIVO_MS = 10 * 60 * 1000;
 
@@ -87,7 +101,7 @@ export class CardImageService {
   private readonly emVoo = new Map<string, Promise<ImagemDeCarta | null>>();
 
   private ativas = 0;
-  private readonly fila: Array<() => void> = [];
+  private readonly fila: (() => void)[] = [];
 
   /** Valida e normaliza os parâmetros da rota. `null` = pedido inválido. */
   static validar(
@@ -129,6 +143,9 @@ export class CardImageService {
 
     const jaEmVoo = this.emVoo.get(chave);
     if (jaEmVoo) return jaEmVoo;
+
+    // Fila cheia: indisponível agora, sem entrar na denylist de 404.
+    if (this.fila.length >= MAX_NA_FILA) return null;
 
     const promessa = this.baixar(chave, id, qualidade, face).finally(() => {
       this.emVoo.delete(chave);

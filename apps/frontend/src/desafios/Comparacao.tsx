@@ -56,11 +56,8 @@ export function Comparacao({ regra }: { regra: RegraDeComparacao }) {
     void novoPar();
   }, [novoPar]);
 
-  const vencedora = par
-    ? regra.valor(par[0])! > regra.valor(par[1])! === regra.maiorVence
-      ? 0
-      : 1
-    : null;
+  const primeiraTemMais = par !== null && regra.valor(par[0])! > regra.valor(par[1])!;
+  const vencedora = par ? (primeiraTemMais === regra.maiorVence ? 0 : 1) : null;
   const acertou = escolha !== null && escolha === vencedora;
 
   const escolher = (i: 0 | 1) => {

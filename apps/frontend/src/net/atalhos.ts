@@ -60,7 +60,7 @@ import type { RoomState } from './schema/RoomState';
  * tabuleiro implementa em `GameBoard`, e oferecer um editor para eles seria
  * oferecer um controle que não liga nada.
  */
-export const GESTOS_DE_MOUSE: ReadonlyArray<{ gesto: string; descricao: string }> = [
+export const GESTOS_DE_MOUSE: readonly { gesto: string; descricao: string }[] = [
   { gesto: 'Alt + clique', descricao: 'Inspecionar a carta / apontar um ping' },
   { gesto: 'Shift + clique', descricao: 'Somar à seleção' },
   { gesto: 'Duplo clique', descricao: 'Virar / desvirar a permanente' },

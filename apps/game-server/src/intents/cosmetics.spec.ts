@@ -99,14 +99,14 @@ describe('INTENT_SET_COSMETICS — grava no estado da mesa', () => {
     const ctx = {
       state,
       client: { sessionId: 'a' } as IntentContext['client'],
-      clients: [] as unknown as IntentContext['clients'],
+      clients: [],
       send: () => {},
       broadcast: () => {},
       log: () => {},
       desfazer: () => null,
       expulsar: () => {},
     } as IntentContext;
-    REGISTRY.INTENT_SET_COSMETICS.executa(ctx, SetCosmeticsIntent.parse(payload) as never);
+    REGISTRY.INTENT_SET_COSMETICS.executa(ctx, SetCosmeticsIntent.parse(payload));
     return p;
   }
 

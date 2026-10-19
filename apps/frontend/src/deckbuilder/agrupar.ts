@@ -209,7 +209,7 @@ export function agruparCartas(
   cartas: readonly DeckCarta[],
   criterio: Criterio,
   ordem: Ordenacao = 'nome',
-): Array<{ nome: string; cartas: DeckCarta[]; total: number; preco: number }> {
+): { nome: string; cartas: DeckCarta[]; total: number; preco: number }[] {
   const ordenadas = ordenarParaExibir(cartas, ordem);
   const somar = (lista: DeckCarta[]) => ({
     total: lista.reduce((t, c) => t + c.quantity, 0),

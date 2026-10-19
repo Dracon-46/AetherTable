@@ -30,8 +30,9 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '../store/auth.store';
+import { useAuthStore, type UserData } from '../store/auth.store';
 import { API_URL } from '@/lib/api';
+import { consumirMarcaDeOAuth } from '@/lib/oauth';
 
 export function OAuthTokenCapture() {
   const router = useRouter();
@@ -72,22 +73,39 @@ export function OAuthTokenCapture() {
     if (!fragmento.startsWith('#token=')) return;
 
     jaProcessou.current = true;
-    const token = decodeURIComponent(fragmento.slice('#token='.length));
 
     /**
-     * APAGA O FRAGMENTO ANTES DE QUALQUER `await`.
+     * APAGA O FRAGMENTO ANTES DE TUDO.
      *
      * Deixar a limpeza para depois da requisição manteria o token na barra de
      * endereço durante toda a ida ao servidor — justamente a janela em que
-     * alguém olha a tela por cima do ombro ou tira um screenshot.
+     * alguém olha a tela por cima do ombro ou tira um screenshot. E vem antes
+     * das recusas abaixo: um fragmento recusado que ficasse na URL seria
+     * reprocessado (e recusado) a cada F5.
      */
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    // Sem a marca, o token não foi pedido por esta aba: é um link de fora
+    // tentando abrir a sessão de outra conta aqui. Ver `lib/oauth.ts`.
+    if (!consumirMarcaDeOAuth()) {
+      console.warn('[oauth] #token= recusado: o login não começou nesta aba.');
+      return;
+    }
+
+    let token: string;
+    try {
+      token = decodeURIComponent(fragmento.slice('#token='.length));
+    } catch {
+      // `#token=%` lançava URIError no efeito e derrubava o app inteiro.
+      console.warn('[oauth] #token= malformado, ignorado.');
+      return;
+    }
 
     // Estava com `http://localhost:3333/api/users/me` escrito à mão: em
     // qualquer ambiente que não fosse a máquina do dev, o login por OAuth
     // redirecionava e morria aqui, em silêncio.
     fetch(`${API_URL}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => (res.ok ? (res.json() as Promise<UserData & { statusCode?: number }>) : null))
       .then((userData) => {
         if (!montado.current || !userData || userData.statusCode) return;
         setAuth(token, userData);

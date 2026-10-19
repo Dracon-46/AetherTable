@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Publica `docs/wiki/` na Wiki do GitHub.
+#
+# A Wiki do GitHub é um repositório git à parte, editável pelo navegador, sem
+# PR e sem revisão. Editada ali, ela diverge do código em silêncio, e ninguém
+# vê a mudança no diff que a motivou. Por isso a fonte da Wiki mora AQUI, em
+# `docs/wiki/`, e passa pela mesma revisão que o código; este job só a copia.
+#
+# Consequência: edição feita direto na Wiki é sobrescrita no próximo push.
+#
+# PRÉ-REQUISITO, UMA VEZ SÓ: a Wiki precisa estar ligada (Settings → Features
+# → Wikis) e ter UMA página criada à mão. O GitHub só cria o repositório git da
+# Wiki depois da primeira página, e antes disso este push falha com "Repository
+# not found".
+# ─────────────────────────────────────────────────────────────────────────────
+name: Wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/wiki/**', '.github/workflows/wiki.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    name: Publicar a Wiki
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # O repositório da Wiki é escrito com o GITHUB_TOKEN deste repositório.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Copiar docs/wiki para a Wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # O token vai no cabeçalho, não na URL: URL com credencial aparece em
+          # mensagem de erro do git.
+          AUTH="Authorization: Basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c http.extraheader="$AUTH" clone --depth 1 "https://github.com/$REPO.wiki.git" "$RUNNER_TEMP/wiki"
+          rsync -a --delete --exclude '.git' docs/wiki/ "$RUNNER_TEMP/wiki/"
+          cd "$RUNNER_TEMP/wiki"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "A Wiki já está igual a docs/wiki."
+            exit 0
+          fi
+          git commit -m "Wiki em sincronia com docs/wiki ($SHA)"
+          git -c http.extraheader="$AUTH" push origin HEAD

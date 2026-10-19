@@ -1,0 +1,22 @@
+# Final de linha LF no repositório e na cópia de trabalho, em qualquer sistema.
+#
+# O `.editorconfig` e o Prettier já exigem LF, mas um clone no Windows com
+# `core.autocrlf=true` converte tudo para CRLF na saída — e o `format:check`
+# acusa o repositório inteiro na primeira execução, sem ninguém ter mudado nada.
+* text=auto eol=lf
+
+# Binários: nenhuma conversão, e diff sem tentar ler o conteúdo.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Gerados: fora das estatísticas de linguagem e recolhidos no diff do PR.
+pnpm-lock.yaml linguist-generated=true
+apps/frontend/src/net/schema/** linguist-generated=true
+docs/estado_de_implementacao.md linguist-generated=true

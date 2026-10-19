@@ -57,7 +57,7 @@ interface OlhadaPanelProps {
 }
 
 /** Filtro por tipo: rótulo em português, termo da linha de tipo da Scryfall. */
-const TIPOS: Array<[string, string]> = [
+const TIPOS: [string, string][] = [
   ['Criatura', 'Creature'],
   ['Terreno', 'Land'],
   ['Instantâneo', 'Instant'],
@@ -255,7 +255,7 @@ export function OlhadaPanel({ room }: OlhadaPanelProps) {
           if (sf) setInspectedCard(sf);
         },
       },
-    ].filter(Boolean) as Array<{ rotulo: string; icone: React.ReactNode; fazer: () => void }>;
+    ].filter(Boolean) as { rotulo: string; icone: React.ReactNode; fazer: () => void }[];
 
   const embaralharBloco = (destino: 'TOP' | 'BOTTOM') => {
     if (vivas.length > 0) intents.arrangePeeked(room, vivas, destino, true);

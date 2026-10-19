@@ -56,6 +56,12 @@ arquivo com o bloco `─── TÍTULO ───`.
 **Nunca afrouxe um teste para ele passar.** Se o comportamento novo é o certo,
 reescreva a asserção sobre a invariante e diga no comentário o que mudou.
 
+**Zero aviso do ESLint.** O lint roda COM TIPOS (`recommendedTypeChecked` +
+`stylisticTypeChecked`) e com `--max-warnings=0` em todo pacote. Exceção a uma
+regra vai na `eslint.config.mjs` com o porquê, ou na linha com
+`// eslint-disable-next-line regra -- justificativa`. Nunca desligue regra no
+arquivo inteiro. `pnpm lint:fix` aplica o que é automático.
+
 ## As armadilhas deste repositório
 
 Cada uma já causou um defeito documentado no próprio código.
@@ -81,6 +87,14 @@ Cada uma já causou um defeito documentado no próprio código.
 
 ## Reportando um defeito
 
-Abra uma issue com: o que você fez, o que esperava, o que aconteceu, e — se
-for da mesa — quantos jogadores estavam na sala. O número de jogadores importa
-mais do que parece: a maioria dos defeitos de mesa só aparece com dois ou mais.
+Abra uma issue pelo formulário **Defeito**: ele pede o que você fez, o que
+esperava, o que aconteceu e, se for da mesa, quantos jogadores estavam na sala.
+O número de jogadores importa mais do que parece: a maioria dos defeitos de
+mesa só aparece com dois ou mais.
+
+**Falha de segurança não vai em issue.** Veja o [`SECURITY.md`](SECURITY.md).
+
+## Convivência
+
+Quem participa segue o [código de conduta](CODE_OF_CONDUCT.md). O AetherTable é
+software proprietário da Falkyria ([`LICENSE`](LICENSE)).

@@ -11,7 +11,10 @@
  *   - pool magro (comandante sem tema) não deixa o deck com menos de 100.
  */
 
+import { BadRequestException } from '@nestjs/common';
 import { temasDoComandante, subtiposDe } from './temas.js';
+import { GeradorDeDeckService } from './gerador-de-deck.service.js';
+import { MAXIMO_DE_DECKS_POR_CONTA } from '../limites-de-conta.js';
 import { dividirBasicos, montarDeck, MOLDE, type Candidata, type Pools } from './montagem.js';
 
 const GHALTA: Candidata = {
@@ -151,12 +154,27 @@ describe('montarDeck', () => {
 describe('dividirBasicos', () => {
   it('segue a demanda de cada cor, com pelo menos um de cada', () => {
     const partes = dividirBasicos(['W', 'B'], 28, ['{B}{B}{B}', '{B}{B}', '{1}{W}']);
-    expect(partes['W']! + partes['B']!).toBe(28);
-    expect(partes['B']!).toBeGreaterThan(partes['W']!);
-    expect(partes['W']!).toBeGreaterThanOrEqual(1);
+    expect(partes.W! + partes.B!).toBe(28);
+    expect(partes.B!).toBeGreaterThan(partes.W!);
+    expect(partes.W!).toBeGreaterThanOrEqual(1);
   });
 
   it('comandante incolor recebe Wastes', () => {
     expect(dividirBasicos([], 30, [])).toEqual({ C: 30 });
+  });
+});
+
+/**
+ * O deck aleatório também é um deck novo na conta: no teto, é recusado ANTES
+ * das ~11 buscas na Scryfall, que seriam gastas para nada.
+ */
+describe('GeradorDeDeckService.gerar — teto de decks por conta', () => {
+  it('no teto, recusa sem buscar nada na Scryfall', async () => {
+    const prisma = { deck: { count: jest.fn().mockResolvedValue(MAXIMO_DE_DECKS_POR_CONTA) } };
+    const cards = { search: jest.fn() };
+    const svc = new GeradorDeDeckService(prisma as never, cards as never);
+
+    await expect(svc.gerar('conta-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(cards.search).not.toHaveBeenCalled();
   });
 });

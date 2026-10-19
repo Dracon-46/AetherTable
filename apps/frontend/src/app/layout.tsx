@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { inter } from './fonte';
 import { Providers } from './Providers';
 
 export const metadata: Metadata = {
@@ -19,7 +20,7 @@ export default function RootLayout({
      * renderizou e o que o navegador tem já são diferentes de propósito. Sem
      * isto, o React reclama de um descasamento que é justamente o objetivo.
      */
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" className={inter.variable} suppressHydrationWarning>
       <head>
         {/*
          * ─── O TEMA É APLICADO ANTES DA PRIMEIRA PINTURA ──────────────────
@@ -47,12 +48,6 @@ export default function RootLayout({
               document.documentElement.dataset.tema = claro ? 'claro' : 'escuro';
             }catch(e){}})();`,
           }}
-        />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
         />
       </head>
       <body className="bg-table-deep text-text min-h-dvh w-full antialiased">

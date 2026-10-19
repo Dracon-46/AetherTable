@@ -71,7 +71,7 @@ export class AdminBootstrapService implements OnModuleInit {
 
   /** `ADMIN_EMAILS=a@x.com,b@y.com` — separados por vírgula ou ponto e vírgula. */
   private emailsConfigurados(): string[] {
-    return (process.env['ADMIN_EMAILS'] ?? '')
+    return (process.env.ADMIN_EMAILS ?? '')
       .split(/[,;]/)
       .map((e) => e.trim().toLowerCase())
       .filter((e) => e.includes('@'));
@@ -127,17 +127,22 @@ export class AdminBootstrapService implements OnModuleInit {
        * dono e virar ADMIN no próximo boot, sem nunca ter tido acesso à caixa
        * de entrada.
        *
-       * Hoje quem grava `emailVerifiedAt` é o login social (Google/Discord só
-       * entregam endereço confirmado — ver `AuthService.validateOAuthUser`).
-       * Então o dono precisa entrar UMA vez pelo provedor com esse e-mail. O
-       * aviso abaixo diz exatamente isso, porque sem ele o operador veria a
-       * promoção não acontecer e não saberia o motivo.
+       * Quem grava `emailVerifiedAt` é o login social (Google/Discord só
+       * entregam endereço confirmado — ver `AuthService.validateOAuthUser`) e
+       * o link de "Esqueci a senha" (`RecuperacaoService.redefinir`), que só
+       * quem lê a caixa de entrada abre. O aviso abaixo diz isso, porque sem
+       * ele o operador veria a promoção não acontecer e não saberia o motivo.
+       *
+       * O vínculo social a uma conta não confirmada APAGA a senha dela e
+       * derruba as sessões: se quem a cadastrou foi outra pessoa, ela não
+       * chega a ADMIN junto com o dono.
        */
       if (!conta.emailVerifiedAt) {
         this.logger.warn(
           `"${conta.email}" está em ADMIN_EMAILS, mas o e-mail dessa conta nunca foi confirmado — ` +
-            'ela NÃO foi promovida. Entre uma vez com Google ou Discord usando esse mesmo e-mail ' +
-            '(o login social confirma a posse) e reinicie a API.',
+            'ela NÃO foi promovida. Entre uma vez com Google ou Discord usando esse mesmo e-mail, ' +
+            'ou redefina a senha pelo link de "Esqueci a senha" (os dois confirmam a posse), ' +
+            'e reinicie a API.',
         );
         continue;
       }

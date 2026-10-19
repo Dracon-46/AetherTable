@@ -6,22 +6,21 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings=0",
     "test": "jest",
     "test:watch": "jest --watch"
   },
   "dependencies": {
     "@aethertable/shared-types": "workspace:*",
-    "@colyseus/core": "^0.16.0",
-    "@colyseus/monitor": "^0.16.0",
-    "@colyseus/playground": "^0.16.0",
+    "@colyseus/core": "^0.16.26",
+    "@colyseus/monitor": "^0.16.7",
     "@colyseus/redis-driver": "^0.16.0",
     "@colyseus/redis-presence": "^0.16.0",
     "@colyseus/schema": "^3.0.0",
-    "@colyseus/ws-transport": "^0.16.0",
+    "@colyseus/ws-transport": "^0.16.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
@@ -29,6 +28,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@colyseus/playground": "^0.16.4",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.7",

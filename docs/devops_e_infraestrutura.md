@@ -113,28 +113,74 @@ Base do cálculo: ~8 MB de RAM por sala (`NFR-07`) e CPU dominada pela serializa
 
 **Ferramenta:** GitHub Actions.
 
-### 3.0 O que roda hoje (`.github/workflows/ci.yml`)
+### 3.0 O que roda hoje (`.github/workflows/`)
 
-As seções 3.1 e 3.2 são o alvo; isto é o que existe. Dispara em push para `main`,
-`develop`, `release/**`, `hotfix/**`, `feature/**` e `fix/**`, em todo pull request e
-pelo botão **Run workflow** da aba Actions. Três jobs em paralelo — o PR só fica
-verde com os três:
+As seções 3.1 e 3.2 são o alvo; isto é o que existe.
 
-| Job         | O que verifica                                                                                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------- |
-| `qualidade` | Atribuição a ferramenta nos commits, mirror de schema, formatação, paridade de intenções, lint, typecheck           |
-| `testes`    | Jest em matriz — um job por app (`backend-core`, `game-server`, `frontend`), `--ci --maxWorkers=2`, sem `fail-fast` |
-| `build-e2e` | `pnpm build` e o E2E das telas públicas no Chromium; o relatório do Playwright sobe como artefato quando falha      |
+| Workflow           | Quando roda                                                                                  | O que faz                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `ci.yml`           | push em `main`, `develop`, `release/**`, `hotfix/**`, `feature/**`, `fix/**`; todo PR; à mão | a bateria inteira, em jobs paralelos (abaixo)                  |
+| `codeql.yml`       | push e PR em `main`/`develop`; toda segunda; à mão                                           | análise estática de segurança de TypeScript e dos workflows    |
+| `dependencias.yml` | PR contra `main`/`develop`                                                                   | barra dependência NOVA com vulnerabilidade alta ou licença GPL |
+| `release.yml`      | push de tag `v*.*.*`; à mão                                                                  | cria o Release do GitHub com a mensagem da tag anotada         |
+| `wiki.yml`         | push na `main` que toca `docs/wiki/`; à mão                                                  | copia `docs/wiki/` para a Wiki do GitHub                       |
 
-Era um job só, em fila: um lint quebrado escondia o resultado dos testes, e a
-falha de um app só aparecia depois de todos os passos anteriores.
+Os jobs do `ci.yml`, todos em paralelo:
 
-O lint do frontend é a CLI do ESLint (`eslint src`) com o plugin do Next declarado
-no `eslint.config.mjs` da raiz. Era `next lint`, que está deprecado (sai no Next 16)
-e nunca tinha carregado o plugin do Next — as regras dele não rodavam.
+| Job          | O que verifica                                                                                             |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| `atribuicao` | nenhuma atribuição a ferramenta nas mensagens dos commits que chegaram (DOC-091 §5)                        |
+| `qualidade`  | mirror de schema, formatação, paridade de intenções, lint com tipos (zero aviso), typecheck                |
+| `testes`     | Jest em matriz, um job por pacote (`backend-core`, `game-server`, `frontend`, `scryfall-client`)           |
+| `build-e2e`  | `pnpm build` e o E2E das telas públicas no Chromium; o relatório do Playwright sobe como artefato na falha |
+| `docker`     | constrói as imagens de produção do `backend-core` e do `game-server`, sem publicar                         |
+| `ci-ok`      | passa só se todos os anteriores passaram: é o único check que a proteção de branch exige                   |
+
+O preparo comum (pnpm, Node, `pnpm install --frozen-lockfile`, Prisma Client e
+pacotes compartilhados) mora numa action composta, `.github/actions/preparar`. A
+versão do pnpm vem do `packageManager` do `package.json` e a do Node, do `.nvmrc`:
+um lugar só para cada uma.
+
+Segurança do próprio pipeline: `GITHUB_TOKEN` só com `contents: read` (quem
+escreve declara a permissão no job), checkout sem credencial persistida, actions
+fixadas por SHA e nenhum `${{ github.event… }}` interpolado em `run:` (vai por
+`env:`). O Dependabot (`.github/dependabot.yml`) atualiza npm, actions e imagens
+Docker toda segunda, com PR contra a `develop`.
+
+O lint é a CLI do ESLint com tipos (`recommendedTypeChecked` +
+`stylisticTypeChecked` do typescript-eslint) e `--max-warnings=0`. Era `next lint`
+no frontend, que está deprecado e nunca tinha carregado o plugin do Next.
 
 Fora do CI ainda: testes de integração com banco, auditoria de informação oculta
-(G1), `npm audit`/secret scanning, imagens Docker e deploy (seções abaixo).
+(G1) e deploy (seções abaixo).
+
+### 3.0.1 Dependências: overrides e riscos aceitos
+
+A auditoria de 19/10/2026 (`pnpm audit --prod`) achou 38 vulnerabilidades, 3 críticas:
+execução remota de código no otimizador de imagem do Next 15.5.23 e falsificação de IP no
+`proxy-addr` (que alimenta o limite de requisições por IP da API). As diretas foram atualizadas
+dentro do mesmo major; as transitivas que o pacote de cima ainda não atualizou estão fixadas em
+`pnpm.overrides` no `package.json` da raiz, sempre dentro do mesmo major:
+
+| Override                          | Por quê                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `proxy-addr@<2.0.8` → `^2.0.8`    | falsificação de IP via IPv6 mapeado; o `trust proxy` da API depende dele |
+| `qs@<6.16.0` → `^6.16.0`          | parsing de querystring do Express                                        |
+| `js-yaml@>=5 <5.4.1` → `^5.4.1`   | usado pelo `@nestjs/swagger`                                             |
+| `next>postcss` → `^8.5.31`        | o Next fixa `8.4.31` exato                                               |
+| `next>sharp` → `^0.35.5`          | falhas do libvips; a faixa já é aceita pelo próprio Next                 |
+| `source-map-js@<1.2.2` → `^1.2.2` | dependência do postcss                                                   |
+
+Quando o pacote de cima publicar a correção, o override deixa de ser necessário: apague a linha e
+rode `pnpm install`. Se o `pnpm audit` continuar limpo, o pacote de cima já resolve sozinho.
+
+**Riscos aceitos** (aparecem no `pnpm audit` e nos alertas do Dependabot, e continuam lá de
+propósito, para ninguém esquecer deles):
+
+| Pacote               | Vem de                             | Por que não é alcançável                                                                                                                  |
+| -------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `nanoid@2.1.11`      | `@colyseus/core` 0.16              | o Colyseus só chama `generateId()` com o tamanho padrão (9), sem entrada externa. A correção é o `nanoid` 3, de API incompatível com o 2. |
+| `deepmerge-ts@7.1.5` | `@prisma/config` (CLI do Prisma 6) | junta só objetos de configuração do próprio repositório, nunca dado de requisição. A correção é o major 8, que o Prisma 6 não adota.      |
 
 ### 3.1 Pipeline de PR
 

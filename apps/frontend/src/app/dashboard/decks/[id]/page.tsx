@@ -103,7 +103,7 @@ import { acharFormato } from '@aethertable/shared-types';
 import { mensagemDaApi } from '@/lib/fetcher';
 import { useQueryClient } from '@tanstack/react-query';
 
-const VISTAS: Array<{ valor: VisaoDeDeck; rotulo: string; Icone: typeof List; dica: string }> = [
+const VISTAS: { valor: VisaoDeDeck; rotulo: string; Icone: typeof List; dica: string }[] = [
   {
     valor: 'lista',
     rotulo: 'Lista',
@@ -124,7 +124,7 @@ const VISTAS: Array<{ valor: VisaoDeDeck; rotulo: string; Icone: typeof List; di
   },
 ];
 
-const AGRUPAMENTOS: Array<{ valor: AgrupamentoDeDeck; rotulo: string }> = [
+const AGRUPAMENTOS: { valor: AgrupamentoDeDeck; rotulo: string }[] = [
   { valor: 'tipo', rotulo: 'Agrupar por tipo' },
   { valor: 'cor', rotulo: 'Agrupar por cor' },
   { valor: 'cmc', rotulo: 'Agrupar por custo' },
@@ -132,7 +132,7 @@ const AGRUPAMENTOS: Array<{ valor: AgrupamentoDeDeck; rotulo: string }> = [
   { valor: 'nenhum', rotulo: 'Sem agrupamento' },
 ];
 
-const ORDENACOES: Array<{ valor: OrdenacaoDeDeck; rotulo: string }> = [
+const ORDENACOES: { valor: OrdenacaoDeDeck; rotulo: string }[] = [
   { valor: 'nome', rotulo: 'Ordenar por nome' },
   { valor: 'cmc', rotulo: 'Ordenar por valor de mana' },
   { valor: 'preco', rotulo: 'Ordenar por preço' },
@@ -150,7 +150,7 @@ const ORDENACOES: Array<{ valor: OrdenacaoDeDeck; rotulo: string }> = [
  */
 const SEM_CARTAS: DeckCarta[] = [];
 
-const TAMANHOS: Array<{ valor: TamanhoDeCarta; rotulo: string }> = [
+const TAMANHOS: { valor: TamanhoDeCarta; rotulo: string }[] = [
   { valor: 'pequeno', rotulo: 'P' },
   { valor: 'medio', rotulo: 'M' },
   { valor: 'grande', rotulo: 'G' },
@@ -280,7 +280,7 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
     [adicionarCarta],
   );
 
-  async function salvarNome() {
+  function salvarNome() {
     const novo = nomeEditado.trim();
     if (!novo || novo === deck?.name) {
       setEditandoNome(false);
@@ -341,14 +341,14 @@ export default function DeckBuilderPage({ params }: { params: Promise<{ id: stri
                   value={nomeEditado}
                   onChange={(e) => setNomeEditado(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') void salvarNome();
+                    if (e.key === 'Enter') salvarNome();
                     if (e.key === 'Escape') setEditandoNome(false);
                   }}
                   autoFocus
                   className="bg-table-deep border-primary text-text min-w-0 flex-1 rounded border px-3 py-1 text-xl font-bold focus:outline-none sm:text-2xl"
                 />
                 <button
-                  onClick={() => void salvarNome()}
+                  onClick={() => salvarNome()}
                   className="bg-success shrink-0 rounded p-2 text-white hover:brightness-110"
                   aria-label="Salvar nome"
                 >

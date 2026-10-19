@@ -26,7 +26,7 @@ function mesa(ids: string[]) {
 }
 
 function contexto(state: RoomState, sid: string) {
-  const transmitidos: Array<{ evento: string; payload: unknown }> = [];
+  const transmitidos: { evento: string; payload: unknown }[] = [];
   const logs: unknown[] = [];
   const ctx = {
     state,
@@ -42,7 +42,7 @@ function contexto(state: RoomState, sid: string) {
 }
 
 function executar(nome: string, ctx: IntentContext, payload: unknown) {
-  const handler = REGISTRY[nome as keyof typeof REGISTRY]!;
+  const handler = REGISTRY[nome as keyof typeof REGISTRY];
   (handler.executa as (c: IntentContext, p: unknown) => void)(ctx, payload);
 }
 

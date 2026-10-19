@@ -212,3 +212,34 @@ describe('AdminSistemaService.criarCosmetico — placa de nome', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+/**
+ * A rota pública `GET /flags` devolvia a linha inteira: o username de quem
+ * mexeu e a nota interna do incidente, para qualquer visitante sem login.
+ */
+describe('AdminSistemaService.flagsPublicas — só chave e estado', () => {
+  it('não leva quem mexeu, quando, nem a nota interna', async () => {
+    const prisma = {
+      platformFlag: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            key: 'VOICE_ENABLED',
+            enabled: false,
+            note: 'SFU estourou o orçamento do mês',
+            updatedAt: new Date(),
+            updatedById: 'a',
+            updatedBy: 'admin',
+          },
+        ]),
+      },
+    };
+    const svc = new AdminSistemaService(prisma as never, {} as never, {} as never, {} as never);
+
+    const flags = await svc.flagsPublicas();
+
+    expect(flags).toContainEqual({ key: 'VOICE_ENABLED', enabled: false });
+    // As que nunca foram gravadas valem ligadas, como no painel.
+    expect(flags).toContainEqual({ key: 'REGISTRATION_ENABLED', enabled: true });
+    for (const f of flags) expect(Object.keys(f).sort()).toEqual(['enabled', 'key']);
+  });
+});

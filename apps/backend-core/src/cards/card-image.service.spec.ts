@@ -1,4 +1,5 @@
-import { CardImageService } from './card-image.service.js';
+import { randomUUID } from 'node:crypto';
+import { CardImageService, MAX_NA_FILA } from './card-image.service.js';
 
 /**
  * card-image.service.spec.ts — o que precisa ficar fixo no espelho de imagens.
@@ -67,7 +68,7 @@ describe('CardImageService.obter', () => {
         headers: new Map([['content-type', 'image/jpeg']]) as unknown as Headers,
         arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       } as unknown as Response;
-    }) as unknown as typeof fetch;
+    });
   });
 
   it('monta a URL da CDN com o particionamento por dois caracteres', async () => {
@@ -97,7 +98,7 @@ describe('CardImageService.obter', () => {
     global.fetch = jest.fn(async () => {
       chamadas.push('404');
       return { ok: false, status: 404 } as unknown as Response;
-    }) as unknown as typeof fetch;
+    });
 
     expect(await servico.obter(UUID, 'small', 'back')).toBeNull();
     expect(await servico.obter(UUID, 'small', 'back')).toBeNull();
@@ -109,10 +110,39 @@ describe('CardImageService.obter', () => {
     global.fetch = jest.fn(async () => {
       tentativas += 1;
       throw new Error('ECONNREFUSED');
-    }) as unknown as typeof fetch;
+    });
 
     expect(await servico.obter(UUID, 'small', 'front')).toBeNull();
     expect(await servico.obter(UUID, 'small', 'front')).toBeNull();
     expect(tentativas).toBe(2);
+  });
+});
+
+/**
+ * A fila de espera por um dos oito downloads não tinha teto. Cada UUID
+ * inventado vira um download novo, e a rota é pública: milhares de pedidos
+ * empilhavam promessas sem fim, e a arte da mesa de quem joga esperava junto.
+ */
+describe('CardImageService.obter — fila de espera com teto', () => {
+  it(`com ${MAX_NA_FILA} esperando, o pedido seguinte é "indisponível" na hora`, async () => {
+    const servico = new CardImageService();
+    const pendentes: (() => void)[] = [];
+    const ausente = { ok: false, status: 404 } as unknown as Response;
+    global.fetch = jest.fn(
+      () => new Promise<Response>((resolve) => pendentes.push(() => resolve(ausente))),
+    );
+
+    // Oito downloads em curso, e o resto na fila de espera.
+    const emEspera = Array.from({ length: 8 + MAX_NA_FILA }, () =>
+      servico.obter(randomUUID(), 'small', 'front'),
+    );
+
+    await expect(servico.obter(randomUUID(), 'small', 'front')).resolves.toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls.length).toBeLessThanOrEqual(8);
+
+    // Esvazia: daqui em diante a CDN responde na hora.
+    global.fetch = jest.fn(async () => ausente);
+    for (const liberar of pendentes) liberar();
+    await Promise.all(emEspera);
   });
 });

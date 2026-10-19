@@ -95,13 +95,13 @@ export interface ScryfallCard {
    * ATENCAO (DOC-035 §2.2): cartas de dupla face NAO tem `image_uris` na raiz —
    * as imagens ficam aqui. Ignorar isso quebra o render de qualquer deck com MDFC.
    */
-  card_faces?: Array<{
+  card_faces?: {
     name: string;
     type_line?: string;
     mana_cost?: string;
     oracle_text?: string;
     image_uris?: { small?: string; normal?: string; large?: string };
-  }>;
+  }[];
   /**
    * Texto de regras e palavras-chave. O gerador de deck aleatório lê o TEMA do
    * comandante daqui ("+1/+1 counter", "token", "graveyard"…). Em carta de
@@ -149,7 +149,7 @@ export class ScryfallClient {
     if (params.page) qs.set('page', String(params.page));
     if (params.order) qs.set('order', params.order);
     if (params.dir) qs.set('dir', params.dir);
-    return this.get<{ data: ScryfallCard[]; has_more: boolean }>(`/cards/search?${qs}`);
+    return this.get<{ data: ScryfallCard[]; has_more: boolean }>(`/cards/search?${qs.toString()}`);
   }
 
   /**
@@ -168,7 +168,7 @@ export class ScryfallClient {
    */
   async autocomplete(query: string): Promise<string[]> {
     const res = await this.get<{ data: string[] } | string[]>(
-      `/cards/autocomplete?${new URLSearchParams({ q: query })}`,
+      `/cards/autocomplete?${new URLSearchParams({ q: query }).toString()}`,
     );
     return Array.isArray(res) ? res : (res?.data ?? []);
   }

@@ -211,7 +211,7 @@ export function ActionBar({ room }: ActionBarProps) {
     // é o id interno do Colyseus, e apagar por ele não apagava nada.
     esquecerReconexao(room.state?.roomCode || room.roomId);
     intents.leave(room);
-    room.leave();
+    void room.leave();
     router.push('/dashboard');
   };
 

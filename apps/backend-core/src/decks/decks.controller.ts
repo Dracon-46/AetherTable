@@ -10,7 +10,6 @@ import {
   Request,
   Query,
   ParseUUIDPipe,
-  NotFoundException,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -31,7 +30,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
 import { SEM_LIMITE_GLOBAL } from '../common/limites.js';
-import { validarDeckParaFormato, type DeckValidavel } from './formato.js';
+import { validarDeckParaFormato } from './formato.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
 /**
@@ -62,6 +61,18 @@ const LIMITE_IMPORTACAO = {
   longo: { limit: 20, ttl: 60_000 },
 };
 
+/**
+ * Criar e clonar ficavam no balde do deckbuilder (60 a cada 5 s), feito para
+ * cliques de quantidade. Cada chamada destas é um deck NOVO no banco: com
+ * aquele balde, um script criava centenas por minuto antes de qualquer teto
+ * por conta (`limites-de-conta.ts`) entrar em jogo. Ninguém cria cinco decks
+ * em dez segundos à mão.
+ */
+export const LIMITE_CRIACAO_DE_DECK = {
+  curto: { limit: 5, ttl: 10_000 },
+  longo: { limit: 30, ttl: 60_000 },
+};
+
 @ApiTags('Decks')
 @ApiBearerAuth()
 @Controller('decks')
@@ -88,6 +99,7 @@ export class DecksController {
   }
 
   @Post()
+  @Throttle(LIMITE_CRIACAO_DE_DECK)
   createDeck(
     @Request() req: RequisicaoAutenticada,
     @Body(new ZodValidationPipe(CriarDeckDto)) dto: CriarDeckDto,
@@ -155,6 +167,7 @@ export class DecksController {
   }
 
   @Post(':id/clone')
+  @Throttle(LIMITE_CRIACAO_DE_DECK)
   @ApiOperation({ summary: 'Copia o deck, carta por carta, num deck novo e privado' })
   clonarDeck(@Request() req: RequisicaoAutenticada, @Param('id', ParseUUIDPipe) id: string) {
     return this.decksService.clonarDeck(req.user.sub, id);
@@ -212,10 +225,9 @@ export class DecksController {
 /**
  * Rota máquina-a-máquina consumida pelo game-server ao provisionar o deck.
  *
- * Ela NÃO checa dono — o servidor de jogo precisa do deck de qualquer jogador
- * da sala. Justamente por isso precisa de um segredo compartilhado:
- * sem o guard, era um endpoint público que devolvia o decklist completo de
- * qualquer id.
+ * Precisa de um segredo compartilhado: sem o guard, era um endpoint público
+ * que devolvia o decklist completo de qualquer id. E confere o DONO — ver
+ * `ownerId` abaixo.
  */
 @ApiTags('Internal')
 @Controller('internal/decks')
@@ -238,11 +250,16 @@ export class InternalDecksController {
   @ApiOperation({ summary: 'Deck completo para o game-server (uso interno)' })
   async getDeckForServer(
     @Param('id', ParseUUIDPipe) id: string,
-    // Quem está pedindo. O game-server envia o `sub` do seat token quando o
-    // grimório é escolhido dentro da sala de espera — ali o id vem de uma
-    // intenção do cliente, e sem esta checagem qualquer jogador poderia
-    // carregar (e ler) o deck de outra pessoa.
-    @Query('ownerId') ownerId?: string,
+    /**
+     * Quem está pedindo — o `sub` do passe da mesa. OBRIGATÓRIO.
+     *
+     * Era opcional, e sem ele a rota devolvia o deck de qualquer id, de
+     * qualquer dono, pelo caminho que nem hidratava as cartas. O grimório é
+     * escolhido na sala de espera por uma intenção do cliente; sem a checagem
+     * de dono, qualquer jogador carregava (e lia) o deck de outra pessoa. O
+     * game-server passou a mandar o `ownerId` sempre, e a falta dele é 400.
+     */
+    @Query('ownerId', ParseUUIDPipe) ownerId: string,
     // Formato da SALA. Quando informado, o deck é recusado aqui com a mesma
     // regra que `joinMatch` aplica — e com a mesma mensagem. Sem isso, escolher
     // um deck de 97 cartas na sala de espera dava certo, e a partida só quebrava
@@ -250,27 +267,14 @@ export class InternalDecksController {
     @Query('gameType') gameType?: string,
   ) {
     /**
-     * COM `ownerId`, PASSA PELO CAMINHO COMPLETO.
-     *
-     * `getDeckById` faz duas coisas que `getDeckForServer` não faz: confere o
-     * dono e HIDRATA as cartas na Scryfall. A hidratação é o que traz `name` e
-     * `isBanned` — sem ela, a trava de cartas banidas simplesmente não dispara,
-     * porque `isBanned` chega `undefined` em todas.
-     *
-     * Custa uma ida à Scryfall na escolha do grimório, que acontece na sala de
-     * espera, fora de qualquer caminho crítico. O fluxo antigo (deck dentro do
-     * seat token) já foi validado em `joinMatch` e segue pelo caminho barato.
+     * `getDeckById` confere o dono (deck de outra conta é o mesmo 404 de deck
+     * inexistente — a rota não vira oráculo de ids alheios) e HIDRATA as
+     * cartas na Scryfall, que é o que traz `isBanned`. A hidratação é
+     * obrigatória: com a Scryfall fora do ar, o deck sairia com toda carta
+     * "legal" e a trava de banidas aprovaria qualquer coisa.
      */
-    if (ownerId) {
-      const deck = await this.decksService.getDeckById(ownerId, id);
-      validarDeckParaFormato(deck as unknown as DeckValidavel, gameType);
-      return deck;
-    }
-
-    // Antes: `(this.decksService as any).prisma.deck.findUnique(...)` — o
-    // controller alcançava um campo privado do serviço por asserção `any`.
-    const deck = await this.decksService.getDeckForServer(id);
-    if (!deck) throw new NotFoundException('Deck não encontrado');
+    const deck = await this.decksService.getDeckById(ownerId, id, { exigirHidratacao: true });
+    validarDeckParaFormato(deck, gameType);
     return deck;
   }
 }

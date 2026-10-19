@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Release no GitHub a partir da tag anotada.
+#
+# O DOC-091 §3 manda cortar todo release com tag ANOTADA, e a mensagem dela já
+# é a nota do release ("v0.9.5 — grimório na mesa e voz sem erro", com o
+# porquê em seguida). Até aqui essa nota só existia para quem rodava
+# `git tag -n`; a aba Releases do GitHub estava vazia, e "o que está no ar" não
+# tinha página.
+#
+# Push de tag `v*` → um Release com a mensagem da tag. Rodado à mão
+# (`workflow_dispatch`), cria o Release de toda tag antiga que ainda não tem um.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    name: Publicar release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # Este job não instala dependência nem roda código do repositório além
+      # do script abaixo, então a credencial pode ficar no checkout: é ela que
+      # o `git fetch` usa se o repositório deixar de ser público.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Trazer as tags anotadas inteiras
+        # Disparado por push de tag, o checkout grava a tag apontando direto
+        # para o commit e a ANOTAÇÃO se perde — e a anotação é a nota do
+        # release (actions/checkout#290).
+        run: git fetch --force --tags origin
+
+      - name: Criar o release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENTO: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          publicar() {
+            local tag="$1"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "$tag já tem release."
+              return 0
+            fi
+            local titulo
+            titulo=$(git tag -l --format='%(contents:subject)' "$tag")
+            # Tag de pré-lançamento (v1.0.0-rc.1) não vira "Latest".
+            local extra=()
+            case "$tag" in *-*) extra+=(--prerelease) ;; esac
+            gh release create "$tag" --verify-tag --notes-from-tag \
+              --title "${titulo:-$tag}" "${extra[@]}"
+          }
+
+          if [ "$EVENTO" = "push" ]; then
+            publicar "$TAG"
+          else
+            # Da mais antiga para a mais nova: a aba Releases ordena pela data
+            # de criação, e assim a lista fica na ordem em que as versões saíram.
+            for tag in $(git tag -l 'v*.*.*' --sort=v:refname); do
+              publicar "$tag"
+            done
+          fi

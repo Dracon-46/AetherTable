@@ -13,6 +13,7 @@
  * banco de verdade.
  */
 
+import { ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
 /**
@@ -59,7 +60,10 @@ function montar() {
       deleteMany: jest.fn(async () => ({ count: 0 })),
     },
     user: {
-      findFirst: jest.fn(async () => ({ id: USUARIO })),
+      findFirst: jest.fn(async (): Promise<{ id: string; emailVerifiedAt: Date | null }> => ({
+        id: USUARIO,
+        emailVerifiedAt: null,
+      })),
       update: jest.fn(async () => ({ id: USUARIO })),
     },
     $transaction: jest.fn(async (arg: unknown): Promise<unknown> => {
@@ -83,7 +87,7 @@ describe('RecuperacaoService.redefinir — uso único atômico', () => {
     ]);
 
     expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    const recusado = resultados.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    const recusado = resultados.find((r) => r.status === 'rejected')!;
     expect(recusado.reason).toBeInstanceOf(TokenDeRedefinicaoInvalido);
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
@@ -112,6 +116,36 @@ describe('RecuperacaoService.redefinir — uso único atômico', () => {
     );
   });
 
+  /**
+   * Abrir o link prova a posse do e-mail. Sem gravar isso, o primeiro "Entrar
+   * com Google" apagaria a senha que o dono acabou de escolher (o vínculo trata
+   * a senha de conta não confirmada como suspeita).
+   */
+  it('confirma o e-mail de quem ainda não tinha confirmado', async () => {
+    const { svc, prisma } = montar();
+
+    await svc.redefinir(TOKEN, 'senha-nova-valida');
+
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ emailVerifiedAt: expect.any(Date) }),
+      }),
+    );
+  });
+
+  it('não reescreve a data de quem já tinha confirmado', async () => {
+    const { svc, prisma } = montar();
+    prisma.user.findFirst.mockResolvedValue({ id: USUARIO, emailVerifiedAt: new Date(0) });
+
+    await svc.redefinir(TOKEN, 'senha-nova-valida');
+
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.not.objectContaining({ emailVerifiedAt: expect.anything() }),
+      }),
+    );
+  });
+
   it('link já usado continua recusado na leitura', async () => {
     const { svc, linha, prisma } = montar();
     linha.usedAt = new Date();
@@ -120,5 +154,90 @@ describe('RecuperacaoService.redefinir — uso único atômico', () => {
       TokenDeRedefinicaoInvalido,
     );
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('RecuperacaoService.solicitar', () => {
+  function montarPedido(opcoes: {
+    producao?: boolean;
+    configurado?: boolean;
+    conta?: { passwordHash: string | null } | null;
+  }) {
+    const conta =
+      opcoes.conta === null
+        ? null
+        : {
+            id: USUARIO,
+            email: 'dono@exemplo.com',
+            username: 'dono',
+            passwordHash: 'hash',
+            ...opcoes.conta,
+          };
+    const prisma = {
+      user: { findFirst: jest.fn().mockResolvedValue(conta) },
+      passwordResetToken: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const email = {
+      configurado: opcoes.configurado ?? true,
+      enviar: jest.fn().mockResolvedValue(undefined),
+    };
+    const config = {
+      get: (chave: string) =>
+        chave === 'NODE_ENV'
+          ? opcoes.producao
+            ? 'production'
+            : 'development'
+          : chave === 'FRONTEND_URL'
+            ? 'https://mesa.exemplo.com'
+            : undefined,
+    } as unknown as ConfigService;
+    const svc = new RecuperacaoService(prisma as never, email as never, config);
+    return { svc, prisma, email };
+  }
+
+  /**
+   * Em produção sem chave, o `EmailService` recusava e `enviarComSeguranca`
+   * engolia: a tela prometia um e-mail que nunca saía.
+   */
+  it('produção sem e-mail configurado: 503 antes de procurar a conta', async () => {
+    const { svc, prisma } = montarPedido({ producao: true, configurado: false });
+
+    await expect(svc.solicitar('dono@exemplo.com')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    // Antes da busca: a resposta é a mesma para e-mail cadastrado ou não.
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('fora de produção, sem chave, segue — o link vai para o log', async () => {
+    const { svc, email } = montarPedido({ producao: false, configurado: false });
+    await expect(svc.solicitar('dono@exemplo.com')).resolves.toBeUndefined();
+    expect(email.enviar).toHaveBeenCalled();
+  });
+
+  /**
+   * Conta só de Google/Discord — inclusive a que perdeu a senha no vínculo
+   * OAuth (`AuthService.validateOAuthUser`) — recebe o link: abri-lo prova a
+   * posse do e-mail, e é o único jeito de ela voltar a ter senha.
+   */
+  it('conta sem senha recebe um link de verdade para criar uma', async () => {
+    const { svc, prisma, email } = montarPedido({ conta: { passwordHash: null } });
+
+    await svc.solicitar('dono@exemplo.com');
+
+    expect(prisma.passwordResetToken.create).toHaveBeenCalledTimes(1);
+    const msg = email.enviar.mock.calls[0]![0] as { texto: string; assunto: string };
+    expect(msg.texto).toContain('https://mesa.exemplo.com/');
+    expect(msg.texto).toContain('?token=');
+    expect(msg.assunto).toMatch(/criar uma senha/i);
+  });
+
+  it('conta inexistente: nada é enviado, e nada é dito', async () => {
+    const { svc, email } = montarPedido({ conta: null });
+    await expect(svc.solicitar('ninguem@exemplo.com')).resolves.toBeUndefined();
+    expect(email.enviar).not.toHaveBeenCalled();
   });
 });

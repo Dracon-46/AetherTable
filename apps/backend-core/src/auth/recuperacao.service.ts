@@ -20,9 +20,12 @@
  *
  * Por isso NENHUM caminho aqui devolve erro diferente: conta inexistente, conta
  * banida, conta suspensa e conta de OAuth terminam todas no mesmo `202`.
+ *
+ * A exceção é o servidor sem e-mail configurado em produção, e ela não vaza
+ * nada: o `503` sai ANTES de procurar a conta, igual para qualquer endereço.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { ConfigService } from '@nestjs/config';
@@ -71,6 +74,21 @@ export class RecuperacaoService {
    * do método evita.
    */
   async solicitar(email: string): Promise<void> {
+    /**
+     * ─── SEM COMO ENVIAR, A ROTA DIZ ISSO — PARA TODO MUNDO IGUAL ───────────
+     *
+     * Em produção sem `RESEND_API_KEY`, o `EmailService` recusa o envio — e
+     * `enviarComSeguranca` engolia a recusa: a tela dizia "o link chegará em
+     * instantes" e nenhum e-mail saía, nunca, para ninguém. A checagem vem
+     * ANTES de procurar a conta: a resposta é a mesma para e-mail cadastrado
+     * e não cadastrado, então ela não reabre a enumeração.
+     */
+    if (!this.email.configurado && this.config.get<string>('NODE_ENV') === 'production') {
+      throw new ServiceUnavailableException(
+        'A recuperação de senha está indisponível neste servidor. Avise um administrador.',
+      );
+    }
+
     const usuario = await this.prisma.user.findFirst({
       where: { email, deletedAt: null },
       select: { id: true, email: true, username: true, passwordHash: true },
@@ -81,23 +99,21 @@ export class RecuperacaoService {
     if (!usuario) return;
 
     /**
-     * Conta de OAuth recebe outro e-mail, e isso não é vazamento.
+     * ─── CONTA SEM SENHA TAMBÉM RECEBE O LINK ───────────────────────────────
      *
-     * A mensagem vai para a caixa de entrada do DONO do endereço — quem já
-     * sabe, por definição, o que tem naquela conta. O que seria vazamento é
-     * dizer isso na TELA, para quem digitou o e-mail; ali a resposta continua
-     * sendo a mesma para todos.
+     * Antes ela recebia só um aviso ("você entra pelo Google"), porque criar
+     * senha a partir de um e-mail parecia abrir um caminho que o dono não
+     * pediu. Mas quem abre o link provou a posse da caixa de entrada — a
+     * mesma prova que o Google dá. E esta é a única saída de quem tinha
+     * senha e a perdeu no vínculo com o Google (ver
+     * `AuthService.validateOAuthUser`): sem o link, a conta ficaria presa ao
+     * provedor para sempre.
      *
-     * Sem este ramo, o dono de uma conta só-Google pediria a redefinição,
-     * receberia um link, escolheria uma senha nova e — como o login por senha
-     * dessa conta nunca existiu — acharia que o sistema está quebrado. Pior:
-     * criar uma senha para uma conta de OAuth a partir de um e-mail é abrir um
-     * segundo caminho de entrada que o dono não pediu.
+     * O texto do e-mail muda, para o dono saber que está CRIANDO uma senha e
+     * que o Google continua funcionando — mas a tela continua igual para
+     * todos.
      */
-    if (!usuario.passwordHash) {
-      await this.enviarComSeguranca(() => this.avisarContaDeOAuth(usuario.email, usuario.username));
-      return;
-    }
+    const semSenha = !usuario.passwordHash;
 
     /**
      * Os pedidos anteriores morrem aqui.
@@ -119,7 +135,11 @@ export class RecuperacaoService {
     });
 
     const link = `${urlDoFrontend(this.config)}${CAMINHO_DE_REDEFINICAO}?token=${encodeURIComponent(token)}`;
-    await this.enviarComSeguranca(() => this.enviarLink(usuario.email, usuario.username, link));
+    await this.enviarComSeguranca(() =>
+      semSenha
+        ? this.enviarLinkDeCriacao(usuario.email, usuario.username, link)
+        : this.enviarLink(usuario.email, usuario.username, link),
+    );
 
     await this.expurgarVencidos();
   }
@@ -149,7 +169,7 @@ export class RecuperacaoService {
      */
     const usuario = await this.prisma.user.findFirst({
       where: { id: linha.userId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, emailVerifiedAt: true },
     });
     if (!usuario) throw new TokenDeRedefinicaoInvalido('conta encerrada após o pedido');
 
@@ -182,6 +202,13 @@ export class RecuperacaoService {
      * Postgres trava a linha, e a segunda requisição reavalia a condição
      * depois que a primeira grava — vê `usedAt` preenchido e conta zero. Só
      * quem consumiu (`count === 1`) troca a senha, na mesma transação.
+     *
+     * ─── E O E-MAIL FICA CONFIRMADO ─────────────────────────────────────
+     *
+     * Abrir o link prova a posse da caixa de entrada, como o login social
+     * prova. Sem gravar isso, a senha que o DONO acabou de escolher seria
+     * apagada no primeiro "Entrar com Google" — o vínculo trata senha de
+     * conta não confirmada como suspeita (ver `validateOAuthUser`).
      */
     const agora = new Date();
     await this.prisma.$transaction(async (tx) => {
@@ -194,7 +221,11 @@ export class RecuperacaoService {
       }
       await tx.user.update({
         where: { id: linha.userId },
-        data: { passwordHash: hash, tokensValidosApos: agora },
+        data: {
+          passwordHash: hash,
+          tokensValidosApos: agora,
+          ...(usuario.emailVerifiedAt ? {} : { emailVerifiedAt: agora }),
+        },
       });
     });
 
@@ -210,9 +241,10 @@ export class RecuperacaoService {
    * `503`. A diferença entre as duas respostas é a resposta à pergunta que esta
    * rota inteira existe para não responder.
    *
-   * Configuração AUSENTE é outro caso e continua estourando: ela vale igual
-   * para todos os e-mails (não distingue conta nenhuma) e precisa ser barulhenta
-   * — é o `EmailService` que decide isso, e em produção ele recusa.
+   * Configuração AUSENTE é outro caso: ela vale igual para todos os e-mails
+   * (não distingue conta nenhuma) e precisa ser barulhenta. Por isso ela é
+   * conferida no começo de `solicitar`, antes da busca pela conta — chegar
+   * até aqui com ela faltando faria este `catch` engoli-la.
    */
   private async enviarComSeguranca(envio: () => Promise<void>): Promise<void> {
     try {
@@ -238,43 +270,66 @@ export class RecuperacaoService {
       'link não for aberto — e sua senha atual continua valendo.',
     ].join('\n');
 
-    await this.email.enviar({ para, assunto, texto, html: this.html(username, link) });
+    await this.email.enviar({
+      para,
+      assunto,
+      texto,
+      html: this.html(
+        username,
+        link,
+        'Alguém pediu para redefinir a senha da sua conta no AetherTable.',
+        'Escolher uma senha nova',
+        'Se não foi você, ignore este e-mail. Sua senha atual continua valendo.',
+      ),
+    });
   }
 
-  private async avisarContaDeOAuth(para: string, username: string): Promise<void> {
+  /** A conta não tem senha: o mesmo link, dizendo que ele CRIA uma. */
+  private async enviarLinkDeCriacao(para: string, username: string, link: string): Promise<void> {
     const texto = [
       `Olá, ${username}.`,
       '',
-      'Alguém pediu para redefinir a senha da sua conta no AetherTable — mas ela',
-      'não tem senha: você entra pelo Google ou pelo Discord.',
+      'Alguém pediu uma senha para a sua conta no AetherTable. Hoje ela não tem',
+      'senha: você entra pelo Google ou pelo Discord.',
       '',
-      'Use o botão do seu provedor na tela de entrada e você estará dentro.',
+      'Se quiser entrar também com e-mail e senha, abra o link abaixo e escolha uma:',
       '',
-      'Se não foi você quem pediu, ignore este e-mail. Nada mudou na sua conta.',
+      link,
+      '',
+      `O link vale por ${VALIDADE_EM_MINUTOS} minutos e só pode ser usado uma vez.`,
+      '',
+      'Se não foi você, ignore este e-mail. Nada muda na sua conta enquanto o',
+      'link não for aberto, e o login pelo provedor continua funcionando.',
     ].join('\n');
 
     await this.email.enviar({
       para,
-      assunto: 'Sua conta do AetherTable entra por Google ou Discord',
+      assunto: 'Criar uma senha para sua conta no AetherTable',
       texto,
-      // Sem link para clicar: um e-mail que a pessoa não pediu e que leva a
-      // algum lugar é o formato do phishing que ela deveria aprender a ignorar.
-      html: `<p>Olá, ${this.escapar(username)}.</p>
-<p>Alguém pediu para redefinir a senha da sua conta no AetherTable — mas ela não tem senha:
-você entra pelo <strong>Google</strong> ou pelo <strong>Discord</strong>.</p>
-<p>Use o botão do seu provedor na tela de entrada e você estará dentro.</p>
-<p style="color:#777;font-size:13px">Se não foi você quem pediu, ignore este e-mail. Nada mudou na sua conta.</p>`,
+      html: this.html(
+        username,
+        link,
+        'Alguém pediu uma senha para a sua conta no AetherTable. Hoje ela não tem senha: você entra pelo Google ou pelo Discord.',
+        'Criar uma senha',
+        'Se não foi você, ignore este e-mail. O login pelo provedor continua funcionando.',
+      ),
     });
   }
 
-  private html(username: string, link: string): string {
+  private html(
+    username: string,
+    link: string,
+    abertura: string,
+    botao: string,
+    rodape: string,
+  ): string {
     const seguro = this.escapar(link);
     return `<p>Olá, ${this.escapar(username)}.</p>
-<p>Alguém pediu para redefinir a senha da sua conta no AetherTable.</p>
-<p><a href="${seguro}" style="display:inline-block;padding:12px 20px;background:#7c3aed;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold">Escolher uma senha nova</a></p>
+<p>${abertura}</p>
+<p><a href="${seguro}" style="display:inline-block;padding:12px 20px;background:#7c3aed;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold">${botao}</a></p>
 <p style="color:#777;font-size:13px">Ou copie este endereço: <br>${seguro}</p>
 <p style="color:#777;font-size:13px">O link vale por ${VALIDADE_EM_MINUTOS} minutos e só pode ser usado uma vez.</p>
-<p style="color:#777;font-size:13px">Se não foi você, ignore este e-mail. Sua senha atual continua valendo.</p>`;
+<p style="color:#777;font-size:13px">${rodape}</p>`;
   }
 
   /**

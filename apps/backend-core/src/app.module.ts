@@ -15,6 +15,7 @@ import { CosmeticosModule } from './cosmeticos/cosmeticos.module.js';
 import { NotificacoesModule } from './notificacoes/notificacoes.module.js';
 import { BALDES_GLOBAIS } from './common/limites.js';
 import { FiltroDeErrosDoPrisma } from './common/filtro-de-erros-do-prisma.js';
+import { opcoesDoRegistroHttp } from './common/registro-http.js';
 
 /**
  * Root Module of the application.
@@ -29,13 +30,10 @@ import { FiltroDeErrosDoPrisma } from './common/filtro-de-erros-do-prisma.js';
       envFilePath: '.env',
     }),
 
-    // Configura o Pino Logger como o logger padrão da aplicação
+    // Configura o Pino Logger como o logger padrão da aplicação. Os
+    // cabeçalhos com credencial saem censurados — ver `registro-http.ts`.
     LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env['NODE_ENV'] !== 'production' ? 'debug' : 'info',
-        // transport pino-pretty removido para evitar dependência faltante em dev
-        // pode ser reativado após: pnpm add pino-pretty --filter backend-core
-      },
+      pinoHttp: opcoesDoRegistroHttp(process.env.NODE_ENV),
     }),
 
     /**

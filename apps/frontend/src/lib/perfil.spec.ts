@@ -7,7 +7,7 @@
  * tinha ido fazer.
  */
 
-import { apelidoParaEnvio } from './perfil';
+import { apelidoParaEnvio, usernameValido } from './perfil';
 
 describe('apelidoParaEnvio', () => {
   it('campo em branco de quem nunca teve apelido NÃO vai no corpo', () => {
@@ -30,5 +30,21 @@ describe('apelidoParaEnvio', () => {
   it('apelido preenchido vai aparado', () => {
     expect(apelidoParaEnvio('  Ana  ', null)).toBe('Ana');
     expect(apelidoParaEnvio('Ana', 'Antigo')).toBe('Ana');
+  });
+});
+
+describe('usernameValido', () => {
+  it('aceita o que o backend aceita', () => {
+    expect(usernameValido('ana')).toBe(true);
+    expect(usernameValido('Ana_B.silva-2')).toBe(true);
+    expect(usernameValido('  ana  ')).toBe(true);
+  });
+
+  it('recusa caminho, espaço no meio e tamanho fora de 3 a 24', () => {
+    expect(usernameValido('../admin')).toBe(false);
+    expect(usernameValido('ana%2Fadmin')).toBe(false);
+    expect(usernameValido('ana silva')).toBe(false);
+    expect(usernameValido('ab')).toBe(false);
+    expect(usernameValido('a'.repeat(25))).toBe(false);
   });
 });

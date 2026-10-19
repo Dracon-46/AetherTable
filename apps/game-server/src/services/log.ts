@@ -113,6 +113,15 @@ export function logEmbaralhar(actorId: string, nome: string): LogEvent {
   return criarLog('SHUFFLE', actorId, `${nome} embaralhou o grimório`);
 }
 
+/**
+ * Reordenar uma zona OCULTA: a mesa precisa saber que a ordem mudou — é o que
+ * torna o histórico uma auditoria de quem mexeu no grimório —, e nunca o que
+ * foi para onde. Mesmo tipo neutro do embaralhar.
+ */
+export function logReordenar(actorId: string, nome: string, zona: string): LogEvent {
+  return criarLog('SHUFFLE', actorId, `${nome} reordenou ${nomeDaZona(zona)}`);
+}
+
 /** Publica CONTAGEM, nunca identidade. */
 export function logOlhada(actorId: string, nome: string, amount: number): LogEvent {
   return criarLog('PEEK', actorId, `${nome} olhou as ${amount} do topo do grimório`);

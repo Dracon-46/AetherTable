@@ -20,9 +20,7 @@ import { podeVer } from '../schema/visibility';
 
 /** Garante que o cliente tem uma StateView. Sem ela, ele veria tudo. */
 function garantirView(client: Client): StateView {
-  if (!client.view) {
-    client.view = new StateView();
-  }
+  client.view ??= new StateView();
   return client.view;
 }
 

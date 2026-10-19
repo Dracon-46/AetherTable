@@ -1,6 +1,12 @@
 # AetherTable
 
-Plataforma web _sandbox_ multiformato para Magic: The Gathering.
+[![CI](https://github.com/Dracon-46/AetherTable/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dracon-46/AetherTable/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Dracon-46/AetherTable/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/Dracon-46/AetherTable/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/Dracon-46/AetherTable?label=versão)](https://github.com/Dracon-46/AetherTable/releases)
+[![Licença: proprietária](https://img.shields.io/badge/licença-proprietária-lightgrey)](LICENSE)
+
+Plataforma web _sandbox_ multiformato para Magic: The Gathering. Produto da
+**Falkyria**.
 
 **Não existe motor de regras.** O sistema move peças, sincroniza estado e
 esconde informação — quem aplica as regras é a mesa. Essa é a decisão de
@@ -11,7 +17,8 @@ etiqueta declarada, não um cálculo.
 
 ## Começando
 
-Requisitos: **Node 22**, **pnpm 9**, e um Postgres alcançável.
+Requisitos: **Node 22** (versão no `.nvmrc`), **pnpm 9** (via `corepack enable`),
+e um Postgres alcançável — o `docker compose up -d` sobe um local.
 
 ```bash
 pnpm install
@@ -85,11 +92,24 @@ Leia o [`CONTRIBUTING.md`](CONTRIBUTING.md). O resumo:
 - Documento afetado é atualizado no mesmo PR
   ([DOC-093](docs/politica_de_documentacao.md)).
 - Comentário explica o **defeito que a linha corrige**, não o que o código faz.
+- ESLint com tipos e zero aviso; o CI só fica verde com lint, tipos, testes,
+  build, E2E e as imagens Docker passando.
+
+## Segurança
+
+Encontrou uma vulnerabilidade? **Não abra issue pública** — veja a
+[política de segurança](SECURITY.md) e use o relato privado do GitHub.
 
 ## Documentação
 
-O índice completo está em [`docs/readme.md`](docs/readme.md). Os mais
-consultados:
+A porta de entrada é a [Wiki](https://github.com/Dracon-46/AetherTable/wiki)
+(primeiros passos, arquitetura, fluxo de trabalho, CI, deploy, glossário). A
+fonte dela está em [`docs/wiki/`](docs/wiki) e passa por PR como o código. O
+histórico de versões está no [`CHANGELOG.md`](CHANGELOG.md) e na aba
+[Releases](https://github.com/Dracon-46/AetherTable/releases).
+
+O índice completo das especificações está em [`docs/readme.md`](docs/readme.md).
+Os mais consultados:
 
 | Documento                                                        | Para quê                                    |
 | ---------------------------------------------------------------- | ------------------------------------------- |
@@ -102,7 +122,10 @@ consultados:
 
 ## Licença
 
-UNLICENSED — uso privado. Magic: The Gathering é marca da Wizards of the
-Coast, que não patrocina nem endossa este projeto. Os dados de carta vêm da
-[Scryfall](https://scryfall.com); nenhuma imagem ou texto de carta é
-redistribuído por este repositório.
+© 2026 **Falkyria**. Todos os direitos reservados. Software proprietário: o
+código é público só para consulta, e a visibilidade não concede licença de uso,
+cópia ou distribuição. Os termos estão em [`LICENSE`](LICENSE).
+
+Magic: The Gathering é marca da Wizards of the Coast, que não patrocina nem
+endossa este projeto. Os dados de carta vêm da [Scryfall](https://scryfall.com);
+nenhuma imagem ou texto de carta é redistribuído por este repositório.

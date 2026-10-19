@@ -11,7 +11,11 @@
 # container de longa duração (Render Web Service, Fly Machine, Koyeb, VPS).
 
 # ─── Estágio 1: dependências e build ────────────────────────────────────────
-FROM node:22-slim AS builder
+# A imagem base vai fixada por versão E digest. `node:22-slim` muda por baixo
+# sem commit nenhum: o mesmo Dockerfile construía imagens diferentes em dias
+# diferentes, e um build que passou ontem podia quebrar hoje sem diff. O
+# Dependabot (ecossistema docker) abre o PR quando sai patch novo.
+FROM node:22.23.3-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS builder
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -66,7 +70,7 @@ RUN pnpm --filter @aethertable/shared-types build \
 RUN pnpm --filter game-server --prod deploy /out
 
 # ─── Estágio 2: runtime ─────────────────────────────────────────────────────
-FROM node:22-slim AS runner
+FROM node:22.23.3-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runner
 
 ENV NODE_ENV=production
 WORKDIR /app

@@ -118,7 +118,7 @@ export interface PingEvent {
  * Um `broadcast` aqui e um vazamento de informacao oculta.
  */
 export interface RevealToOwnerEvent {
-  cards: Array<{ id: string; scryfallId: string }>;
+  cards: { id: string; scryfallId: string }[];
   /**
    * Por que as cartas chegaram. O mesmo evento serve olhar, buscar (tutor) e
    * sortear; só a olhada abre o painel de olhada no cliente.
@@ -135,7 +135,7 @@ export interface RevealToOwnerEvent {
  */
 export interface ScryOpenedEvent {
   mode: 'SCRY' | 'SURVEIL';
-  cards: Array<{ id: string; scryfallId: string }>;
+  cards: { id: string; scryfallId: string }[];
 }
 
 export interface WarningEvent {
@@ -233,6 +233,18 @@ export interface MatchEndedEvent {
   winnerName: string;
 }
 
+/**
+ * O passe de voz desta sala. Vai SO a quem entrou, por `client.send()`, logo
+ * depois de aceitar a entrada e de novo a cada reconexao.
+ *
+ * E a prova, para a API, de que esta conta esta NESTA sala: o cliente o manda
+ * em `X-Passe-De-Voz` ao pedir a credencial do LiveKit. O seat token nao serve
+ * para isso — a API o emite para qualquer codigo de sala.
+ */
+export interface PasseDeVozEvent {
+  token: string;
+}
+
 /** Mapa canonico: nome do evento -> payload. */
 export interface ServerEventMap {
   log: LogEvent;
@@ -258,6 +270,7 @@ export interface ServerEventMap {
   kicked: KickedEvent;
   playerEliminated: PlayerEliminatedEvent;
   matchEnded: MatchEndedEvent;
+  'passe-de-voz': PasseDeVozEvent;
 }
 
 export type ServerEventType = keyof ServerEventMap;

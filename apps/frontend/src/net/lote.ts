@@ -45,11 +45,11 @@
  * carrega as duas informações juntas.
  */
 
-export type LoteDeCartas<T> = {
+export interface LoteDeCartas<T> {
   /** Mudanças por id, na ordem em que chegaram. `null` = remover. */
   alteradas: Map<string, T>;
   removidas: Set<string>;
-};
+}
 
 export interface Coalescedor<T> {
   /** Enfileira uma mudança. Cancela uma remoção pendente do mesmo id. */

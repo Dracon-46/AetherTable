@@ -9,15 +9,15 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings=0",
     "test": "jest --passWithNoTests",
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "undici": "^7.2.3"
+    "undici": "^7.30.1"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

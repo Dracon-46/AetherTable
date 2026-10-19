@@ -480,7 +480,7 @@ export function TableMenu({ room }: TableMenuProps) {
                     // Saída deliberada: sem apagar a chave, a próxima entrada
                     // nesta sala gastava uma tentativa de reconexão que falha.
                     esquecerReconexao(room.state?.roomCode || room.roomId);
-                    room.leave();
+                    void room.leave();
                     router.push('/dashboard');
                   }}
                   className="bg-danger flex-1 rounded-md px-2 py-1.5 text-xs font-bold text-white"

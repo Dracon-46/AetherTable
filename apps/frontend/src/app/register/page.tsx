@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { UserPlus, AlertCircle, ShieldCheck } from 'lucide-react';
 import { CenaDoDragao, useDragao } from '../CenaDoDragao';
-import { useAuthStore } from '../../store/auth.store';
+import { useAuthStore, type SessaoDaApi } from '../../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
@@ -54,7 +54,7 @@ export default function RegisterPage() {
         body: JSON.stringify({ username, email, password }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as SessaoDaApi;
 
       if (!response.ok) {
         // `data.message` de um 400 de validação é só "Dados inválidos." — a
@@ -67,8 +67,8 @@ export default function RegisterPage() {
       // (sem precisar de um segundo fetch para login)
       setAuth(data.accessToken, data.user);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : null);
       setIsRegistering(false);
     } finally {
       setEstadoServidor(null);
