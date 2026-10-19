@@ -1,0 +1,15 @@
+# Quem revisa o quê. O GitHub pede revisão destas pessoas automaticamente nos
+# PRs que tocam os caminhos abaixo. Vale a ÚLTIMA regra que casar com o arquivo.
+#
+# Hoje é uma pessoa só. As linhas por área existem para o dia em que a Falkyria
+# tiver mais gente: basta trocar o dono da linha, sem reescrever o arquivo.
+
+*                               @Dracon-46
+
+# Fronteiras de segurança: passe de mesa, visibilidade, autenticação.
+/apps/game-server/src/rooms/    @Dracon-46
+/apps/game-server/src/schema/   @Dracon-46
+/apps/backend-core/src/auth/    @Dracon-46
+
+# O pipeline roda com o token do repositório.
+/.github/                       @Dracon-46

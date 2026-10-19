@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Revisão de dependências no pull request.
+#
+# O `pnpm audit` acusa o que JÁ está no lockfile; este job acusa o que o PR
+# está TRAZENDO. A diferença importa: uma vulnerabilidade antiga não deve
+# bloquear um PR que não mexeu em dependência, e uma nova não deve entrar só
+# porque o resto do lockfile também tem problema.
+#
+# Também barra licença incompatível com um produto fechado: GPL e AGPL
+# obrigariam a abrir o código de quem as incorpora.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Dependências
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  revisar:
+    name: Revisão de dependências
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later

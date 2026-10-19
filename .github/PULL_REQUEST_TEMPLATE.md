@@ -12,8 +12,8 @@
 
 - [ ] `pnpm verificar` passa
 - [ ] Comportamento novo tem teste; correção tem o teste que falhava antes dela
-- [ ] Mexeu em render, geometria ou conexão da mesa → E2E multijogador rodado ([DOC-092 §2](../docs/politica_de_testes.md))
-- [ ] Documentos afetados atualizados **neste PR** ([DOC-093 §2](../docs/politica_de_documentacao.md))
+- [ ] Mexeu em render, geometria ou conexão da mesa → E2E multijogador rodado ([DOC-092 §2](https://github.com/Dracon-46/AetherTable/blob/main/docs/politica_de_testes.md))
+- [ ] Documentos afetados atualizados **neste PR** ([DOC-093 §2](https://github.com/Dracon-46/AetherTable/blob/main/docs/politica_de_documentacao.md))
 - [ ] Gerados regerados: `pnpm docs:estado`, `pnpm schema:sync`
 - [ ] Variável de ambiente nova está em `.env.example` **e** no `render.yaml`
 - [ ] Nenhum segredo no diff

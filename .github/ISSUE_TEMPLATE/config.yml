@@ -1,0 +1,11 @@
+# Issue em branco desligada: os dois formulários pedem o que quem corrige
+# precisa (quantos jogadores na mesa, qual navegador), e a issue livre chegava
+# sem nada disso.
+blank_issues_enabled: false
+contact_links:
+  - name: Falha de segurança
+    url: https://github.com/Dracon-46/AetherTable/security/advisories/new
+    about: Relato privado. Não abra issue pública para vulnerabilidade.
+  - name: Documentação e guias
+    url: https://github.com/Dracon-46/AetherTable/wiki
+    about: Como rodar, como contribuir, arquitetura e glossário.

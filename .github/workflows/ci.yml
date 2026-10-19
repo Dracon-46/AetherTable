@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # CI do AetherTable.
 #
-# `.github/workflows/` existia VAZIO: nenhuma verificação automática rodava em
-# push ou pull request. Os defeitos encontrados na auditoria de 31/08 eram
+# `.github/workflows/` já existiu VAZIO: nenhuma verificação automática rodava
+# em push ou pull request. Os defeitos encontrados na auditoria de 31/08 eram
 # todos detectáveis por máquina:
 #
 #   - `next build` quebrado (useSearchParams sem Suspense) → job `build-e2e`;
@@ -10,19 +10,33 @@
 #   - hooks condicionais derrubando a mesa → `lint` (react-hooks/rules-of-hooks);
 #   - intenções que o cliente emitia e o servidor não conhecia → `test`.
 #
-# ─── POR QUE TRÊS JOBS, E NÃO UM ────────────────────────────────────────────
+# ─── OS JOBS ────────────────────────────────────────────────────────────────
 #
-# Era um job só, em fila: um lint quebrado escondia o resultado dos testes, e um
-# teste do backend falhando só aparecia depois de 15 minutos de passos que nada
-# tinham a ver com ele. Agora:
-#
+#   atribuicao — mensagens de commit sem atribuição a ferramenta (DOC-091 §5);
 #   qualidade  — o que é barato e pega muita coisa (formatação, schema,
-#                paridade de intenções, lint, typecheck);
-#   testes     — um job POR APP, em paralelo: a falha diz de qual app é, e um
-#                app não espera o outro;
-#   build-e2e  — o build de produção e as telas públicas no Chromium.
+#                paridade de intenções, lint com tipos, typecheck);
+#   testes     — um job POR PACOTE, em paralelo: a falha diz de qual pacote
+#                é, e um não espera o outro;
+#   build-e2e  — o build de produção e as telas públicas no Chromium;
+#   docker     — as imagens do Render construídas de verdade. O `pnpm deploy`
+#                do Dockerfile já quebrou um deploy com o CI verde, porque
+#                nada aqui construía a imagem;
+#   ci-ok      — o único check que a proteção de branch precisa exigir. A
+#                matriz de testes pode ganhar ou perder pacote sem ninguém
+#                lembrar de atualizar a regra da branch.
 #
-# Os três rodam ao mesmo tempo; o PR só fica verde com os três.
+# ─── SEGURANÇA DO PRÓPRIO PIPELINE ──────────────────────────────────────────
+#
+#   - `permissions: contents: read` — o GITHUB_TOKEN deixa de herdar o padrão
+#     do repositório. Nenhum job aqui escreve nada.
+#   - `persist-credentials: false` — o checkout não deixa o token no
+#     `.git/config`, onde um `postinstall` comprometido no `pnpm install` o
+#     leria.
+#   - Actions de terceiros fixadas por SHA, não por tag: tag é móvel, e uma
+#     tag sequestrada roda código arbitrário com o token do repositório. O
+#     Dependabot mantém os SHAs atualizados (ver .github/dependabot.yml).
+#   - Nada de `${{ github.event... }}` interpolado dentro de `run:` — vai por
+#     `env:`, que o shell trata como dado, nunca como código.
 # ─────────────────────────────────────────────────────────────────────────────
 name: CI
 
@@ -34,60 +48,71 @@ on:
     # trabalho so era verificada quando virava PR — e subir para ver o CI antes
     # de abrir o PR era impossivel.
     branches: [main, develop, 'release/**', 'hotfix/**', 'feature/**', 'fix/**']
+    paths-ignore: ['docs/wiki/**']
   pull_request:
   # Botão "Run workflow" na aba Actions, para rodar sob demanda.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Um push novo na mesma branch (ou no mesmo PR) cancela a execução anterior.
+  # Na `main` não: cada commit dela é um release, e o resultado de cada um
+  # precisa ficar registrado.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  qualidade:
-    name: Qualidade (formatação, schema, lint, tipos)
+  atribuicao:
+    name: Mensagens de commit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # O historico e preciso para varrer as mensagens dos commits que
           # chegaram. Com o clone raso padrao (depth 1) so existe um commit, e
-          # a checagem de atribuicao passaria sem olhar nada.
+          # a checagem passaria sem olhar nada.
           fetch-depth: 0
 
       - name: Nenhuma atribuicao a ferramenta nas mensagens
         # Ultima rede. O `commit-msg` barra ao escrever e o `pre-push` ao
         # subir, mas os dois sao locais e puláveis com `--no-verify`; aqui nao
         # ha como pular. Ver DOC-091 §5 para por que a regra existe.
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_DO_PR: ${{ github.event.pull_request.base.sha }}
+          TOPO_DO_PR: ${{ github.event.pull_request.head.sha }}
+          ANTES: ${{ github.event.before }}
+          DEPOIS: ${{ github.sha }}
+          PADRAO: ${{ github.event.repository.default_branch }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          if [ "$EVENTO" = "pull_request" ]; then
+            RANGE="$BASE_DO_PR..$TOPO_DO_PR"
+          elif [ -z "$ANTES" ] || [ "$ANTES" = "0000000000000000000000000000000000000000" ]; then
+            # Primeiro push de uma branch nova: o `before` vem zerado, e o
+            # intervalo invalido fazia a checagem sair limpa sem olhar nada.
+            RANGE="origin/$PADRAO..$DEPOIS"
           else
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
+            RANGE="$ANTES..$DEPOIS"
           fi
           echo "Verificando $RANGE"
           node tools/sem-atribuicao-de-ia.mjs --range "$RANGE"
 
-      - uses: pnpm/action-setup@v4
+  qualidade:
+    name: Qualidade (formatação, schema, lint, tipos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 9.15.4
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/preparar
         with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Instalar dependências
-        run: pnpm install --frozen-lockfile
-
-      - name: Gerar o Prisma Client
-        run: pnpm --filter backend-core exec prisma generate
-
-      - name: Compilar pacotes compartilhados
-        # O frontend e o game-server importam `@aethertable/shared-types` pelo
-        # `dist`. Sem este passo, typecheck e testes falham por módulo ausente.
-        run: pnpm --filter @aethertable/shared-types --filter @aethertable/scryfall-client build
+          prisma: 'true'
 
       - name: Mirror de schema Colyseus em sincronia
         # Falha se apps/frontend/src/net/schema divergir do game-server. Esta é
@@ -96,85 +121,65 @@ jobs:
         # sem emitir um único erro em runtime.
         run: pnpm schema:check
 
-      - name: Formatacao
+      - name: Formatação
         # Diff de formatacao some no meio de diff de conteudo, e revisor humano
         # gasta atencao com ele. O `pre-commit` ja formata o que esta staged;
         # este passo pega o que entrou por outro caminho.
         run: pnpm format:check
 
-      - name: Paridade de intencoes
+      - name: Paridade de intenções
         # Intencao que o cliente emite e o servidor nao conhece e descartada em
         # SILENCIO pelo Colyseus — nao ha erro para o teste pegar. Esta
         # ferramenta compara contrato, REGISTRY e emissores.
         run: pnpm docs:estado
 
-      - name: Lint
+      - name: Lint (com tipos, zero aviso)
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
 
   testes:
-    name: Testes — ${{ matrix.app }}
+    name: Testes — ${{ matrix.pacote }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
-      # Um app vermelho não cancela os outros: o relatório completo de uma vez
-      # é o que poupa a segunda volta de push.
+      # Um pacote vermelho não cancela os outros: o relatório completo de uma
+      # vez é o que poupa a segunda volta de push.
       fail-fast: false
       matrix:
-        app: [backend-core, game-server, frontend]
-
+        pacote: [backend-core, game-server, frontend, '@aethertable/scryfall-client']
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 9.15.4
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/preparar
         with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Instalar dependências
-        run: pnpm install --frozen-lockfile
-
-      - name: Gerar o Prisma Client
-        if: matrix.app == 'backend-core'
-        run: pnpm --filter backend-core exec prisma generate
-
-      - name: Compilar pacotes compartilhados
-        run: pnpm --filter @aethertable/shared-types --filter @aethertable/scryfall-client build
+          prisma: ${{ matrix.pacote == 'backend-core' }}
 
       - name: Jest
         # `--ci` faz snapshot ausente falhar em vez de ser gravado. Dois
         # workers: o runner tem 4 núcleos e o jsdom do frontend é pesado — com
         # o padrão, os workers disputavam memória e o jest morria sem relatório.
-        run: pnpm --filter ${{ matrix.app }} test -- --ci --maxWorkers=2
+        env:
+          PACOTE: ${{ matrix.pacote }}
+        run: pnpm --filter "$PACOTE" test -- --ci --maxWorkers=2
 
   build-e2e:
     name: Build e E2E das telas públicas
     runs-on: ubuntu-latest
     timeout-minutes: 25
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 9.15.4
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/preparar
         with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Instalar dependências
-        run: pnpm install --frozen-lockfile
-
-      - name: Gerar o Prisma Client
-        run: pnpm --filter backend-core exec prisma generate
+          prisma: 'true'
+          # O `pnpm build` do turbo compila os pacotes na ordem certa.
+          pacotes: 'false'
 
       - name: Build
         run: pnpm build
@@ -195,8 +200,44 @@ jobs:
 
       - name: Guardar o relatório do E2E quando falhar
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: apps/frontend/playwright-report
           retention-days: 7
+
+  docker:
+    name: Imagem — ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [backend-core, game-server]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Construir a imagem de produção
+        # O contexto é a RAIZ do monorepo, igual ao Render. A imagem não é
+        # publicada: o que interessa é o build passar.
+        env:
+          APP: ${{ matrix.app }}
+        run: docker build --file "apps/$APP/Dockerfile" --tag "aethertable-$APP:ci" .
+
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [atribuicao, qualidade, testes, build-e2e, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Todos os jobs passaram
+        env:
+          RESULTADOS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Resultados: $RESULTADOS"
+          for r in $RESULTADOS; do
+            [ "$r" = "success" ] || { echo "::error::algum job terminou em '$r'"; exit 1; }
+          done

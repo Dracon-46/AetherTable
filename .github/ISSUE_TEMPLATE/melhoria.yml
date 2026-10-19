@@ -1,0 +1,39 @@
+name: Melhoria
+description: Uma funcionalidade nova ou uma mudança de comportamento.
+title: '[melhoria] '
+labels: [melhoria]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: O problema
+      description: >-
+        Comece pelo problema, não pela solução. O que hoje é difícil, confuso ou
+        impossível, e para quem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposta
+    attributes:
+      label: A proposta
+    validations:
+      required: true
+
+  - type: textarea
+    id: descartado
+    attributes:
+      label: O que foi descartado, e por quê
+      description: >-
+        Se você já pensou em outra saída e a descartou, escreva. É a informação
+        mais cara de recuperar depois, e a que evita refazer a mesma discussão.
+
+  - type: checkboxes
+    id: regras
+    attributes:
+      label: Encosta em alguma regra do projeto?
+      description: Marque as que a proposta toca.
+      options:
+        - label: 'RN01: não existe motor de regras. O sistema move peças, não aplica regras.'
+        - label: 'RN06: aleatoriedade só pelo CSPRNG do servidor.'
+        - label: 'RN12: o estado da sala vive em RAM, nunca no Postgres.'

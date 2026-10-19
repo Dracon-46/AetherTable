@@ -55,7 +55,7 @@ const PASSOS = [
   {
     nome: 'lint',
     comando: ['pnpm', ['lint']],
-    pega: 'Hook condicional (já derrubou a mesa) e `Math.random()` fora de services/rng.ts (RN06).',
+    pega: 'Promessa sem dono, `any` vazando, hook condicional (já derrubou a mesa) e `Math.random()` fora de services/rng.ts (RN06). Zero aviso.',
   },
   {
     nome: 'typecheck',

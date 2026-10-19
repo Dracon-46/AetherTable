@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Atualização automática de dependências.
+#
+# A auditoria de 19/10/2026 achou 38 vulnerabilidades conhecidas nas
+# dependências de produção (3 críticas), quase todas já corrigidas em versão
+# de patch publicada meses antes. Ninguém ficou sabendo porque nada avisava.
+#
+# Os PRs vão para a `develop` (DOC-091: a `main` só recebe release), uma vez
+# por semana e agrupados: um PR por ecossistema com tudo que é minor/patch, e
+# major sempre em PR próprio, porque major é a que quebra.
+# ─────────────────────────────────────────────────────────────────────────────
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    commit-message:
+      prefix: 'build(deps)'
+      prefix-development: 'build(deps-dev)'
+    groups:
+      producao:
+        dependency-type: production
+        update-types: [minor, patch]
+      desenvolvimento:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    # Inclui a action composta em .github/actions/preparar.
+    directories: ['/', '/.github/actions/*']
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Sao_Paulo
+    commit-message:
+      prefix: 'ci'
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directories: ['/apps/backend-core', '/apps/game-server']
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Sao_Paulo
+    commit-message:
+      prefix: 'build(docker)'
+    ignore:
+      # A imagem acompanha o `engines` do package.json (Node 22). Trocar de
+      # major é decisão de projeto, não atualização de rotina.
+      - dependency-name: node
+        update-types: [version-update:semver-major]

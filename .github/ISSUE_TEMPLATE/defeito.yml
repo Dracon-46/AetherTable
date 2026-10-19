@@ -1,0 +1,82 @@
+name: Defeito
+description: Algo que não funciona como deveria.
+title: '[defeito] '
+labels: [defeito]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por relatar. **Falha de segurança não vai aqui**: use o
+        [relato privado](https://github.com/Dracon-46/AetherTable/security/advisories/new),
+        porque uma issue é pública antes de existir correção.
+
+  - type: textarea
+    id: aconteceu
+    attributes:
+      label: O que aconteceu
+      description: O comportamento observado.
+    validations:
+      required: true
+
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que você esperava
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduzir
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: onde
+    attributes:
+      label: Onde
+      options:
+        - Mesa (partida em andamento)
+        - Sala de espera
+        - Deckbuilder
+        - Conta, login ou cadastro
+        - Painel (Taverna, Explorar, histórico)
+        - Administração
+        - Outro
+    validations:
+      required: true
+
+  - type: input
+    id: jogadores
+    attributes:
+      label: Jogadores na sala
+      description: >-
+        Se foi na mesa. O número de jogadores importa mais do que parece: a
+        maioria dos defeitos de mesa só aparece com dois ou mais.
+      placeholder: 'ex.: 4, eu era o anfitrião'
+
+  - type: input
+    id: formato
+    attributes:
+      label: Formato da partida
+      placeholder: 'ex.: Commander, Duel Commander'
+
+  - type: input
+    id: navegador
+    attributes:
+      label: Navegador e sistema
+      placeholder: 'ex.: Chrome 141 no Windows 11'
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console do navegador
+      description: Erros que apareceram (F12 → Console), se houver.
+      render: text

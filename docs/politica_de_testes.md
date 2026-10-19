@@ -146,11 +146,13 @@ Nesta ordem, e a ordem importa:
 
 ## 6. Onde a bateria roda sozinha
 
-| Momento                                            | O quê                                                 | Onde                       |
-| -------------------------------------------------- | ----------------------------------------------------- | -------------------------- |
-| `git commit`                                       | ESLint + Prettier nos arquivos staged                 | `.husky/pre-commit`        |
-| `git push`                                         | A bateria completa                                    | `.husky/pre-push`          |
-| PR, push em `main`/`develop`/`feature/**`/`fix/**` | Bateria + build + E2E público, em três jobs paralelos | `.github/workflows/ci.yml` |
+| Momento                                            | O quê                                                             | Onde                                 |
+| -------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------ |
+| `git commit`                                       | ESLint + Prettier nos arquivos staged                             | `.husky/pre-commit`                  |
+| `git push`                                         | A bateria completa                                                | `.husky/pre-push`                    |
+| PR, push em `main`/`develop`/`feature/**`/`fix/**` | Bateria + build + E2E público + imagens Docker, em jobs paralelos | `.github/workflows/ci.yml`           |
+| PR, push em `main`/`develop`, toda segunda         | Análise estática de segurança (CodeQL)                            | `.github/workflows/codeql.yml`       |
+| PR contra `main`/`develop`                         | Dependência nova com vulnerabilidade alta ou licença incompatível | `.github/workflows/dependencias.yml` |
 
 O hook de push existe porque o CI descobre tarde: o custo de um push quebrado
 é o tempo de todo mundo que puxou a branch nesse meio-tempo. Ele é o mesmo

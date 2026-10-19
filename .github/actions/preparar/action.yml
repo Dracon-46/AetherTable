@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# O preparo que todo job do CI repete: pnpm, Node, dependências e o que precisa
+# estar compilado antes de qualquer verificação.
+#
+# Eram os mesmos cinco passos copiados em três jobs. A versão do pnpm estava
+# escrita à mão em cada um, e divergir do `packageManager` do package.json é
+# a receita de um lockfile que passa local e falha no CI. Agora há um lugar só:
+# o pnpm lê a versão do `packageManager`, e o Node lê a do `.nvmrc`.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Preparar o monorepo
+description: pnpm, Node, dependências congeladas e os pacotes compartilhados compilados.
+
+inputs:
+  prisma:
+    description: Gerar o Prisma Client (só quem toca o backend-core precisa).
+    default: 'false'
+  pacotes:
+    description: Compilar shared-types e scryfall-client (o resto importa pelo `dist`).
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+        cache: pnpm
+
+    - name: Instalar dependências
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Gerar o Prisma Client
+      if: inputs.prisma == 'true'
+      shell: bash
+      run: pnpm --filter backend-core exec prisma generate
+
+    - name: Compilar pacotes compartilhados
+      # O frontend e o game-server importam `@aethertable/shared-types` pelo
+      # `dist`. Sem este passo, typecheck, lint com tipos e testes falham por
+      # módulo ausente — e a mensagem não fala do problema real.
+      if: inputs.pacotes == 'true'
+      shell: bash
+      run: pnpm --filter @aethertable/shared-types --filter @aethertable/scryfall-client build

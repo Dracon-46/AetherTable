@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Análise estática de segurança (CodeQL).
+#
+# O lint pega o defeito que tem forma — promessa sem dono, hook condicional. O
+# CodeQL pega o que tem CAMINHO: dado vindo da requisição que chega a uma query,
+# a um redirecionamento, a um `RegExp`, a um caminho de arquivo. É o tipo de
+# furo que a revisão humana deixa passar porque a fonte e o destino estão em
+# arquivos diferentes.
+#
+# `actions` entra como linguagem: os próprios workflows são código que roda
+# com o token do repositório, e injeção por `${{ }}` em `run:` é o furo mais
+# comum deles.
+#
+# Os alertas aparecem em Security → Code scanning, não no log do job.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CodeQL
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Toda segunda, 06:17 UTC. As consultas do CodeQL melhoram sozinhas: código
+    # que estava limpo pode ganhar alerta novo sem ninguém mexer nele.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analisar:
+    name: CodeQL — ${{ matrix.linguagem }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        linguagem: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ matrix.linguagem }}
+          # TypeScript e workflows são analisados sem compilar nada.
+          build-mode: none
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: /language:${{ matrix.linguagem }}
