@@ -254,7 +254,17 @@ export const useCardCatalog = create<CatalogState>((set, get) => ({
       pendentes.add(id);
       novos += 1;
     }
-    if (novos === 0) return;
+    /**
+     * ─── IDS PRESOS DEPOIS DE UMA FALHA DE REDE ─────────────────────────
+     *
+     * A drenagem que falha para no meio, e o que ela não chegou a pedir fica
+     * em `pendentes`. Sair só por "nenhum id novo" deixava esses ids presos
+     * para sempre: quem os pedia de novo caía no `pendentes.has` acima, não
+     * contava como novo, e nada voltava a agendar a drenagem. As cartas ficavam
+     * sem nome até recarregar a página. Sem id novo, só sai se não há o que
+     * drenar ou se uma drenagem já está a caminho.
+     */
+    if (novos === 0 && (pendentes.size === 0 || agendado !== null || drenando)) return;
 
     if (agendado) clearTimeout(agendado);
     agendado = setTimeout(() => {
@@ -311,8 +321,9 @@ async function drenar(
         set({ cartas, ausentes: { ...get().ausentes, ...naoAchados } });
         gravarCache(cartas);
       } catch (erro) {
-        // Falha de rede não pode virar loop: os ids voltam para a fila UMA vez
-        // e a drenagem para. O próximo `hidratar` tenta de novo.
+        // Falha de rede não pode virar loop: a drenagem para, o lote que falhou
+        // fica livre para ser pedido de novo e o resto espera em `pendentes`.
+        // O próximo `hidratar` retoma.
         console.warn('[catalog] Falha ao hidratar cartas:', erro);
         lote.forEach((id) => emVoo.delete(id));
         break;

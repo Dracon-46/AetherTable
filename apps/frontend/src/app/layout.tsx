@@ -1,27 +1,12 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
+import { inter } from './fonte';
 import { Providers } from './Providers';
 
 export const metadata: Metadata = {
   title: 'AetherTable - O Seu Novo Card Game',
   description: 'Jogue seus formatos favoritos de card games de forma online, imersiva e gratuita.',
 };
-
-/**
- * A Inter é baixada no build e servida pelo próprio site. Com o `<link>` do
- * Google Fonts, cada visita mandava o IP do visitante ao Google (LGPD).
- *
- * O nome da família que o `next/font` gera não é "Inter": quem precisa da
- * fonte lê a variável `--font-inter`, via `--font-sans` no `globals.css`. Ela
- * fica no `<html>` porque é ali (`:root`) que o `--font-sans` é resolvido.
- */
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-  variable: '--font-inter',
-});
 
 export default function RootLayout({
   children,

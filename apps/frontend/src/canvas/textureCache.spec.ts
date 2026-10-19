@@ -21,7 +21,7 @@
  * obriga a decisão a ser deliberada, em vez de um número mudado de passagem.
  */
 
-import { getTexture, limparCache, tamanhoDoCache } from './textureCache';
+import { cardImageUrl, getTexture, limparCache, tamanhoDoCache } from './textureCache';
 
 beforeEach(() => {
   limparCache();
@@ -106,6 +106,35 @@ describe('cache de texturas', () => {
     for (let i = 0; i < 400; i += 1) getTexture(`empurra-${i}`, 'normal', 'front');
 
     expect(segurada.src).toBe(urlOriginal);
+  });
+
+  it('uma imagem que FALHOU sai do cache: o próximo pedido tenta de novo', () => {
+    // Guardada, a imagem quebrada voltava para toda carta com o mesmo id, e a
+    // arte nunca mais era pedida até recarregar a página.
+    const quebrada = getTexture('falhou', 'normal', 'front');
+    quebrada.dispatchEvent(new Event('error'));
+
+    expect(tamanhoDoCache()).toBe(0);
+    expect(getTexture('falhou', 'normal', 'front')).not.toBe(quebrada);
+  });
+
+  it('a falha de uma imagem já substituída não tira a nova do cache', () => {
+    // A antiga sai pelo LRU ainda carregando; a carta é pedida de novo e ganha
+    // outra instância; só então a antiga falha.
+    const antiga = getTexture('troca', 'normal', 'front');
+    for (let i = 0; i < 400; i += 1) getTexture(`empurra-${i}`, 'normal', 'front');
+    const nova = getTexture('troca', 'normal', 'front');
+
+    antiga.dispatchEvent(new Event('error'));
+
+    expect(getTexture('troca', 'normal', 'front')).toBe(nova);
+  });
+
+  it('o id vai codificado na URL da arte', () => {
+    // O id vem do estado da sala; sem codificar, `../` ou `?` mudariam o
+    // caminho pedido à API.
+    const url = cardImageUrl('../admin?x=1', 'normal', 'front');
+    expect(url).toContain('/cards/img/..%2Fadmin%3Fx%3D1?quality=normal&face=front');
   });
 
   it('`limparCache` zera tudo', () => {

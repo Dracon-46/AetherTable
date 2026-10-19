@@ -37,7 +37,7 @@
   --color-mana-r: #e49977;
   --color-mana-g: #a3c095;
 
-  /* Fontes (Inter, via `next/font` — ver `app/layout.tsx`) */
+  /* Fontes (Inter, via `next/font` — ver `app/fonte.ts`) */
   --font-sans: var(--font-inter), system-ui, sans-serif;
 }
 

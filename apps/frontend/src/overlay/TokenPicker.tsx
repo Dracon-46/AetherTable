@@ -93,6 +93,13 @@ function lembrarRecente(f: FichaSalva): FichaSalva[] {
   return nova;
 }
 
+/** O termo que o campo pede; `null` com uma letra só (espera a segunda). */
+function termoDaBusca(query: string): string | null {
+  const texto = query.trim();
+  if (texto === '') return 't:token';
+  return texto.length >= 2 ? `t:token ${query}` : null;
+}
+
 export function TokenPicker({ room }: TokenPickerProps) {
   const isActive = useUIStore((s) => s.activeModals.tokens);
   const toggleModal = useUIStore((s) => s.toggleModal);
@@ -137,7 +144,9 @@ export function TokenPicker({ room }: TokenPickerProps) {
     const deckId = deckDaSala(room.state?.roomCode ?? '');
     if (!deckId) return;
     let ativo = true;
-    fetch(`${API_URL}/decks/${deckId}`, { headers: { Authorization: `Bearer ${accessToken}` } })
+    fetch(`${API_URL}/decks/${encodeURIComponent(deckId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((deck: { cards?: { scryfallId: string }[] } | null) => {
         if (!ativo || !deck?.cards) return;
@@ -172,58 +181,67 @@ export function TokenPicker({ room }: TokenPickerProps) {
     return [...vistas.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [idsDoDeck, idsVisiveis, catalogo]);
 
+  /**
+   * ─── SÓ A ÚLTIMA BUSCA ESCREVE NA TELA ──────────────────────────────────
+   *
+   * Digitar "zo", parar, digitar "zombie": as duas buscas saem, e a resposta
+   * da primeira podia chegar DEPOIS da segunda. A lista mostrava as fichas de
+   * "zo" com "zombie" no campo, e o indicador de busca apagava enquanto a
+   * busca que valia ainda estava no ar.
+   */
+  const ultimaBusca = useRef(0);
+  /** O termo cuja resposta está na tela; `null` = nenhuma, ou a última falhou. */
+  const termoNaTela = useRef<string | null>(null);
+
   // A falha já vira lista vazia aqui dentro: quem chama pode disparar e esquecer.
-  const performSearch = useCallback(async (q: string) => {
+  const performSearch = useCallback(async (termo: string) => {
+    ultimaBusca.current += 1;
+    const minha = ultimaBusca.current;
     setIsSearching(true);
     try {
       // Espelho do backend: `api.scryfall.com` pode estar bloqueado na rede.
       const res = await fetch(
-        `${API_URL}/cards/search?q=${encodeURIComponent(q)}&order=cmc&dir=asc`,
+        `${API_URL}/cards/search?q=${encodeURIComponent(termo)}&order=cmc&dir=asc`,
       );
-      if (res.ok) {
-        const data = (await res.json()) as { data?: FichaDaBusca[] };
-        setResults(data.data?.slice(0, 30) ?? []);
-      } else {
-        setResults([]);
-      }
+      const data = res.ok ? ((await res.json()) as { data?: FichaDaBusca[] }) : null;
+      if (minha !== ultimaBusca.current) return;
+      setResults(data?.data?.slice(0, 30) ?? []);
+      termoNaTela.current = data ? termo : null;
     } catch (e) {
       console.error(e);
+      if (minha !== ultimaBusca.current) return;
       setResults([]);
+      termoNaTela.current = null;
     } finally {
-      setIsSearching(false);
+      if (minha === ultimaBusca.current) setIsSearching(false);
     }
   }, []);
 
   /**
-   * A busca inicial decide pelo estado do momento em que o painel ABRE. Ler a
-   * lista e o texto por ref, e não como dependência, evita que limpar o campo
-   * ou receber uma lista vazia dispare uma segunda busca junto com a do
-   * debounce abaixo.
+   * ─── PAINEL FECHADO NÃO BUSCA ───────────────────────────────────────────
+   *
+   * O painel fica montado a partida inteira. O debounce disparava a busca
+   * genérica meio segundo depois de cada jogador entrar na mesa, mesmo para
+   * quem nunca abriu o painel.
+   *
+   * Ao ABRIR, busca na hora — a não ser que a lista na tela já seja a resposta
+   * do texto do campo. Digitando, espera o debounce.
    */
-  const estadoDaBusca = useRef({ query, semResultados: results.length === 0 });
+  const estavaAberto = useRef(false);
   useEffect(() => {
-    estadoDaBusca.current = { query, semResultados: results.length === 0 };
-  }, [query, results.length]);
+    const acabouDeAbrir = isActive && !estavaAberto.current;
+    estavaAberto.current = isActive;
+    if (!isActive) return;
 
-  // Busca inicial genérica de tokens comuns
-  useEffect(() => {
-    const { query: texto, semResultados } = estadoDaBusca.current;
-    if (isActive && semResultados && texto === '') {
-      void performSearch('t:token');
+    const termo = termoDaBusca(query);
+    if (termo === null) return;
+    if (acabouDeAbrir) {
+      if (termo !== termoNaTela.current) void performSearch(termo);
+      return;
     }
-  }, [isActive, performSearch]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (query.trim().length >= 2) {
-        void performSearch(`t:token ${query}`);
-      } else if (query.trim() === '') {
-        void performSearch('t:token');
-      }
-    }, 500);
-
+    const handler = setTimeout(() => void performSearch(termo), 500);
     return () => clearTimeout(handler);
-  }, [query, performSearch]);
+  }, [isActive, query, performSearch]);
 
   /** Busca a impressão mais recente do preset e cria a ficha direto. */
   const criarPreset = async (query: string) => {

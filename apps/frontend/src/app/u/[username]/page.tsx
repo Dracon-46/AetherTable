@@ -2,7 +2,9 @@ import React from 'react';
 import { API_URL } from '@/lib/api';
 import { User, Trophy, Calendar, Ghost } from 'lucide-react';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import type { UserRole } from '@aethertable/shared-types';
+import { usernameValido } from '@/lib/perfil';
 
 /** O que `GET /users/:username` devolve. Sem e-mail: o perfil é público. */
 interface PerfilPublico {
@@ -18,7 +20,9 @@ interface PerfilPublico {
 
 async function getProfile(username: string) {
   try {
-    const res = await fetch(`${API_URL}/users/${username}`, { next: { revalidate: 60 } });
+    const res = await fetch(`${API_URL}/users/${encodeURIComponent(username)}`, {
+      next: { revalidate: 60 },
+    });
     if (!res.ok) {
       if (res.status === 404) return null;
       throw new Error('Falha ao carregar perfil');
@@ -36,7 +40,10 @@ export default async function PublicProfilePage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const profile = await getProfile(username);
+  // Um nome que o backend recusaria não vira requisição: `/u/..%2Fadmin`
+  // montava outro caminho da API, renderizado no servidor.
+  if (!usernameValido(username)) notFound();
+  const profile = await getProfile(username.trim());
 
   if (!profile) {
     return (

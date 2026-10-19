@@ -31,6 +31,10 @@ const INTENCAO: Record<string, string> = {
   NOT_YOUR_TURN: 'Não é a sua vez. Só quem está na vez passa o turno.',
   NOT_HOST: 'Só o anfitriao da mesa (o primeiro assento) pode fazer isso.',
   INTERNAL: 'Erro interno do servidor nessa ação. As outras continuam funcionando.',
+  // Tetos do servidor contra estado inchado: fichas por jogador, cartas na sala,
+  // contadores por carta e setas por jogador.
+  LIMIT:
+    'A mesa chegou a um limite (fichas, cartas, contadores ou setas). Remova algo antes de criar mais.',
 };
 
 /**

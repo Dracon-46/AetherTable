@@ -30,6 +30,16 @@ export interface PerfilDaConta extends PerfilSalvo {
   _count?: { participions: number };
 }
 
+/**
+ * A regra de nome de usuário do backend (`users.dto.ts`): 3 a 24 letras,
+ * números, ponto, hífen ou underline, depois do `trim`.
+ */
+const USERNAME = /^[a-zA-Z0-9_.-]{3,24}$/;
+
+export function usernameValido(nome: string): boolean {
+  return USERNAME.test(nome.trim());
+}
+
 export function apelidoParaEnvio(
   digitado: string,
   anterior: string | null | undefined,

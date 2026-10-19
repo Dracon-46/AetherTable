@@ -181,4 +181,37 @@ describe('catálogo de cartas', () => {
     await esperarFila();
     expect(chamadas).toBe(0);
   });
+
+  it('depois de uma falha de rede, os ids que ficaram na fila voltam a ser pedidos', async () => {
+    /**
+     * 80 ids = um lote de 75 e sobram 5. O primeiro lote falha, a drenagem
+     * para, e os 5 ficam na fila. Pedi-los de novo não contava como "id novo"
+     * e nada reagendava a drenagem: ficavam sem nome até recarregar a página.
+     */
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const ids = Array.from({ length: 80 }, (_, i) => `preso-${i}`);
+    const corpos: string[] = [];
+    let primeira = true;
+    global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      chamadas += 1;
+      corpos.push(typeof init?.body === 'string' ? init.body : '');
+      if (primeira) {
+        primeira = false;
+        throw new TypeError('Failed to fetch');
+      }
+      return { ok: true, status: 200, json: async () => ({ data: [], not_found: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    useCardCatalog.getState().hidratar(ids);
+    await esperarFila();
+    expect(chamadas).toBe(1);
+
+    const sobra = ids.slice(75);
+    useCardCatalog.getState().hidratar(sobra);
+    await esperarFila();
+
+    expect(chamadas).toBe(2);
+    for (const id of sobra) expect(corpos[1]).toContain(id);
+    jest.restoreAllMocks();
+  });
 });

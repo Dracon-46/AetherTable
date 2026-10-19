@@ -9,7 +9,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
 import * as Colyseus from 'colyseus.js';
-import { WS_URL, API_URL } from '@/lib/api';
+import { LIVEKIT_URL, WS_URL } from '@/lib/api';
 import { AETHER_ROOM } from '@aethertable/shared-types';
 import { useRoomSync } from '@/net/useRoomSync';
 import { RoomState } from '@/net/schema/RoomState';
@@ -43,7 +43,8 @@ import { SorteioOverlay } from '@/overlay/SorteioOverlay';
 import { ReacoesOverlay } from '@/overlay/ReacoesOverlay';
 import { ManaTracker } from '@/overlay/ManaTracker';
 import { PilhaPanel } from '@/overlay/PilhaPanel';
-import { VoiceBridge } from '@/net/voice';
+import { VoiceBridge, avisarFalhaDoMicrofone } from '@/net/voice';
+import { escutarPasseDeVoz, useCredencialDeVoz } from '@/net/credencial-de-voz';
 import { ToastHost } from '@/components/Toast';
 import { mensagemDeConexao } from '@/net/erros';
 import { esquecerReconexao, guardarReconexao, lerReconexao } from '@/net/reconexao';
@@ -68,7 +69,14 @@ export default function PlayRoomPage() {
   const { accessToken } = useAuthStore();
   const [room, setRoom] = useState<Colyseus.Room<RoomState> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [voiceToken, setVoiceToken] = useState<string | null>(null);
+  /** Vem do game-server, ao entrar. Ver `net/credencial-de-voz.ts`. */
+  const [passeDeVoz, setPasseDeVoz] = useState<string | null>(null);
+  const voiceToken = useCredencialDeVoz({
+    roomId,
+    accessToken,
+    passeDeVoz,
+    servidorDeVoz: LIVEKIT_URL,
+  });
 
   useRoomSync(room);
   const phase = useGameStore((s) => s.phase);
@@ -135,28 +143,6 @@ export default function PlayRoomPage() {
   }, [room, souEspectador, souJogador, sleeveId, playmatId, borderId, titleId, petId, nameplateId]);
 
   useEffect(() => {
-    if (!roomId || !accessToken || !token) return;
-    let active = true;
-
-    // O passe da mesa vai junto como prova de que esta conta está NESTA sala.
-    // Sem ele o backend emitia voz para qualquer código — e a vitrine lista os
-    // códigos das mesas públicas.
-    fetch(`${API_URL}/matches/${roomId}/voice-token`, {
-      headers: { Authorization: `Bearer ${accessToken}`, 'X-Passe-De-Mesa': token },
-    })
-      // `token: null` (com `motivo`) é a voz desligada: a mesa segue sem ela.
-      .then((res) => (res.ok ? (res.json() as Promise<{ token?: string | null }>) : null))
-      .then((data) => {
-        if (active && data?.token) setVoiceToken(data.token);
-      })
-      .catch((err) => console.error('Voice token falhou:', err));
-
-    return () => {
-      active = false;
-    };
-  }, [roomId, accessToken, token]);
-
-  useEffect(() => {
     if (!roomId || !token) {
       setError('Sala ou token ausente.');
       return;
@@ -174,6 +160,9 @@ export default function PlayRoomPage() {
      * segunda recarga seguida usaria a chave da primeira, que já queimou.
      */
     const guardar = (r: Colyseus.Room<RoomState>) => {
+      // Antes de qualquer outra coisa: o passe chega logo depois da entrada, e
+      // uma mensagem sem handler é descartada.
+      escutarPasseDeVoz(r, setPasseDeVoz);
       joinedRoom = r;
       guardarReconexao(roomId, r.reconnectionToken);
       setRoom(r);
@@ -403,8 +392,12 @@ export default function PlayRoomPage() {
       video={false}
       audio={true}
       token={voiceToken ?? undefined}
-      serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://aether-livekit-mock.livekit.cloud'}
+      // Sem `NEXT_PUBLIC_LIVEKIT_URL` não há credencial nem conexão: o padrão
+      // antigo era um domínio de terceiro, que recebia a credencial de voz.
+      serverUrl={LIVEKIT_URL || undefined}
       connect={Boolean(voiceToken)}
+      // `audio` liga o microfone ao conectar; a permissão negada vinha calada.
+      onMediaDeviceFailure={(falha) => avisarFalhaDoMicrofone(falha)}
     >
       {voiceToken && <RoomAudioRenderer />}
       {voiceToken && <VoiceBridge />}

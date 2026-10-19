@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
-import { API_URL } from '@/lib/api';
 import { apelidoParaEnvio, type PerfilSalvo } from '@/lib/perfil';
-import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
+import { api, mensagemDaApi } from '@/lib/fetcher';
 import { Settings, Save, Check, Palette, User as UserIcon, Sun, Moon, Monitor } from 'lucide-react';
 import { DESCRICAO_DO_TEMA, TEMAS } from '@aethertable/shared-types';
 import { useTema } from '../../../store/tema.store';
@@ -37,48 +36,38 @@ export default function SettingsPage() {
     setIsSaving(true);
     setMessage('');
     try {
-      const res = await fetch(`${API_URL}/users/me`, {
+      // Pelo `api()`: um 401 desloga e a falha vem com a frase certa.
+      const salvo = await api<PerfilSalvo>('/users/me', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
         // Ver `apelidoParaEnvio`: o apelido em branco ia como `''` e o servidor
         // recusava o formulário inteiro.
-        body: JSON.stringify({
+        body: {
           username,
           displayName: apelidoParaEnvio(displayName, user?.displayName),
           language,
-        }),
+        },
       });
-
-      // Sucesso traz o perfil salvo; falha traz o corpo de erro da API.
-      const data: unknown = await res.json();
-      if (res.ok) {
-        const salvo = data as PerfilSalvo;
-        /**
-         * ─── SALVAR E VOLTAR DESFAZIA A TROCA ───────────────────────────────
-         *
-         * O formulário é preenchido a partir do store, e o store nunca era
-         * atualizado aqui. Ao voltar para Ajustes o campo mostrava o nome
-         * ANTIGO; qualquer outro salvamento (tema, idioma) mandava esse nome
-         * antigo de volta e revertia a troca sem ninguém perceber. Grava a
-         * resposta do servidor — que é o que de fato ficou salvo.
-         */
-        if (user && accessToken) {
-          setAuth(accessToken, {
-            ...user,
-            username: salvo.username ?? user.username,
-            displayName: salvo.displayName ?? null,
-            avatarUrl: salvo.avatarUrl ?? user.avatarUrl ?? null,
-          });
-        }
-        setMessage('Perfil atualizado com sucesso!');
-      } else {
-        setMessage(`Erro: ${mensagemDoCorpoDeErro(data) ?? 'Falha ao salvar'}`);
+      /**
+       * ─── SALVAR E VOLTAR DESFAZIA A TROCA ─────────────────────────────────
+       *
+       * O formulário é preenchido a partir do store, e o store nunca era
+       * atualizado aqui. Ao voltar para Ajustes o campo mostrava o nome
+       * ANTIGO; qualquer outro salvamento (tema, idioma) mandava esse nome
+       * antigo de volta e revertia a troca sem ninguém perceber. Grava a
+       * resposta do servidor — que é o que de fato ficou salvo.
+       */
+      if (user && accessToken) {
+        setAuth(accessToken, {
+          ...user,
+          username: salvo.username ?? user.username,
+          displayName: salvo.displayName ?? null,
+          avatarUrl: salvo.avatarUrl ?? user.avatarUrl ?? null,
+        });
       }
-    } catch {
-      setMessage('Erro na conexão com o servidor.');
+      setMessage('Perfil atualizado com sucesso!');
+    } catch (erro) {
+      // "Erro" no começo é o que pinta a mensagem de vermelho (ver o JSX).
+      setMessage(`Erro: ${mensagemDaApi(erro)}`);
     } finally {
       setIsSaving(false);
     }

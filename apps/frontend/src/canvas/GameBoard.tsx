@@ -31,11 +31,15 @@ import type { Room } from 'colyseus.js';
 import Konva from 'konva';
 import { useGameStore, useTableStore, useUIStore, type CardData } from '../store/game.store';
 import { getTexture } from './textureCache';
+import { useImagemDaCarta } from './useImagemDaCarta';
+import { useMovimentoReduzido } from './useMovimentoReduzido';
+import { Mascote } from './Mascote';
+import { usePlaymatDeFundo } from './usePlaymatDeFundo';
 import { chaveDaZona, idDoTopo } from '../store/ordem-de-zona';
 import { useCardCatalog, type CardMeta } from '../cards/catalog';
-import { caminhoDoPet, placaNoCanvas, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
+import { placaNoCanvas, playmatCanvas, sleeveCanvas } from '../cosmetics/render';
 import { cosmeticosVisiveis, useCosmeticos } from '../cosmetics/store';
-import { acharNameplate, acharPet, type Nameplate } from '@aethertable/shared-types';
+import { acharNameplate, type Nameplate } from '@aethertable/shared-types';
 import { intents } from '../net/intents';
 import type { RoomState } from '../net/schema/RoomState';
 import {
@@ -147,35 +151,7 @@ const CardSprite = React.memo(function CardSprite({
   const w = CARD_W * escala;
   const h = CARD_H * escala;
 
-  const [imgEl, setImgEl] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    // Carta oculta mostra o SLEEVE, desenhado localmente. Nada de rede, e
-    // nada de arte da WotC (DOC-060 §2.1).
-    if (!frente || !card.scryfallId) {
-      setImgEl(sleeveCanvas(sleeveId));
-      return;
-    }
-
-    let active = true;
-    const alvo = getTexture(card.scryfallId, 'normal', face === 1 ? 'back' : 'front');
-
-    if (alvo.complete) {
-      // DOC-060 §4: a mesa nunca fica sem verso enquanto a arte carrega.
-      setImgEl(alvo.naturalWidth > 0 ? alvo : sleeveCanvas(sleeveId));
-      return;
-    }
-
-    setImgEl(null);
-    const onLoad = () => {
-      if (active && alvo.naturalWidth > 0) setImgEl(alvo);
-    };
-    alvo.addEventListener('load', onLoad);
-    return () => {
-      active = false;
-      alvo.removeEventListener('load', onLoad);
-    };
-  }, [card.scryfallId, frente, face, sleeveId]);
+  const imgEl = useImagemDaCarta(card.scryfallId, frente, face, sleeveId);
 
   const rotation = card.isTapped ? 90 : (card.rotation ?? 0);
   const [drag, setDrag] = useState<Ponto | null>(null);
@@ -825,60 +801,6 @@ function SlotComando({
   );
 }
 
-// ─── Mascote ─────────────────────────────────────────────────────────────────
-
-/**
- * Mascote da faixa. Discreto de propósito: fica no canto, é pequeno e se move
- * devagar. Um enfeite que disputa atenção com as cartas deixa de ser enfeite e
- * vira ruído — e a mesa já é densa.
- *
- * Respeita `prefers-reduced-motion`: quem pediu menos movimento vê a silhueta
- * parada, não uma silhueta pulsando.
- */
-function Mascote({ petId, x, y }: { petId: string; x: number; y: number }) {
-  const pet = acharPet(petId);
-  const pontos = caminhoDoPet(pet);
-  const [t, setT] = useState(0);
-  const reduzido = useMovimentoReduzido();
-
-  useEffect(() => {
-    if (!pontos || reduzido) return;
-    let raf = 0;
-    const inicio = performance.now();
-    const passo = (agora: number) => {
-      setT((agora - inicio) / 1000);
-      raf = requestAnimationFrame(passo);
-    };
-    raf = requestAnimationFrame(passo);
-    return () => cancelAnimationFrame(raf);
-  }, [pontos, reduzido]);
-
-  if (!pontos) return null;
-
-  const R = 17;
-  const fase = Math.sin(t * 1.6);
-  const dy = pet.animacao === 'flutuar' ? fase * 5 : 0;
-  const escala = pet.animacao === 'pulsar' ? 1 + fase * 0.07 : 1;
-  const giro = pet.animacao === 'balancar' ? fase * 7 : 0;
-
-  return (
-    <Group x={x} y={y + dy} rotation={giro} scaleX={escala} scaleY={escala} listening={false}>
-      <Circle radius={R * 1.5} fill={pet.cor} opacity={0.1} />
-      <Line
-        points={pontos.flatMap(([px, py]) => [px * R, py * R])}
-        closed
-        fill={pet.cor}
-        opacity={0.85}
-        stroke="rgba(0,0,0,0.45)"
-        strokeWidth={1.5}
-      />
-      {/* Olhos: é o que faz a silhueta virar bicho. */}
-      <Circle x={-R * 0.28} y={-R * 0.12} radius={2.2} fill="#0b0f16" />
-      <Circle x={R * 0.28} y={-R * 0.12} radius={2.2} fill="#0b0f16" />
-    </Group>
-  );
-}
-
 // ─── Rótulo da faixa ─────────────────────────────────────────────────────────
 
 /** Corpo do rótulo. A placa é medida com a mesma fonte do `<Text>`. */
@@ -981,19 +903,6 @@ function RotuloDaFaixa({
       />
     </Group>
   );
-}
-
-/** `prefers-reduced-motion` do sistema. */
-function useMovimentoReduzido(): boolean {
-  const [reduzido, setReduzido] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const aplicar = () => setReduzido(mq.matches);
-    aplicar();
-    mq.addEventListener('change', aplicar);
-    return () => mq.removeEventListener('change', aplicar);
-  }, []);
-  return reduzido;
 }
 
 // ─── GameBoard ───────────────────────────────────────────────────────────────
@@ -1502,13 +1411,9 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
    * viewport inteira, e o zoom/pan da câmera passa a mexer só no tabuleiro que
    * está POR CIMA dele. O tapete fica parado; as cartas é que se movem.
    */
-  const meuPlaymat = useMemo(() => {
-    const cosmeticos = cosmeticosVisiveis(myId ? players[myId] : undefined, true, true);
-    const canvas = playmatCanvas(cosmeticos.playmatId);
-    // `toDataURL` roda uma vez por troca de playmat, não por quadro: o canvas é
-    // cacheado por id em `cosmetics/render.ts`.
-    return canvas ? canvas.toDataURL() : null;
-  }, [players, myId]);
+  const meuPlaymat = usePlaymatDeFundo(
+    cosmeticosVisiveis(myId ? players[myId] : undefined, true, true).playmatId,
+  );
 
   return (
     <div ref={containerRef} className="absolute inset-0">

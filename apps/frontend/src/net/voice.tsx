@@ -23,6 +23,8 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { useLocalParticipant, useParticipants } from '@livekit/components-react';
+import { MediaDeviceFailure } from 'livekit-client';
+import { useToast } from '../components/Toast';
 
 interface VoiceState {
   /** Há uma sala de voz conectada nesta sessão? */
@@ -44,6 +46,31 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   reset: () => set({ available: false, micEnabled: false, speaking: [], toggleMic: () => {} }),
 }));
 
+/** O que dizer quando o microfone não liga. */
+export function mensagemDoMicrofone(falha: MediaDeviceFailure | undefined): string {
+  switch (falha) {
+    case MediaDeviceFailure.PermissionDenied:
+      return 'O navegador não deu acesso ao microfone. Libere a permissão do site e tente de novo.';
+    case MediaDeviceFailure.NotFound:
+      return 'Nenhum microfone encontrado neste aparelho.';
+    case MediaDeviceFailure.DeviceInUse:
+      return 'O microfone está em uso por outro programa.';
+    default:
+      return 'Não foi possível ligar o microfone.';
+  }
+}
+
+/**
+ * Avisa na tela que o microfone não ligou.
+ *
+ * A permissão negada rejeitava a promessa em silêncio: o botão do microfone
+ * parecia simplesmente não funcionar, e ninguém procuraria a permissão do
+ * site no navegador sem ser avisado.
+ */
+export function avisarFalhaDoMicrofone(falha: MediaDeviceFailure | undefined): void {
+  useToast.getState().mostrar(mensagemDoMicrofone(falha), 'erro');
+}
+
 /** Só é renderizado dentro de `<LiveKitRoom>`. */
 export function VoiceBridge() {
   const { isMicrophoneEnabled, localParticipant } = useLocalParticipant();
@@ -61,7 +88,9 @@ export function VoiceBridge() {
       micEnabled: isMicrophoneEnabled,
       speaking: speakingKey ? speakingKey.split(',') : [],
       toggleMic: () => {
-        void localParticipant?.setMicrophoneEnabled(!isMicrophoneEnabled);
+        void localParticipant
+          ?.setMicrophoneEnabled(!isMicrophoneEnabled)
+          .catch((erro: unknown) => avisarFalhaDoMicrofone(MediaDeviceFailure.getFailure(erro)));
       },
     });
   }, [isMicrophoneEnabled, localParticipant, speakingKey]);

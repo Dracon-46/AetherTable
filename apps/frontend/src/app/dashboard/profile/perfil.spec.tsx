@@ -4,6 +4,9 @@
  * O formulário mandava `displayName: ''` para todo mundo que nunca escolheu
  * apelido (quase todo mundo), e o servidor recusava o PATCH inteiro: trocar o
  * nome de usuário por esta tela era impossível para essas contas.
+ *
+ * E a tela usava `fetch` cru: um 401 deixava a sessão vencida de pé, e a
+ * falha aparecia como "Falha na conexão." qualquer que fosse o motivo.
  */
 
 import React from 'react';
@@ -22,6 +25,7 @@ function resposta(status: number, corpo: unknown) {
     status,
     headers: { get: () => null },
     json: async () => corpo,
+    text: async () => JSON.stringify(corpo),
   };
 }
 
@@ -56,6 +60,29 @@ describe('Meu Perfil → salvar', () => {
     await waitFor(() => expect(patches()).toHaveLength(1));
     const corpo = JSON.parse(patches()[0][1].body as string);
     expect(corpo).toEqual({ username: 'ana2' });
+  });
+
+  it('sessão vencida no salvamento (401) desloga e diz por quê', async () => {
+    render(<ProfilePage />);
+    const campo = await screen.findByDisplayValue('ana');
+    global.fetch = jest.fn(async () =>
+      resposta(401, { message: 'Unauthorized' }),
+    ) as unknown as typeof fetch;
+
+    fireEvent.submit(campo.closest('form')!);
+
+    expect(await screen.findByText('Sua sessão expirou. Entre de novo.')).toBeInTheDocument();
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  });
+
+  it('sessão vencida ao abrir a tela (401) desloga', async () => {
+    global.fetch = jest.fn(async () =>
+      resposta(401, { message: 'Unauthorized' }),
+    ) as unknown as typeof fetch;
+
+    render(<ProfilePage />);
+
+    await waitFor(() => expect(useAuthStore.getState().accessToken).toBeNull());
   });
 
   it('o store recebe o apelido que o servidor devolveu', async () => {
