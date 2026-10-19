@@ -51,6 +51,14 @@ jobs:
           EVENTO: ${{ github.event_name }}
           TAG: ${{ github.ref_name }}
         run: |
+          # ─── "LATEST" É A MAIOR VERSÃO, NÃO O ÚLTIMO RELEASE CRIADO ─────────
+          #
+          # O GitHub marca como "Latest" o release criado por último. Criar os
+          # das tags antigas depois da v0.9.6 tirou dela o selo e o deu à
+          # v0.9.5; um hotfix de versão antiga faria o mesmo. Só a maior versão
+          # estável recebe o selo.
+          MAIOR=$(git tag -l 'v*.*.*' --sort=-v:refname | grep -v -- '-' | head -1)
+
           publicar() {
             local tag="$1"
             if gh release view "$tag" >/dev/null 2>&1; then
@@ -59,9 +67,13 @@ jobs:
             fi
             local titulo
             titulo=$(git tag -l --format='%(contents:subject)' "$tag")
-            # Tag de pré-lançamento (v1.0.0-rc.1) não vira "Latest".
             local extra=()
-            case "$tag" in *-*) extra+=(--prerelease) ;; esac
+            case "$tag" in
+              # Pré-lançamento (v1.0.0-rc.1) nunca é "Latest".
+              *-*) extra+=(--prerelease --latest=false) ;;
+              "$MAIOR") extra+=(--latest) ;;
+              *) extra+=(--latest=false) ;;
+            esac
             gh release create "$tag" --verify-tag --notes-from-tag \
               --title "${titulo:-$tag}" "${extra[@]}"
           }
