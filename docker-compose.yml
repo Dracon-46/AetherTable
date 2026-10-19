@@ -9,7 +9,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: aethertable_db
-    ports: ['5432:5432']
+    # Só no loopback: com 0.0.0.0, qualquer um na mesma rede (café, escritório)
+    # entraria como superusuário com a senha `password` — e o Postgres executa
+    # comando no container (`COPY … FROM PROGRAM`).
+    ports: ['127.0.0.1:5432:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
@@ -20,7 +23,8 @@ services:
     image: redis:7-alpine
     container_name: aethertable-redis
     restart: unless-stopped
-    ports: ['6379:6379']
+    # Só no loopback: o Redis local não tem senha.
+    ports: ['127.0.0.1:6379:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -29,15 +33,16 @@ services:
   # Opcional: so necessario para trabalhar no chat de voz.
   #   docker compose --profile voice up -d
   livekit:
-    image: livekit/livekit-server:latest
+    # Versão fixa: `latest` muda o servidor de voz por baixo sem commit nenhum.
+    image: livekit/livekit-server:v1.13.10
     container_name: aethertable-livekit
     profiles: ['voice']
     command: --dev
     environment:
       LIVEKIT_KEYS: 'devkey: secret'
     ports:
-      - '7880:7880'
-      - '7881:7881'
+      - '127.0.0.1:7880:7880'
+      - '127.0.0.1:7881:7881'
       - '50000-50100:50000-50100/udp'
 
 volumes:

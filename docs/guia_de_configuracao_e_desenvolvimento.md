@@ -105,7 +105,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: aethertable_db
-    ports: ['5432:5432']
+    ports: ['127.0.0.1:5432:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
@@ -114,7 +114,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ['6379:6379']
+    ports: ['127.0.0.1:6379:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -159,9 +159,10 @@ PORT=3333
 DATABASE_URL="postgresql://postgres:password@localhost:5432/aethertable_db"
 REDIS_URL="redis://localhost:6379"
 
+# Em produção a API recusa subir com menos de 32 caracteres: openssl rand -base64 48
 JWT_SECRET="troque-por-uma-string-longa-e-aleatoria"
-JWT_ACCESS_TTL=900
-JWT_REFRESH_TTL=604800
+# 24 h. Não existe refresh token: a sessão morre quando o access token expira.
+JWT_ACCESS_TTL=86400
 
 # OAuth — opcional. Sem as DUAS variáveis de um provedor (id E segredo), a
 # estratégia dele não é registrada, GET /auth/provedores responde `false` e a
