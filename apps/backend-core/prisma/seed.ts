@@ -107,7 +107,7 @@ async function resolverCartas(): Promise<Map<string, CartaResolvida>> {
         layout: carta.layout,
         imageSmall: imageUrl(carta, 'small') ?? '',
         imageNormal: imageUrl(carta, 'normal') ?? '',
-        faces: (carta.card_faces ?? []) as object,
+        faces: carta.card_faces ?? [],
       },
     });
   }
