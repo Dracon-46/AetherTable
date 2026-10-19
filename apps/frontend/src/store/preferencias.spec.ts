@@ -10,7 +10,19 @@ import {
 } from '@aethertable/shared-types';
 import { FATOR_CARTA_PADRAO } from '../canvas/layout';
 import { useUIStore } from './game.store';
-import { aplicarPreferenciasDaMesa, lerPreferenciasDaMesa } from './preferencias-da-conta';
+import {
+  aplicarPreferenciasDaMesa,
+  ESPERA_MS,
+  lerPreferenciasDaMesa,
+  observarPreferenciasDaMesa,
+} from './preferencias-da-conta';
+import { api } from '../lib/fetcher';
+import { useAuthStore } from './auth.store';
+
+jest.mock('../lib/fetcher', () => ({
+  ...jest.requireActual('../lib/fetcher'),
+  api: jest.fn(),
+}));
 
 describe('normalizarPreferenciasDeMesa', () => {
   it('devolve o padrão completo para entrada ausente ou de tipo errado', () => {
@@ -166,5 +178,93 @@ describe('estiloDeMesa', () => {
       expect(DESCRICAO_DO_ESTILO_DE_MESA[estilo].nome.length).toBeGreaterThan(0);
       expect(DESCRICAO_DO_ESTILO_DE_MESA[estilo].resumo.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * ─── AS CINCO QUE TINHAM FICADO SÓ NO NAVEGADOR ─────────────────────────────
+ *
+ * Log dividido, rastreador de mana, prévia ao lado, sons e tremor do
+ * comandante estavam no `partialize` do store — persistidos, mas só em
+ * `localStorage`. Entraram no contrato. E uma conta gravada ANTES delas não
+ * traz as chaves: aplicar o padrão por cima apagaria a escolha que só este
+ * navegador conhecia.
+ */
+describe('as preferências de mesa que faltavam', () => {
+  const inicial = useUIStore.getState();
+  const NOVAS = [
+    'logDividido',
+    'manaAberto',
+    'previaAoLado',
+    'efeitosSonoros',
+    'tremorDoComandante',
+  ] as const;
+
+  afterEach(() => {
+    useUIStore.setState(inicial, true);
+  });
+
+  it('estão no contrato, desligadas por padrão — como no store', () => {
+    for (const chave of NOVAS) {
+      expect(CHAVES_DE_PREFERENCIA_DE_MESA).toContain(chave);
+      expect(PREFERENCIAS_DE_MESA_PADRAO[chave]).toBe(false);
+      expect(inicial[chave]).toBe(false);
+    }
+  });
+
+  it('vão para a conta e voltam dela', () => {
+    useUIStore.setState({ logDividido: true, efeitosSonoros: true, tremorDoComandante: true });
+    const enviado = lerPreferenciasDaMesa();
+    expect(enviado).toMatchObject({ logDividido: true, efeitosSonoros: true });
+    useUIStore.setState(inicial, true);
+    aplicarPreferenciasDaMesa(enviado);
+    expect(useUIStore.getState()).toMatchObject({
+      logDividido: true,
+      efeitosSonoros: true,
+      tremorDoComandante: true,
+      manaAberto: false,
+    });
+  });
+
+  it('conta gravada antes delas não apaga a escolha local — e pede para subir', () => {
+    useUIStore.setState({ previaAoLado: true, manaAberto: true });
+    // O objeto que uma versão anterior do site gravava: sem as cinco chaves.
+    const antigo: Record<string, unknown> = { ...PREFERENCIAS_DE_MESA_PADRAO, fatorCarta: 1.4 };
+    for (const chave of NOVAS) delete antigo[chave];
+
+    expect(aplicarPreferenciasDaMesa(antigo)).toBe(true);
+    const s = useUIStore.getState();
+    expect(s.fatorCarta).toBe(1.4);
+    expect(s.previaAoLado).toBe(true);
+    expect(s.manaAberto).toBe(true);
+  });
+
+  it('o que a conta traz vence o local', () => {
+    useUIStore.setState({ previaAoLado: true });
+    expect(aplicarPreferenciasDaMesa({ ...PREFERENCIAS_DE_MESA_PADRAO })).toBe(false);
+    expect(useUIStore.getState().previaAoLado).toBe(false);
+  });
+
+  it('navegador no padrão e conta vazia: nada sobe', () => {
+    expect(aplicarPreferenciasDaMesa({})).toBe(false);
+    expect(aplicarPreferenciasDaMesa(undefined)).toBe(false);
+  });
+
+  it('mudar uma delas manda PATCH para a conta', () => {
+    jest.useFakeTimers();
+    useAuthStore.setState({ accessToken: 'token', user: { id: 'u1', username: 'ana' } });
+    const apiMock = (api as jest.MockedFunction<typeof api>).mockResolvedValue({});
+    const parar = observarPreferenciasDaMesa();
+    for (const [i, chave] of NOVAS.entries()) {
+      useUIStore.setState({ [chave]: true });
+      jest.advanceTimersByTime(ESPERA_MS);
+      expect(apiMock).toHaveBeenCalledTimes(i + 1);
+      expect(apiMock.mock.calls[i]![1]!.body).toEqual({
+        preferenciasDeMesa: expect.objectContaining({ [chave]: true }),
+      });
+    }
+    parar();
+    apiMock.mockReset();
+    jest.useRealTimers();
   });
 });

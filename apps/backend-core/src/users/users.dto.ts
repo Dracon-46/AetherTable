@@ -3,6 +3,10 @@ import {
   ACOES_DE_ATALHO,
   ehAcaoDeAtalho,
   ehPreferenciaDeMesa,
+  ehPreferenciaDeInterface,
+  MAX_FICHAS_RECENTES,
+  MAX_NOME_DE_FICHA,
+  MAX_PODER_OU_RESISTENCIA,
   ehBorderValido,
   ehNameplateValido,
   ehPetValido,
@@ -108,6 +112,39 @@ const preferenciasDeMesa = z.record(z.string(), z.unknown()).refine(ehPreferenci
   message: 'Há uma preferência de mesa que não existe no contrato.',
 });
 
+/**
+ * ─── A APARÊNCIA DO SITE, COM A MESMA TRANCA ───────────────────────────────
+ *
+ * Mesma regra das preferências de mesa: chave fora do contrato e objeto maior
+ * que o contrato são recusados, e o VALOR fica com
+ * `normalizarPreferenciasDeInterface`. O degrau a mais de
+ * `ehPreferenciaDeInterface` — cada valor tem de ser um escalar curto — vem de
+ * graça: aqui toda preferência é um texto de lista fechada ou um booleano.
+ */
+const preferenciasDeInterface = z.record(z.string(), z.unknown()).refine(ehPreferenciaDeInterface, {
+  message: 'Há uma preferência de interface que não existe no contrato.',
+});
+
+/**
+ * ─── AS FICHAS RECENTES SÃO VALIDADAS ITEM A ITEM ──────────────────────────
+ *
+ * Aqui não há normalizador que conserte: cada item vira uma intenção
+ * `INTENT_CREATE_TOKEN` quando a pessoa clica nele, e o game-server recusa a
+ * intenção inteira se um campo passar do limite. Os limites são os MESMOS de
+ * `CreateTokenIntent` (nome até 120, P/R até 4, `scryfallId` uuid). Chave a
+ * mais num item é DESCARTADA (o padrão do zod), e não gravada: a lista não é
+ * depósito de JSON livre. Descartar em vez de recusar é o que deixa um cliente
+ * mais novo, com um campo a mais, continuar salvando contra esta API.
+ */
+const fichaRecente = z.object({
+  scryfallId: z.string().uuid().optional(),
+  name: z.string().trim().min(1).max(MAX_NOME_DE_FICHA),
+  power: z.string().max(MAX_PODER_OU_RESISTENCIA).optional(),
+  toughness: z.string().max(MAX_PODER_OU_RESISTENCIA).optional(),
+});
+
+const fichasRecentes = z.array(fichaRecente).max(MAX_FICHAS_RECENTES);
+
 export const AtualizarPerfilDto = z
   .object({
     username: username.optional(),
@@ -122,6 +159,10 @@ export const AtualizarPerfilDto = z
     keybindings: keybindings.optional(),
     /** Objeto completo de preferências da mesa. Ver o comentário acima. */
     preferenciasDeMesa: preferenciasDeMesa.optional(),
+    /** Objeto completo da aparência do site. Ver `preferenciasDeInterface`. */
+    preferenciasDeInterface: preferenciasDeInterface.optional(),
+    /** Lista completa, a mais recente primeiro. Ver `fichaRecente`. */
+    fichasRecentes: fichasRecentes.optional(),
     /**
      * Tema da interface. `UserPreference.theme` existia no banco desde a
      * primeira migracao e NENHUMA rota o aceitava — a coluna nao tinha como

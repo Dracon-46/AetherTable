@@ -22,4 +22,8 @@ export * from './cards-catalog';
 export * from './cosmetics';
 export * from './atalhos';
 export * from './preferencias';
+export * from './preferencias-de-interface';
+export * from './fichas-recentes';
+export * from './desafios';
+export * from './leitura-do-sino';
 export * from './idiomas';

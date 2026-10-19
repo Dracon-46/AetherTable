@@ -9,6 +9,7 @@ import {
   podeEquipar,
   temaParaPrisma,
   type FamiliaDeCosmetico,
+  type FichaRecente,
   type Tema,
 } from '@aethertable/shared-types';
 import { PrismaService } from '../common/prisma/prisma.service.js';
@@ -96,6 +97,14 @@ export class UsersService {
              * resto continuariam presos ao `localStorage` daquele navegador.
              */
             preferenciasDeMesa: true,
+            /**
+             * A aparência do site e as fichas recentes, pelo mesmo motivo.
+             * Um cliente que não conhece os campos simplesmente os ignora; o
+             * que os conhece trata a ausência (API antiga) como "a conta
+             * ainda não tem nada" e sobe o que o navegador guardava.
+             */
+            preferenciasDeInterface: true,
+            fichasRecentes: true,
           },
         },
       },
@@ -250,6 +259,10 @@ export class UsersService {
       keybindings?: Record<string, string>;
       /** Preferências da mesa. Validado em `AtualizarPerfilDto`. */
       preferenciasDeMesa?: Record<string, unknown>;
+      /** Aparência do site. Validado em `AtualizarPerfilDto`. */
+      preferenciasDeInterface?: Record<string, unknown>;
+      /** As últimas fichas criadas. Validado item a item em `AtualizarPerfilDto`. */
+      fichasRecentes?: FichaRecente[];
     },
   ) {
     const { username, displayName, language } = data;
@@ -325,6 +338,15 @@ export class UsersService {
        */
       ...(data.preferenciasDeMesa !== undefined
         ? { preferenciasDeMesa: data.preferenciasDeMesa as Prisma.InputJsonValue }
+        : {}),
+      // As duas abaixo seguem a mesma regra: o cliente manda o conjunto
+      // completo (`lerPreferenciasDeInterface`, a lista inteira de fichas), e
+      // o que chega substitui o que havia.
+      ...(data.preferenciasDeInterface !== undefined
+        ? { preferenciasDeInterface: data.preferenciasDeInterface as Prisma.InputJsonValue }
+        : {}),
+      ...(data.fichasRecentes !== undefined
+        ? { fichasRecentes: data.fichasRecentes as unknown as Prisma.InputJsonValue }
         : {}),
     };
 

@@ -12,6 +12,11 @@ import { useFecharComEsc } from './useFecharComEsc';
 import { useCardCatalog, useHidratarCartas } from '../cards/catalog';
 import { deckDaSala } from '../cards/deck-da-sala';
 import { useAuthStore } from '@/store/auth.store';
+import {
+  lembrarFichaRecente,
+  lerFichasRecentes,
+  type FichaRecente,
+} from '../store/fichas-recentes';
 
 interface TokenPickerProps {
   room: Room<RoomState>;
@@ -41,12 +46,7 @@ const PRESETS: { rotulo: string; query: string; emoji: string }[] = [
 ];
 
 /** O que basta para recriar uma ficha: impressão (se houver), nome e P/R. */
-interface FichaSalva {
-  scryfallId?: string;
-  name: string;
-  power?: string;
-  toughness?: string;
-}
+type FichaSalva = FichaRecente;
 
 /** O que a busca de cartas da API devolve e esta tela usa (formato da Scryfall). */
 interface FichaDaBusca {
@@ -62,36 +62,10 @@ interface FichaDaBusca {
  *
  * Quem joga com fichas cria as MESMAS a partida inteira — os Soldados do
  * próprio deck, a Planta do Avenger. Cada criação passava pela busca ou pelo
- * menu da carta de origem. Lembrar as últimas oito por conta, no navegador,
- * resolve sem servidor: é conveniência de quem joga, não estado da mesa.
+ * menu da carta de origem. As últimas oito ficam lembradas — na CONTA, com o
+ * navegador como cache: é conveniência de quem joga, não estado da mesa, mas
+ * trocar de máquina não pode esvaziar a fileira. Ver `store/fichas-recentes.ts`.
  */
-const CHAVE_RECENTES = 'aether-fichas-recentes';
-const MAX_RECENTES = 8;
-
-function ehFichaSalva(f: unknown): f is FichaSalva {
-  return typeof f === 'object' && f !== null && typeof (f as { name?: unknown }).name === 'string';
-}
-
-function lerRecentes(): FichaSalva[] {
-  try {
-    const bruto: unknown = JSON.parse(localStorage.getItem(CHAVE_RECENTES) ?? '[]');
-    return Array.isArray(bruto) ? bruto.filter(ehFichaSalva) : [];
-  } catch {
-    return [];
-  }
-}
-
-function lembrarRecente(f: FichaSalva): FichaSalva[] {
-  const igual = (a: FichaSalva) =>
-    f.scryfallId ? a.scryfallId === f.scryfallId : !a.scryfallId && a.name === f.name;
-  const nova = [f, ...lerRecentes().filter((a) => !igual(a))].slice(0, MAX_RECENTES);
-  try {
-    localStorage.setItem(CHAVE_RECENTES, JSON.stringify(nova));
-  } catch {
-    /* sem storage: a lista só não sobrevive ao recarregar */
-  }
-  return nova;
-}
 
 /** O termo que o campo pede; `null` com uma letra só (espera a segunda). */
 function termoDaBusca(query: string): string | null {
@@ -127,7 +101,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
 
   useEffect(() => {
     if (!isActive) return;
-    setRecentes(lerRecentes());
+    setRecentes(lerFichasRecentes());
     setQuantidade(1);
   }, [isActive]);
 
@@ -276,7 +250,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
   const criar = (f: FichaSalva, chave: string) => {
     setCreatingId(chave);
     intents.createToken(room, { ...f, amount: quantidade, x: 0, y: 0 });
-    setRecentes(lembrarRecente(f));
+    setRecentes(lembrarFichaRecente(f));
     setTimeout(() => {
       setCreatingId(null);
       toggleModal('tokens');

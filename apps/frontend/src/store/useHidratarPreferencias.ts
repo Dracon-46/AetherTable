@@ -33,6 +33,15 @@
  * Roda uma vez por sessão. Não é uma query que revalida: preferência muda por
  * ação explícita do dono, e ficar reconciliando por foco de aba faria a mesa
  * piscar de visual no meio de uma partida.
+ *
+ * ─── CAMPO AUSENTE NÃO APAGA O NAVEGADOR — E O NAVEGADOR SOBE ─────────────
+ *
+ * A aparência do site e as fichas recentes chegaram depois, e por alguns
+ * minutos de cada troca de versão a API e o site podem estar em versões
+ * diferentes. Um campo que não veio na resposta (API antiga), vazio de
+ * fábrica, ou uma chave que a conta ainda não tem são a MESMA coisa: "a conta
+ * ainda não tem isto". O local fica, e o que ele tem de escolha própria sobe
+ * — ver `aplicarPreferenciasDaMesa` e `aplicarFichasRecentesDaConta`.
  */
 
 import { useEffect, useRef } from 'react';
@@ -40,7 +49,13 @@ import { api } from '../lib/fetcher';
 import { useAuthStore } from './auth.store';
 import { useAtalhos } from './atalhos.store';
 import { useCosmeticos } from '../cosmetics/store';
-import { aplicarPreferenciasDaMesa, observarPreferenciasDaMesa } from './preferencias-da-conta';
+import {
+  aplicarPreferenciasDaMesa,
+  aplicarPreferenciasDeInterface,
+  observarPreferenciasDaMesa,
+  observarPreferenciasDeInterface,
+} from './preferencias-da-conta';
+import { aplicarFichasRecentesDaConta, observarFichasRecentes } from './fichas-recentes';
 import { temaDoPrisma, type CosmeticTier } from '@aethertable/shared-types';
 import { useTema } from './tema.store';
 import { useCatalogoDeCosmeticos } from '../cosmetics/useCatalogo';
@@ -78,6 +93,10 @@ interface PreferenciaDaConta {
      * `normalizarPreferenciasDeMesa` é quem dá forma a isso.
      */
     preferenciasDeMesa?: unknown;
+    /** A aparência do site (`PreferenciasDeInterface`). JSON solto, pelo mesmo motivo. */
+    preferenciasDeInterface?: unknown;
+    /** O "Usadas recentemente" do seletor de fichas. */
+    fichasRecentes?: unknown;
   } | null;
 }
 
@@ -101,7 +120,7 @@ export function useHidratarPreferencias(): void {
   const aplicarAtalhos = useAtalhos((s) => s.aplicarDoServidor);
   const definirTier = useCosmeticos((s) => s.definirTier);
   const aplicarTema = useTema((s) => s.aplicarDoServidor);
-  /** Cancela a assinatura das preferências de mesa. Ver o efeito abaixo. */
+  /** Cancela as assinaturas (mesa, aparência, fichas). Ver o efeito abaixo. */
   const pararDeObservar = useRef<(() => void) | null>(null);
   /**
    * O pedido em voo e o token dele. O StrictMode monta, limpa e monta de novo:
@@ -141,8 +160,17 @@ export function useHidratarPreferencias(): void {
         // O tier chega mesmo quando `preference` é nula: uma conta que nunca
         // mexeu em cosmético nenhum ainda pode ser apoiadora.
         definirTier(eu?.supporterTier ?? 'FREE');
-        if (!eu?.preference) return;
-        const p = eu.preference;
+        /**
+         * Conta sem linha de preferências é "nunca configurou nada", e não
+         * motivo para desistir.
+         *
+         * Aqui havia um `return` quando `preference` vinha nula — e com ele
+         * o observador nunca ligava: numa conta nova, nada do que a pessoa
+         * ajustasse na mesa chegava à conta até ela equipar um cosmético (que
+         * cria a linha) e entrar de novo. Nula vale o mesmo que `{}`: nada a
+         * aplicar, e o que o navegador tiver de próprio sobe.
+         */
+        const p = eu?.preference ?? {};
         // O tema da CONTA vence o do `localStorage` — que ja foi aplicado na
         // carga para nao piscar. Quem escolheu claro noutra maquina abre claro
         // aqui tambem.
@@ -159,7 +187,11 @@ export function useHidratarPreferencias(): void {
             : {}),
         });
         aplicarAtalhos(p.keybindings);
-        aplicarPreferenciasDaMesa(p.preferenciasDeMesa);
+        // Cada `aplicar…` diz se o navegador tem algo que a conta não tem; o
+        // observador correspondente então sobe logo ao ligar.
+        const subirMesa = aplicarPreferenciasDaMesa(p.preferenciasDeMesa);
+        const subirAparencia = aplicarPreferenciasDeInterface(p.preferenciasDeInterface);
+        const subirFichas = aplicarFichasRecentesDaConta(p.fichasRecentes);
         /**
          * Observar só DEPOIS de aplicar.
          *
@@ -167,7 +199,14 @@ export function useHidratarPreferencias(): void {
          * de volta — e, se a resposta demorasse, o estado local (ainda o
          * padrão) seria gravado por cima do que a conta guardava.
          */
-        pararDeObservar.current = observarPreferenciasDaMesa();
+        const pararMesa = observarPreferenciasDaMesa({ enviarJa: subirMesa });
+        const pararAparencia = observarPreferenciasDeInterface({ enviarJa: subirAparencia });
+        const pararFichas = observarFichasRecentes({ enviarJa: subirFichas });
+        pararDeObservar.current = () => {
+          pararMesa();
+          pararAparencia();
+          pararFichas();
+        };
       })
       .catch((erro) => {
         // Requisição já descartada pela limpeza: nada a avisar.

@@ -17,7 +17,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { cardImageUrl } from '@/canvas/textureCache';
 import { mensagemDaApi } from '../lib/fetcher';
-import { CampoDeNome, Placar, useRecorde } from './comum';
+import { CampoDeNome, Placar } from './comum';
+import { useProgressoDeDesafio } from './progresso';
 import {
   atendeCasa,
   BASE_DA_GRADE,
@@ -69,7 +70,13 @@ export function GradeDeCriaturas() {
   const [aviso, setAviso] = useState<{ texto: string; bom: boolean } | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [conferindo, setConferindo] = useState(false);
-  const [recorde, registrar] = useRecorde('grade');
+  /**
+   * Só o RECORDE segue a conta aqui. A grade sorteada não é guardada — são
+   * nove critérios e as cartas de cada casa, não um número —, então um F5
+   * começa outra grade de qualquer jeito, e não há pergunta para pular. A
+   * "sequência" gravada é a contagem de casas da grade em curso.
+   */
+  const { recorde, pronto, responder } = useProgressoDeDesafio('grade');
 
   const nova = useCallback(async () => {
     setGrade(null);
@@ -127,7 +134,7 @@ export function GradeDeCriaturas() {
       setCasas(novas);
       setCasaAtiva(null);
       setAviso({ texto: `${carta.name} — vale!`, bom: true });
-      registrar(Object.keys(novas).length);
+      responder(Object.keys(novas).length);
     } catch (e) {
       setAviso({ texto: mensagemDaApi(e), bom: false });
     } finally {
@@ -146,7 +153,7 @@ export function GradeDeCriaturas() {
 
       {erro ? (
         <p className="text-danger text-sm">{erro}</p>
-      ) : !grade ? (
+      ) : !grade || !pronto ? (
         <p className="text-text-muted flex items-center gap-2 text-sm">
           <Loader2 className="h-4 w-4 animate-spin" /> Montando uma grade com resposta em todas as
           casas…
