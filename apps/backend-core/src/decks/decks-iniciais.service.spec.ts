@@ -15,8 +15,8 @@ import { DecksIniciaisService } from './decks-iniciais.service.js';
 import { DECKS_INICIAIS } from './decks-iniciais.dados.js';
 
 function bancoFalso() {
-  const decks: Array<Record<string, unknown>> = [];
-  const linhas: Array<Record<string, unknown>> = [];
+  const decks: Record<string, unknown>[] = [];
+  const linhas: Record<string, unknown>[] = [];
   const ref: { tx?: unknown } = {};
   const prisma = {
     deck: {
@@ -24,9 +24,9 @@ function bancoFalso() {
         async ({ where }: { where: { userId: string; name: string; description: string } }) =>
           decks.find(
             (d) =>
-              d['userId'] === where.userId &&
-              d['name'] === where.name &&
-              d['description'] === where.description,
+              d.userId === where.userId &&
+              d.name === where.name &&
+              d.description === where.description,
           ) ?? null,
       ),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -36,7 +36,7 @@ function bancoFalso() {
       }),
     },
     deckCard: {
-      createMany: jest.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+      createMany: jest.fn(async ({ data }: { data: Record<string, unknown>[] }) => {
         linhas.push(...data);
         return { count: data.length };
       }),

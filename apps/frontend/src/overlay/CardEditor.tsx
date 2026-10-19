@@ -74,7 +74,7 @@ export function CardEditor({ room }: CardEditorProps) {
   const resistAtual = card?.toughnessOverride ?? 0;
   React.useEffect(() => {
     if (!overrideAtivo) return;
-    if (pendente.current && pendente.current.p === forcaAtual && pendente.current.t === resistAtual)
+    if (pendente.current?.p === forcaAtual && pendente.current.t === resistAtual)
       pendente.current = null;
   }, [overrideAtivo, forcaAtual, resistAtual]);
 

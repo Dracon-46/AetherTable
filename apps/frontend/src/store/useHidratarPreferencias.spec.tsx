@@ -75,7 +75,7 @@ describe('useHidratarPreferencias', () => {
 
   it('a resposta que chega depois da desmontagem não é aplicada', async () => {
     let responder: (v: unknown) => void = () => {};
-    apiMock.mockReturnValue(new Promise((r) => (responder = r)) as never);
+    apiMock.mockReturnValue(new Promise((r) => (responder = r)));
 
     const { unmount } = render(<Casca />);
     unmount();

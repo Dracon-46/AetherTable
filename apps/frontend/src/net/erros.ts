@@ -57,7 +57,7 @@ const CONEXAO: Record<string, string> = {
 
 /** Rejeição de intenção → frase. */
 export function mensagemDeErro(code?: string, fallback?: string): string {
-  if (code && INTENCAO[code]) return INTENCAO[code]!;
+  if (code && INTENCAO[code]) return INTENCAO[code];
   // O `fallback` é a mensagem crua do servidor. Melhor ela do que "erro".
   return fallback?.trim() || 'A mesa recusou essa ação e não disse o motivo.';
 }
@@ -72,10 +72,14 @@ export function mensagemDeErro(code?: string, fallback?: string): string {
  * silenciaria justamente os casos que este mapa existe para explicar.
  */
 export function mensagemDeConexao(erro: unknown): string {
-  const bruto =
-    erro && typeof erro === 'object' && 'message' in erro
-      ? String((erro as { message: unknown }).message)
-      : String(erro ?? '');
+  let bruto = '';
+  if (erro && typeof erro === 'object') {
+    // Objeto sem `message` (um evento de fechamento, por exemplo) viraria
+    // "[object Object]" na frase de recusa. Sem texto, cai na frase genérica.
+    if ('message' in erro) bruto = String(erro.message);
+  } else if (typeof erro === 'string' || typeof erro === 'number' || typeof erro === 'boolean') {
+    bruto = String(erro);
+  }
 
   for (const [code, texto] of Object.entries(CONEXAO)) {
     if (bruto.includes(code)) return texto;

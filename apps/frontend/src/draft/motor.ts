@@ -24,9 +24,10 @@ import type { Sorteador } from '../desafios/cartas';
 export interface CartaDeDraft {
   id: string;
   name: string;
-  rarity: 'common' | 'uncommon' | 'rare' | 'mythic' | string;
+  /** Além de common, uncommon, rare e mythic, a Scryfall devolve `special` e `bonus`. */
+  rarity: string;
   colors?: string[];
-  card_faces?: Array<{ colors?: string[] }>;
+  card_faces?: { colors?: string[] }[];
   type_line?: string;
   cmc?: number;
   set?: string;
@@ -191,7 +192,7 @@ export function sugerirBasicos(
   let dados = 0;
   for (const cor of cores) {
     partes[cor] = Math.max(1, Math.floor((conta.get(cor)! / soma) * total));
-    dados += partes[cor]!;
+    dados += partes[cor];
   }
   // Acerta a soma na cor mais pedida (para cima ou para baixo).
   const principal = [...conta].sort((a, b) => b[1] - a[1])[0]![0];

@@ -21,8 +21,8 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
   const publico = opcoes.publico ?? true;
   let likes = new Set<string>();
   const deck = { id: DECK, userId: DONO, likeCount: 0 };
-  const criados: Array<Record<string, unknown>> = [];
-  const linhasCriadas: Array<Record<string, unknown>> = [];
+  const criados: Record<string, unknown>[] = [];
+  const linhasCriadas: Record<string, unknown>[] = [];
 
   // A transação recebe o próprio falso como `tx`, como o Prisma faz. Declarado
   // antes para o tipo do objeto não depender dele mesmo.
@@ -51,8 +51,8 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
           : {}),
       })),
       update: jest.fn(async ({ data }: { data: { likeCount: Record<string, number> } }) => {
-        if (data.likeCount['increment']) deck.likeCount += data.likeCount['increment'];
-        if (data.likeCount['decrement']) deck.likeCount -= data.likeCount['decrement'];
+        if (data.likeCount.increment) deck.likeCount += data.likeCount.increment;
+        if (data.likeCount.decrement) deck.likeCount -= data.likeCount.decrement;
         return { likeCount: deck.likeCount };
       }),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -62,7 +62,7 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
       }),
     },
     deckLike: {
-      createMany: jest.fn(async ({ data }: { data: Array<{ userId: string }> }) => {
+      createMany: jest.fn(async ({ data }: { data: { userId: string }[] }) => {
         const antes = likes.size;
         for (const d of data) likes.add(d.userId);
         return { count: likes.size - antes };
@@ -74,7 +74,7 @@ function bancoFalso(opcoes: { publico?: boolean } = {}) {
       findUnique: jest.fn(async () => null),
     },
     deckCard: {
-      createMany: jest.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+      createMany: jest.fn(async ({ data }: { data: Record<string, unknown>[] }) => {
         linhasCriadas.push(...data);
         return { count: data.length };
       }),
@@ -139,7 +139,7 @@ describe('ExplorarService.ver', () => {
   it('mostra o nome do dono e esconde o id dele', async () => {
     const banco = bancoFalso();
     const deck = (await banco.svc.ver(EU, DECK)) as Record<string, unknown>;
-    expect(deck['dono']).toBe('gaspare');
+    expect(deck.dono).toBe('gaspare');
     expect(deck).not.toHaveProperty('userId');
   });
 });
@@ -149,10 +149,10 @@ describe('ExplorarService.copiar', () => {
     const banco = bancoFalso();
     const novo = (await banco.svc.copiar(EU, DECK)) as Record<string, unknown>;
 
-    expect(novo['userId']).toBe(EU);
+    expect(novo.userId).toBe(EU);
     expect(novo).not.toHaveProperty('isPublic', true);
-    expect(String(novo['name'])).toContain('de gaspare');
+    expect(String(novo.name)).toContain('de gaspare');
     expect(banco.linhasCriadas).toHaveLength(2);
-    expect(banco.linhasCriadas.every((l) => l['deckId'] === 'deck-novo')).toBe(true);
+    expect(banco.linhasCriadas.every((l) => l.deckId === 'deck-novo')).toBe(true);
   });
 });

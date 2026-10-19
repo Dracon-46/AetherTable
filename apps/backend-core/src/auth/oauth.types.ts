@@ -11,7 +11,7 @@
 export interface PerfilOAuth {
   id: string;
   username?: string;
-  emails?: Array<{ value?: string; verified?: boolean | string }>;
+  emails?: { value?: string; verified?: boolean | string }[];
   name?: { givenName?: string; familyName?: string };
   displayName?: string;
   /** O JSON cru do provedor. O Google só põe `email_verified` aqui. */

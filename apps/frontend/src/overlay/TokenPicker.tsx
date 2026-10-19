@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Search, Plus, Loader2, X, Ghost, Minus, History, Layers, PenLine } from 'lucide-react';
 import { useGameStore, useUIStore } from '../store/game.store';
 import { intents } from '../net/intents';
@@ -27,7 +27,7 @@ interface TokenPickerProps {
  *
  * A busca usa a sintaxe da Scryfall e devolve a impressão mais recente.
  */
-const PRESETS: Array<{ rotulo: string; query: string; emoji: string }> = [
+const PRESETS: { rotulo: string; query: string; emoji: string }[] = [
   { rotulo: 'Tesouro', query: 't:token t:treasure', emoji: '💰' },
   { rotulo: 'Pista', query: 't:token t:clue', emoji: '🔍' },
   { rotulo: 'Comida', query: 't:token t:food', emoji: '🍗' },
@@ -48,6 +48,15 @@ interface FichaSalva {
   toughness?: string;
 }
 
+/** O que a busca de cartas da API devolve e esta tela usa (formato da Scryfall). */
+interface FichaDaBusca {
+  id: string;
+  name: string;
+  type_line?: string;
+  power?: string;
+  toughness?: string;
+}
+
 /**
  * ─── "USADAS RECENTEMENTE" ─────────────────────────────────────────────────
  *
@@ -59,10 +68,14 @@ interface FichaSalva {
 const CHAVE_RECENTES = 'aether-fichas-recentes';
 const MAX_RECENTES = 8;
 
+function ehFichaSalva(f: unknown): f is FichaSalva {
+  return typeof f === 'object' && f !== null && typeof (f as { name?: unknown }).name === 'string';
+}
+
 function lerRecentes(): FichaSalva[] {
   try {
-    const bruto = JSON.parse(localStorage.getItem(CHAVE_RECENTES) ?? '[]');
-    return Array.isArray(bruto) ? bruto.filter((f) => f && typeof f.name === 'string') : [];
+    const bruto: unknown = JSON.parse(localStorage.getItem(CHAVE_RECENTES) ?? '[]');
+    return Array.isArray(bruto) ? bruto.filter(ehFichaSalva) : [];
   } catch {
     return [];
   }
@@ -89,7 +102,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<FichaDaBusca[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [presetEmCurso, setPresetEmCurso] = useState<string | null>(null);
@@ -126,7 +139,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
     let ativo = true;
     fetch(`${API_URL}/decks/${deckId}`, { headers: { Authorization: `Bearer ${accessToken}` } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((deck: { cards?: Array<{ scryfallId: string }> } | null) => {
+      .then((deck: { cards?: { scryfallId: string }[] } | null) => {
         if (!ativo || !deck?.cards) return;
         setIdsDoDeck([...new Set(deck.cards.map((c) => c.scryfallId.toLowerCase()))]);
       })
@@ -143,7 +156,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
     () =>
       Object.values(cards)
         .filter((c) => c.ownerId === myId && c.scryfallId && !c.isToken)
-        .map((c) => c.scryfallId!.toLowerCase()),
+        .map((c) => c.scryfallId.toLowerCase()),
     [cards, myId],
   );
 
@@ -159,26 +172,8 @@ export function TokenPicker({ room }: TokenPickerProps) {
     return [...vistas.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [idsDoDeck, idsVisiveis, catalogo]);
 
-  // Busca inicial genérica de tokens comuns
-  useEffect(() => {
-    if (isActive && results.length === 0 && query === '') {
-      performSearch('t:token');
-    }
-  }, [isActive]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (query.trim().length >= 2) {
-        performSearch(`t:token ${query}`);
-      } else if (query.trim() === '') {
-        performSearch('t:token');
-      }
-    }, 500);
-
-    return () => clearTimeout(handler);
-  }, [query]);
-
-  const performSearch = async (q: string) => {
+  // A falha já vira lista vazia aqui dentro: quem chama pode disparar e esquecer.
+  const performSearch = useCallback(async (q: string) => {
     setIsSearching(true);
     try {
       // Espelho do backend: `api.scryfall.com` pode estar bloqueado na rede.
@@ -186,8 +181,8 @@ export function TokenPicker({ room }: TokenPickerProps) {
         `${API_URL}/cards/search?q=${encodeURIComponent(q)}&order=cmc&dir=asc`,
       );
       if (res.ok) {
-        const data = await res.json();
-        setResults(data.data?.slice(0, 30) || []);
+        const data = (await res.json()) as { data?: FichaDaBusca[] };
+        setResults(data.data?.slice(0, 30) ?? []);
       } else {
         setResults([]);
       }
@@ -197,7 +192,38 @@ export function TokenPicker({ room }: TokenPickerProps) {
     } finally {
       setIsSearching(false);
     }
-  };
+  }, []);
+
+  /**
+   * A busca inicial decide pelo estado do momento em que o painel ABRE. Ler a
+   * lista e o texto por ref, e não como dependência, evita que limpar o campo
+   * ou receber uma lista vazia dispare uma segunda busca junto com a do
+   * debounce abaixo.
+   */
+  const estadoDaBusca = useRef({ query, semResultados: results.length === 0 });
+  useEffect(() => {
+    estadoDaBusca.current = { query, semResultados: results.length === 0 };
+  }, [query, results.length]);
+
+  // Busca inicial genérica de tokens comuns
+  useEffect(() => {
+    const { query: texto, semResultados } = estadoDaBusca.current;
+    if (isActive && semResultados && texto === '') {
+      void performSearch('t:token');
+    }
+  }, [isActive, performSearch]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (query.trim().length >= 2) {
+        void performSearch(`t:token ${query}`);
+      } else if (query.trim() === '') {
+        void performSearch('t:token');
+      }
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [query, performSearch]);
 
   /** Busca a impressão mais recente do preset e cria a ficha direto. */
   const criarPreset = async (query: string) => {
@@ -207,7 +233,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
         `${API_URL}/cards/search?q=${encodeURIComponent(query)}&order=released&dir=desc`,
       );
       if (!res.ok) throw new Error(`API de cartas respondeu ${res.status}`);
-      const data = await res.json();
+      const data = (await res.json()) as { data?: FichaDaBusca[] };
       const carta = data.data?.[0];
       if (carta) handleCreate(carta);
     } catch (e) {
@@ -239,7 +265,7 @@ export function TokenPicker({ room }: TokenPickerProps) {
     }, 300);
   };
 
-  const handleCreate = (card: any) =>
+  const handleCreate = (card: FichaDaBusca) =>
     criar(
       { scryfallId: card.id, name: card.name, power: card.power, toughness: card.toughness },
       card.id,

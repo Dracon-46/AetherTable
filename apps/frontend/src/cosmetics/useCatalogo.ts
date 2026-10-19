@@ -32,7 +32,7 @@ import { api } from '../lib/fetcher';
 
 interface Resposta {
   versao: number;
-  itens: Array<{ familia: unknown; item: CosmeticoAutoralBruto }>;
+  itens: { familia: unknown; item: CosmeticoAutoralBruto }[];
 }
 
 /** A versão aplicada. Muda quando o catálogo muda, e só então. */

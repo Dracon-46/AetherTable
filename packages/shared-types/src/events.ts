@@ -118,7 +118,7 @@ export interface PingEvent {
  * Um `broadcast` aqui e um vazamento de informacao oculta.
  */
 export interface RevealToOwnerEvent {
-  cards: Array<{ id: string; scryfallId: string }>;
+  cards: { id: string; scryfallId: string }[];
   /**
    * Por que as cartas chegaram. O mesmo evento serve olhar, buscar (tutor) e
    * sortear; só a olhada abre o painel de olhada no cliente.
@@ -135,7 +135,7 @@ export interface RevealToOwnerEvent {
  */
 export interface ScryOpenedEvent {
   mode: 'SCRY' | 'SURVEIL';
-  cards: Array<{ id: string; scryfallId: string }>;
+  cards: { id: string; scryfallId: string }[];
 }
 
 export interface WarningEvent {

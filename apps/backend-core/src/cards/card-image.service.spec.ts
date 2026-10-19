@@ -67,7 +67,7 @@ describe('CardImageService.obter', () => {
         headers: new Map([['content-type', 'image/jpeg']]) as unknown as Headers,
         arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       } as unknown as Response;
-    }) as unknown as typeof fetch;
+    });
   });
 
   it('monta a URL da CDN com o particionamento por dois caracteres', async () => {
@@ -97,7 +97,7 @@ describe('CardImageService.obter', () => {
     global.fetch = jest.fn(async () => {
       chamadas.push('404');
       return { ok: false, status: 404 } as unknown as Response;
-    }) as unknown as typeof fetch;
+    });
 
     expect(await servico.obter(UUID, 'small', 'back')).toBeNull();
     expect(await servico.obter(UUID, 'small', 'back')).toBeNull();
@@ -109,7 +109,7 @@ describe('CardImageService.obter', () => {
     global.fetch = jest.fn(async () => {
       tentativas += 1;
       throw new Error('ECONNREFUSED');
-    }) as unknown as typeof fetch;
+    });
 
     expect(await servico.obter(UUID, 'small', 'front')).toBeNull();
     expect(await servico.obter(UUID, 'small', 'front')).toBeNull();

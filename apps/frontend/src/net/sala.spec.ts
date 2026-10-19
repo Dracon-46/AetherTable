@@ -100,7 +100,7 @@ describe('normalizarConfigDeSala', () => {
     ] as const;
 
     for (const bruta of brutas) {
-      const uma = normalizarConfigDeSala(bruta as never);
+      const uma = normalizarConfigDeSala(bruta);
       expect(normalizarConfigDeSala(uma)).toEqual(uma);
     }
   });
@@ -118,7 +118,7 @@ describe('normalizarConfigDeSala', () => {
       visibilidade: 'PUBLICA_MAS_NAO_MUITO',
       comunicacao: 'TELEPATIA',
       idioma: 'tlh',
-    } as never);
+    });
     expect(config.visibilidade).toBe('PRIVADA');
     expect(config.comunicacao).toBe('QUALQUER');
     expect(config.idioma).toBe('pt-BR');

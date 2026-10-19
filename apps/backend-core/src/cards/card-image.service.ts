@@ -87,7 +87,7 @@ export class CardImageService {
   private readonly emVoo = new Map<string, Promise<ImagemDeCarta | null>>();
 
   private ativas = 0;
-  private readonly fila: Array<() => void> = [];
+  private readonly fila: (() => void)[] = [];
 
   /** Valida e normaliza os parâmetros da rota. `null` = pedido inválido. */
   static validar(

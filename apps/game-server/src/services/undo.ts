@@ -49,7 +49,7 @@ interface CartaSnapshot {
   toughnessOverride: number;
   hasPtOverride: boolean;
   enteredThisTurn: boolean;
-  counters: Array<[string, number]>;
+  counters: [string, number][];
 }
 
 interface JogadorSnapshot {
@@ -69,20 +69,20 @@ interface JogadorSnapshot {
   conceded: boolean;
   /** Desfazer a compra do grimório vazio não revivia o jogador sem isto. */
   decked: boolean;
-  commanderDamage: Array<[string, number]>;
+  commanderDamage: [string, number][];
 }
 
 export interface Snapshot {
   sid: string;
   tipo: string;
   em: number;
-  cartas: Array<[string, CartaSnapshot]>;
-  zonas: Array<[Zone, string[]]>;
+  cartas: [string, CartaSnapshot][];
+  zonas: [Zone, string[]][];
   jogador: JogadorSnapshot | null;
 }
 
 export function capturar(state: RoomState, sid: string, tipo: string): Snapshot {
-  const cartas: Array<[string, CartaSnapshot]> = [];
+  const cartas: [string, CartaSnapshot][] = [];
   state.cards.forEach((c, id) => {
     if (c.ownerId !== sid && c.controllerId !== sid) return;
     cartas.push([
@@ -113,7 +113,7 @@ export function capturar(state: RoomState, sid: string, tipo: string): Snapshot 
     ]);
   });
 
-  const zonas: Array<[Zone, string[]]> = [];
+  const zonas: [Zone, string[]][] = [];
   for (const zona of ZONES) {
     const lista = state.zoneOrder.get(zoneOrderKey(sid, zona))?.items;
     if (lista) zonas.push([zona, Array.from(lista)]);

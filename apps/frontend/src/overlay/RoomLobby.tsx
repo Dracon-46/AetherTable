@@ -188,7 +188,12 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
    */
   // Do STORE, e não de `room.state`: ler o schema direto não redesenha nada, e
   // o anfitrião que abria um assento continuava vendo a grade antiga.
-  const lugares = Math.max(config.maxSeats || maxClients || players.length, players.length, 1);
+  // `||` de propósito: 0 e o NaN de um `?maxClients=` inválido caem para o próximo.
+  const lugares = Math.max(
+    config.maxSeats || (maxClients ?? 0) || players.length,
+    players.length,
+    1,
+  );
   const codigo = room.state?.roomCode || roomId;
   const formato = room.state?.gameType || gameType || 'COMMANDER';
 
@@ -304,7 +309,7 @@ export function RoomLobby({ room, maxClients, gameType }: RoomLobbyProps) {
     // Pelo código da sala, que é a chave usada ao guardar — ver ActionBar.
     esquecerReconexao(room.state?.roomCode || room.roomId);
     intents.leave(room);
-    room.leave();
+    void room.leave();
     router.push('/dashboard');
   };
 

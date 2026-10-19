@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './Providers';
 
@@ -6,6 +7,21 @@ export const metadata: Metadata = {
   title: 'AetherTable - O Seu Novo Card Game',
   description: 'Jogue seus formatos favoritos de card games de forma online, imersiva e gratuita.',
 };
+
+/**
+ * A Inter é baixada no build e servida pelo próprio site. Com o `<link>` do
+ * Google Fonts, cada visita mandava o IP do visitante ao Google (LGPD).
+ *
+ * O nome da família que o `next/font` gera não é "Inter": quem precisa da
+ * fonte lê a variável `--font-inter`, via `--font-sans` no `globals.css`. Ela
+ * fica no `<html>` porque é ali (`:root`) que o `--font-sans` é resolvido.
+ */
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 export default function RootLayout({
   children,
@@ -19,7 +35,7 @@ export default function RootLayout({
      * renderizou e o que o navegador tem já são diferentes de propósito. Sem
      * isto, o React reclama de um descasamento que é justamente o objetivo.
      */
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" className={inter.variable} suppressHydrationWarning>
       <head>
         {/*
          * ─── O TEMA É APLICADO ANTES DA PRIMEIRA PINTURA ──────────────────
@@ -47,12 +63,6 @@ export default function RootLayout({
               document.documentElement.dataset.tema = claro ? 'claro' : 'escuro';
             }catch(e){}})();`,
           }}
-        />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
         />
       </head>
       <body className="bg-table-deep text-text min-h-dvh w-full antialiased">

@@ -712,7 +712,7 @@ export function zonaSolta(faixa: Faixa, x: number, y: number): ZonaDeSoltura {
   // A reserva NÃO entra: é zona oculta e de pré-jogo, e cair nela por um
   // arrasto impreciso esconderia a carta da mesa inteira. Soltar sobre ela é
   // soltar no campo.
-  const alvos: Array<[ZonaDeSoltura, Ponto]> = [
+  const alvos: [ZonaDeSoltura, Ponto][] = [
     ['COMMAND', faixa.comando],
     ['LIBRARY', faixa.grimorio],
     ['GRAVEYARD', faixa.cemiterio],

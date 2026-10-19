@@ -22,7 +22,7 @@ describe('trocar de conta no mesmo navegador', () => {
   });
 
   it('os atalhos voltam às teclas de fábrica', () => {
-    useAtalhos.setState({ atalhos: { ...ATALHOS_PADRAO, COMPRAR: 'z' } as never });
+    useAtalhos.setState({ atalhos: { ...ATALHOS_PADRAO, COMPRAR: 'z' } });
 
     useAtalhos.getState().esquecerConta();
 

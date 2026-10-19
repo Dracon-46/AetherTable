@@ -168,7 +168,7 @@ export interface IntentHandler<Schema extends z.ZodTypeAny> {
  */
 function exigirAnfitriao(ctx: IntentContext, intent: string): boolean {
   const eu = ctx.state.players.get(ctx.client.sessionId);
-  if (eu && eu.seat === 0) return false;
+  if (eu?.seat === 0) return false;
 
   const anfitriao = Array.from(ctx.state.players.values()).find((p) => p.seat === 0);
   ctx.send('error', {
@@ -560,7 +560,7 @@ const INTENT_BATCH_CHANGE_ZONE: IntentHandler<typeof S.BatchChangeZoneIntent> = 
     let movidas = 0;
     for (const id of new Set(entityIds)) {
       const c = carta(ctx.state, id);
-      if (!c || c.controllerId !== sid) continue;
+      if (c?.controllerId !== sid) continue;
       trocarDeZona(ctx, c, targetZone, { registrar: false });
       movidas += 1;
     }
@@ -670,7 +670,7 @@ const INTENT_PEEK: IntentHandler<typeof S.PeekIntent> = {
     const ids =
       from === 'BOTTOM' ? [...lista].slice(0, n) : [...lista].slice(lista.length - n).reverse();
 
-    const vistas: Array<{ id: string; scryfallId: string }> = [];
+    const vistas: { id: string; scryfallId: string }[] = [];
     for (const id of ids) {
       const c = carta(ctx.state, id);
       if (!c) continue;
@@ -1323,7 +1323,7 @@ const INTENT_DESTROY_TOKEN: IntentHandler<typeof S.DestroyTokenIntent> = {
   executa(ctx, { entityId }) {
     const c = carta(ctx.state, entityId);
     // So token: uma carta real precisa ir para uma zona, nunca sumir.
-    if (!c || !c.isToken) return;
+    if (!c?.isToken) return;
     ctx.state.cards.delete(entityId);
     ctx.log(
       criarLog(
@@ -1518,7 +1518,7 @@ const INTENT_CAST_COMMANDER: IntentHandler<typeof S.CastCommanderIntent> = {
   executa(ctx, { entityId }) {
     const sid = ctx.client.sessionId;
     const c = carta(ctx.state, entityId);
-    if (!c || c.zone !== 'COMMAND') return;
+    if (c?.zone !== 'COMMAND') return;
 
     moverNaOrdem(ctx.state, c.ownerId, c.id, 'COMMAND', 'BATTLEFIELD');
     // (0, 0) = centro do campo de quem conjura (`posicaoNoCampo`). Era
@@ -1873,12 +1873,9 @@ function topoDe(lista: ArrayLike<string> & { length: number }, n: number): strin
 }
 
 /** Concede olhada ao remetente sobre um conjunto de cartas e reconcilia. */
-function concederOlhada(
-  ctx: IntentContext,
-  ids: string[],
-): Array<{ id: string; scryfallId: string }> {
+function concederOlhada(ctx: IntentContext, ids: string[]): { id: string; scryfallId: string }[] {
   const sid = ctx.client.sessionId;
-  const vistas: Array<{ id: string; scryfallId: string }> = [];
+  const vistas: { id: string; scryfallId: string }[] = [];
   for (const id of ids) {
     const c = carta(ctx.state, id);
     if (!c) continue;
@@ -2265,7 +2262,7 @@ const INTENT_REVEAL: IntentHandler<typeof S.RevealIntent> = {
       const c = carta(ctx.state, id);
       // So revela carta PROPRIA: revelar a carta alheia seria expor informacao
       // oculta de outro jogador, exatamente o que RN02 proibe.
-      if (!c || c.ownerId !== sid) continue;
+      if (c?.ownerId !== sid) continue;
       c.revealedTo =
         to === 'ALL' ? 'ALL' : to.reduce((acc, alvo) => concede(acc, alvo), c.revealedTo);
       reconciliarCartaParaTodos(ctx.clients, c);
@@ -2357,7 +2354,7 @@ export function aplicarTopoRevelado(ctx: IntentContext, sid: string): void {
   const anterior = jogador.topoReveladoId;
   if (anterior && (anterior !== topo || !jogador.topoRevelado)) {
     const c = ctx.state.cards.get(anterior);
-    if (c && c.zone === 'LIBRARY') {
+    if (c?.zone === 'LIBRARY') {
       c.revealedTo = '';
       reconciliarCartaParaTodos(ctx.clients, c);
     }
@@ -2421,7 +2418,7 @@ const INTENT_UNREVEAL: IntentHandler<typeof S.UnrevealIntent> = {
     const sid = ctx.client.sessionId;
     for (const id of ids) {
       const c = carta(ctx.state, id);
-      if (!c || c.ownerId !== sid) continue;
+      if (c?.ownerId !== sid) continue;
       c.revealedTo = '';
       reconciliarCartaParaTodos(ctx.clients, c);
     }
@@ -2489,7 +2486,7 @@ const INTENT_DETACH: IntentHandler<typeof S.DetachIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { childId }) {
     const c = carta(ctx.state, childId);
-    if (!c || c.controllerId !== ctx.client.sessionId) return;
+    if (c?.controllerId !== ctx.client.sessionId) return;
     c.attachedTo = '';
   },
 };
@@ -2560,7 +2557,7 @@ const INTENT_BATCH_UPDATE: IntentHandler<typeof S.BatchUpdateIntent> = {
     // 30 intencoes/s (DOC-036 item 70).
     for (const id of entityIds) {
       const c = carta(ctx.state, id);
-      if (!c || c.controllerId !== sid) continue;
+      if (c?.controllerId !== sid) continue;
       if (property === 'rotation') {
         if (typeof value === 'number') c.rotation = value;
         continue;
@@ -2595,7 +2592,7 @@ const INTENT_BATCH_COUNTER: IntentHandler<typeof S.BatchCounterIntent> = {
     const sid = ctx.client.sessionId;
     for (const id of entityIds) {
       const c = carta(ctx.state, id);
-      if (!c || c.controllerId !== sid) continue;
+      if (c?.controllerId !== sid) continue;
       const atual = c.counters.get(name) ?? 0;
       const novo = atual + amount;
       // `<= 0`, como no ADD_COUNTER: Shift+A ("tirar um +1/+1") numa carta
@@ -2660,7 +2657,7 @@ const INTENT_SET_RING: IntentHandler<typeof S.SetRingIntent> = {
     p.ringLevel = level;
     if (bearerId !== undefined) {
       const portador = carta(ctx.state, bearerId);
-      p.ringBearerId = portador && portador.controllerId === sid ? portador.id : '';
+      p.ringBearerId = portador?.controllerId === sid ? portador.id : '';
     }
     ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)}: o Anel tenta no nível ${level}`));
   },
@@ -2899,7 +2896,7 @@ const INTENT_ARROW: IntentHandler<typeof S.ArrowIntent> = {
     seta.ownerId = sid;
     seta.fromId = fromId;
     seta.toId = toId;
-    seta.color = /^#[0-9a-fA-F]{3,8}$/.test(color ?? '') ? (color as string) : '#EF4444';
+    seta.color = /^#[0-9a-fA-F]{3,8}$/.test(color ?? '') ? color! : '#EF4444';
     seta.combat = combat;
     ctx.state.arrows.set(seta.id, seta);
   },
@@ -2962,7 +2959,7 @@ const INTENT_FETCH_FROM_SIDEBOARD: IntentHandler<typeof S.FetchFromSideboardInte
     }
 
     const c = carta(ctx.state, entityId);
-    if (!c || c.zone !== 'SIDEBOARD') return;
+    if (c?.zone !== 'SIDEBOARD') return;
 
     moverNaOrdem(ctx.state, c.ownerId, c.id, 'SIDEBOARD', to);
     aplicarEfeitosDeZona(ctx, c, to);
@@ -3284,7 +3281,7 @@ const INTENT_RESPOND_VIEW: IntentHandler<typeof S.RespondViewIntent> = {
       // A permissao vive no JOGADOR (persiste entre compras) e e aplicada
       // tambem a cada carta que ja esta na zona.
       eu.sharedZones.set(zone, concede(eu.sharedZones.get(zone) ?? '', requesterId));
-      const lista = ordem(ctx.state, sid, zone as Zone);
+      const lista = ordem(ctx.state, sid, zone);
       lista?.forEach((id) => {
         const c = carta(ctx.state, id);
         if (!c) return;
@@ -3330,7 +3327,7 @@ const INTENT_REVOKE_VIEW: IntentHandler<typeof S.RevokeViewIntent> = {
     if (novo) eu.sharedZones.set(zone, novo);
     else eu.sharedZones.delete(zone);
 
-    const lista = ordem(ctx.state, sid, zone as Zone);
+    const lista = ordem(ctx.state, sid, zone);
     lista?.forEach((id) => {
       const c = carta(ctx.state, id);
       if (!c) return;
@@ -3516,7 +3513,7 @@ export const REGISTRY = {
  * verificavel, em vez de descoberta por um jogador clicando num botao inerte
  * (que foi exatamente o que aconteceu com as 18 intencoes da fase 1).
  */
-export const INTENCOES_PENDENTES: ReadonlyArray<{ intent: IntentType; motivo: string }> = [
+export const INTENCOES_PENDENTES: readonly { intent: IntentType; motivo: string }[] = [
   { intent: 'INTENT_MELD', motivo: 'V2 — exige carta resultante e desfazer o meld' },
   { intent: 'INTENT_GROUP', motivo: 'V2 — exige um id de grupo no Schema de Card' },
   { intent: 'INTENT_CREATE_EMBLEM', motivo: 'V2 — exige zona/objeto de emblema' },
@@ -3568,7 +3565,7 @@ export class RateLimiter {
 
   constructor(
     private readonly maximo: number = REALTIME_LIMITS.MAX_INTENTS_PER_SECOND,
-    private readonly janelaMs: number = 1000,
+    private readonly janelaMs = 1000,
   ) {}
 
   permitir(sid: string, agora = Date.now()): boolean {

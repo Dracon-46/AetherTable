@@ -48,7 +48,7 @@ export class DecksService {
     private cards: CardsService,
   ) {}
 
-  async createDeck(userId: string, name: string, formatId: string = 'commander') {
+  async createDeck(userId: string, name: string, formatId = 'commander') {
     return this.prisma.deck.create({
       data: {
         userId,
@@ -112,10 +112,7 @@ export class DecksService {
             // de Modern ou Pauper: cartas legais no formato do deck vinham
             // marcadas como banidas e o `join` bloqueava a entrada na mesa.
             // Formato sem chave (freeform, peasant) não tem banlist a consultar.
-            isBanned:
-              extra && chave
-                ? (extra.legalities as Record<string, string> | undefined)?.[chave] === 'banned'
-                : false,
+            isBanned: extra && chave ? extra.legalities?.[chave] === 'banned' : false,
             imageNormal:
               extra?.image_uris?.normal || extra?.card_faces?.[0]?.image_uris?.normal || '',
             priceUsd: extra?.prices?.usd || 0,
@@ -161,14 +158,7 @@ export class DecksService {
             gameChanger: typeof extra?.game_changer === 'boolean' ? extra.game_changer : undefined,
           };
         });
-        await this.sincronizarResumo(
-          deck,
-          deck.cards as unknown as Array<{
-            scryfallId: string;
-            boardType: BoardType;
-            colorIdentity?: string[];
-          }>,
-        );
+        await this.sincronizarResumo(deck, deck.cards);
       } catch (erro) {
         // A hidratação é enriquecimento: se a Scryfall cair, o deck ainda
         // precisa ser devolvido — só sem nome, set e legalidade.
@@ -314,7 +304,7 @@ export class DecksService {
       partnerId: string | null;
       colorIdentity: string[];
     },
-    cartas: Array<{ scryfallId: string; boardType: BoardType; colorIdentity?: string[] }>,
+    cartas: { scryfallId: string; boardType: BoardType; colorIdentity?: string[] }[],
   ): Promise<void> {
     const comandantes = cartas.filter((c) => c.boardType === BoardType.COMMANDER);
     const commanderId = comandantes[0]?.scryfallId.toLowerCase() ?? null;
@@ -347,7 +337,7 @@ export class DecksService {
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
     const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
-    if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
+    if (card?.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
 
     // As duas escritas numa transação só. Separadas, uma falha de conexão
     // entre elas — o Neon do plano gratuito autossuspende — apagava a carta e
@@ -390,7 +380,7 @@ export class DecksService {
     if (!deck) throw new NotFoundException('Deck não encontrado');
 
     const card = await this.prisma.deckCard.findUnique({ where: { id: cardId } });
-    if (!card || card.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
+    if (card?.deckId !== deckId) throw new NotFoundException('Carta não encontrada');
 
     if (delta === 0) return { success: true };
 
@@ -427,7 +417,7 @@ export class DecksService {
     userId: string,
     deckId: string,
     scryfallId: string,
-    quantity: number = 1,
+    quantity = 1,
     boardType: BoardType = BoardType.MAIN,
   ) {
     const deck = await this.prisma.deck.findFirst({ where: { id: deckId, userId } });

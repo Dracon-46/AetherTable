@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
 import { API_URL } from '@/lib/api';
-import { apelidoParaEnvio } from '@/lib/perfil';
+import { apelidoParaEnvio, type PerfilSalvo } from '@/lib/perfil';
 import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { Settings, Save, Check, Palette, User as UserIcon, Sun, Moon, Monitor } from 'lucide-react';
 import { DESCRICAO_DO_TEMA, TEMAS } from '@aethertable/shared-types';
@@ -52,8 +52,10 @@ export default function SettingsPage() {
         }),
       });
 
-      const data = await res.json();
+      // Sucesso traz o perfil salvo; falha traz o corpo de erro da API.
+      const data: unknown = await res.json();
       if (res.ok) {
+        const salvo = data as PerfilSalvo;
         /**
          * ─── SALVAR E VOLTAR DESFAZIA A TROCA ───────────────────────────────
          *
@@ -66,9 +68,9 @@ export default function SettingsPage() {
         if (user && accessToken) {
           setAuth(accessToken, {
             ...user,
-            username: data.username ?? user.username,
-            displayName: data.displayName ?? null,
-            avatarUrl: data.avatarUrl ?? user.avatarUrl ?? null,
+            username: salvo.username ?? user.username,
+            displayName: salvo.displayName ?? null,
+            avatarUrl: salvo.avatarUrl ?? user.avatarUrl ?? null,
           });
         }
         setMessage('Perfil atualizado com sucesso!');

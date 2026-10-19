@@ -469,12 +469,12 @@ const IDS_DE_CODIGO: Record<FamiliaDeCosmetico, ReadonlySet<string>> = {
 };
 
 const MAPAS: Record<FamiliaDeCosmetico, Map<string, { id: string }>> = {
-  sleeveId: MAPA_SLEEVES as Map<string, { id: string }>,
-  playmatId: MAPA_PLAYMATS as Map<string, { id: string }>,
-  borderId: MAPA_BORDERS as Map<string, { id: string }>,
-  titleId: MAPA_TITLES as Map<string, { id: string }>,
-  petId: MAPA_PETS as Map<string, { id: string }>,
-  nameplateId: MAPA_NAMEPLATES as Map<string, { id: string }>,
+  sleeveId: MAPA_SLEEVES,
+  playmatId: MAPA_PLAYMATS,
+  borderId: MAPA_BORDERS,
+  titleId: MAPA_TITLES,
+  petId: MAPA_PETS,
+  nameplateId: MAPA_NAMEPLATES,
 };
 
 /** Ids autorais atualmente registrados, por familia — usado para limpar antes de recarregar. */
@@ -595,7 +595,7 @@ const umDe = <T extends string>(v: unknown, lista: readonly T[]): T | null =>
   typeof v === 'string' && (lista as readonly string[]).includes(v) ? (v as T) : null;
 
 /** O que chega: qualquer coisa. Por isso todo campo e `unknown`. */
-export type CosmeticoAutoralBruto = { [k: string]: unknown };
+export type CosmeticoAutoralBruto = Record<string, unknown>;
 
 /**
  * O par de cores, aceito nas DUAS formas.
@@ -615,7 +615,7 @@ export type CosmeticoAutoralBruto = { [k: string]: unknown };
  * classe inteira de defeito, e e o mesmo contrato de `normalizarConfigDeSala`.
  */
 function parDeCores(bruto: CosmeticoAutoralBruto): [string, string] | null {
-  const tupla = bruto['cores'];
+  const tupla = bruto.cores;
   /**
    * `cores` PRESENTE manda, mesmo que esteja quebrado.
    *
@@ -630,8 +630,8 @@ function parDeCores(bruto: CosmeticoAutoralBruto): [string, string] | null {
     const b = cor(tupla[1]);
     return a && b ? [a, b] : null;
   }
-  const a = cor(bruto['cor1']);
-  const b = cor(bruto['cor2']);
+  const a = cor(bruto.cor1);
+  const b = cor(bruto.cor2);
   return a && b ? [a, b] : null;
 }
 
@@ -644,7 +644,7 @@ function parDeCores(bruto: CosmeticoAutoralBruto): [string, string] | null {
  * certos — nem no servidor, nem no cliente.
  */
 export function normalizarCosmeticoAutoral(bruto: CosmeticoAutoralBruto): CosmeticoAutoral | null {
-  const familia = umDe(bruto['familia'], [
+  const familia = umDe(bruto.familia, [
     'sleeveId',
     'playmatId',
     'borderId',
@@ -654,24 +654,24 @@ export function normalizarCosmeticoAutoral(bruto: CosmeticoAutoralBruto): Cosmet
   ] as const);
   if (!familia) return null;
 
-  const id = typeof bruto['id'] === 'string' && SLUG.test(bruto['id']) ? bruto['id'] : null;
-  const nome = texto(bruto['nome'], 48);
-  const tier = umDe(bruto['tier'], ['FREE', 'APOIADOR'] as const);
+  const id = typeof bruto.id === 'string' && SLUG.test(bruto.id) ? bruto.id : null;
+  const nome = texto(bruto.nome, 48);
+  const tier = umDe(bruto.tier, ['FREE', 'APOIADOR'] as const);
   if (!id || !nome || !tier) return null;
 
   switch (familia) {
     case 'sleeveId': {
       const cores = parDeCores(bruto);
-      const borda = cor(bruto['borda']);
-      const detalhe = cor(bruto['detalhe']);
-      const padrao = umDe(bruto['padrao'], PADROES_DE_SLEEVE);
+      const borda = cor(bruto.borda);
+      const detalhe = cor(bruto.detalhe);
+      const padrao = umDe(bruto.padrao, PADROES_DE_SLEEVE);
       if (!cores || !borda || !detalhe || !padrao) return null;
       return { familia, item: { id, nome, tier, cores, borda, detalhe, padrao } };
     }
     case 'playmatId': {
       const cores = parDeCores(bruto);
-      const destaque = cor(bruto['destaque']);
-      const padrao = umDe(bruto['padrao'], PADROES_DE_PLAYMAT);
+      const destaque = cor(bruto.destaque);
+      const padrao = umDe(bruto.padrao, PADROES_DE_PLAYMAT);
       if (!cores || !destaque || !padrao) return null;
       return { familia, item: { id, nome, tier, cores, destaque, padrao } };
     }
@@ -680,22 +680,22 @@ export function normalizarCosmeticoAutoral(bruto: CosmeticoAutoralBruto): Cosmet
       // CSS arbitrario: o admin escolhe entre as bordas que o cliente sabe
       // desenhar. Por isso o conjunto vem do proprio catalogo de codigo.
       const classe = umDe(
-        bruto['classe'],
+        bruto.classe,
         PROFILE_BORDERS.map((b) => b.classe),
       );
       if (!classe) return null;
       return { familia, item: { id, nome, tier, classe } };
     }
     case 'titleId': {
-      const badge = texto(bruto['badge'], 16);
-      const c = cor(bruto['cor']);
+      const badge = texto(bruto.badge, 16);
+      const c = cor(bruto.cor);
       if (!badge || !c) return null;
       return { familia, item: { id, nome, tier, badge, cor: c } };
     }
     case 'petId': {
-      const forma = umDe(bruto['forma'], FORMAS_DE_PET);
-      const animacao = umDe(bruto['animacao'], ANIMACOES_DE_PET);
-      const c = cor(bruto['cor']);
+      const forma = umDe(bruto.forma, FORMAS_DE_PET);
+      const animacao = umDe(bruto.animacao, ANIMACOES_DE_PET);
+      const c = cor(bruto.cor);
       if (!forma || !animacao || !c) return null;
       return { familia, item: { id, nome, tier, forma, cor: c, animacao } };
     }
@@ -704,9 +704,9 @@ export function normalizarCosmeticoAutoral(bruto: CosmeticoAutoralBruto): Cosmet
       // `parDeCores`), e toda cor e `#rrggbb` porque vai direto para
       // `linear-gradient` no DOM e `fillLinearGradient` no canvas.
       const cores = parDeCores(bruto);
-      const borda = cor(bruto['borda']);
-      const textoDaPlaca = cor(bruto['texto']);
-      const estilo = umDe(bruto['estilo'], ESTILOS_DE_NAMEPLATE);
+      const borda = cor(bruto.borda);
+      const textoDaPlaca = cor(bruto.texto);
+      const estilo = umDe(bruto.estilo, ESTILOS_DE_NAMEPLATE);
       if (!cores || !borda || !textoDaPlaca || !estilo) return null;
       return { familia, item: { id, nome, tier, cores, borda, texto: textoDaPlaca, estilo } };
     }

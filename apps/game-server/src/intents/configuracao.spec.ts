@@ -63,7 +63,7 @@ function contexto(state: RoomState, sessionId: string, enviados: Enviado[]): Int
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: (event, payload) => enviados.push({ event, payload }),
     broadcast: () => {},
     log: () => {},
@@ -211,7 +211,7 @@ describe('INTENT_START_MATCH — quem começa', () => {
     // `activePlayerId = eu.id`, o teste passaria por acaso com 'eu'.
     const sorteio = jest
       .spyOn(rng, 'sortear')
-      .mockImplementation((itens) => itens[itens.length - 1] as never);
+      .mockImplementation((itens) => itens[itens.length - 1]);
 
     executar('INTENT_START_MATCH', state, 'eu', {});
 
@@ -384,7 +384,7 @@ describe('modo espectador', () => {
     (ctx as { broadcast: IntentContext['broadcast'] }).broadcast = (event, payload) =>
       transmitidos.push({ event, payload });
 
-    REGISTRY.INTENT_CHAT.executa(ctx, { text: 'boa jogada' } as never);
+    REGISTRY.INTENT_CHAT.executa(ctx, { text: 'boa jogada' });
 
     expect(transmitidos[0]?.event).toBe('chat');
     expect((transmitidos[0]?.payload as { actorId: string }).actorId).toBe('olheiro');

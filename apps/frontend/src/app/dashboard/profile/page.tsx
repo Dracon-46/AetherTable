@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
 import { API_URL } from '@/lib/api';
-import { apelidoParaEnvio } from '@/lib/perfil';
+import { apelidoParaEnvio, type PerfilDaConta, type PerfilSalvo } from '@/lib/perfil';
 import { mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { User, Save, Loader2, Trophy, Clock } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProfilePage() {
   const { accessToken, setAuth, user: sessionUser } = useAuthStore();
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<PerfilDaConta | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const [displayName, setDisplayName] = useState('');
@@ -26,7 +26,7 @@ export default function ProfilePage() {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (res.ok) {
-          const data = await res.json();
+          const data = (await res.json()) as PerfilDaConta;
           setProfile(data);
           setDisplayName(data.displayName || '');
           setUsername(data.username || '');
@@ -37,7 +37,8 @@ export default function ProfilePage() {
         setIsLoading(false);
       }
     }
-    fetchProfile();
+    // A falha já é tratada (e registrada) dentro de `fetchProfile`.
+    void fetchProfile();
   }, [accessToken]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -61,8 +62,8 @@ export default function ProfilePage() {
       });
 
       if (res.ok) {
-        const updatedUser = await res.json();
-        setProfile((p: any) => ({ ...p, ...updatedUser }));
+        const updatedUser = (await res.json()) as PerfilSalvo;
+        setProfile((p) => ({ ...p, ...updatedUser }));
         setMessage({ text: 'Perfil atualizado com sucesso!', type: 'success' });
 
         // Atualiza a sessão
@@ -75,7 +76,7 @@ export default function ProfilePage() {
           });
         }
       } else {
-        const err = await res.json();
+        const err: unknown = await res.json();
         // `err.message` de um 400 de validação é sempre "Dados inválidos.";
         // o campo e o motivo vêm em `erros[]`. Ver `mensagemDoCorpoDeErro`.
         setMessage({
@@ -202,7 +203,7 @@ export default function ProfilePage() {
                 <div>
                   <p className="text-text-muted text-sm">Partidas Jogadas</p>
                   <p className="text-text text-2xl font-bold">
-                    {profile?._count?.participions || 0}
+                    {profile?._count?.participions ?? 0}
                   </p>
                 </div>
               </div>

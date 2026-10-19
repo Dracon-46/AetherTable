@@ -112,7 +112,7 @@ function pipsDe(custo: string | undefined): Record<string, number> {
 export function dividirBasicos(
   cores: string[],
   total: number,
-  custos: Array<string | undefined>,
+  custos: (string | undefined)[],
 ): Record<string, number> {
   if (cores.length === 0) return { C: total };
   const demanda: Record<string, number> = {};
@@ -126,7 +126,7 @@ export function dividirBasicos(
   let usados = 0;
   for (const c of cores) {
     partes[c] = Math.max(1, Math.floor((demanda[c]! / soma) * total));
-    usados += partes[c]!;
+    usados += partes[c];
   }
   // O arredondamento para baixo deixa sobra (ou, com o mínimo de 1, excesso):
   // ajusta na cor de maior demanda, que é a que mais sente falta.

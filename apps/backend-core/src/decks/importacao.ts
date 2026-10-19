@@ -83,7 +83,7 @@ const SECOES = new Map<string, BoardType | null>([
  * seria uma carta.
  */
 function secaoDoCabecalho(linha: string): BoardType | null | undefined {
-  const m = linha.match(/^(?:\/\/|#)?\s*([A-Za-z][A-Za-z ]*?)\s*(?:\(\d+\))?\s*:?\s*$/);
+  const m = /^(?:\/\/|#)?\s*([A-Za-z][A-Za-z ]*?)\s*(?:\(\d+\))?\s*:?\s*$/.exec(linha);
   if (!m) return undefined;
   const nome = m[1]!.toLowerCase();
   return SECOES.has(nome) ? SECOES.get(nome)! : undefined;
@@ -164,13 +164,13 @@ export function analisarListaDeImportacao(texto: string): ListaAnalisada {
     let nome = limpa;
     let set: string | undefined;
 
-    const m = limpa.match(LINHA_DE_CARTA);
+    const m = LINHA_DE_CARTA.exec(limpa);
     if (m?.groups) {
-      quantidade = Number(m.groups['qty']);
-      nome = m.groups['name']!.trim();
-      set = m.groups['set1'] ?? m.groups['set2'];
+      quantidade = Number(m.groups.qty);
+      nome = m.groups.name!.trim();
+      set = m.groups.set1 ?? m.groups.set2;
     } else {
-      const simples = limpa.match(/^(\d+)x?\s+(.+)$/);
+      const simples = /^(\d+)x?\s+(.+)$/.exec(limpa);
       if (simples) {
         quantidade = Number(simples[1]);
         nome = simples[2]!.trim();
@@ -227,12 +227,12 @@ export function casarResultados(
   linhas: readonly LinhaImportada[],
   encontradas: readonly { id: string; name: string; set: string }[],
 ): { linhasDoDeck: LinhaDoDeck[]; recusadas: string[]; importadas: number } {
-  type Pedido = {
+  interface Pedido {
     nome: string;
     set?: string;
     rotulo: string;
     carta?: { id: string; name: string };
-  };
+  }
   const pedidos = new Map<string, Pedido>();
   for (const l of linhas) {
     const chave = chaveDoPedido(l);

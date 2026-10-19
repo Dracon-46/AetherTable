@@ -146,7 +146,7 @@ export class GeradorDeDeckService {
       const resposta = (await this.cards.search(consulta, 'cards', pagina, 'edhrec')) as {
         data?: ScryfallCard[];
       };
-      return (resposta.data ?? []) as Candidata[];
+      return resposta.data ?? [];
     } catch (erro) {
       // A Scryfall responde 404 a uma busca sem resultado (um tema raro numa
       // cor só, por exemplo). Para o gerador isso é "nenhuma candidata".

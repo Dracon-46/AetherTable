@@ -62,7 +62,7 @@ function contexto(state: RoomState, sessionId: string, enviados: Enviado[]): Int
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: (event, payload) => enviados.push({ event, payload }),
     broadcast: () => {},
     log: () => {},
@@ -237,7 +237,7 @@ describe('INTENT_KICK_PLAYER', () => {
       expulsar: (sid: string) => expulsos.push(sid),
     } as IntentContext;
 
-    REGISTRY.INTENT_KICK_PLAYER.executa(ctx, { playerId: 'b' } as never);
+    REGISTRY.INTENT_KICK_PLAYER.executa(ctx, { playerId: 'b' });
 
     expect(expulsos).toHaveLength(0);
     expect(codigoDoErro(enviados)).toBe('NOT_HOST');
@@ -249,12 +249,12 @@ describe('INTENT_KICK_PLAYER', () => {
     const ctx = (sid: string) =>
       ({ ...contexto(state, sid, []), expulsar: (x: string) => expulsos.push(x) }) as IntentContext;
 
-    REGISTRY.INTENT_KICK_PLAYER.executa(ctx('anfitriao'), { playerId: 'a' } as never);
+    REGISTRY.INTENT_KICK_PLAYER.executa(ctx('anfitriao'), { playerId: 'a' });
     expect(expulsos).toEqual(['a']);
 
     // Sair da própria sala é INTENT_LEAVE. Se o assento 0 pudesse se expulsar,
     // a sala ficaria sem ninguém que pudesse iniciar a partida.
-    REGISTRY.INTENT_KICK_PLAYER.executa(ctx('anfitriao'), { playerId: 'anfitriao' } as never);
+    REGISTRY.INTENT_KICK_PLAYER.executa(ctx('anfitriao'), { playerId: 'anfitriao' });
     expect(expulsos).toEqual(['a']);
   });
 });

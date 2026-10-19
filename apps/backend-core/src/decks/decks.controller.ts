@@ -31,7 +31,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { InternalApiGuard } from '../common/internal-api.guard.js';
 import { SEM_LIMITE_GLOBAL } from '../common/limites.js';
-import { validarDeckParaFormato, type DeckValidavel } from './formato.js';
+import { validarDeckParaFormato } from './formato.js';
 import type { RequisicaoAutenticada } from '../auth/http.types.js';
 
 /**
@@ -263,7 +263,7 @@ export class InternalDecksController {
      */
     if (ownerId) {
       const deck = await this.decksService.getDeckById(ownerId, id);
-      validarDeckParaFormato(deck as unknown as DeckValidavel, gameType);
+      validarDeckParaFormato(deck, gameType);
       return deck;
     }
 

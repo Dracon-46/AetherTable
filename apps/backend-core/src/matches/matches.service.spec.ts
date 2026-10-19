@@ -18,15 +18,19 @@
 import { BadRequestException } from '@nestjs/common';
 import { MatchesService } from './matches.service.js';
 
-type Carta = {
+interface Carta {
   scryfallId: string;
   boardType: string;
   quantity?: number;
   isBanned?: boolean;
   name?: string;
-};
+}
 
-type Deck = { formatId: string; cardCount: number; cards: Carta[] };
+interface Deck {
+  formatId: string;
+  cardCount: number;
+  cards: Carta[];
+}
 
 function montarServico(deck: Deck) {
   const decksService = { getDeckById: jest.fn().mockResolvedValue(deck) };
@@ -342,7 +346,7 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
   const jwt = new JwtService({ secret: 'segredo-de-teste-com-16+' });
   const sistema = { flagLigada: jest.fn().mockResolvedValue(true) };
   const svc = new MatchesService(
-    jwt as unknown as ConstructorParameters<typeof MatchesService>[0],
+    jwt,
     {} as unknown as ConstructorParameters<typeof MatchesService>[1],
     {} as unknown as ConstructorParameters<typeof MatchesService>[2],
     sistema as unknown as ConstructorParameters<typeof MatchesService>[3],
@@ -359,9 +363,9 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
   });
 
   it('passe de outra sala ou de outra conta não serve', async () => {
-    const outraSala = await svc.spectateMatch('u1', 'Ana', 'ZZZ999');
+    const outraSala = svc.spectateMatch('u1', 'Ana', 'ZZZ999');
     expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraSala.seatToken)).token).toBeNull();
-    const outraConta = await svc.spectateMatch('u2', 'Bia', 'ABC123');
+    const outraConta = svc.spectateMatch('u2', 'Bia', 'ABC123');
     expect((await svc.getVoiceToken('u1', 'Ana', 'ABC123', outraConta.seatToken)).token).toBeNull();
   });
 
@@ -371,7 +375,7 @@ describe('getVoiceToken — a voz é de quem está na mesa', () => {
   });
 
   it('quem assiste ouve, mas não fala', async () => {
-    const plateia = await svc.spectateMatch('u1', 'Ana', 'ABC123');
+    const plateia = svc.spectateMatch('u1', 'Ana', 'ABC123');
     const { token } = await svc.getVoiceToken('u1', 'Ana', 'ABC123', plateia.seatToken);
     expect(token).toBeTruthy();
     expect(podePublicar(token!)).toBe(false);

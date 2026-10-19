@@ -91,7 +91,7 @@ async function sentar(bot) {
   const ctx = await navegador.newContext({ viewport: { width: 1600, height: 950 } });
   await ctx.addInitScript(
     ([token, user]) => {
-      window.localStorage.setItem(
+      globalThis.localStorage.setItem(
         'aethertable-auth-storage',
         JSON.stringify({ state: { accessToken: token, user }, version: 0 }),
       );

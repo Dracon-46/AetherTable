@@ -55,7 +55,7 @@ export function ScryModal({ room }: ScryModalProps) {
   // jogador confirmar sem querer o que decidiu no scry passado.
   React.useEffect(() => {
     if (!scry) return;
-    setDestinos(Object.fromEntries(scry.cards.map((c) => [c.id, 'TOPO' as Destino])));
+    setDestinos(Object.fromEntries(scry.cards.map((c) => [c.id, 'TOPO'])));
     setOrdem(scry.cards.map((c) => c.id));
   }, [scry]);
 

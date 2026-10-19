@@ -194,7 +194,7 @@ export function normalizarPreferenciasDeMesa(entrada: unknown): PreferenciasDeMe
  */
 export function ehPreferenciaDeMesa(entrada: unknown): boolean {
   if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) return false;
-  const chaves = Object.keys(entrada as Record<string, unknown>);
+  const chaves = Object.keys(entrada);
   if (chaves.length > CHAVES_DE_PREFERENCIA_DE_MESA.length) return false;
   return chaves.every((c) => (CHAVES_DE_PREFERENCIA_DE_MESA as string[]).includes(c));
 }

@@ -44,13 +44,13 @@ function carta(state: RoomState, id: string, dono: string, zona: Zone) {
 
 /** Contexto mínimo: os handlers só falam com o estado através dele. */
 function ctxDe(state: RoomState, sid: string) {
-  const enviados: Array<{ evento: string; payload: unknown }> = [];
+  const enviados: { evento: string; payload: unknown }[] = [];
   const ctx: IntentContext = {
     state,
     client: { sessionId: sid } as never,
     clients: [],
-    send: (evento, payload) => enviados.push({ evento, payload: payload as unknown }),
-    broadcast: (evento, payload) => enviados.push({ evento, payload: payload as unknown }),
+    send: (evento, payload) => enviados.push({ evento, payload: payload }),
+    broadcast: (evento, payload) => enviados.push({ evento, payload: payload }),
     log: () => {},
     desfazer: () => null,
     // A Room e quem sabe expulsar (ver `IntentContext.expulsar`): num contexto

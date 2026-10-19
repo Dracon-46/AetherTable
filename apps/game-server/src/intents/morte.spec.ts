@@ -64,7 +64,7 @@ function contexto(state: RoomState, sessionId: string, transmitidos: Enviado[]):
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: () => {},
     broadcast: (event, payload) => transmitidos.push({ event, payload }),
     log: () => {},

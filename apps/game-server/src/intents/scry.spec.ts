@@ -68,7 +68,7 @@ function contexto(state: RoomState, sessionId: string): IntentContext {
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: () => {},
     broadcast: () => {},
     log: () => {},
@@ -93,7 +93,7 @@ const cemiterioDe = (state: RoomState, sid: string) =>
 const ordemDeCompra = (state: RoomState, sid: string) => grimorioDe(state, sid).reverse();
 
 function executar(nome: string, ctx: IntentContext, payload: unknown) {
-  const handler = REGISTRY[nome as keyof typeof REGISTRY]!;
+  const handler = REGISTRY[nome as keyof typeof REGISTRY];
   (handler.executa as (c: IntentContext, p: unknown) => void)(ctx, payload);
 }
 
@@ -225,7 +225,7 @@ describe('INTENT_SURVEIL_COMMIT', () => {
 describe('a sessão de scry — o grimório que muda com o modal aberto', () => {
   /** Contexto que guarda o último erro enviado ao remetente. */
   function comRecusa(state: RoomState) {
-    const recusas: Array<{ code?: string }> = [];
+    const recusas: { code?: string }[] = [];
     const ctx = contexto(state, 'ana');
     (ctx as { send: (t: string, p: unknown) => void }).send = (t, p) => {
       if (t === 'error') recusas.push(p as { code?: string });

@@ -42,6 +42,6 @@ const CLAIMS_DE_MESA = ['roomId', 'spectator', 'cfg'] as const;
  */
 export function naoEhSessaoDaApi(payload: object): boolean {
   const claims = payload as Record<string, unknown>;
-  if (claims['aud'] !== undefined) return true;
+  if (claims.aud !== undefined) return true;
   return CLAIMS_DE_MESA.some((c) => claims[c] !== undefined);
 }

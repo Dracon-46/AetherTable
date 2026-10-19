@@ -30,7 +30,7 @@ import {
 } from '@aethertable/shared-types';
 
 /** As seis famílias, com o catálogo de cada uma. */
-const FAMILIAS: Array<{ familia: FamiliaDeCosmetico; itens: readonly { id: string }[] }> = [
+const FAMILIAS: { familia: FamiliaDeCosmetico; itens: readonly { id: string }[] }[] = [
   { familia: 'sleeveId', itens: SLEEVES },
   { familia: 'playmatId', itens: PLAYMATS },
   { familia: 'borderId', itens: PROFILE_BORDERS },
@@ -89,7 +89,7 @@ describe('podeEquipar', () => {
     // O padrão é para onde o servidor devolve alguém rebaixado de tier. Se um
     // deles fosse APOIADOR, rebaixar deixaria a conta num estado que ela não
     // consegue nem reproduzir.
-    const padroes: Array<[FamiliaDeCosmetico, string]> = [
+    const padroes: [FamiliaDeCosmetico, string][] = [
       ['sleeveId', COSMETICOS_PADRAO.sleeveId],
       ['playmatId', COSMETICOS_PADRAO.playmatId],
       ['borderId', COSMETICOS_PADRAO.borderId],

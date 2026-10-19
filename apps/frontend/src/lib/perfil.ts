@@ -14,6 +14,22 @@
  *  - a pessoa nunca teve apelido → o campo NÃO VAI (nada a mudar);
  *  - a pessoa tinha e apagou     → vai `null`, o pedido explícito de limpar.
  */
+/** O que `PATCH /users/me` devolve: só os campos que o salvamento pode mudar. */
+export interface PerfilSalvo {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+/** O que `GET /users/me` devolve e a tela de Perfil lê. */
+export interface PerfilDaConta extends PerfilSalvo {
+  email?: string;
+  /** ISO 8601: data vem como texto no JSON. */
+  createdAt?: string;
+  _count?: { participions: number };
+}
+
 export function apelidoParaEnvio(
   digitado: string,
   anterior: string | null | undefined,

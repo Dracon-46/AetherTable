@@ -7,7 +7,24 @@
 
 import { useEffect, useRef } from 'react';
 import { getStateCallbacks, type Room } from 'colyseus.js';
-import type { DiceEvent, ReactionEvent, RevealToOwnerEvent } from '@aethertable/shared-types';
+import type {
+  ChatEvent,
+  DeckErrorEvent,
+  DeckReadyEvent,
+  DiceEvent,
+  ErrorEvent,
+  KickedEvent,
+  LogEvent,
+  MatchEndedEvent,
+  PlayerConnectionEvent,
+  PlayerEliminatedEvent,
+  PlayerPresenceEvent,
+  ReactionEvent,
+  RevealToOwnerEvent,
+  ViewRequestEvent,
+  ViewResponseEvent,
+  WarningEvent,
+} from '@aethertable/shared-types';
 import {
   useGameStore,
   useTableStore,
@@ -124,7 +141,6 @@ function snapPlayer(p: Player): PlayerData {
 }
 
 export function useRoomSync(room: Room<RoomState> | null) {
-  const store = useGameStore.getState();
   const roomRef = useRef<Room<RoomState> | null>(null);
   /** Vive fora do efeito só para a limpeza alcançá-lo. Ver `net/lote.ts`. */
   const coalescedorRef = useRef<Coalescedor<Partial<CardData>> | null>(null);
@@ -132,6 +148,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
   useEffect(() => {
     if (!room) return;
     roomRef.current = room;
+    const store = useGameStore.getState();
 
     // Informações base da sala
     // colyseus.js expõe `roomId`, não `id`.
@@ -337,11 +354,11 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     // ── Eventos efêmeros ───────────────────────────────────────────────────
 
-    room.onMessage('log', (entry: any) => {
-      useGameStore.getState().addLog(entry as LogEntry);
+    room.onMessage('log', (entry: LogEvent) => {
+      useGameStore.getState().addLog(entry);
     });
 
-    room.onMessage('chat', (entry: any) => {
+    room.onMessage('chat', (entry: ChatEvent) => {
       useGameStore.getState().addChat(entry as LogEntry);
     });
 
@@ -386,7 +403,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
 
     room.onMessage(
       'scryOpened',
-      (payload: { mode: 'SCRY' | 'SURVEIL'; cards: Array<{ id: string; scryfallId: string }> }) => {
+      (payload: { mode: 'SCRY' | 'SURVEIL'; cards: { id: string; scryfallId: string }[] }) => {
         useTableStore.getState().abrirScry({ mode: payload.mode, cards: payload.cards ?? [] });
       },
     );
@@ -400,7 +417,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * sem isto, escolher um deck e ver o contador subir sozinho é indistinguível
      * de "não aconteceu nada" quando o deck é pequeno.
      */
-    room.onMessage('deckReady', (payload: any) => {
+    room.onMessage('deckReady', (payload: DeckReadyEvent) => {
       useToast
         .getState()
         .mostrar(
@@ -415,7 +432,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * Chega só para o dono da zona, e não concede nada: é um convite a decidir.
      * A permissão só existe depois de `INTENT_RESPOND_VIEW` com `accept: true`.
      */
-    room.onMessage('viewRequest', (payload: any) => {
+    room.onMessage('viewRequest', (payload: ViewRequestEvent) => {
       if (!payload?.requesterId) return;
       useTableStore.getState().addPedidoDeVista({
         requesterId: payload.requesterId,
@@ -424,7 +441,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
       });
     });
 
-    room.onMessage('viewResponse', (payload: any) => {
+    room.onMessage('viewResponse', (payload: ViewResponseEvent) => {
       const zona = ROTULO_DE_ZONA[payload?.zone] ?? 'a zona';
       const nome = payload?.ownerName ?? 'O jogador';
       useToast
@@ -452,7 +469,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * eliminação seria um ícone que muda de cor num painel para o qual ninguém
      * está olhando.
      */
-    room.onMessage('playerEliminated', (payload: any) => {
+    room.onMessage('playerEliminated', (payload: PlayerEliminatedEvent) => {
       const souEu = payload?.playerId === useGameStore.getState().mySessionId;
       const porQuem = payload?.byName ? ` (comandante de ${payload.byName})` : '';
       const motivo = MOTIVO_DE_DERROTA[payload?.reason] ?? 'saiu da partida';
@@ -466,7 +483,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
         );
     });
 
-    room.onMessage('matchEnded', (payload: any) => {
+    room.onMessage('matchEnded', (payload: MatchEndedEvent) => {
       const souEu = payload?.winnerId === useGameStore.getState().mySessionId;
       useToast
         .getState()
@@ -483,7 +500,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * — e o jogador tentava voltar em looping, sem entender por que o passe já
      * não valia.
      */
-    room.onMessage('kicked', (payload: any) => {
+    room.onMessage('kicked', (payload: KickedEvent) => {
       useToast.getState().mostrar(payload?.message ?? 'Você foi removido da sala.', 'erro');
       if (typeof window !== 'undefined') {
         window.setTimeout(() => {
@@ -504,7 +521,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * O log da partida também recebe: o toast some em 5 s, e quem estava
      * olhando para outro canto da mesa perderia o aviso.
      */
-    room.onMessage('error', (payload: any) => {
+    room.onMessage('error', (payload: ErrorEvent) => {
       const texto = mensagemDeErro(payload?.code, payload?.message);
       console.warn('[AetherRoom] Intenção rejeitada:', payload?.code, payload?.message);
       useToast.getState().mostrar(texto, 'erro');
@@ -517,7 +534,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
       });
     });
 
-    room.onMessage('warning', (payload: any) => {
+    room.onMessage('warning', (payload: WarningEvent) => {
       console.warn('[AetherRoom] Aviso:', payload?.code, payload?.message);
       useToast.getState().mostrar(mensagemDeErro(payload?.code, payload?.message), 'info');
     });
@@ -530,7 +547,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * mesa dele nascia sem grimório, sem comandante e sem mão — sobrava
      * assistir os outros jogarem, sem nenhuma mensagem que explicasse por quê.
      */
-    room.onMessage('deckError', (payload: any) => {
+    room.onMessage('deckError', (payload: DeckErrorEvent) => {
       const texto =
         payload?.message ||
         'Seu deck não pôde ser carregado — você entra na mesa sem cartas. Volte à Taverna e entre de novo.';
@@ -544,7 +561,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
       });
     });
 
-    room.onMessage('playerJoined', (payload: any) => {
+    room.onMessage('playerJoined', (payload: PlayerPresenceEvent) => {
       useGameStore.getState().addLog({
         id: `join-${Date.now()}`,
         timestamp: Date.now(),
@@ -554,7 +571,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
       });
     });
 
-    room.onMessage('playerLeft', (payload: any) => {
+    room.onMessage('playerLeft', (payload: PlayerPresenceEvent) => {
       useGameStore.getState().addLog({
         id: `left-${Date.now()}`,
         timestamp: Date.now(),
@@ -578,7 +595,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
      * no payload: numa mesa de quatro, "um jogador se desconectou" obriga todo
      * mundo a conferir quem sumiu.
      */
-    room.onMessage('playerDisconnected', (payload: any) => {
+    room.onMessage('playerDisconnected', (payload: PlayerConnectionEvent) => {
       const nome = useGameStore.getState().players[payload?.playerId]?.name;
       useGameStore.getState().addLog({
         id: `dc-${Date.now()}`,
@@ -591,7 +608,7 @@ export function useRoomSync(room: Room<RoomState> | null) {
       });
     });
 
-    room.onMessage('playerReconnected', (payload: any) => {
+    room.onMessage('playerReconnected', (payload: PlayerConnectionEvent) => {
       const nome = useGameStore.getState().players[payload?.playerId]?.name;
       useGameStore.getState().addLog({
         id: `rc-${Date.now()}`,

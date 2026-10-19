@@ -43,7 +43,7 @@ import {
 } from '../../../historico/useHistorico';
 import { useT } from '../../../i18n/i18n';
 
-const ABAS: ReadonlyArray<readonly [FiltroDeResultado, string]> = [
+const ABAS: readonly (readonly [FiltroDeResultado, string])[] = [
   ['todas', 'Todas'],
   ['vitorias', 'Vitórias'],
   ['derrotas', 'Derrotas'],
@@ -112,7 +112,7 @@ export default function HistoricoPage() {
   const paginas = data ? Math.max(1, Math.ceil(data.total / data.porPagina)) : 1;
 
   // Agrupa por mês, na ordem em que o servidor mandou (mais recentes primeiro).
-  const meses: Array<{ mes: string; partidas: PartidaDoHistorico[] }> = [];
+  const meses: { mes: string; partidas: PartidaDoHistorico[] }[] = [];
   for (const p of data?.partidas ?? []) {
     const mes = MES.format(new Date(p.terminouEm));
     const ultimo = meses[meses.length - 1];

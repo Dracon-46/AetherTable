@@ -14,7 +14,7 @@ export class ZodValidationPipe<T extends ZodTypeAny> implements PipeTransform {
 
   transform(value: unknown): z.infer<T> {
     const resultado = this.schema.safeParse(value);
-    if (resultado.success) return resultado.data;
+    if (resultado.success) return resultado.data as z.infer<T>;
 
     // Devolve o caminho e a mensagem, nunca o valor recebido: um corpo de
     // requisição de autenticação contém senha.

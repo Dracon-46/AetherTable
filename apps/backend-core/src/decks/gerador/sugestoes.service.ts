@@ -112,7 +112,7 @@ export class SugestoesDeCartasService {
 
     const jaNoDeck = new Set(cartas.flatMap((c) => [c.oracle_id ?? c.name, c.name]));
 
-    const papeis: Array<{ papel: GrupoDeSugestoes['papel']; nome: string; consulta: string }> = [
+    const papeis: { papel: GrupoDeSugestoes['papel']; nome: string; consulta: string }[] = [
       ...(tema
         ? [{ papel: 'tema' as const, nome: 'Do tema', consulta: `${tema} -t:land ${base}` }]
         : []),

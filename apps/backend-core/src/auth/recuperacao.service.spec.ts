@@ -83,7 +83,7 @@ describe('RecuperacaoService.redefinir — uso único atômico', () => {
     ]);
 
     expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    const recusado = resultados.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    const recusado = resultados.find((r) => r.status === 'rejected')!;
     expect(recusado.reason).toBeInstanceOf(TokenDeRedefinicaoInvalido);
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });

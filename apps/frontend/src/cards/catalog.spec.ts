@@ -22,7 +22,7 @@ beforeEach(() => {
     chamadas += 1;
     const corpo = respostas.shift() ?? { data: [], not_found: [] };
     return { ok: true, status: 200, json: async () => corpo } as Response;
-  }) as unknown as typeof fetch;
+  });
 });
 
 const esperarFila = () => new Promise((r) => setTimeout(r, 300));

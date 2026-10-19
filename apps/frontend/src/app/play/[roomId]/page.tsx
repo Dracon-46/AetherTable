@@ -144,7 +144,8 @@ export default function PlayRoomPage() {
     fetch(`${API_URL}/matches/${roomId}/voice-token`, {
       headers: { Authorization: `Bearer ${accessToken}`, 'X-Passe-De-Mesa': token },
     })
-      .then((res) => (res.ok ? res.json() : null))
+      // `token: null` (com `motivo`) é a voz desligada: a mesa segue sem ela.
+      .then((res) => (res.ok ? (res.json() as Promise<{ token?: string | null }>) : null))
       .then((data) => {
         if (active && data?.token) setVoiceToken(data.token);
       })

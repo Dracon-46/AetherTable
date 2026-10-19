@@ -32,7 +32,7 @@ const USUARIO = {
 };
 
 /** Cada `useAcaoDeUsuario` da página, com a rota e o método com que nasceu. */
-const acoes: Array<{ rota: string; method: string; mutate: jest.Mock }> = [];
+const acoes: { rota: string; method: string; mutate: jest.Mock }[] = [];
 
 jest.mock('../../../admin/useAdmin', () => ({
   useSouAdmin: () => ({ data: { id: 'adm', username: 'chefe', papel: 'ADMIN' } }),

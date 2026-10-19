@@ -211,7 +211,7 @@ const CardSprite = React.memo(function CardSprite({
     // Percursos longos (mão → campo) ganham um pouco mais de tempo; ajustes
     // finos continuam instantâneos ao olho.
     const duracao = Math.min(0.34, 0.12 + distancia / 2600);
-    node.to({ ...alvo, duration: duracao, easing: Konva.Easings.EaseOut });
+    node.to({ ...alvo, duration: duracao, easing: Konva.Easings.EaseOut.bind(Konva.Easings) });
   }, [pos.x, pos.y, rotation, drag, reduzido]);
 
   const handleDragStart = useCallback(
@@ -895,9 +895,7 @@ let medidorDeRotulo: Konva.Text | null = null;
  * um nó novo por medição seria lixo para o coletor a cada clique.
  */
 function larguraDoRotulo(texto: string): number {
-  if (!medidorDeRotulo) {
-    medidorDeRotulo = new Konva.Text({ fontSize: FONTE_ROTULO, fontStyle: 'bold' });
-  }
+  medidorDeRotulo ??= new Konva.Text({ fontSize: FONTE_ROTULO, fontStyle: 'bold' });
   medidorDeRotulo.text(texto);
   return medidorDeRotulo.width();
 }
@@ -1552,7 +1550,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                 if (p) openContextMenu('zone', p.x, p.y);
               }}
               onPointerDown={(e) => {
-                const evt = e.evt as PointerEvent;
+                const evt = e.evt;
                 // Botão principal só, e nunca no meio de "escolha o alvo" nem
                 // com Alt (que é o ping).
                 if (evt.button !== 0 || evt.altKey || arrowSource) return;
@@ -1571,7 +1569,7 @@ export default function GameBoard({ room, modoAnexar, onAlvoEscolhido }: GameBoa
                   ignorarCliqueNoFundo.current = false;
                   return;
                 }
-                const evt = e.evt as MouseEvent;
+                const evt = e.evt;
                 // Konva dispara `click` para todo botão do mouse: sem isto, o
                 // botão direito abria o menu da mesa E limpava a seleção — quer
                 // dizer, o menu abria já sem alvo nenhum.

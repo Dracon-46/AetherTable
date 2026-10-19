@@ -20,7 +20,7 @@ function fontes(dir: string): string[] {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) return fontes(p);
     return /\.(tsx?|ts)$/.test(e.name) &&
-      !/\.spec\./.test(e.name) &&
+      !e.name.includes('.spec.') &&
       !p.includes(`${path.sep}i18n${path.sep}`)
       ? [p]
       : [];

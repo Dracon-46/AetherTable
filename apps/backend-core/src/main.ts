@@ -96,4 +96,10 @@ async function bootstrap() {
   logger.log(`🚀 AetherTable Backend-Core rodando na porta: ${port}`);
 }
 
-bootstrap();
+// Falha na subida (porta ocupada, banco fora do ar) derruba o processo com
+// código de erro: é o que faz o Render marcar o deploy como quebrado em vez de
+// deixar um processo vivo que não atende ninguém.
+bootstrap().catch((erro: unknown) => {
+  console.error('[backend-core] falha ao subir:', erro);
+  process.exit(1);
+});

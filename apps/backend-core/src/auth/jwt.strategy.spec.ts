@@ -71,7 +71,7 @@ describe('JwtStrategy — passe de mesa não é sessão da API', () => {
 
   it('recusa o passe de espectador', async () => {
     const { jwt, estrategia, matches } = montar();
-    const { seatToken } = await matches.spectateMatch(USUARIO, 'gaspare', 'ABC123');
+    const { seatToken } = matches.spectateMatch(USUARIO, 'gaspare', 'ABC123');
     await expect(estrategia.validate(jwt.verify(seatToken))).rejects.toBeInstanceOf(
       UnauthorizedException,
     );

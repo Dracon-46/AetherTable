@@ -119,7 +119,7 @@ export default function AuditoriaPage() {
                       <span key={chave}>
                         <dt className="inline">{chave}:</dt>{' '}
                         <dd className="text-text-muted inline">
-                          {typeof valor === 'object' ? JSON.stringify(valor) : String(valor)}
+                          {typeof valor === 'string' ? valor : JSON.stringify(valor)}
                         </dd>
                       </span>
                     ))}

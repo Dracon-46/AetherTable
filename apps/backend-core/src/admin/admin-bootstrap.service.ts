@@ -71,7 +71,7 @@ export class AdminBootstrapService implements OnModuleInit {
 
   /** `ADMIN_EMAILS=a@x.com,b@y.com` — separados por vírgula ou ponto e vírgula. */
   private emailsConfigurados(): string[] {
-    return (process.env['ADMIN_EMAILS'] ?? '')
+    return (process.env.ADMIN_EMAILS ?? '')
       .split(/[,;]/)
       .map((e) => e.trim().toLowerCase())
       .filter((e) => e.includes('@'));

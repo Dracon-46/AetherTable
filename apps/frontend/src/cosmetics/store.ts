@@ -87,7 +87,7 @@ function ler(): CosmeticosEquipados & { cosmeticosDeOponentes: boolean } {
   if (typeof window === 'undefined') return base;
   try {
     const cru = window.localStorage.getItem(CHAVE);
-    return cru ? { ...base, ...JSON.parse(cru) } : base;
+    return cru ? { ...base, ...(JSON.parse(cru) as Partial<typeof base>) } : base;
   } catch {
     return base;
   }

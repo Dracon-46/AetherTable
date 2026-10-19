@@ -32,7 +32,7 @@ export class AuthService {
    * de uma semana. Ler da mesma fonte é o que impede os dois de divergirem
    * outra vez.
    */
-  private readonly ttlSegundos = ttlEmSegundos(process.env['JWT_ACCESS_TTL']);
+  private readonly ttlSegundos = ttlEmSegundos(process.env.JWT_ACCESS_TTL);
 
   /**
    * Valida e/ou cria o usuário via OAuth
@@ -196,7 +196,7 @@ export class AuthService {
     const user = await this.usersService.findForAuthByEmail(email);
 
     // Se não encontrou o usuário ou ele não tem senha (login via OAuth apenas)
-    if (!user || !user.passwordHash) {
+    if (!user?.passwordHash) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 

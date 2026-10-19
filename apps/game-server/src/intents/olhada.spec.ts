@@ -67,17 +67,17 @@ function contexto(state: RoomState, sessionId: string, enviados: Enviado[] = [])
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: (tipo: string, payload: Record<string, unknown>) => enviados.push({ tipo, payload }),
     broadcast: () => {},
     log: () => {},
     desfazer: () => null,
     expulsar: () => {},
-  } as unknown as IntentContext;
+  };
 }
 
 function executar(nome: string, ctx: IntentContext, payload: unknown) {
-  const handler = REGISTRY[nome as keyof typeof REGISTRY]!;
+  const handler = REGISTRY[nome as keyof typeof REGISTRY];
   (handler.executa as (c: IntentContext, p: unknown) => void)(ctx, payload);
 }
 

@@ -32,7 +32,7 @@ import { FiltroDeErrosDoPrisma } from './common/filtro-de-erros-do-prisma.js';
     // Configura o Pino Logger como o logger padrão da aplicação
     LoggerModule.forRoot({
       pinoHttp: {
-        level: process.env['NODE_ENV'] !== 'production' ? 'debug' : 'info',
+        level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
         // transport pino-pretty removido para evitar dependência faltante em dev
         // pode ser reativado após: pnpm add pino-pretty --filter backend-core
       },

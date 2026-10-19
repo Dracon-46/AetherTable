@@ -72,7 +72,7 @@ export interface CardMeta {
    * token`). É o que o menu de botão direito oferece como "Criar ficha": o
    * gerador genérico obrigava a buscar "zombie" a cada Gravecrawler.
    */
-  fichas: Array<{ scryfallId: string; name: string }>;
+  fichas: { scryfallId: string; name: string }[];
 }
 
 // v2: `fichas` entrou no metadado. Com a chave antiga, as cartas já em cache
@@ -90,7 +90,7 @@ interface CatalogState {
   /** Ids que a Scryfall não reconheceu — não adianta pedir de novo. */
   ausentes: Record<string, true>;
   carregando: boolean;
-  hidratar: (ids: Array<string | undefined | null>) => void;
+  hidratar: (ids: (string | undefined | null)[]) => void;
 }
 
 // ─── Fila de hidratação ──────────────────────────────────────────────────────
@@ -101,8 +101,8 @@ let agendado: ReturnType<typeof setTimeout> | null = null;
 let drenando = false;
 
 interface RespostaScryfall {
-  data?: Array<Record<string, unknown>>;
-  not_found?: Array<{ id?: string }>;
+  data?: Record<string, unknown>[];
+  not_found?: { id?: string }[];
 }
 
 function texto(v: unknown): string {
@@ -145,7 +145,7 @@ const LAYOUTS_COM_VERSO = new Set([
 
 function normalizar(bruto: Record<string, unknown>): CardMeta {
   const facesBrutas = Array.isArray(bruto.card_faces)
-    ? (bruto.card_faces as Array<Record<string, unknown>>)
+    ? (bruto.card_faces as Record<string, unknown>[])
     : [];
   const id = texto(bruto.id);
   const layout = texto(bruto.layout);
@@ -202,7 +202,7 @@ function fichasDe(bruto: Record<string, unknown>, id: string): CardMeta['fichas'
   if (!Array.isArray(bruto.all_parts)) return [];
   const vistas = new Set<string>();
   const saida: CardMeta['fichas'] = [];
-  for (const parte of bruto.all_parts as Array<Record<string, unknown>>) {
+  for (const parte of bruto.all_parts as Record<string, unknown>[]) {
     const pid = texto(parte.id);
     const nome = texto(parte.name);
     if (parte.component !== 'token' || !pid || pid === id || vistas.has(nome)) continue;
@@ -347,7 +347,7 @@ export function useCardMeta(scryfallId?: string | null): CardMeta | null {
 }
 
 /** Hidrata um conjunto de ids. Seguro para chamar a cada render. */
-export function useHidratarCartas(ids: Array<string | undefined | null>): void {
+export function useHidratarCartas(ids: (string | undefined | null)[]): void {
   const hidratar = useCardCatalog((s) => s.hidratar);
   // A chave estável evita reexecutar quando só a ordem do array muda.
   const chave = ids.filter(Boolean).sort().join(',');

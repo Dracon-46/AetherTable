@@ -24,7 +24,7 @@ import { ZoneOrderList } from '../schema/ZoneOrderList';
 const { AetherRoom } = require('./AetherRoom') as typeof ModuloDaSala;
 
 /** O que o teste toca da Room — inclusive o que é privado nela. */
-type Sala = {
+interface Sala {
   state: RoomState;
   onCreate(opcoes: unknown): void;
   setPatchRate(ms: number | null): void;
@@ -35,7 +35,7 @@ type Sala = {
   onAuth(cliente: unknown, opcoes: { seatToken: string }): Promise<unknown>;
   agendarFimDaVotacao(): void;
   clock: { setTimeout(cb: () => void, ms: number): { clear(): void } };
-};
+}
 
 function montarSala(assentos: string[]): Sala {
   const sala = new AetherRoom() as unknown as Sala;
@@ -259,9 +259,9 @@ describe('histórico de partidas', () => {
       .mockResolvedValue(new Response(null, { status: 201 }));
     await interna.registrarResumoDaPartida();
 
-    const corpo = JSON.parse(String(enviado.mock.calls[0]![1]!.body)) as {
+    const corpo = JSON.parse(enviado.mock.calls[0]![1]!.body as string) as {
       turnos: number;
-      detalhes: Array<Record<string, unknown>>;
+      detalhes: Record<string, unknown>[];
     };
     expect(corpo.turnos).toBe(7);
     const de = (conta: string) => corpo.detalhes.find((d) => d.userId === conta);

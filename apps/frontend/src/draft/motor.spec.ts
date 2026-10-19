@@ -111,8 +111,8 @@ it('os básicos fecham exatamente o que falta, proporcional às cores', () => {
     ...Array.from({ length: 8 }, (_, i) => carta(i, 'common', { colors: ['B'] })),
   ];
   const b = sugerirBasicos(magicas, 17);
-  expect(b['G']! + b['B']!).toBe(17);
-  expect(b['G']!).toBeGreaterThan(b['B']!);
+  expect(b.G! + b.B!).toBe(17);
+  expect(b.G!).toBeGreaterThan(b.B!);
 });
 
 it('a lista do deck agrupa cópias, fixa a coleção e põe a reserva na seção dela', () => {

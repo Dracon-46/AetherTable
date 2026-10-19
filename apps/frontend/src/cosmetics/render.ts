@@ -153,6 +153,17 @@ function desenharPadraoSleeve(ctx: CanvasRenderingContext2D, s: Sleeve): void {
 }
 
 /** Monograma "AT" — a marca da plataforma no lugar do verso da WotC. */
+/**
+ * A pilha de fontes do site, para o texto desenhado no canvas.
+ *
+ * A Inter vem do `next/font` com um nome de família gerado, não "Inter": o
+ * canvas só a encontra pelo valor de `--font-sans`, já resolvido pelo CSS.
+ */
+function fonteDoSite(): string {
+  const pilha = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim();
+  return pilha || 'Inter, system-ui, sans-serif';
+}
+
 function desenharMonograma(ctx: CanvasRenderingContext2D, s: Sleeve): void {
   const { width: w, height: h } = ctx.canvas;
   const cx = w / 2;
@@ -181,7 +192,7 @@ function desenharMonograma(ctx: CanvasRenderingContext2D, s: Sleeve): void {
 
   ctx.globalAlpha = 1;
   ctx.fillStyle = s.detalhe;
-  ctx.font = `bold ${Math.round(r * 0.92)}px Inter, system-ui, sans-serif`;
+  ctx.font = `bold ${Math.round(r * 0.92)}px ${fonteDoSite()}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('AT', cx, cy + 1);
@@ -369,7 +380,7 @@ function desenharPlaymat(p: Playmat, cachear: boolean): HTMLCanvasElement | null
  * Silhueta do mascote, em coordenadas de -1..1. O componente do canvas aplica
  * escala, posição e a animação — aqui só a forma.
  */
-export function caminhoDoPet(pet: Pet): Array<[number, number]> | null {
+export function caminhoDoPet(pet: Pet): [number, number][] | null {
   switch (pet.forma) {
     case 'slime':
       return [
@@ -473,7 +484,7 @@ export function estiloCssDaPlaca(placa: Nameplate): CSSProperties | null {
 export interface PlacaNoCanvas {
   fillLinearGradientStartPoint: { x: number; y: number };
   fillLinearGradientEndPoint: { x: number; y: number };
-  fillLinearGradientColorStops: Array<number | string>;
+  fillLinearGradientColorStops: (number | string)[];
   stroke: string;
   texto: string;
   shadowColor?: string;

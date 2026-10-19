@@ -26,13 +26,13 @@ const SOL_RING = '6ad8011d-3471-4369-9d68-b264cc027487';
 const FOREST_ZNR = 'b2d1a5a5-8a5e-4f5a-9b38-4f7f2d6f0f0a';
 const FOREST_M21 = 'c3e2b6b6-9b6f-4a6b-8c49-5a8a3e7a1b1b';
 
-type Linha = {
+interface Linha {
   id: string;
   deckId: string;
   scryfallId: string;
   quantity: number;
   boardType: BoardType;
-};
+}
 
 const erroDoPrisma = (code: string) =>
   new Prisma.PrismaClientKnownRequestError(`falso ${code}`, { code, clientVersion: 'teste' });
@@ -52,7 +52,7 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
     isPublic: false,
     cardCount: inicial.reduce((s, l) => s + l.quantity, 0),
   };
-  const criados: Array<Record<string, unknown>> = [];
+  const criados: Record<string, unknown>[] = [];
   let sequencia = 0;
 
   const porChave = (w: { deckId: string; scryfallId: string; boardType: BoardType }) =>
@@ -85,8 +85,8 @@ function bancoFalso(inicial: Omit<Linha, 'deckId'>[] = [], formatId = 'commander
           // vieram — é o que o Prisma faz com um valor absoluto.
           Object.assign(deck, resto);
           if (typeof c === 'number') deck.cardCount = c;
-          else if (c?.['increment'] !== undefined) deck.cardCount += c['increment'];
-          else if (c?.['decrement'] !== undefined) deck.cardCount -= c['decrement'];
+          else if (c?.increment !== undefined) deck.cardCount += c.increment;
+          else if (c?.decrement !== undefined) deck.cardCount -= c.decrement;
           return { ...deck };
         },
       ),

@@ -522,6 +522,9 @@ export class AetherRoom extends Room<RoomState> {
    * Valida o seat token: assinatura, expiracao, uso unico e vinculo com o
    * roomId (FR-20). Falhar aqui e a primeira linha de defesa da sala.
    */
+  // `async` sem `await` de propósito: o Colyseus faz `await this.onAuth(...)` e todo
+  // `throw` daqui precisa chegar como promessa rejeitada, não como exceção síncrona.
+  // eslint-disable-next-line @typescript-eslint/require-await -- contrato de promessa do Colyseus
   override async onAuth(client: Client, options: JoinOptions): Promise<SeatTokenClaims> {
     if (!options?.seatToken) {
       throw new Error('INVALID_TOKEN');
@@ -925,7 +928,7 @@ export class AetherRoom extends Room<RoomState> {
     // TypeScript intersecta todos os payloads e nenhum valor satisfaz o
     // resultado. A correlacao real e garantida pelo `satisfies` na declaracao do
     // REGISTRY — o dispatcher so precisa saber "valida, autoriza, executa".
-    const entradas = Object.entries(REGISTRY) as Array<[string, IntentHandler<z.ZodTypeAny>]>;
+    const entradas = Object.entries(REGISTRY) as [string, IntentHandler<z.ZodTypeAny>][];
 
     for (const [tipo, handler] of entradas) {
       this.onMessage(tipo, (client, payload: unknown) => {

@@ -60,7 +60,7 @@ function contexto(state: RoomState, sessionId: string): IntentContext {
   return {
     state,
     client: { sessionId } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: () => {},
     broadcast: () => {},
     log: () => {},
@@ -130,7 +130,7 @@ describe('modo topo revelado — o topo ANDA e a revelação acompanha', () => {
    * todas é a mesma: a carta ANTERIOR não pode continuar revelada dentro do
    * grimório. Foi por causa desta lista que a reaplicação ficou num ponto só.
    */
-  const casos: Array<{ nome: string; intent: keyof typeof REGISTRY; payload: unknown }> = [
+  const casos: { nome: string; intent: keyof typeof REGISTRY; payload: unknown }[] = [
     { nome: 'comprar', intent: 'INTENT_DRAW', payload: { amount: 1 } },
     { nome: 'moer', intent: 'INTENT_MILL', payload: { amount: 1, target: 'GRAVEYARD' } },
     { nome: 'topo para o fundo', intent: 'INTENT_MOVE_TOP_TO_BOTTOM', payload: { amount: 1 } },

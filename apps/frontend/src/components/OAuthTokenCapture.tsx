@@ -30,7 +30,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '../store/auth.store';
+import { useAuthStore, type UserData } from '../store/auth.store';
 import { API_URL } from '@/lib/api';
 
 export function OAuthTokenCapture() {
@@ -87,7 +87,7 @@ export function OAuthTokenCapture() {
     // qualquer ambiente que não fosse a máquina do dev, o login por OAuth
     // redirecionava e morria aqui, em silêncio.
     fetch(`${API_URL}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => (res.ok ? (res.json() as Promise<UserData & { statusCode?: number }>) : null))
       .then((userData) => {
         if (!montado.current || !userData || userData.statusCode) return;
         setAuth(token, userData);

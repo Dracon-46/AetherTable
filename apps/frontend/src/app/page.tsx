@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { CenaDoDragao, useDragao } from './CenaDoDragao';
-import { useAuthStore } from '../store/auth.store';
+import { useAuthStore, type SessaoDaApi } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { api, mensagemDoCorpoDeErro } from '@/lib/fetcher';
@@ -136,7 +136,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as SessaoDaApi;
 
       if (!response.ok) {
         // Um 400 de validação (e-mail malformado) dizia só "Dados inválidos.";
@@ -147,8 +147,8 @@ export default function LoginPage() {
       // Sucesso! A API retorna accessToken (camelCase)
       setAuth(data.accessToken, data.user);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : null);
       setIsLoggingIn(false);
     } finally {
       setEstadoServidor(null);
@@ -298,7 +298,7 @@ export default function LoginPage() {
             aqui é a promessa de que aquele caminho funciona. Sem provedor
             nenhum, some também o separador: um "ou continue com" seguido de
             nada é pior que nada. */}
-        {(provedores?.google || provedores?.discord) && (
+        {(!!provedores?.google || !!provedores?.discord) && (
           <>
             <div className="mt-4 flex items-center justify-between">
               <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>

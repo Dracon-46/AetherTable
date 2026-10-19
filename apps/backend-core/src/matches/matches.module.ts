@@ -13,7 +13,7 @@ import { AdminModule } from '../admin/admin.module.js';
     AdminModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
       }),
       inject: [ConfigService],

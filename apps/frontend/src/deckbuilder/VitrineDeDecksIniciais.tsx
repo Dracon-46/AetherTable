@@ -76,7 +76,7 @@ export function VitrineDeDecksIniciais({ abertaDeInicio }: { abertaDeInicio: boo
                   className="bg-table-deep border-panel-border h-40 animate-pulse rounded-lg border"
                 />
               ))
-            : iniciais!.map((d) => (
+            : iniciais.map((d) => (
                 <article
                   key={d.codigo}
                   className="bg-table-deep border-panel-border hover:border-primary group flex flex-col overflow-hidden rounded-lg border transition-colors"

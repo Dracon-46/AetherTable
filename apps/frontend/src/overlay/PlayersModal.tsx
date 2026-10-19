@@ -74,7 +74,7 @@ export function PlayersModal({ room }: PlayersModalProps) {
    */
   const enviaveis = selectedCardIds
     .map((id) => cards[id])
-    .filter((c) => c && c.controllerId === myId && c.zone === 'BATTLEFIELD');
+    .filter((c) => c?.controllerId === myId && c.zone === 'BATTLEFIELD');
 
   const enviar = (alvoId: string) => {
     enviaveis.forEach((c) => c && intents.giveCard(room, c.id, alvoId));

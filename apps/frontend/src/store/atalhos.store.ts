@@ -122,7 +122,7 @@ export const useAtalhos = create<AtalhosState>((set, get) => ({
      * acabou de mudar: uma troca em cadeia ("agora 'g' faz o que 't' fazia")
      * é inventar uma intenção que ninguém expressou.
      */
-    const atalhos = { ...get().atalhos, [acao]: tecla } as Mapa;
+    const atalhos = { ...get().atalhos, [acao]: tecla };
     if (tecla !== TECLA_NAO_ATRIBUIDA) {
       for (const id of Object.keys(atalhos) as AcaoDeAtalho[]) {
         if (id !== acao && atalhos[id] === tecla) atalhos[id] = TECLA_NAO_ATRIBUIDA;
@@ -135,7 +135,7 @@ export const useAtalhos = create<AtalhosState>((set, get) => ({
   },
 
   restaurarPadrao: () => {
-    const atalhos = { ...ATALHOS_PADRAO } as Mapa;
+    const atalhos = { ...ATALHOS_PADRAO };
     set({ atalhos });
     gravar(atalhos);
     salvarNaConta(atalhos);

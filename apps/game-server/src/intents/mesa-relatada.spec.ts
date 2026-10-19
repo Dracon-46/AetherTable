@@ -11,6 +11,7 @@
 import { PLAYER_COUNTERS, ZONES, zoneOrderKey } from '@aethertable/shared-types';
 import { REGISTRY } from './registry';
 import type { IntentContext } from './registry';
+import { BatchChangeZoneIntent, SetLifeIntent } from './schemas';
 import { RoomState } from '../schema/RoomState';
 import { Player } from '../schema/Player';
 import { Card } from '../schema/Card';
@@ -18,7 +19,7 @@ import { ZoneOrderList } from '../schema/ZoneOrderList';
 
 interface Mesa {
   state: RoomState;
-  enviados: Array<{ event: string; payload: unknown }>;
+  enviados: { event: string; payload: unknown }[];
   expulsos: string[];
 }
 
@@ -56,7 +57,7 @@ function executar(mesa: Mesa, intent: keyof typeof REGISTRY, sid: string, payloa
   const ctx = {
     state: mesa.state,
     client: { sessionId: sid } as IntentContext['client'],
-    clients: [] as unknown as IntentContext['clients'],
+    clients: [],
     send: (event: string, p: unknown) => mesa.enviados.push({ event, payload: p }),
     broadcast: () => {},
     log: () => {},
@@ -368,8 +369,7 @@ describe('mover a seleção em lote', () => {
 
   // O teto é único para os três lotes (MAX_LOTE = 200): eram 60/60/100, e a
   // seleção por laço passava de 60 num campo de fichas com facilidade.
-  it('o schema aceita 200 e recusa 201', async () => {
-    const { BatchChangeZoneIntent } = await import('./schemas');
+  it('o schema aceita 200 e recusa 201', () => {
     const ids = Array.from({ length: 200 }, (_, i) => uuid(i));
     expect(BatchChangeZoneIntent.safeParse({ entityIds: ids, targetZone: 'EXILE' }).success).toBe(
       true,
@@ -435,8 +435,7 @@ describe('vida inicial combinada pela mesa', () => {
   });
 
   /** Somando cliques a vida passava de 999, e digitar por cima era recusado. */
-  it('vida acima de 999 pode ser digitada', async () => {
-    const { SetLifeIntent } = await import('./schemas');
+  it('vida acima de 999 pode ser digitada', () => {
     expect(SetLifeIntent.safeParse({ absolute: 1500 }).success).toBe(true);
     const mesa = montarMesa(['a', 'b']);
     executar(mesa, 'INTENT_SET_LIFE', 'a', { absolute: 1500 });

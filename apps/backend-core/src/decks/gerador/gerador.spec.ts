@@ -151,9 +151,9 @@ describe('montarDeck', () => {
 describe('dividirBasicos', () => {
   it('segue a demanda de cada cor, com pelo menos um de cada', () => {
     const partes = dividirBasicos(['W', 'B'], 28, ['{B}{B}{B}', '{B}{B}', '{1}{W}']);
-    expect(partes['W']! + partes['B']!).toBe(28);
-    expect(partes['B']!).toBeGreaterThan(partes['W']!);
-    expect(partes['W']!).toBeGreaterThanOrEqual(1);
+    expect(partes.W! + partes.B!).toBe(28);
+    expect(partes.B!).toBeGreaterThan(partes.W!);
+    expect(partes.W!).toBeGreaterThanOrEqual(1);
   });
 
   it('comandante incolor recebe Wastes', () => {

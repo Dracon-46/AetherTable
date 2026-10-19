@@ -109,7 +109,7 @@ export class RedirecionarFalhaDeOAuth implements ExceptionFilter {
   private codigoDe(excecao: unknown, requisicao: RequisicaoComQuery): CodigoDeOAuth {
     if (excecao instanceof ErroDeOAuth) return excecao.codigo;
 
-    const erroDoProvedor = requisicao.query?.['error'];
+    const erroDoProvedor = requisicao.query?.error;
     if (erroDoProvedor === 'access_denied') return 'recusado';
 
     return 'falhou';

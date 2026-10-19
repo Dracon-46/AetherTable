@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { randomBytes } from 'crypto';
 import { DecksService } from '../decks/decks.service.js';
-import { validarDeckParaFormato, type DeckValidavel } from '../decks/formato.js';
+import { validarDeckParaFormato } from '../decks/formato.js';
 import { AdminSistemaService, FLAGS } from '../admin/admin-sistema.service.js';
 import { AccessToken } from 'livekit-server-sdk';
 import { Prisma } from '@prisma/client';
@@ -176,7 +176,7 @@ export class MatchesService {
       // `getDeckById` hidrata cada carta com dados da Scryfall — daí `name` e
       // `isBanned`, que não existem no registro cru do Prisma.
       const deck = await this.decksService.getDeckById(userId, deckId);
-      validarDeckParaFormato(deck as DeckValidavel);
+      validarDeckParaFormato(deck);
     }
 
     /**
@@ -314,12 +314,12 @@ export class MatchesService {
     try {
       const deck = (await this.decksService.getDeckById(userId, deckId)) as unknown as {
         formatId: string;
-        cards: Array<{
+        cards: {
           name?: string;
           boardType?: string;
           gameChanger?: boolean;
           quantity: number;
-        }>;
+        }[];
       };
       return estimarBracket(deck.cards, deck.formatId)?.minimo ?? null;
     } catch {
@@ -483,7 +483,7 @@ export class MatchesService {
    * `roomId` não bate com a sala. Consultar aqui seria uma chamada entre
    * serviços para antecipar um "não" que chega de qualquer forma.
    */
-  async spectateMatch(userId: string, username: string, roomCode: string) {
+  spectateMatch(userId: string, username: string, roomCode: string) {
     const jti = randomBytes(8).toString('hex');
     const seatToken = this.jwtService.sign(
       {

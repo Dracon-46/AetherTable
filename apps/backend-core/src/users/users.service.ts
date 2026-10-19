@@ -8,7 +8,6 @@ import { Prisma } from '@prisma/client';
 import {
   podeEquipar,
   temaParaPrisma,
-  type CosmeticTier,
   type FamiliaDeCosmetico,
   type Tema,
 } from '@aethertable/shared-types';
@@ -217,7 +216,7 @@ export class UsersService {
       where: { id: userId },
       select: { supporterTier: true },
     });
-    const tier = (usuario?.supporterTier ?? 'FREE') as CosmeticTier;
+    const tier = usuario?.supporterTier ?? 'FREE';
 
     const negados = pedidos.filter((p) => !podeEquipar(tier, p.familia, p.id));
     if (negados.length > 0) {

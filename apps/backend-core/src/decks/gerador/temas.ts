@@ -15,7 +15,7 @@ export interface CartaComTexto {
   name: string;
   type_line?: string;
   oracle_text?: string;
-  card_faces?: Array<{ type_line?: string; oracle_text?: string }>;
+  card_faces?: { type_line?: string; oracle_text?: string }[];
 }
 
 export interface Tema {
@@ -68,7 +68,7 @@ const TRIBOS = new Set([
 ]);
 
 /** Mecânicas: o que o texto diz → o que buscar. A ordem é a de prioridade. */
-const MECANICAS: Array<{ padrao: RegExp; nome: string; consulta: string }> = [
+const MECANICAS: { padrao: RegExp; nome: string; consulta: string }[] = [
   { padrao: /\+1\/\+1 counter/i, nome: 'marcadores +1/+1', consulta: 'o:"+1/+1 counter"' },
   {
     padrao: /proliferate|counter on/i,

@@ -24,7 +24,7 @@ const RELATIVO = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
 /** "há 5 minutos", "ontem", "há 3 dias". */
 export function haQuantoTempo(iso: string, agora = Date.now()): string {
   const segundos = Math.round((new Date(iso).getTime() - agora) / 1000);
-  const passos: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+  const passos: [Intl.RelativeTimeFormatUnit, number][] = [
     ['day', 86_400],
     ['hour', 3_600],
     ['minute', 60],

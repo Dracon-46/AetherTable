@@ -40,19 +40,19 @@ function montar(conta: { emailVerifiedAt: Date | null; role?: Role }) {
 }
 
 describe('AdminBootstrapService — ADMIN_EMAILS exige e-mail confirmado', () => {
-  const antes = process.env['ADMIN_EMAILS'];
+  const antes = process.env.ADMIN_EMAILS;
   let aviso: jest.SpyInstance;
 
   beforeEach(() => {
-    process.env['ADMIN_EMAILS'] = EMAIL;
+    process.env.ADMIN_EMAILS = EMAIL;
     aviso = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-    if (antes === undefined) delete process.env['ADMIN_EMAILS'];
-    else process.env['ADMIN_EMAILS'] = antes;
+    if (antes === undefined) delete process.env.ADMIN_EMAILS;
+    else process.env.ADMIN_EMAILS = antes;
   });
 
   it('NÃO promove a conta cujo e-mail nunca foi confirmado', async () => {
@@ -71,7 +71,9 @@ describe('AdminBootstrapService — ADMIN_EMAILS exige e-mail confirmado', () =>
     await svc.onModuleInit();
 
     const mensagens = aviso.mock.calls.map((c) => String(c[0]));
-    expect(mensagens.some((m) => m.includes(EMAIL) && /nunca foi confirmado/.test(m))).toBe(true);
+    expect(mensagens.some((m) => m.includes(EMAIL) && m.includes('nunca foi confirmado'))).toBe(
+      true,
+    );
   });
 
   it('promove a conta confirmada, com a confirmação também no WHERE da escrita', async () => {

@@ -109,7 +109,7 @@ export interface CampoExtra {
   /** `senha` mascara o campo e pede ao navegador para não preenchê-lo sozinho. */
   tipo: 'numero' | 'texto' | 'selecao' | 'senha';
   valorInicial: string;
-  opcoes?: Array<{ valor: string; rotulo: string }>;
+  opcoes?: { valor: string; rotulo: string }[];
   min?: number;
   max?: number;
   dica?: string;
