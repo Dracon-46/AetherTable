@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Client } from '@colyseus/core';
-import { Room } from '@colyseus/core';
-import jwt from 'jsonwebtoken';
+import type { AuthContext, Client, RoomException } from '@colyseus/core';
+import { Protocol, Room } from '@colyseus/core';
 import {
   REALTIME_LIMITS,
   ZONES,
@@ -21,13 +20,14 @@ import { Espectador } from '../schema/Espectador';
 import { Player } from '../schema/Player';
 import { RoomState } from '../schema/RoomState';
 import { ZoneOrderList } from '../schema/ZoneOrderList';
+import { revoga } from '../schema/visibility';
 // Valor, nao so tipo: `OpcoesDeCriacao` valida as opcoes cruas do navegador.
 import { z } from 'zod';
 import {
   RateLimiter,
   REGISTRY,
   aplicarTopoRevelado,
-  espectadorBarrado,
+  barreiraDoRemetente,
   haAssentoLivre,
   verificarAutorizacao,
   verificarFimDePartida,
@@ -47,6 +47,7 @@ import {
   reconexoes,
   salasAtivas,
 } from '../metrics';
+import { RecusaDeEntrada, emitirPasseDeVoz, validarPasse, type SeatTokenClaims } from './passes';
 
 /** Aceita a forma canonica de uuid v1-v5; e o formato do id no Postgres. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -61,6 +62,67 @@ const INTENCOES_DE_SORTEIO = new Set<string>([
   'INTENT_RANDOM_PLAYER',
   'INTENT_RANDOM_CARD',
 ]);
+
+/**
+ * ─── AS MENSAGENS SOCIAIS TÊM COTA PRÓPRIA ──────────────────────────────────
+ *
+ * Chat, ping, pedido para ver a mão e votação não mudam a mesa: cada uma vira
+ * um `broadcast`, uma linha de log ou uma notificação NA TELA DE OUTRA PESSOA.
+ * Dentro do limite geral (30/s) elas passavam inteiras — trinta mensagens de
+ * chat por segundo, ou trinta pedidos de "deixa eu ver sua mão" seguidos na
+ * tela do alvo. Dez a cada dez segundos cobre qualquer conversa de mesa.
+ */
+const INTENCOES_SOCIAIS = new Set<string>([
+  'INTENT_CHAT',
+  'INTENT_PING',
+  'INTENT_REQUEST_VIEW',
+  'INTENT_VOTE_KICK',
+]);
+const MAX_SOCIAIS_POR_JANELA = 10;
+const SOCIAL_JANELA_MS = 10_000;
+
+/**
+ * ─── QUEM SÓ MANDA LIXO É DESCONECTADO ──────────────────────────────────────
+ *
+ * Os limitadores descartam o excesso, mas cada descarte ainda custa o parse do
+ * pacote — e respondia um `warning`, o que fazia o servidor devolver uma
+ * mensagem para cada mensagem do atacante. Agora o aviso sai uma vez por
+ * janela, e quem acumula `MAX_DESCARTES_POR_JANELA` descartes numa janela é
+ * desconectado (4002, o código de "fechado por erro" do Colyseus). Um humano
+ * segurando uma tecla gera dezenas por janela, nunca centenas.
+ */
+const MAX_DESCARTES_POR_JANELA = 300;
+const DESCARTES_JANELA_MS = 10_000;
+
+/** Uma busca de grimório na API por sessão a cada tanto — ver `pedirDeck`. */
+const INTERVALO_DE_DECK_MS = 2_000;
+
+/**
+ * Quanto a sala espera a API Core antes de desistir de uma chamada. Sem teto,
+ * uma API pendurada segurava o `provisionarDeck` (e, no `onDispose`, o
+ * encerramento da sala) pelo tempo que o sistema operacional quisesse.
+ */
+const TEMPO_DA_API_MS = 8_000;
+
+/**
+ * Reserva de vaga do matchmaker, em segundos (o padrão do Colyseus é 15).
+ *
+ * É o intervalo entre a resposta do `POST /matchmake` e o WebSocket conectar —
+ * no cliente honesto, o tempo de um round-trip. Quinze segundos eram o tempo
+ * que uma reserva sem conexão segurava uma das vagas de `maxClients`.
+ */
+const TEMPO_DE_RESERVA_S = 8;
+
+/**
+ * Teto de cartas de UM grimório provisionado (comando + grimório + reserva).
+ *
+ * A API limita a 99 cópias por LINHA, não o número de linhas: um deck salvo com
+ * cem linhas de 99 virava dez mil cartas na mesa — muito além do que cabe no
+ * buffer de encode da sala (ver `index.ts`). 250 está bem acima de qualquer
+ * formato jogável (Commander é 100), e oito assentos no teto somam por volta de
+ * 450 KB de estado (~225 bytes por carta, medidos lá) — abaixo dos 512 KB.
+ */
+const MAX_CARTAS_POR_GRIMORIO = 250;
 
 /** Uma carta do deck, como vem de `GET /api/v1/internal/decks/:id`. */
 interface DeckCardPayload {
@@ -91,44 +153,6 @@ interface DeckPayload {
   id: string;
   name: string;
   cards: DeckCardPayload[];
-}
-
-/** Conteudo do seat token emitido pela API Core. */
-interface SeatTokenClaims {
-  sub: string;
-  username: string;
-  roomId: string;
-  jti: string;
-  /**
-   * OPCIONAL desde que o grimorio passou a ser escolhido na sala de espera.
-   *
-   * O fluxo antigo embutia o deck no passe: era preciso decidir com que baralho
-   * jogar antes de ver quem sentou na mesa, e trocar de ideia significava sair,
-   * pedir um passe novo e voltar — so que o passe e de uso unico (FR-20) e o
-   * assento antigo ainda estava ocupado. Quem entra sem deck escolhe por
-   * `INTENT_SET_DECK`, dentro da sala.
-   */
-  deckId?: string;
-  /**
-   * Configuracao da sala, ASSINADA pela API Core (ver `assinarConfig` em
-   * `matches.service.ts`).
-   *
-   * So o criador tem esta claim. Ela existe porque `onCreate` recebe as opcoes
-   * CRUAS do navegador — nada ali impedia uma mesa de Duel Commander com oito
-   * assentos — e o Colyseus nao entrega o resultado do `onAuth` ao `onCreate`,
-   * que roda antes. Aplicar aqui, com a sala ainda vazia, e o unico ponto em
-   * que a configuracao autorizada consegue substituir a forjada.
-   */
-  cfg?: ConfigDeSala;
-  /**
-   * `true` = passe de ESPECTADOR, emitido por `POST /matches/:code/spectate`.
-   *
-   * Vem no token assinado, e nao numa opcao do `joinOrCreate`, porque a
-   * diferenca entre assistir e jogar decide quem ocupa assento numa mesa cheia.
-   * Se fosse um parametro do cliente, bastaria remove-lo da querystring para um
-   * espectador virar jogador e tomar o ultimo lugar.
-   */
-  spectator?: boolean;
 }
 
 /**
@@ -179,6 +203,26 @@ export class AetherRoom extends Room<RoomState> {
     REALTIME_LIMITS.MAX_REACOES_POR_JANELA,
     REALTIME_LIMITS.REACAO_JANELA_MS,
   );
+  /** Chat, ping, pedido de vista e votação — ver `INTENCOES_SOCIAIS`. */
+  private readonly limitadorSocial = new RateLimiter(MAX_SOCIAIS_POR_JANELA, SOCIAL_JANELA_MS);
+  /** Uma busca de grimório por sessão a cada `INTERVALO_DE_DECK_MS` — ver `pedirDeck`. */
+  private readonly limitadorDeDeck = new RateLimiter(1, INTERVALO_DE_DECK_MS);
+  /** Conta os DESCARTES de cada sessão — ver `MAX_DESCARTES_POR_JANELA`. */
+  private readonly limitadorDeDescartes = new RateLimiter(
+    MAX_DESCARTES_POR_JANELA,
+    DESCARTES_JANELA_MS,
+  );
+  /** Um `warning` de excesso por sessão e por janela, e não um por descarte. */
+  private readonly limitadorDeAvisos = new RateLimiter(1, DESCARTES_JANELA_MS);
+  /** A escolha de grimório que chegou dentro da janela e espera a próxima. */
+  private readonly deckAdiado = new Map<string, string>();
+  /**
+   * Sessões contadas em `ws_connections_active`. A métrica só sobe para quem
+   * foi ADMITIDO, e só desce para quem subiu: a entrada recusada no `onJoin`
+   * passa pelo `onLeave` (o Colyseus desfaz a entrada assim), e descontar ali
+   * levava o gauge a negativo.
+   */
+  private readonly conexoesContadas = new Set<string>();
   /**
    * Os comandos ja executados, um por jogador (DOC-036 item 130).
    *
@@ -256,7 +300,7 @@ export class AetherRoom extends Room<RoomState> {
     // do navegador e nao sao assinadas. `safeParse` e nao `parse` porque um
     // campo malformado nao pode impedir a sala de abrir — o que ele nao
     // reconhece cai no padrao, e e `normalizarConfigDeSala` quem decide o
-    // resto. A correcao FORTE (config assinada) chega no `onAuth`.
+    // resto. A correcao FORTE (config assinada) chega em `admitir`.
     const brutas = OpcoesDeCriacao.safeParse(options);
     const opcoes = brutas.success ? brutas.data : {};
 
@@ -270,6 +314,7 @@ export class AetherRoom extends Room<RoomState> {
     // 20 Hz: mutacoes na mesma janela viram um patch. Arrastar uma carta nao
     // gera 60 pacotes por segundo.
     this.setPatchRate(REALTIME_LIMITS.PATCH_RATE_MS);
+    this.setSeatReservationTime(TEMPO_DE_RESERVA_S);
 
     this.registrarIntencoes();
     this.registrarIntencoesComIO();
@@ -429,7 +474,7 @@ export class AetherRoom extends Room<RoomState> {
    * Grava uma configuracao JA NORMALIZADA no estado.
    *
    * Um caminho so para os dois momentos em que a config chega — o `onCreate`,
-   * com o que o navegador mandou, e o `onAuth` do criador, com o que a API
+   * com o que o navegador mandou, e a admissao do criador, com o que a API
    * assinou. Duas escritas separadas divergiriam, e a divergencia apareceria
    * como um campo que o passe assinado nao consegue corrigir.
    */
@@ -442,14 +487,14 @@ export class AetherRoom extends Room<RoomState> {
      * quer assistir.
      *
      * O Colyseus tranca a sala em `hasReachedMaxClients()`, e a checagem
-     * acontece no MATCHMAKING, antes do `onAuth`. Com `maxClients` igual aos
+     * acontece no MATCHMAKING, antes de `admitir`. Com `maxClients` igual aos
      * assentos, o espectador seria recusado antes de o servidor sequer abrir o
      * passe dele e descobrir que ele nao queria assento nenhum.
      *
      * Entao `maxClients` passa a ser assentos + plateia, e A LOTACAO DE
-     * JOGADORES VIRA RESPONSABILIDADE NOSSA — ela e checada no `onAuth`, que
+     * JOGADORES VIRA RESPONSABILIDADE NOSSA — ela e checada em `admitir`, que
      * lanca `ROOM_FULL`. Isto e uma transferencia real de responsabilidade do
-     * framework para este arquivo: se a checagem do `onAuth` sumir numa
+     * framework para este arquivo: se a checagem de `admitir` sumir numa
      * refatoracao, a mesa passa a aceitar dezoito jogadores em silencio.
      *
      * `state.maxSeats` continua sendo o numero de ASSENTOS, e e ele que o lobby
@@ -463,7 +508,7 @@ export class AetherRoom extends Room<RoomState> {
     // No TETO, e não nos assentos da config: o anfitrião pode abrir vagas no
     // lobby (`INTENT_SET_ROOM_CONFIG.maxSeats`), e um `maxClients` preso ao
     // número da criação recusaria o quinto jogador no matchmaking antes de o
-    // `onAuth` ver o assento novo.
+    // `admitir` ver o assento novo.
     this.maxClients = REALTIME_LIMITS.MAX_PLAYERS + REALTIME_LIMITS.MAX_ESPECTADORES;
     this.state.maxSeats = config.maxClients;
     this.state.gameType = config.gameType;
@@ -519,36 +564,64 @@ export class AetherRoom extends Room<RoomState> {
   }
 
   /**
-   * Valida o seat token: assinatura, expiracao, uso unico e vinculo com o
-   * roomId (FR-20). Falhar aqui e a primeira linha de defesa da sala.
+   * ─── A ENTRADA É DECIDIDA ANTES DE A SALA EXISTIR ─────────────────────────
+   *
+   * No Colyseus 0.16, `POST /matchmake/joinOrCreate` roda o `onCreate` e
+   * RESERVA a vaga antes do `onAuth` de instância — que só roda quando o
+   * WebSocket conecta. Com a autenticação só ali, qualquer um sem passe abria
+   * salas à vontade, e dezoito POSTs enchiam o `maxClients` de qualquer mesa
+   * com reservas que nunca conectavam.
+   *
+   * O `onAuth` ESTÁTICO roda em `callOnAuth`, antes de procurar, criar ou
+   * reservar. Ele valida o passe (`validarPasse`: audiência da mesa, HS256,
+   * `sub`, `jti` e `roomId` obrigatórios) e exige que o `roomCode` pedido seja
+   * o da sala para a qual o passe foi emitido. O filtro do matchmaker
+   * (`filterBy(['roomCode'])`) usa esse mesmo campo: um passe da sala A não
+   * cria, não encontra e não reserva vaga na sala B.
+   *
+   * Quando o estático devolve dados, o Colyseus os entrega como `client.auth` e
+   * PULA o `onAuth` de instância (`Room._onJoin`) — por isso ele não existe
+   * mais aqui. O que depende do estado da sala (passe já usado, conta
+   * bloqueada, assento duplicado, lotação) ficou em `admitir`, no `onJoin`.
    */
-  // `async` sem `await` de propósito: o Colyseus faz `await this.onAuth(...)` e todo
-  // `throw` daqui precisa chegar como promessa rejeitada, não como exceção síncrona.
+  // `async` sem `await`: o matchmaker faz `await` e todo `throw` daqui precisa
+  // chegar como promessa rejeitada, não como exceção síncrona.
   // eslint-disable-next-line @typescript-eslint/require-await -- contrato de promessa do Colyseus
-  override async onAuth(client: Client, options: JoinOptions): Promise<SeatTokenClaims> {
-    if (!options?.seatToken) {
-      throw new Error('INVALID_TOKEN');
+  static override async onAuth(
+    _token: string,
+    options: unknown,
+    _context: AuthContext,
+  ): Promise<SeatTokenClaims> {
+    const { seatToken, roomCode } = (options ?? {}) as { seatToken?: unknown; roomCode?: unknown };
+    const claims = validarPasse(seatToken);
+    if (roomCode !== claims.roomId) throw new RecusaDeEntrada('INVALID_TOKEN');
+    return claims;
+  }
+
+  /**
+   * Decide, com o estado da sala, se esta conexão entra.
+   *
+   * Lança `RecusaDeEntrada`. Lançar no `onJoin` faz o Colyseus desfazer a
+   * entrada (`_onJoin` chama `_onLeave` e apaga a reserva) e mandar a mensagem
+   * ao cliente como erro de conexão — a mesma forma que o `onAuth` de instância
+   * produzia, com o código (`ROOM_FULL`, ...) na mensagem.
+   *
+   * Síncrono de ponta a ponta: sem `await` entre checar e consumir, duas
+   * entradas não disputam o mesmo passe nem a mesma vaga.
+   */
+  private admitir(auth: SeatTokenClaims): void {
+    // O estático já casou o passe com o `roomCode` pedido, e a sala foi achada
+    // (ou criada) por esse código. A repetição aqui é a defesa que sobra se
+    // alguém um dia chamar `_reserveSeat` por outro caminho.
+    if (!auth?.sub || !auth.jti || auth.roomId !== this.state.roomCode) {
+      throw new RecusaDeEntrada('INVALID_TOKEN');
     }
 
-    let claims: SeatTokenClaims;
-    try {
-      claims = jwt.verify(options.seatToken, config.JWT_SECRET) as SeatTokenClaims;
-    } catch (erro) {
-      // jsonwebtoken distingue expirado de invalido; o cliente merece saber qual.
-      const expirado = erro instanceof jwt.TokenExpiredError;
-      throw new Error(expirado ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN');
-    }
-
-    // Vinculo com a sala: um token emitido para outra sala nao serve aqui.
-    if (claims.roomId && claims.roomId !== this.state.roomCode) {
-      throw new Error('INVALID_TOKEN');
-    }
-
-    if (claims.jti && this.jtisUsados.has(claims.jti)) throw new Error('TOKEN_ALREADY_USED');
+    if (this.jtisUsados.has(auth.jti)) throw new RecusaDeEntrada('TOKEN_ALREADY_USED');
 
     // Removido da mesa (pelo anfitrião ou por votação) não volta — nem como
     // espectador, que veria a mesa de quem acabou de tirá-lo dela.
-    if (claims.sub && this.contasBanidas.has(claims.sub)) throw new Error('PLAYER_BLOCKED');
+    if (this.contasBanidas.has(auth.sub)) throw new RecusaDeEntrada('PLAYER_BLOCKED');
 
     /**
      * ─── A CONFIGURACAO ASSINADA SOBREPOE A QUE VEIO DO NAVEGADOR ──────────
@@ -560,8 +633,8 @@ export class AetherRoom extends Room<RoomState> {
      * querystring".
      *
      * A claim `cfg` vem dentro do seat token, que a API Core assinou. Aplicar
-     * aqui e o unico ponto possivel: o Colyseus nao entrega o resultado do
-     * `onAuth` ao `onCreate`, que roda antes.
+     * aqui e o unico ponto possivel: o Colyseus nao entrega o resultado da
+     * autenticacao ao `onCreate`, que roda antes.
      *
      * A GUARDA E `players.size === 0`, e nao "e o assento 0".
      *
@@ -571,8 +644,8 @@ export class AetherRoom extends Room<RoomState> {
      * durante a partida — e quem herdasse o papel reescreveria a mesa inteira
      * apresentando um passe emitido para outra configuracao.
      */
-    if (claims.cfg && this.state.players.size === 0) {
-      this.aplicarConfig(normalizarConfigDeSala(claims.cfg));
+    if (auth.cfg && this.state.players.size === 0) {
+      this.aplicarConfig(normalizarConfigDeSala(auth.cfg));
     }
 
     /**
@@ -588,9 +661,9 @@ export class AetherRoom extends Room<RoomState> {
      * assento antigo é liberado agora. A mesa perde as cartas dele, mas é o
      * mesmo resultado de esperar a janela vencer, sem o fantasma no meio.
      */
-    if (!claims.spectator && claims.sub) {
-      const mesmo = Array.from(this.state.players.values()).find((p) => p.userId === claims.sub);
-      if (mesmo?.connected) throw new Error('ALREADY_SEATED');
+    if (!auth.spectator) {
+      const mesmo = Array.from(this.state.players.values()).find((p) => p.userId === auth.sub);
+      if (mesmo?.connected) throw new RecusaDeEntrada('ALREADY_SEATED');
       if (mesmo) {
         this.publicarLog(
           logSistema(
@@ -618,14 +691,14 @@ export class AetherRoom extends Room<RoomState> {
      * plateia, e uma mesa com quatro assentos e tres espectadores recusaria o
      * quarto jogador.
      */
-    if (!claims.spectator && !haAssentoLivre(this.state)) {
-      throw new Error('ROOM_FULL');
+    if (!auth.spectator && !haAssentoLivre(this.state)) {
+      throw new RecusaDeEntrada('ROOM_FULL');
     }
     // A plateia tem teto próprio. `maxClients` é assentos + plateia somados, e
     // com a mesa ainda vazia de jogadores a sala aceitava dezoito espectadores
     // — as vagas de assento viravam lugar na arquibancada.
-    if (claims.spectator && this.state.espectadores.size >= REALTIME_LIMITS.MAX_ESPECTADORES) {
-      throw new Error('ROOM_FULL');
+    if (auth.spectator && this.state.espectadores.size >= REALTIME_LIMITS.MAX_ESPECTADORES) {
+      throw new RecusaDeEntrada('ROOM_FULL');
     }
 
     // O passe só é CONSUMIDO aqui, depois de a vaga ser confirmada. Antes ele
@@ -633,22 +706,24 @@ export class AetherRoom extends Room<RoomState> {
     // cheia", e quando uma vaga abria o mesmo link respondia "token já usado"
     // — que parecia defeito, e não lotação. Não há `await` entre a checagem e
     // a marcação, então duas entradas não disputam o mesmo passe.
-    if (claims.jti) this.jtisUsados.add(claims.jti);
-
-    return claims;
+    this.jtisUsados.add(auth.jti);
   }
 
-  override onJoin(client: Client, options: JoinOptions, auth: SeatTokenClaims): void {
+  override onJoin(client: Client, _options: JoinOptions, auth: SeatTokenClaims): void {
+    this.admitir(auth);
     // `ws_connections_active` e `ws_reconnections_total` eram expostas em
     // /metrics e NUNCA atualizadas: o painel mostrava zero jogadores conectados
     // com a mesa cheia. Cada cliente que entra (jogador ou plateia) conta um;
-    // cada `onLeave` desconta.
-    conexoesAtivas.inc();
-    if (auth.spectator) {
-      this.entrarComoEspectador(client, auth);
-      return;
-    }
+    // cada `onLeave` desconta — e só quem passou por `admitir` conta.
+    this.contarConexao(client.sessionId);
 
+    if (auth.spectator) this.entrarComoEspectador(client, auth);
+    else this.entrarComoJogador(client, auth);
+
+    this.enviarPasseDeVoz(client, auth.sub, auth.spectator === true);
+  }
+
+  private entrarComoJogador(client: Client, auth: SeatTokenClaims): void {
     this.cancelarDescarte();
 
     const player = new Player();
@@ -729,12 +804,52 @@ export class AetherRoom extends Room<RoomState> {
     this.publicarMetadados();
   }
 
+  /**
+   * Manda ao cliente o passe de voz desta sala — ver `emitirPasseDeVoz`.
+   *
+   * Chamado depois de `admitir` e depois de cada reconexão. Antes do JOIN do
+   * Colyseus o `send` fica na fila do cliente e sai logo depois do estado
+   * inicial: o frontend precisa registrar `onMessage('passe-de-voz')` no mesmo
+   * tick em que o `joinOrCreate`/`reconnect` resolve.
+   */
+  private enviarPasseDeVoz(client: Client, sub: string, spectator: boolean): void {
+    client.send('passe-de-voz', {
+      token: emitirPasseDeVoz({ sub, roomId: this.state.roomCode, spectator }),
+    });
+  }
+
+  private contarConexao(sessionId: string): void {
+    if (this.conexoesContadas.has(sessionId)) return;
+    this.conexoesContadas.add(sessionId);
+    conexoesAtivas.inc();
+  }
+
+  private descontarConexao(sessionId: string): void {
+    if (this.conexoesContadas.delete(sessionId)) conexoesAtivas.dec();
+  }
+
+  /** Quem foi embora de vez não ocupa mais memória em limitador nenhum. */
+  private esquecerLimites(sessionId: string): void {
+    for (const limitador of [
+      this.rateLimiter,
+      this.limitadorDeSorteio,
+      this.limitadorDeReacao,
+      this.limitadorSocial,
+      this.limitadorDeDeck,
+      this.limitadorDeDescartes,
+      this.limitadorDeAvisos,
+    ]) {
+      limitador.esquecer(sessionId);
+    }
+    this.deckAdiado.delete(sessionId);
+  }
+
   override async onLeave(client: Client, consented: boolean): Promise<void> {
-    conexoesAtivas.dec();
+    this.descontarConexao(client.sessionId);
     /**
      * Espectador sai NA HORA, sem janela de reconexao.
      *
-     * Os 90 s de `allowReconnection` existem para guardar o ASSENTO e as cartas
+     * A janela de `allowReconnection` existe para guardar o ASSENTO e as cartas
      * de quem caiu. Espectador nao tem nem um nem outro: segurar a saida dele
      * so faria a lista da mesa mostrar plateia que ja foi embora, e ainda
      * ocuparia uma das dez vagas de `MAX_ESPECTADORES`.
@@ -742,7 +857,7 @@ export class AetherRoom extends Room<RoomState> {
     if (this.state.espectadores.has(client.sessionId)) {
       const espectador = this.state.espectadores.get(client.sessionId);
       this.state.espectadores.delete(client.sessionId);
-      this.rateLimiter.esquecer(client.sessionId);
+      this.esquecerLimites(client.sessionId);
       this.broadcast('spectatorLeft', {
         spectatorId: client.sessionId,
         name: espectador?.name ?? '',
@@ -752,11 +867,23 @@ export class AetherRoom extends Room<RoomState> {
       return;
     }
 
+    /**
+     * ─── SEM ASSENTO, NÃO HÁ O QUE GUARDAR ──────────────────────────────────
+     *
+     * Chegam aqui a entrada recusada por `admitir` (o Colyseus desfaz a entrada
+     * passando pelo `onLeave`) e a aba antiga que reconectou depois de perder o
+     * assento. As duas caíam no `allowReconnection` de dez minutos — e a aba
+     * sem assento, ao reconectar, era derrubada e voltava a esperar, em ciclo,
+     * cada volta segurando uma reserva de vaga.
+     */
     const player = this.state.players.get(client.sessionId);
-    if (player) {
-      player.connected = false;
-      player.disconnectedAt = Date.now();
+    if (!player) {
+      this.esquecerLimites(client.sessionId);
+      return;
     }
+
+    player.connected = false;
+    player.disconnectedAt = Date.now();
 
     // Libera qualquer lock de arraste que o jogador estivesse segurando: sem
     // isso a carta fica travada para todos ate o TTL expirar.
@@ -765,8 +892,8 @@ export class AetherRoom extends Room<RoomState> {
     });
 
     // Saida consentida (o jogador clicou em sair) ou expulsao pelo anfitriao:
-    // nos dois casos o assento vai embora agora. Guardar a vaga do expulso por
-    // 90 s seria desfazer o chute na pratica — a sala continuaria cheia.
+    // nos dois casos o assento vai embora agora. Guardar a vaga do expulso
+    // seria desfazer o chute na pratica — a sala continuaria cheia.
     if (consented || this.expulsos.has(client.sessionId)) {
       this.expulsos.delete(client.sessionId);
       this.removerJogador(client.sessionId);
@@ -776,10 +903,13 @@ export class AetherRoom extends Room<RoomState> {
     this.broadcast('playerDisconnected', { playerId: client.sessionId });
 
     try {
-      await this.allowReconnection(client, REALTIME_LIMITS.RECONNECTION_WINDOW_S);
-      conexoesAtivas.inc();
+      // O que volta é o cliente NOVO. É ele que ainda está no JOIN do
+      // Colyseus e enfileira o que receber; o antigo (`client`) já aponta para
+      // o socket novo e mandaria por fora da fila, antes do JOIN — e o
+      // navegador descartaria a mensagem por não ter quem a ouça.
+      const novo = await this.allowReconnection(client, REALTIME_LIMITS.RECONNECTION_WINDOW_S);
       // A mesma conta pode ter voltado por um passe novo enquanto esta aba
-      // estava fora (`onAuth` libera o assento antigo). A aba antiga que
+      // estava fora (`admitir` libera o assento antigo). A aba antiga que
       // reconecta depois disso não tem mais assento: ficaria na sala como um
       // cliente sem jogador, vendo a mesa sem ser plateia nem mesa.
       if (!this.state.players.has(client.sessionId)) {
@@ -787,25 +917,50 @@ export class AetherRoom extends Room<RoomState> {
         client.leave(4001);
         return;
       }
+      this.contarConexao(client.sessionId);
       reconexoes.inc({ result: 'ok' });
-      if (player) {
-        player.connected = true;
-        player.disconnectedAt = 0;
-      }
+      player.connected = true;
+      player.disconnectedAt = 0;
       // A view nao sobrevive a reconexao: reconstruir e obrigatorio.
       reconciliarClient(client, this.state);
       this.broadcast('playerReconnected', { playerId: client.sessionId });
+      this.enviarPasseDeVoz(novo, player.userId, false);
     } catch {
       reconexoes.inc({ result: 'expirou' });
       this.removerJogador(client.sessionId);
     }
   }
 
-  override onDispose(): void {
+  /**
+   * ─── O RESUMO DA PARTIDA SUMIA NO DEPLOY ──────────────────────────────────
+   *
+   * O comentário antigo dizia que `onDispose` não espera promessa. Espera: o
+   * `Room._dispose` do Colyseus faz `await` do que ele devolve, e só depois
+   * emite o `disconnect` que o desligamento gracioso aguarda. Com o `void`, o
+   * deploy derrubava o processo com o `fetch` do resumo em voo, e a partida
+   * sumia do histórico de todo mundo. A espera é limitada por `TEMPO_DA_API_MS`.
+   */
+  override onDispose(): Promise<void> {
     salasAtivas.dec();
-    // Sem `await`: `onDispose` nao espera promessa, e segurar o encerramento da
-    // sala por uma chamada HTTP atrasaria a liberacao do processo.
-    void this.registrarResumoDaPartida();
+    return this.registrarResumoDaPartida();
+  }
+
+  /**
+   * ─── UMA EXCEÇÃO NUM TIMER DERRUBAVA O PROCESSO ───────────────────────────
+   *
+   * Os callbacks de `clock.setTimeout` (descarte da sala vazia, fim da votação,
+   * prazo do mulligan) rodam fora de qualquer `try`: uma exceção ali virava
+   * `uncaughtException` e levava junto TODAS as mesas do nó. Definir este
+   * método faz o Colyseus embrulhar timers, mensagens e o ciclo de vida da
+   * sala (`Room` registra os embrulhos no construtor), e a falha vira log.
+   *
+   * A recusa de entrada passa por aqui também — `admitir` lança no `onJoin` —,
+   * mas ela não é falha: é a sala dizendo "não", e o Colyseus já a repassa ao
+   * cliente.
+   */
+  override onUncaughtException(erro: RoomException<this>, metodo: string): void {
+    if (erro.cause instanceof RecusaDeEntrada) return;
+    console.error(`[${this.roomId}] exceção não tratada em ${metodo}:`, erro.cause ?? erro);
   }
 
   /**
@@ -891,6 +1046,9 @@ export class AetherRoom extends Room<RoomState> {
 
     try {
       const res = await fetch(`${config.BACKEND_CORE_URL}/api/v1/internal/matches/summary`, {
+        // O `onDispose` espera esta chamada: sem teto, uma API pendurada
+        // segurava o fechamento da sala — e o desligamento do processo.
+        signal: AbortSignal.timeout(TEMPO_DA_API_MS),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -934,8 +1092,7 @@ export class AetherRoom extends Room<RoomState> {
       this.onMessage(tipo, (client, payload: unknown) => {
         // Rate limit antes de qualquer trabalho: 30 intencoes/s (NFR-04).
         if (!this.rateLimiter.permitir(client.sessionId)) {
-          intentsRejeitadas.inc({ reason: 'rate_limit' });
-          client.send('warning', {
+          this.descartar(client, 'rate_limit', {
             code: 'RATE_LIMITED',
             message: 'Muitas ações por segundo. Algumas foram descartadas.',
           });
@@ -944,8 +1101,7 @@ export class AetherRoom extends Room<RoomState> {
 
         // Sorteios tem janela propria — ver `limitadorDeSorteio`.
         if (INTENCOES_DE_SORTEIO.has(tipo) && !this.limitadorDeSorteio.permitir(client.sessionId)) {
-          intentsRejeitadas.inc({ reason: 'too_many_rolls' });
-          client.send('warning', {
+          this.descartar(client, 'too_many_rolls', {
             code: 'RATE_LIMITED',
             message: `Calma com os sorteios: até ${REALTIME_LIMITS.MAX_SORTEIOS_POR_JANELA} a cada ${Math.round(REALTIME_LIMITS.SORTEIO_JANELA_MS / 1000)} s.`,
           });
@@ -955,35 +1111,52 @@ export class AetherRoom extends Room<RoomState> {
         // Reação: freio próprio. Recusa calada — avisar a cada balão a mais
         // seria mais ruído que o próprio excesso.
         if (tipo === 'INTENT_REACTION' && !this.limitadorDeReacao.permitir(client.sessionId)) {
-          intentsRejeitadas.inc({ reason: 'too_many_reactions' });
+          this.descartar(client, 'too_many_reactions');
+          return;
+        }
+
+        // Chat, ping, pedido de vista e votação — ver `INTENCOES_SOCIAIS`.
+        if (INTENCOES_SOCIAIS.has(tipo) && !this.limitadorSocial.permitir(client.sessionId)) {
+          this.descartar(client, 'too_many_social', {
+            code: 'RATE_LIMITED',
+            message: `Calma: até ${MAX_SOCIAIS_POR_JANELA} mensagens a cada ${SOCIAL_JANELA_MS / 1000} s.`,
+          });
           return;
         }
 
         /**
-         * ─── ESPECTADOR NAO MEXE NA MESA ───────────────────────────────────
+         * ─── SÓ QUEM ESTÁ NA MESA MEXE NA MESA ─────────────────────────────
          *
          * `verificarAutorizacao` NAO cobre isto, e e importante entender por
          * que: ela devolve `null` na hora para `QUALQUER_JOGADOR`, sem checar
          * se o remetente e mesmo um jogador — o nome da regra sempre foi uma
-         * promessa que ninguem verificava, porque ate agora todo mundo na sala
-         * tinha assento.
+         * promessa que ninguem verificava.
          *
          * A barreira fica AQUI, e nao dentro de cada handler, pelo mesmo motivo
          * de `exigirAnfitriao` existir: a proxima intencao nasce protegida em
-         * vez de nascer aberta. Espalhar a checagem por 90 handlers e como
-         * garantir que os 90 lembrem — e os que esquecessem falhariam em
-         * silencio, porque quase todos comecam com um
-         * `state.players.get(sid)` que devolve `undefined` e sai calado.
+         * vez de nascer aberta. E ela exige ASSENTO, e nao so "não ser
+         * plateia": um cliente que perdeu o assento (a aba antiga de quem
+         * voltou por um passe novo, no intervalo até ser derrubada) não era
+         * nem um nem outro, e passava.
          *
-         * O CHAT E A UNICA EXCECAO. Quem assiste comenta a partida; e o
-         * conteudo inteiro de assistir. Ele nao muta estado nenhum — so
-         * transmite texto que o servidor ja limpa de caracteres de controle.
+         * A plateia passa só no chat (`INTENCOES_DE_ESPECTADOR`): quem assiste
+         * comenta a partida, e o chat nao muta estado nenhum.
          */
-        if (espectadorBarrado(this.state, client.sessionId, tipo)) {
+        const barreira = barreiraDoRemetente(this.state, client.sessionId, tipo);
+        if (barreira === 'SPECTATOR') {
           intentsRejeitadas.inc({ reason: 'spectator' });
           client.send('error', {
             code: 'SPECTATOR',
             message: 'Você está assistindo a esta mesa. Só quem tem assento pode agir nela.',
+            intent: tipo,
+          });
+          return;
+        }
+        if (barreira === 'SEM_ASSENTO') {
+          intentsRejeitadas.inc({ reason: 'no_seat' });
+          client.send('error', {
+            code: 'NOT_AUTHORIZED',
+            message: 'Você não tem assento nesta mesa.',
             intent: tipo,
           });
           return;
@@ -1085,9 +1258,31 @@ export class AetherRoom extends Room<RoomState> {
       broadcast: (event, payload) => this.transmitir(event, payload),
       log: (entrada) => this.publicarLog(entrada),
       desfazer: () => this.historico.desfazer(client.sessionId),
+      invalidarDesfazer: () => this.historico.esquecerTodos(),
       expulsar: (sessionId) => this.expulsar(sessionId),
       aoMudarLotacao: () => this.publicarMetadados(),
     };
+  }
+
+  /**
+   * Um pedido descartado por limite — ver `MAX_DESCARTES_POR_JANELA`.
+   *
+   * O `warning` sai no máximo uma vez por janela: responder cada descarte fazia
+   * o servidor devolver uma mensagem para cada mensagem do flood. Quem passa do
+   * teto de descartes é desconectado com código de erro, sem consentimento — o
+   * assento fica guardado pela janela de reconexão, como numa queda comum.
+   */
+  private descartar(
+    client: Client,
+    motivo: string,
+    aviso?: { code: string; message: string },
+  ): void {
+    intentsRejeitadas.inc({ reason: motivo });
+    if (!this.limitadorDeDescartes.permitir(client.sessionId)) {
+      client.leave(Protocol.WS_CLOSE_WITH_ERROR);
+      return;
+    }
+    if (aviso && this.limitadorDeAvisos.permitir(client.sessionId)) client.send('warning', aviso);
   }
 
   private publicarLog(entrada: LogEvent): void {
@@ -1116,7 +1311,7 @@ export class AetherRoom extends Room<RoomState> {
     // DESCONECTADO: o Colyseus ja tirou o cliente de `this.clients`, entao o
     // `leave` acima nao tinha em quem agir. O expulso seguia ocupando a vaga
     // pela janela de reconexao inteira — e a chave de reconexao dele pula o
-    // `onAuth`, entao ele voltava a sentar apesar do bloqueio da conta. Sai
+    // `admitir`, entao ele voltava a sentar apesar do bloqueio da conta. Sai
     // agora; se a aba dele reconectar, `onLeave` a recusa por nao ter assento.
     this.expulsos.delete(sessionId);
     this.removerJogador(sessionId);
@@ -1133,12 +1328,15 @@ export class AetherRoom extends Room<RoomState> {
    */
   private registrarIntencoesComIO(): void {
     this.onMessage('INTENT_SET_DECK', (client, payload: unknown) => {
-      if (!this.rateLimiter.permitir(client.sessionId)) return;
+      if (!this.rateLimiter.permitir(client.sessionId)) {
+        this.descartar(client, 'rate_limit');
+        return;
+      }
 
       // Esta intencao NAO passa pelo dispatcher do REGISTRY (ela faz I/O), e
-      // por isso a barreira de espectador de la nao a alcanca. Sem esta linha,
-      // quem assiste escolheria um grimorio e o servidor tentaria provisiona-lo
-      // para um sessionId que nao tem zona nenhuma.
+      // por isso a barreira de la nao a alcanca. Sem esta linha, quem assiste
+      // escolheria um grimorio e o servidor tentaria provisiona-lo para um
+      // sessionId que nao tem zona nenhuma.
       if (this.state.espectadores.has(client.sessionId)) {
         client.send('error', {
           code: 'SPECTATOR',
@@ -1158,15 +1356,7 @@ export class AetherRoom extends Room<RoomState> {
         return;
       }
 
-      // Trocar de deck no meio da partida seria trocar de baralho com o jogo em
-      // andamento. So na sala de espera — com UMA excecao: quem entrou com a
-      // partida rodando e ainda nao tem carta nenhuma. "Entrar" pela lista
-      // publica manda um passe sem deck, e a recusa deixava a pessoa sentada,
-      // sem grimorio, assistindo a mesa para sempre.
-      const semCartas = !Array.from(this.state.cards.values()).some(
-        (c) => c.ownerId === client.sessionId && !c.isToken,
-      );
-      if (this.state.phase !== 'WAITING' && !(this.state.phase === 'PLAYING' && semCartas)) {
+      if (!this.podeEscolherDeck(client.sessionId)) {
         client.send('error', {
           code: 'NOT_AUTHORIZED',
           message: 'O grimório só pode ser escolhido antes de a partida começar.',
@@ -1175,8 +1365,55 @@ export class AetherRoom extends Room<RoomState> {
         return;
       }
 
-      void this.provisionarDeck(client.sessionId, deckId);
+      this.pedirDeck(client.sessionId, deckId);
     });
+  }
+
+  /**
+   * Trocar de deck no meio da partida seria trocar de baralho com o jogo em
+   * andamento. So na sala de espera — com UMA excecao: quem entrou com a
+   * partida rodando e ainda nao tem carta nenhuma. "Entrar" pela lista publica
+   * manda um passe sem deck, e a recusa deixava a pessoa sentada, sem
+   * grimorio, assistindo a mesa para sempre.
+   */
+  private podeEscolherDeck(sessionId: string): boolean {
+    if (!this.state.players.has(sessionId)) return false;
+    if (this.state.phase === 'WAITING') return true;
+    const semCartas = !Array.from(this.state.cards.values()).some(
+      (c) => c.ownerId === sessionId && !c.isToken,
+    );
+    return this.state.phase === 'PLAYING' && semCartas;
+  }
+
+  /**
+   * ─── UMA BUSCA DE GRIMÓRIO A CADA DOIS SEGUNDOS ───────────────────────────
+   *
+   * Cada `INTENT_SET_DECK` era um `fetch` à API Core, e o limite geral deixa
+   * passar trinta intenções por segundo: um cliente sozinho fazia a sala
+   * disparar trinta buscas por segundo contra a rota interna de decks, que
+   * monta o decklist inteiro a cada chamada.
+   *
+   * Agora sai no máximo uma busca por `INTERVALO_DE_DECK_MS`, por sessão. A
+   * escolha que chega dentro da janela não é descartada: fica guardada e sai
+   * quando a janela abre — só a ÚLTIMA. Descartar quebraria o uso honesto:
+   * percorrer o `<select>` do lobby com as setas manda uma escolha por tecla, e
+   * a que vale é aquela em que a pessoa parou.
+   */
+  private pedirDeck(sessionId: string, deckId: string): void {
+    if (this.limitadorDeDeck.permitir(sessionId)) {
+      void this.provisionarDeck(sessionId, deckId);
+      return;
+    }
+    const jaAgendado = this.deckAdiado.has(sessionId);
+    this.deckAdiado.set(sessionId, deckId);
+    if (jaAgendado) return;
+    this.clock.setTimeout(() => {
+      const adiado = this.deckAdiado.get(sessionId);
+      this.deckAdiado.delete(sessionId);
+      // A regra é conferida de novo: a partida pode ter começado na espera, e
+      // provisionar agora apagaria as cartas de quem já está jogando.
+      if (adiado && this.podeEscolherDeck(sessionId)) this.pedirDeck(sessionId, adiado);
+    }, INTERVALO_DE_DECK_MS);
   }
 
   /**
@@ -1199,7 +1436,7 @@ export class AetherRoom extends Room<RoomState> {
   private removerJogador(sessionId: string): void {
     const player = this.state.players.get(sessionId);
     // Idempotente: a conta que volta por passe novo libera o assento antigo no
-    // `onAuth`, e a janela de reconexão dele ainda vence depois e chama isto
+    // `admitir`, e a janela de reconexão dele ainda vence depois e chama isto
     // de novo — sem a guarda, a mesa anunciaria a saída duas vezes.
     if (!player) return;
     // A foto vem ANTES do `delete`: depois dele, a vida, o deck e o
@@ -1216,18 +1453,38 @@ export class AetherRoom extends Room<RoomState> {
       this.state.votacaoSim = '';
       this.state.votacaoExpiraEm = 0;
     }
-    this.rateLimiter.esquecer(sessionId);
+    this.esquecerLimites(sessionId);
     this.historico.esquecer(sessionId);
+    // Depois da foto, que ainda o lê: o histórico já levou o deck de quem saiu.
+    this.deckIdPorSessao.delete(sessionId);
 
     for (const zone of ZONES) {
       this.state.zoneOrder.delete(zoneOrderKey(sessionId, zone));
     }
     this.state.cards.forEach((card, id) => {
-      if (card.ownerId === sessionId) this.state.cards.delete(id);
+      if (card.ownerId === sessionId) {
+        this.state.cards.delete(id);
+        return;
+      }
       // Carta de OUTRO dono sob controle de quem saiu ficava apontando para um
       // jogador inexistente: ninguém podia movê-la e ela não era desenhada em
       // faixa nenhuma. O controle volta ao dono.
-      else if (card.controllerId === sessionId) card.controllerId = card.ownerId;
+      if (card.controllerId === sessionId) card.controllerId = card.ownerId;
+      if (card.lockedBy === sessionId) card.lockedBy = '';
+      // As concessões a quem saiu não servem a mais ninguém — sessionId não se
+      // repete — e só incham as strings que viajam em todo patch da carta.
+      if (card.revealedTo !== 'ALL') card.revealedTo = revoga(card.revealedTo, sessionId);
+      card.peekedBy = revoga(card.peekedBy, sessionId);
+    });
+    // Idem para "deixei fulano ver minha mão": a permissão de zona de cada
+    // jogador ainda listava quem já foi embora.
+    this.state.players.forEach((p) => {
+      for (const [zona, lista] of Array.from(p.sharedZones.entries())) {
+        const restante = revoga(lista, sessionId);
+        if (restante === lista) continue;
+        if (restante) p.sharedZones.set(zona, restante);
+        else p.sharedZones.delete(zona);
+      }
     });
 
     // Reatribui assentos: `proximoAssento` so crescia, entao apos qualquer
@@ -1327,36 +1584,48 @@ export class AetherRoom extends Room<RoomState> {
       return;
     }
 
+    /**
+     * ─── SEM DONO, NÃO HÁ BUSCA ─────────────────────────────────────────────
+     *
+     * `ownerId` faz a API Core recusar o deck que nao e de quem pediu, e era
+     * OPCIONAL: sem conta no assento, a busca saía sem ele e a API entregava o
+     * decklist de qualquer id. Isso é indispensável desde que o id chega numa
+     * INTENÇÃO do cliente: sem o dono, qualquer jogador entraria com o baralho
+     * de outro — e leria a lista inteira dele. Todo assento tem conta desde que
+     * o passe exige `sub`; um que não tenha não busca nada.
+     */
+    const dono = this.state.players.get(sessionId)?.userId ?? '';
+    if (!dono) {
+      this.avisarDeckAusente(
+        sessionId,
+        'Seu grimório não pôde ser carregado: o assento não está ligado a uma conta.',
+      );
+      return;
+    }
+
     const versao = (this.provisionamento.get(sessionId) ?? 0) + 1;
     this.provisionamento.set(sessionId, versao);
 
     try {
+      // O formato da SALA, nao o do deck: e a sala que define o que esta sendo
+      // jogado. A API Core recusa ali, com a mesma mensagem de `joinMatch` —
+      // sem isso, escolher um deck de 97 cartas na sala de espera dava certo e
+      // a partida so quebrava depois, com todo mundo ja sentado.
+      const parametros = new URLSearchParams({
+        ownerId: dono,
+        gameType: this.state.gameType || 'COMMANDER',
+      });
       // A URL vem da config (BACKEND_CORE_URL), nunca hardcoded: era isso que
       // fazia o game-server procurar a API numa porta onde ninguem escutava.
-      // `ownerId` faz a API Core recusar o deck que nao e de quem pediu. E
-      // indispensavel agora que o id chega numa INTENCAO do cliente e nao mais
-      // dentro do seat token assinado: sem isso, qualquer jogador entraria com
-      // o baralho de outro — e leria a lista inteira dele.
-      const dono = this.state.players.get(sessionId)?.userId ?? '';
-      const parametros = new URLSearchParams();
-      if (dono) {
-        parametros.set('ownerId', dono);
-        // O formato da SALA, nao o do deck: e a sala que define o que esta
-        // sendo jogado. A API Core recusa aqui, com a mesma mensagem de
-        // `joinMatch` — sem isso, escolher um deck de 97 cartas na sala de
-        // espera dava certo e a partida so quebrava depois, com todo mundo
-        // ja sentado.
-        parametros.set('gameType', this.state.gameType || 'COMMANDER');
-      }
-      const query = parametros.toString();
       const res = await fetch(
-        `${config.BACKEND_CORE_URL}/api/v1/internal/decks/${deckId}${query ? `?${query}` : ''}`,
+        `${config.BACKEND_CORE_URL}/api/v1/internal/decks/${deckId}?${parametros.toString()}`,
         {
           // A rota interna passou a exigir segredo compartilhado: sem ele, ela
           // era um endpoint publico que entregava o decklist de qualquer id.
           headers: config.INTERNAL_API_TOKEN
             ? { 'X-Internal-Token': config.INTERNAL_API_TOKEN }
             : {},
+          signal: AbortSignal.timeout(TEMPO_DA_API_MS),
         },
       );
 
@@ -1390,6 +1659,36 @@ export class AetherRoom extends Room<RoomState> {
       if (this.provisionamento.get(sessionId) !== versao || !this.state.players.has(sessionId)) {
         return;
       }
+
+      // Uma entrada por CÓPIA, separada por destino. Antes o `else` mandava
+      // TUDO que nao fosse COMMANDER para o grimorio — inclusive SIDEBOARD e
+      // MAYBEBOARD. Teto por linha: o backend limita a 99, mas um deck salvo
+      // antes do limite com "2000000000 Forest" travava o processo inteiro.
+      const doComando: DeckCardPayload[] = [];
+      const doGrimorio: DeckCardPayload[] = [];
+      const daReserva: DeckCardPayload[] = [];
+      for (const card of deckReal.cards) {
+        for (let i = 0; i < Math.min(card.quantity, 99); i++) {
+          if (card.boardType === 'COMMANDER' || card.boardType === 'SIGNATURE_SPELL') {
+            doComando.push(card);
+          } else if (card.boardType === 'SIDEBOARD') {
+            daReserva.push(card);
+          } else if (card.boardType !== 'MAYBEBOARD') {
+            // MAYBEBOARD é a lista de consideração do deckbuilder: não entra.
+            doGrimorio.push(card);
+          }
+        }
+      }
+
+      // ANTES de limpar: um deck recusado não pode custar o que já estava na mesa.
+      if (doComando.length + doGrimorio.length + daReserva.length > MAX_CARTAS_POR_GRIMORIO) {
+        this.avisarDeckAusente(
+          sessionId,
+          `Seu grimório tem cartas demais para a mesa (o máximo é ${MAX_CARTAS_POR_GRIMORIO}).`,
+        );
+        return;
+      }
+
       // Uma segunda escolha substitui a primeira; sem isto os dois decks se
       // somavam dentro das mesmas listas de zona.
       this.limparCartasDe(sessionId);
@@ -1400,50 +1699,36 @@ export class AetherRoom extends Room<RoomState> {
         c.ownerId = sessionId;
         c.controllerId = sessionId;
         c.zone = zone;
-        c.scryfallId = dbCard.scryfallId; // Agora salva o ID real para o Frontend saber o que renderizar
+        c.scryfallId = dbCard.scryfallId;
         this.state.cards.set(c.id, c);
         return c;
       };
 
-      const deckCards: string[] = [];
+      for (const card of doComando) {
+        // Marcado aqui, e so aqui: o comandante passa a partida inteira fora
+        // da zona de comando, entao a zona nao serve para identifica-lo.
+        const c = criar('COMMAND', card);
+        c.isCommander = true;
+        comando.push(c.id);
+      }
 
+      /**
+       * ─── O GRIMÓRIO NASCE EMBARALHADO, E NÃO É EMBARALHADO DEPOIS ──────────
+       *
+       * As cartas eram criadas na ORDEM DO DECKLIST e só os ids eram
+       * embaralhados. Só que o `Card.id` é público e o mapa `cards` chega a
+       * todo cliente na ordem de inserção: quem conhece o decklist (o dono, ou
+       * qualquer um, se o deck é público) casava cada id com a linha de onde
+       * ele saiu — e lia o grimório inteiro na lista de `zoneOrder`.
+       *
+       * Agora o que se embaralha é o decklist expandido, e as cartas nascem já
+       * na ordem do grimório. A ordem de inserção passa a dizer exatamente o
+       * que `zoneOrder` já diz, e nada sobre o decklist. A reserva vai pelo
+       * mesmo caminho: buscar uma carta dela seria apontar qual era.
+       */
+      for (const card of embaralhar(doGrimorio)) grimorio.push(criar('LIBRARY', card).id);
       const reserva = this.state.zoneOrder.get(zoneOrderKey(sessionId, 'SIDEBOARD'))?.items;
-
-      // Popula por boardType. Antes o `else` mandava TUDO que nao fosse
-      // COMMANDER para o grimorio — inclusive SIDEBOARD e MAYBEBOARD. Quem
-      // tivesse reserva cadastrada jogava com um grimorio maior que o deck.
-      // Teto por linha: o backend limita a 99, mas um deck salvo antes do
-      // limite com "2000000000 Forest" travava o processo inteiro do jogo
-      // criando cartas neste laco.
-      for (const card of deckReal.cards) {
-        for (let i = 0; i < Math.min(card.quantity, 99); i++) {
-          switch (card.boardType) {
-            case 'COMMANDER':
-            case 'SIGNATURE_SPELL': {
-              // Marcado aqui, e so aqui: o comandante passa a partida inteira
-              // fora da zona de comando, entao a zona nao serve para identifica-lo.
-              const c = criar('COMMAND', card);
-              c.isCommander = true;
-              comando.push(c.id);
-              break;
-            }
-            case 'SIDEBOARD':
-              reserva?.push(criar('SIDEBOARD', card).id);
-              break;
-            case 'MAYBEBOARD':
-              // Lista de considerACAO do deckbuilder: nao entra na mesa.
-              break;
-            default:
-              deckCards.push(criar('LIBRARY', card).id);
-          }
-        }
-      }
-
-      // Embaralhar as cartas do grimório
-      const ids = embaralhar(deckCards);
-      for (const id of ids) {
-        grimorio.push(id);
-      }
+      for (const card of embaralhar(daReserva)) reserva?.push(criar('SIDEBOARD', card).id);
 
       // A mao inicial NAO e comprada aqui. Com a sala de espera, quem entra
       // primeiro ficaria com 7 cartas na mesa enquanto os outros ainda estao

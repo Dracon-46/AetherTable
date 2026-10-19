@@ -308,16 +308,24 @@ ausência de `scryfallId` e `name` de zona oculta. Falha no teste **bloqueia o m
 **Ameaça.** O atacante altera o JavaScript (ou usa um cliente próprio) para enviar
 `INTENT_DRAW { amount: 20 }`, mover cartas do oponente ou definir a própria vida em 9999.
 
-| Intenção maliciosa                   | Defesa                                                                                                                       |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `INTENT_DRAW { amount: 9999 }`       | Zod limita a 1–100; e a `LIBRARY` tem tamanho finito                                                                         |
-| Mover carta de outro jogador         | `controllerId !== sessionId` → rejeitado + log de auditoria (`FR-12`)                                                        |
-| Comprar do grimório alheio           | `ownerId !== sessionId` → rejeitado                                                                                          |
-| `INTENT_SET_LIFE { absolute: 9999 }` | **Permitido** — e visível no log para todos. Ajustar vida é ação legítima na mesa; trapaça grosseira é detectada socialmente |
-| Criar 100.000 fichas                 | Teto de 50/intenção e 200/jogador                                                                                            |
-| Carta banida passando na validação   | `scryfallId` normalizado para minúsculas na API — o id em maiúsculas não casava com a lista de banidas e passava             |
-| Estado inventado                     | **Impossível**: o cliente não envia estado, só intenção (`RN07`)                                                             |
-| Campo desconhecido no payload        | Zod em modo estrito descarta                                                                                                 |
+| Intenção maliciosa                   | Defesa                                                                                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `INTENT_DRAW { amount: 9999 }`       | Zod limita a 1–100; e a `LIBRARY` tem tamanho finito                                                                                                                                             |
+| Mover carta de outro jogador         | `controllerId !== sessionId` → rejeitado + log de auditoria (`FR-12`)                                                                                                                            |
+| Comprar do grimório alheio           | `ownerId !== sessionId` → rejeitado                                                                                                                                                              |
+| `INTENT_SET_LIFE { absolute: 9999 }` | **Permitido** — e visível no log para todos. Ajustar vida é ação legítima na mesa; trapaça grosseira é detectada socialmente                                                                     |
+| Criar 100.000 fichas                 | Teto de 20 por intenção, 200 fichas (cópias incluídas) por jogador e 1.500 cartas na sala (`LIMITES_DA_MESA`); acima disso, `error { code: "LIMIT" }`                                            |
+| Inchar o estado até a sala cair      | Tetos de 32 tipos de contador por carta e 64 setas por jogador; revelação só para quem está na mesa, sem repetição; nome de ficha ≤ 120 e P/T ≤ 4 caracteres; grimório provisionado ≤ 250 cartas |
+| Carta banida passando na validação   | `scryfallId` normalizado para minúsculas na API — o id em maiúsculas não casava com a lista de banidas e passava                                                                                 |
+| Estado inventado                     | **Impossível**: o cliente não envia estado, só intenção (`RN07`)                                                                                                                                 |
+| Campo desconhecido no payload        | Zod descarta                                                                                                                                                                                     |
+| Intenção de quem não tem assento     | O despacho exige `players.has(sessionId)`; a plateia só passa no chat                                                                                                                            |
+
+**O estado era inchável.** O buffer de encode da sala é fixo (`Encoder.BUFFER_SIZE`, 64 KB por
+assento) e o estado inteiro precisa caber nele quando alguém entra. Fichas, cópias, contadores de nome
+livre, setas e a lista de quem vê uma carta (`revealedTo`, que aceitava qualquer string) cresciam sem
+teto, a 30 intenções por segundo: o `ROOM_STATE` do próximo a entrar saía truncado e a sala parava de
+aceitar gente. Os tetos acima estão muito além de qualquer mesa real.
 
 **Insight de projeto:** a arquitetura de intenções torna categorias inteiras de trapaça
 _inexprimíveis_. Não existe mensagem que o cliente possa enviar dizendo "esta carta agora é minha" —
@@ -327,12 +335,32 @@ o vocabulário do protocolo simplesmente não tem essa frase.
 
 ### 3.3 Manipulação de aleatoriedade
 
-| Ameaça                                       | Mitigação                                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Rolar dado no cliente e reportar o resultado | Todo RNG é do servidor (`RN06`, `FR-09`)                                              |
-| Prever o embaralhamento observando rolagens  | `crypto.randomInt` (CSPRNG), nunca `Math.random()`                                    |
-| Repetir a rolagem até dar bom                | _Rate limit_ de 5 rolagens/10 s; **toda** rolagem vai ao log, inclusive as ruins      |
-| Embaralhar até obter ordem favorável         | O jogador não vê o resultado do embaralhamento — a `LIBRARY` é oculta até para o dono |
+| Ameaça                                       | Mitigação                                                                                                                                                |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rolar dado no cliente e reportar o resultado | Todo RNG é do servidor (`RN06`, `FR-09`)                                                                                                                 |
+| Prever o embaralhamento observando rolagens  | `crypto.randomInt` (CSPRNG), nunca `Math.random()`                                                                                                       |
+| Repetir a rolagem até dar bom                | _Rate limit_ de 5 sorteios a cada 8 s; **toda** rolagem vai ao log, inclusive as ruins                                                                   |
+| Embaralhar até obter ordem favorável         | A `LIBRARY` é oculta até para o dono, e embaralhar **não se desfaz**: `SHUFFLE`, `MULLIGAN`, `RETURN_ZONE` e `ARRANGE_PEEKED` estão em `NAO_REVERSIVEIS` |
+| Ler o grimório pela ordem do decklist        | O provisionamento embaralha o decklist expandido **antes** de criar as cartas: a ordem de inserção de `cards` é a do grimório                            |
+| Rastrear pelo `Card.id` uma carta já vista   | Todo embaralhamento de zona oculta troca o id das cartas (`renovarIds`), e a carta que entra na mão, no grimório ou na reserva perde as marcas públicas  |
+
+**A ordem do grimório vazava pelos ids.** O `Card.id` é público e permanente, e as cartas eram
+criadas na ordem do decklist — só os ids eram embaralhados depois. O mapa `cards` chega a todo cliente
+na ordem de inserção: quem conhecia o decklist (o dono, ou qualquer um, se o deck é público) casava
+cada id com a linha de onde ele saiu e lia o grimório inteiro na lista de `zoneOrder`. E qualquer carta
+vista uma vez (revelada, devolvida do cemitério) continuava rastreável através de todo embaralhamento.
+
+Agora as cartas nascem na ordem do grimório, e embaralhar uma zona oculta (embaralhar, mulligan,
+devolver zona embaralhando, reiniciar a partida, rearrumar em ordem aleatória) substitui cada carta
+embaralhada por uma carta nova, com id novo. O que apontava para a carta antiga — seta, anexo, portador
+do Anel, topo revelado — é **desligado**, e não remapeado: remapear publicaria, no mesmo _patch_, o
+fio entre o id antigo e o novo. A exceção é o dano de comandante, que segue o comandante (`isCommander`
+já é público). Anotação, destaque, P/T, giro e as demais marcas públicas são zerados quando a carta
+entra na mão, no grimório ou na reserva. Reordenar zona oculta vai ao log com a variante neutra.
+
+**Devolver uma zona ao grimório era desfazível.** Com o topo revelado, dava para devolver o cemitério
+embaralhando, ver o topo, desfazer e repetir até sair bom. `INTENT_RETURN_ZONE` entrou em
+`NAO_REVERSIVEIS`.
 
 **Severidade:** Média · **Probabilidade após mitigação:** Muito baixa
 
@@ -379,37 +407,65 @@ fazia o dono ler o grimório inteiro, sem uma linha no log. Agora a cláusula s�
 
 ### 3.6 Sequestro de sala
 
-| Ameaça                       | Mitigação                                                                                                      |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Adivinhar `roomId`           | 6 caracteres de um alfabeto de 32 → ~10⁹ combinações; senha opcional; _rate limit_ na tentativa de ingresso    |
-| Reutilizar `seatToken`       | Uso único (`jti`), validade de 1 dia, vinculado ao `roomId`; não vale como sessão da API (§2.2)                |
-| Entrar na sala de voz alheia | Passe de voz só com o passe da mesa (`X-Passe-De-Mesa`: `sub` e `roomId` conferidos); plateia sem `canPublish` |
-| Força bruta de senha de sala | 3 tentativas e espera de 30 s por IP                                                                           |
-| Sala de jogador bloqueado    | Verificação de bloqueio no ingresso (`F36`)                                                                    |
-| Expulso voltar à mesa        | **Conta** (`sub`) bloqueada pela vida da sala, também como espectador (`PLAYER_BLOCKED`)                       |
+| Ameaça                                   | Mitigação                                                                                                                                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adivinhar o código de sala privada       | Código de 6 hexadecimais (~1,7 × 10⁷); sala privada não aparece em `GET /salas` nem no matchmaker, e entrar exige um passe emitido para aquele código                                                             |
+| Reutilizar `seatToken`                   | Uso único (`jti`), validade de 1 dia, vinculado ao `roomId`; não vale como sessão da API (§2.2)                                                                                                                   |
+| Usar o access token da API como passe    | O game-server exige `aud: 'aethertable-mesa'`, HS256, e `sub`, `jti`, `roomId` e `exp`; o access token (sem audiência) e o passe de configuração (sem `sub`/`jti`) são recusados                                  |
+| Matchmaker sem autenticação              | `onAuth` **estático**, antes de criar sala ou reservar vaga, com `roomCode` igual ao `roomId` do passe; só `joinOrCreate` e `reconnect` expostos; reserva de 8 s; corpo ≤ 8 KB; CORS só das origens da plataforma |
+| Entrar na sala de voz alheia             | O game-server manda `passe-de-voz` (audiência `aethertable-voz`, 6 h, `sub` + `roomId` + `spectator`) só a quem admitiu, e de novo a cada reconexão; plateia sem `canPublish`                                     |
+| Sala de jogador bloqueado                | Verificação de bloqueio no ingresso (`F36`)                                                                                                                                                                       |
+| Expulso voltar à mesa                    | **Conta** (`sub`) bloqueada pela vida da sala, também como espectador (`PLAYER_BLOCKED`)                                                                                                                          |
+| Um convidado remover o anfitrião sozinho | A votação de remoção exige pelo menos **dois** votantes; numa mesa de dois, quem remove é o anfitrião (`INTENT_KICK_PLAYER`)                                                                                      |
+
+**O access token da API era um passe universal.** O passe da mesa era verificado com
+`jwt.verify(token, JWT_SECRET)` e mais nada — sem audiência, sem algoritmo fixo, e com `roomId`, `jti`
+e `sub` opcionais. O access token é assinado com o mesmo segredo e não tem `roomId` nem `jti`: quem tinha
+uma sessão entrava em qualquer mesa, quantas vezes quisesse, e continuava entrando depois de logout,
+banimento ou troca de senha. Agora a validação mora em `rooms/passes.ts` e exige a audiência da mesa e
+as quatro claims.
+
+**O matchmaker abria e travava salas sem passe.** No Colyseus 0.16, `POST /matchmake/*` roda o
+`onCreate` e reserva a vaga **antes** do `onAuth` de instância, que só roda quando o WebSocket conecta.
+Qualquer um criava salas, `join {}` devolvia a listagem com o código de uma sala privada, e dezoito POSTs
+enchiam o `maxClients` de qualquer mesa. O corpo do POST era lido sem limite, e o CORS refletia qualquer
+origem. Agora o `onAuth` estático valida o passe antes de tudo; o que depende do estado da sala (passe
+já usado, conta bloqueada, assento duplicado, lotação) é checado em `admitir`, no começo do `onJoin`.
+
+**Força bruta de senha de sala** saiu da tabela: não existe senha de sala. A sala privada é protegida
+por não ser listada e por exigir um passe que só a API emite.
 
 **O expulso voltava pelo código da sala.** O bloqueio de quem o anfitrião removia era por
 `sessionId`, e cada entrada pede um seat token novo, com `sessionId` novo. Agora a sala guarda a
-**conta** de quem sai pelo anfitrião ou por votação (`INTENT_VOTE_KICK`), e o `onAuth` a recusa até a
-sala acabar.
+**conta** de quem sai pelo anfitrião ou por votação (`INTENT_VOTE_KICK`), e a admissão (`admitir`)
+a recusa até a sala acabar.
 
 **Severidade:** Média · **Probabilidade:** Baixa
 
 **A voz era de qualquer um que soubesse o código.** O `room` no claim do LiveKit limitava o passe à
 sala, mas o passe saía para QUALQUER conta logada e QUALQUER código — e a vitrine pública lista os
-códigos. Uma conta qualquer entrava no canal de voz de uma mesa alheia, ouvia e falava. Agora o
-`GET /matches/:roomCode/voice-token` exige o passe da mesa como prova de assento (ou de plateia, que
-recebe o passe sem direito de falar).
+códigos. Uma conta qualquer entrava no canal de voz de uma mesa alheia, ouvia e falava. O passe da
+mesa, que a API passou a exigir como prova, é de uso único e vive na URL: prova que alguém **podia**
+entrar, não que entrou. Quem sabe que a conta está sentada (ou assistindo) é o game-server que a
+admitiu — e é ele que emite agora o `passe-de-voz` (ver `especificacao_websocket_e_eventos.md` §4.2),
+que a API troca pelo passe do LiveKit.
 
 ### 3.7 Abuso e toxicidade
 
-| Ameaça                                    | Mitigação                                                        |
-| ----------------------------------------- | ---------------------------------------------------------------- |
-| Assédio por voz                           | _Mute_ local imediato; bloqueio; report (`RF03`)                 |
-| Spam de chat                              | 10 mensagens/10 s; máx. 500 caracteres                           |
-| Conteúdo abusivo em nome de deck ou ficha | Validação de caracteres; report; moderação                       |
-| Playmat com imagem imprópria              | Upload de cosmético revisado (recurso de apoiador, volume baixo) |
-| _Griefing_ (embaralhar a mesa e sair)     | Log completo; bloqueio; salas privadas por padrão                |
+| Ameaça                                    | Mitigação                                                                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Assédio por voz                           | _Mute_ local imediato; bloqueio; report (`RF03`)                                                                                                        |
+| Spam de chat                              | Cota social de 10 mensagens a cada 10 s (chat, ping, pedido para ver a mão, votação); máx. 500 caracteres; um `warning` por janela, não um por descarte |
+| _Flood_ de mensagens                      | Mais de 300 descartes em 10 s derrubam a conexão (código 4002); o assento fica guardado pela janela de reconexão                                        |
+| Conteúdo abusivo em nome de deck ou ficha | Nome de ficha ≤ 120 caracteres, limpo como a anotação (sem `<`/`>`); report; moderação                                                                  |
+| Playmat com imagem imprópria              | Upload de cosmético revisado (recurso de apoiador, volume baixo)                                                                                        |
+| _Griefing_ (embaralhar a mesa e sair)     | Log completo; bloqueio; salas privadas por padrão                                                                                                       |
+| Escolher grimório em rajada               | Uma busca de grimório na API a cada 2 s por sessão (a última escolha sai quando a janela abre), com prazo de 8 s                                        |
+
+**O chat só tinha o limite geral.** A "cota de 10 mensagens a cada 10 s" estava neste documento e não
+existia no código: chat, ping e pedido para ver a mão passavam pelo limite geral de 30 intenções por
+segundo — trinta pedidos de "deixa eu ver sua mão" por segundo na tela do alvo. E cada mensagem
+descartada recebia um `warning` de volta, o que fazia o servidor espelhar o _flood_.
 
 **Severidade:** Média · **Probabilidade:** Média em salas públicas (V2)
 

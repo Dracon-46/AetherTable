@@ -284,10 +284,17 @@ describe('partida', () => {
     REGISTRY.INTENT_RESET_MATCH.executa(ctx(state, 'a'), {});
 
     expect(state.cards.has(ficha.id)).toBe(false);
-    expect(lista(state, 'a', 'LIBRARY').sort()).toEqual([campo.id, mao.id].sort());
+    // As mesmas CARTAS voltam ao grimório, com ids novos: a partida anterior
+    // mostrou quase todas, e o reset embaralha (`renovarIds`).
+    const grimorio = lista(state, 'a', 'LIBRARY');
+    expect(grimorio.map((id) => state.cards.get(id)!.scryfallId).sort()).toEqual(
+      [campo.scryfallId, mao.scryfallId].sort(),
+    );
+    expect(state.cards.has(campo.id) || state.cards.has(mao.id)).toBe(false);
+    expect(grimorio.every((id) => !state.cards.get(id)!.isTapped)).toBe(true);
+    // O comandante não é embaralhado: volta ao comando com o mesmo id.
     expect(lista(state, 'a', 'COMMAND')).toEqual([cmd.id]);
     expect(lista(state, 'a', 'BATTLEFIELD')).toEqual([]);
-    expect(campo.isTapped).toBe(false);
     expect(state.players.get('a')!.handCount).toBe(0);
     expect(state.players.get('a')!.libraryCount).toBe(2);
   });

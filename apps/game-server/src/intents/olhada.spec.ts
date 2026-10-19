@@ -87,6 +87,10 @@ const grimorioDe = (state: RoomState, sid: string) =>
 /** De cima para baixo: o topo é o FIM do array. */
 const ordemDeCompra = (state: RoomState, sid: string) => grimorioDe(state, sid).reverse();
 
+/** Quem a carta É, e não o id — que o embaralhar renova. */
+const identidades = (state: RoomState, ids: readonly string[]) =>
+  ids.map((id) => state.cards.get(id)?.scryfallId);
+
 describe('INTENT_PEEK — o que chega ao dono', () => {
   it('diz que é uma olhada e de que ponta, para o painel saber o que abrir', () => {
     const state = montarMesa(['ana']);
@@ -168,14 +172,26 @@ describe('INTENT_ARRANGE_PEEKED', () => {
     const ctx = contexto(state, 'ana');
     executar('INTENT_PEEK', ctx, { zone: 'LIBRARY', amount: 4, from: 'TOP' });
     const vistas = [ids[9]!, ids[8]!, ids[7]!, ids[6]!];
+    const quem = identidades(state, vistas);
 
     executar('INTENT_ARRANGE_PEEKED', ctx, { ids: vistas, destino: 'TOP', aleatorio: true });
 
-    // As mesmas quatro continuam no topo — só a ordem é do sorteio.
-    expect(new Set(ordemDeCompra(state, 'ana').slice(0, 4))).toEqual(new Set(vistas));
-    // Sem revogar, o cliente casaria posição com identidade e "aleatória"
-    // seria "a ordem que eu sei".
-    for (const id of vistas) expect(contem(state.cards.get(id)!.peekedBy, 'ana')).toBe(false);
+    // As mesmas quatro CARTAS continuam no topo — só a ordem é do sorteio. Os
+    // ids, não: o bloco embaralhado troca de identidade (`renovarIds`), senão
+    // a ordem "aleatória" seria a ordem que eu sei.
+    const topo = ordemDeCompra(state, 'ana').slice(0, 4);
+    expect(new Set(identidades(state, topo))).toEqual(new Set(quem));
+    for (const id of vistas) expect(state.cards.has(id)).toBe(false);
+    for (const id of topo) expect(contem(state.cards.get(id)!.peekedBy, 'ana')).toBe(false);
+    // O resto do grimório não foi embaralhado e mantém os ids.
+    expect(ordemDeCompra(state, 'ana').slice(4)).toEqual([
+      ids[5],
+      ids[4],
+      ids[3],
+      ids[2],
+      ids[1],
+      ids[0],
+    ]);
   });
 
   it('mandar o topo olhado para o fundo em ordem aleatória tira o bloco do topo', () => {
@@ -184,10 +200,13 @@ describe('INTENT_ARRANGE_PEEKED', () => {
     const ctx = contexto(state, 'ana');
     executar('INTENT_PEEK', ctx, { zone: 'LIBRARY', amount: 3, from: 'TOP' });
     const vistas = [ids[6]!, ids[5]!, ids[4]!];
+    const quem = identidades(state, vistas);
 
     executar('INTENT_ARRANGE_PEEKED', ctx, { ids: vistas, destino: 'BOTTOM', aleatorio: true });
 
-    expect(new Set(grimorioDe(state, 'ana').slice(0, 3))).toEqual(new Set(vistas));
+    expect(new Set(identidades(state, grimorioDe(state, 'ana').slice(0, 3)))).toEqual(
+      new Set(quem),
+    );
     expect(ordemDeCompra(state, 'ana')[0]).toBe(ids[3]);
   });
 

@@ -13,7 +13,6 @@ process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'segredo-de-teste-com-16+';
 
 import { ZONES, zoneOrderKey } from '@aethertable/shared-types';
 import type * as ModuloDaSala from './AetherRoom';
-import jwt from 'jsonwebtoken';
 import { Espectador } from '../schema/Espectador';
 import { Player } from '../schema/Player';
 import type { RoomState } from '../schema/RoomState';
@@ -32,9 +31,36 @@ interface Sala {
   expulsar(sid: string): void;
   provisionarDeck(sid: string, deckId: string): Promise<void>;
   contasBanidas: Set<string>;
-  onAuth(cliente: unknown, opcoes: { seatToken: string }): Promise<unknown>;
+  onJoin(cliente: unknown, opcoes: unknown, auth: unknown): void;
+  onLeave(cliente: unknown, consentido: boolean): Promise<void>;
+  onDispose(): Promise<void> | void;
   agendarFimDaVotacao(): void;
   clock: { setTimeout(cb: () => void, ms: number): { clear(): void } };
+  onMessageHandlers: Record<string, { callback(cliente: unknown, payload: unknown): void }>;
+}
+
+/** Um cliente de mentira: o que a sala chama nele fica registrado. */
+function cliente(sessionId: string) {
+  return {
+    sessionId,
+    send: jest.fn(),
+    leave: jest.fn(),
+    view: undefined as unknown,
+  };
+}
+
+let passesEmitidos = 0;
+
+/** Claims de um passe JÁ validado — o que o `onAuth` estático entrega ao `onJoin`. */
+function passe(extra: Record<string, unknown> = {}) {
+  passesEmitidos += 1;
+  return {
+    sub: `conta-${passesEmitidos}`,
+    username: 'Fulano',
+    roomId: 'ABC123',
+    jti: `jti-${passesEmitidos}`,
+    ...extra,
+  };
 }
 
 function montarSala(assentos: string[]): Sala {
@@ -183,17 +209,13 @@ describe('escolher grimório', () => {
 
 describe('plateia e votação', () => {
   /** `maxClients` soma assentos e plateia: sem teto próprio, cabiam 18 espectadores. */
-  it('a plateia tem teto próprio de 10', async () => {
+  it('a plateia tem teto próprio de 10', () => {
     const sala = montarSala(['a']);
     sala.state.roomCode = 'ABC123';
     for (let i = 0; i < 10; i += 1) {
       sala.state.espectadores.set(`e${i}`, new Espectador());
     }
-    const passe = jwt.sign(
-      { sub: 'conta-x', username: 'X', roomId: 'ABC123', spectator: true },
-      process.env.JWT_SECRET!,
-    );
-    await expect(sala.onAuth({}, { seatToken: passe })).rejects.toThrow('ROOM_FULL');
+    expect(() => sala.onJoin(cliente('x'), {}, passe({ spectator: true }))).toThrow('ROOM_FULL');
   });
 
   /** O painel decidia sumir pelo relógio do navegador; quem fecha agora é o servidor. */

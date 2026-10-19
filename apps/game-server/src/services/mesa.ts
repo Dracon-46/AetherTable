@@ -12,9 +12,10 @@
  * familias alcancam.
  */
 
+import { randomUUID } from 'node:crypto';
 import { zoneOrderKey, type Zone } from '@aethertable/shared-types';
 
-import type { Card } from '../schema/Card';
+import { Card } from '../schema/Card';
 import type { RoomState } from '../schema/RoomState';
 import type { IntentContext } from '../intents/registry';
 import { limparConcessoes, reconciliarCartaParaTodos } from './view-sync';
@@ -92,6 +93,7 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
   switch (destino) {
     case 'HAND':
     case 'LIBRARY':
+    case 'SIDEBOARD':
       card.x = 0;
       card.y = 0;
       card.zIndex = 0;
@@ -99,6 +101,27 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
       card.faceDown = false;
       card.damage = 0;
       card.counters.clear();
+      /**
+       * ─── NA ZONA OCULTA, A CARTA NÃO LEVA MARCA NENHUMA ──────────────────
+       *
+       * Estes campos são PÚBLICOS — chegam a todo cliente, sem `view()` — e
+       * sobreviviam à volta para a mão ou o grimório. Uma carta com anotação,
+       * destaque, P/T alterado ou girada no campo continuava com a marca no
+       * grimório: quem acompanhava a marca sabia qual era aquela carta de
+       * costas, e onde ela estava depois de comprada. Zona oculta é
+       * exatamente o lugar em que a carta não pode ser distinguível das outras.
+       */
+      card.rotation = 0;
+      card.phasedOut = false;
+      card.isFlipped = false;
+      card.note = '';
+      card.highlight = '';
+      card.exiledBy = '';
+      card.goadedBy = '';
+      card.powerOverride = 0;
+      card.toughnessOverride = 0;
+      card.hasPtOverride = false;
+      card.enteredThisTurn = false;
       break;
     case 'GRAVEYARD':
     case 'EXILE':
@@ -191,4 +214,116 @@ export function aplicarEfeitosDeZona(ctx: IntentContext, card: Card, destino: Zo
   }
 
   reconciliarCartaParaTodos(ctx.clients, card);
+}
+
+/**
+ * ─── DEPOIS DE EMBARALHAR, AS CARTAS TROCAM DE IDENTIDADE ───────────────────
+ *
+ * O `Card.id` é público e permanente: chega a todo cliente, em `cards` e em
+ * `zoneOrder`. Embaralhar mudava a POSIÇÃO de cada id, mas não o id — então
+ * qualquer carta vista uma vez (revelada, devolvida de uma zona pública ao
+ * grimório, ou marcada no provisionamento) continuava rastreável através de
+ * todo embaralhamento, e a "ordem aleatória" era aleatória só para quem não
+ * prestava atenção.
+ *
+ * Aqui cada id da lista que não está em `manter` vira uma carta NOVA, com id
+ * novo, e a antiga sai do mapa. Do lado de fora, o que se vê é: N cartas
+ * sumiram, N cartas nasceram, em ordem de grimório. Não há fio ligando uma à
+ * outra.
+ *
+ * `randomUUID` e não `services/rng.ts`: isto é IDENTIDADE, não sorteio de
+ * jogo. A RN06 governa o que decide o resultado da partida (ordem, dado,
+ * moeda); o id só precisa ser imprevisível e único, que é o que o UUID v4 do
+ * `node:crypto` (CSPRNG) já garante.
+ *
+ * A carta nova herda só o que a carta É e de quem é: dono, zona, identidade
+ * (`scryfallId`), e as marcas de natureza (comandante, ficha, cópia). O
+ * controle volta ao dono (fora do campo não existe controle alheio), e a
+ * permissão de zona que o dono deu (`sharedZones`) é reaplicada. Concessões
+ * POR CARTA (olhada, revelação) não passam: embaralhar já as destruía.
+ *
+ * ─── RECEBE E DEVOLVE UM ARRAY, E NÃO MEXE NA LISTA DA ZONA ─────────────────
+ *
+ * Quem grava a zona é quem chama, UMA vez, com a operação que já usava. O
+ * `ArraySchema` do schema 3 não aguenta duas operações de reescrita no mesmo
+ * tick: o `splice` não atualiza a lista interna que o `pop` consulta, e um
+ * `pop` depois de um `splice` devolve `undefined` — o mulligan comprava zero
+ * cartas. Um segundo `splice` seguido também perde o índice e corrompe o patch.
+ *
+ * Devolve os ids na mesma ordem, com os renovados trocados.
+ */
+export function renovarIds(
+  ctx: Pick<IntentContext, 'state' | 'clients'>,
+  ids: readonly string[],
+  manter: ReadonlySet<string> = new Set(),
+): string[] {
+  const { state } = ctx;
+  const trocas = new Map<string, string>();
+
+  const nova = ids.map((id) => {
+    const antiga = state.cards.get(id);
+    if (!antiga || manter.has(id)) return id;
+    const c = new Card();
+    c.id = randomUUID();
+    c.ownerId = antiga.ownerId;
+    c.controllerId = antiga.ownerId;
+    c.zone = antiga.zone;
+    c.scryfallId = antiga.scryfallId;
+    c.isCommander = antiga.isCommander;
+    c.isToken = antiga.isToken;
+    c.isCopy = antiga.isCopy;
+    reaplicarPermissaoDeZona(state, c);
+    state.cards.delete(id);
+    state.cards.set(c.id, c);
+    trocas.set(id, c.id);
+    return c.id;
+  });
+  if (trocas.size === 0) return nova;
+
+  desligarReferencias(state, trocas);
+  // A carta nova não está em view nenhuma: sem reconciliar, o dono deixaria de
+  // ver a própria mão embaralhada, e quem tem a zona aberta perderia a vista.
+  for (const novoId of trocas.values()) {
+    const c = state.cards.get(novoId);
+    if (c) reconciliarCartaParaTodos(ctx.clients, c);
+  }
+  return nova;
+}
+
+/**
+ * O que apontava para uma carta renovada.
+ *
+ * REMAPEAR seria publicar, no mesmo patch, "o antigo X agora se chama Y" — o
+ * fio que a renovação existe para cortar. Por isso quase tudo é LIMPO: seta,
+ * anexo, "exilada por", "provocada por", portador do Anel e o topo revelado.
+ * São marcas do campo, e a carta já saiu dele; o topo revelado o servidor
+ * recalcula no fim do despacho (`aplicarTopoRevelado`).
+ *
+ * A exceção é o DANO DE COMANDANTE, que é contabilidade de derrota e não pode
+ * sumir num embaralhamento. Ele é remapeado — e isso não vaza nada, porque
+ * `isCommander` é público: o comandante já é distinguível das outras cartas.
+ */
+function desligarReferencias(state: RoomState, trocas: ReadonlyMap<string, string>): void {
+  for (const [antigo, novo] of trocas) {
+    if (!state.cards.get(novo)?.isCommander) continue;
+    state.players.forEach((p) => {
+      const valor = p.commanderDamage.get(antigo);
+      if (valor === undefined) return;
+      p.commanderDamage.delete(antigo);
+      p.commanderDamage.set(novo, valor);
+    });
+  }
+
+  state.players.forEach((p) => {
+    if (trocas.has(p.ringBearerId)) p.ringBearerId = '';
+    if (trocas.has(p.topoReveladoId)) p.topoReveladoId = '';
+  });
+  state.cards.forEach((c) => {
+    if (trocas.has(c.attachedTo)) c.attachedTo = '';
+    if (trocas.has(c.exiledBy)) c.exiledBy = '';
+    if (trocas.has(c.goadedBy)) c.goadedBy = '';
+  });
+  state.arrows.forEach((seta, chave) => {
+    if (trocas.has(seta.fromId) || trocas.has(seta.toId)) state.arrows.delete(chave);
+  });
 }

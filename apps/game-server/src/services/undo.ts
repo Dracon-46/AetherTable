@@ -281,6 +281,17 @@ export const NAO_REVERSIVEIS: ReadonlySet<string> = new Set([
   // Voto dado e voto dado — e o ultimo voto ja tirou alguem da sala.
   'INTENT_VOTE_KICK',
   'INTENT_SEARCH_ZONE',
+  /**
+   * DEVOLVER UMA ZONA AO GRIMÓRIO EMBARALHA (`shuffle` vem `true` por padrão).
+   *
+   * Desfazível, ela era um "embaralhe até sair bom": devolver o cemitério
+   * embaralhando, ver o resultado (com o topo revelado, por exemplo), desfazer
+   * e repetir até o topo agradar. É a mesma regra de `INTENT_SHUFFLE` e
+   * `INTENT_MULLIGAN`, que já estavam aqui. A intenção inteira, e não só o caso
+   * com `shuffle`: a lista é por tipo, e o caso sem embaralhar não ganha nada
+   * sendo desfazível.
+   */
+  'INTENT_RETURN_ZONE',
   'INTENT_REVEAL',
   'INTENT_REVEAL_TOP',
   'INTENT_REVEAL_ZONE',

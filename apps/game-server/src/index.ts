@@ -15,6 +15,7 @@ import { config, isProd } from './config';
 import { AetherRoom } from './rooms/AetherRoom';
 import { registry } from './metrics';
 import { iniciarSincronizacaoDoCatalogo } from './services/catalogo-de-cosmeticos';
+import { limitarCorpoDoMatchmake, restringirMatchmaker, senhaDoBasic } from './borda-http';
 import { Encoder } from '@colyseus/schema';
 
 /**
@@ -100,11 +101,9 @@ function autenticarOperacao(
   // assim em producao (ver a checagem cruzada em config.ts).
   if (!config.ADMIN_PANEL_PASSWORD) return next();
 
-  const cabecalho = req.headers.authorization ?? '';
-  const [tipo, credencial] = cabecalho.split(' ');
+  const senha = senhaDoBasic(req.headers.authorization);
 
-  if (tipo === 'Basic' && credencial) {
-    const [, senha = ''] = Buffer.from(credencial, 'base64').toString('utf8').split(':');
+  if (senha !== null) {
     const recebida = Buffer.from(senha);
     const esperada = Buffer.from(config.ADMIN_PANEL_PASSWORD);
     // `timingSafeEqual` exige o mesmo comprimento; o teste de tamanho antes
@@ -118,6 +117,17 @@ function autenticarOperacao(
   res.status(401).send('Autenticacao necessaria.');
 }
 
+/**
+ * O monitor é uma página que mostra a mão de todo mundo: emoldurado num iframe
+ * de outro site, um clique "inocente" do operador logado podia ser sequestrado
+ * (clickjacking). Os dois cabeçalhos dizem a mesma coisa para navegadores de
+ * gerações diferentes, e valem também para o 401 — por isso vêm antes da auth.
+ */
+app.use('/colyseus', (_req, res, next) => {
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Content-Security-Policy', "frame-ancestors 'none'");
+  next();
+});
 app.use('/colyseus', autenticarOperacao);
 app.use('/metrics', autenticarOperacao);
 
@@ -156,11 +166,14 @@ const ORIGENS = new Set([
 
 app.use('/salas', (req, res, next) => {
   const origem = req.headers.origin;
+  // SEMPRE, e não só quando a origem é aceita: a resposta varia por origem dos
+  // dois lados do `if`. Com o `Vary` só na resposta "com CORS", um cache no
+  // caminho podia guardar a resposta SEM o cabeçalho (pedida por uma origem de
+  // fora, ou sem `Origin`) e servi-la ao site oficial, que veria a vitrine
+  // vazia com erro de CORS.
+  res.set('Vary', 'Origin');
   if (origem && ORIGENS.has(origem)) {
     res.set('Access-Control-Allow-Origin', origem);
-    // A resposta varia por origem: sem isto, um proxy no caminho pode servir a
-    // resposta de uma origem para outra e o navegador recusar a segunda.
-    res.set('Vary', 'Origin');
   }
   res.set('Access-Control-Allow-Methods', 'GET,OPTIONS');
   // Sem preflight de verdade: um GET sem cabeçalho customizado é requisição
@@ -271,6 +284,19 @@ const gameServer = new Server({
 });
 
 gameServer.define(AETHER_ROOM, AetherRoom).filterBy(['roomCode']);
+
+/**
+ * ─── O MATCHMAKER SÓ FAZ O QUE O FRONTEND USA ───────────────────────────────
+ *
+ * Depois do `new Server`: é ele que instala o desvio de `/matchmake` no
+ * servidor HTTP, e o limite de corpo precisa embrulhar justamente esse desvio.
+ * As origens são as MESMAS da vitrine (`CORS_ORIGINS` + o site oficial): a
+ * vitrine e a entrada na mesa são chamadas pela mesma página, e uma lista
+ * diferente para cada uma quebraria a entrada no deploy que esquecesse uma.
+ * Ver `borda-http.ts`.
+ */
+restringirMatchmaker(ORIGENS, ORIGEM_DO_SITE);
+limitarCorpoDoMatchmake(httpServer);
 
 // Bind explícito em 0.0.0.0: hosts gerenciados (Render, Fly, Koyeb) fazem o
 // health check de fora do container. Ligar só em localhost derruba o deploy.

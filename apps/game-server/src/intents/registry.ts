@@ -37,6 +37,7 @@ import {
   logCompra,
   nomeDaZona,
   logEmbaralhar,
+  logReordenar,
   logBusca,
   logOlhada,
   logTrocaZonaOculta,
@@ -57,6 +58,7 @@ import {
   nomeDe,
   ordem,
   reaplicarPermissaoDeZona,
+  renovarIds,
   topoDaPilha,
 } from '../services/mesa';
 import * as S from './schemas';
@@ -78,6 +80,12 @@ export interface IntentContext {
    * O jornal vive na Room — ver services/undo.ts.
    */
   desfazer(): string | null;
+  /**
+   * Esquece o "desfazer" de todos os jogadores. Para quando a mesa inteira
+   * muda por baixo deles — ver `HistoricoDeComandos.esquecerTodos`. Opcional:
+   * os testes montam o contexto à mão.
+   */
+  invalidarDesfazer?(): void;
   /**
    * Remove um jogador da sala AGORA, sem janela de reconexao.
    *
@@ -124,6 +132,104 @@ const INTENCOES_DE_ESPECTADOR = new Set<string>(['INTENT_CHAT']);
 export function espectadorBarrado(state: RoomState, sid: string, intent: string): boolean {
   if (!state.espectadores.has(sid)) return false;
   return !INTENCOES_DE_ESPECTADOR.has(intent);
+}
+
+/**
+ * Quem pode mandar esta intenção, pela presença na mesa — `null` quando pode.
+ *
+ * `espectadorBarrado` só olhava a plateia: quem não era jogador NEM espectador
+ * (a aba antiga de quem voltou por um passe novo, no intervalo até ser
+ * derrubada) passava como se tivesse assento. Agora a regra é positiva —
+ * intenção de mesa exige estar em `players` —, e a plateia continua passando
+ * só no que `INTENCOES_DE_ESPECTADOR` permite.
+ */
+export function barreiraDoRemetente(
+  state: RoomState,
+  sid: string,
+  intent: string,
+): 'SPECTATOR' | 'SEM_ASSENTO' | null {
+  if (state.players.has(sid)) return null;
+  if (state.espectadores.has(sid)) return INTENCOES_DE_ESPECTADOR.has(intent) ? null : 'SPECTATOR';
+  return 'SEM_ASSENTO';
+}
+
+/**
+ * ─── TETOS DO QUE UM JOGADOR CONSEGUE CRIAR ─────────────────────────────────
+ *
+ * O buffer de encode da sala é fixo (ver `Encoder.BUFFER_SIZE` em `index.ts`)
+ * e o estado inteiro precisa caber nele quando alguém entra. Fichas, cópias,
+ * contadores de nome livre e setas eram ilimitados: um jogador sozinho, a 30
+ * intenções por segundo, inchava o estado até o `ROOM_STATE` do próximo a
+ * entrar sair truncado — e a sala parava de aceitar gente. Os números estão
+ * muito acima de qualquer mesa real (um campo com 200 fichas já é ilegível).
+ */
+export const LIMITES_DA_MESA = {
+  FICHAS_POR_JOGADOR: 200,
+  CARTAS_NA_SALA: 1500,
+  CONTADORES_POR_CARTA: 32,
+  SETAS_POR_JOGADOR: 64,
+} as const;
+
+/** Recusa por teto — o mesmo canal `error` das outras recusas de intenção. */
+function recusarPorLimite(ctx: IntentContext, intent: string, message: string): void {
+  ctx.send('error', { code: 'LIMIT', message, intent });
+}
+
+/**
+ * Cabe mais `novas` fichas deste jogador na mesa? Responde o erro quando não.
+ * Ficha e cópia contam juntas: as duas são `isToken` de quem as criou.
+ */
+function cabemFichas(ctx: IntentContext, intent: string, novas: number): boolean {
+  const sid = ctx.client.sessionId;
+  if (ctx.state.cards.size + novas > LIMITES_DA_MESA.CARTAS_NA_SALA) {
+    recusarPorLimite(
+      ctx,
+      intent,
+      `A mesa já tem cartas demais (máximo de ${LIMITES_DA_MESA.CARTAS_NA_SALA}). Remova fichas antes de criar outras.`,
+    );
+    return false;
+  }
+  let minhas = 0;
+  ctx.state.cards.forEach((c) => {
+    if (c.isToken && c.ownerId === sid) minhas += 1;
+  });
+  if (minhas + novas > LIMITES_DA_MESA.FICHAS_POR_JOGADOR) {
+    recusarPorLimite(
+      ctx,
+      intent,
+      `Você já tem ${minhas} fichas na mesa (máximo de ${LIMITES_DA_MESA.FICHAS_POR_JOGADOR}). Remova algumas antes de criar outras.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+/** Um contador com este nome ainda cabe na carta? (Mexer num que já existe, sempre.) */
+function cabeContador(c: Card, nome: string): boolean {
+  return c.counters.has(nome) || c.counters.size < LIMITES_DA_MESA.CONTADORES_POR_CARTA;
+}
+
+const MENSAGEM_DE_CONTADORES = `Esta carta já tem ${LIMITES_DA_MESA.CONTADORES_POR_CARTA} tipos de contador. Remova algum antes de criar outro.`;
+
+/**
+ * Texto livre que vai para a mesa de todo mundo (anotação, nome de ficha).
+ * Sanitização mínima: o texto é renderizado como texto, mas `<` e `>` não têm
+ * uso legítimo ali e são o primeiro passo de qualquer injeção.
+ */
+function sanitizarNota(texto: string): string {
+  return texto.replace(/[<>]/g, '').slice(0, 120);
+}
+
+/**
+ * Os destinatários de uma revelação que EXISTEM na mesa, sem repetição.
+ *
+ * `to` era aceito como veio: sete strings de qualquer tamanho por intenção,
+ * todas concatenadas em `revealedTo` — um campo público que viaja em todo patch
+ * da carta. Revelar a uma lista inventada, de novo e de novo, inchava cada
+ * carta da zona até o estado não caber mais no buffer da sala.
+ */
+function destinatariosDaMesa(state: RoomState, to: readonly string[]): string[] {
+  return [...new Set(to)].filter((id) => state.players.has(id) || state.espectadores.has(id));
 }
 
 /**
@@ -633,9 +739,8 @@ const INTENT_SHUFFLE: IntentHandler<typeof S.ShuffleIntent> = {
     //
     // `keepTop` fazia parte do payload desde sempre e era IGNORADO: quem pedia
     // "embaralhe mantendo as 2 do topo" tinha o topo embaralhado junto.
-    const ids =
+    const embaralhados =
       keepTop && keepTop > 0 ? embaralharMantendoTopo([...lista], keepTop) : embaralhar([...lista]);
-    lista.splice(0, lista.length, ...ids);
 
     // Embaralhar destroi qualquer olhada anterior: a ordem que o jogador viu
     // deixou de valer. Nao revogar aqui manteria conhecimento sobre cartas que
@@ -644,15 +749,25 @@ const INTENT_SHUFFLE: IntentHandler<typeof S.ShuffleIntent> = {
     // Excecao: as `keepTop` do topo NAO foram movidas, entao a olhada sobre
     // elas continua legitima.
     const preservadas =
-      keepTop && keepTop > 0 ? new Set(topoDe(lista, keepTop)) : new Set<string>();
-    lista.forEach((id) => {
-      if (preservadas.has(id)) return;
-      const c = carta(ctx.state, id);
-      if (!c) return;
-      limparConcessoes(c);
-      reaplicarPermissaoDeZona(ctx.state, c);
-      reconciliarCartaParaTodos(ctx.clients, c);
-    });
+      keepTop && keepTop > 0 ? new Set(topoDe(embaralhados, keepTop)) : new Set<string>();
+
+    // Zona OCULTA: as cartas embaralhadas trocam de id (`renovarIds`) — a
+    // carta nova já nasce sem concessão nenhuma e com a permissão de zona do
+    // dono. Sem isso, um id visto antes do embaralhar continuava rastreável.
+    const oculta = HIDDEN_ZONES.has(zone);
+    const ids = oculta ? renovarIds(ctx, embaralhados, preservadas) : embaralhados;
+    lista.splice(0, lista.length, ...ids);
+
+    if (!oculta) {
+      lista.forEach((id) => {
+        if (preservadas.has(id)) return;
+        const c = carta(ctx.state, id);
+        if (!c) return;
+        limparConcessoes(c);
+        reaplicarPermissaoDeZona(ctx.state, c);
+        reconciliarCartaParaTodos(ctx.clients, c);
+      });
+    }
 
     ctx.log(logEmbaralhar(sid, nomeDe(ctx.state, sid)));
   },
@@ -754,14 +869,16 @@ const INTENT_ARRANGE_PEEKED: IntentHandler<typeof S.ArrangePeekedIntent> = {
       return;
     }
 
-    const arranjo = aleatorio ? embaralhar([...unicos]) : unicos;
+    // Ordem aleatória: o bloco embaralhado troca de id, e a olhada some junto
+    // com as cartas antigas — manter `peekedBy` (ou o id) deixaria o cliente
+    // casar posição com identidade, e "ordem aleatória" viraria "ordem que eu
+    // sei". O resto do grimório não foi tocado e fica como está.
+    const arranjo = aleatorio ? renovarIds(ctx, embaralhar([...unicos])) : unicos;
     const restante = Array.from(grimorio).filter((id) => !unicos.includes(id));
     // Topo = FIM do array; fundo = INÍCIO. Ver `topoDe`.
     const nova =
       destino === 'TOP' ? [...restante, ...[...arranjo].reverse()] : [...arranjo, ...restante];
     grimorio.splice(0, grimorio.length, ...nova);
-
-    if (aleatorio) revogarOlhada(ctx, unicos);
 
     const nome = nomeDe(ctx.state, sid);
     const onde = destino === 'TOP' ? 'no topo' : 'no fundo';
@@ -827,6 +944,10 @@ const INTENT_ADD_COUNTER: IntentHandler<typeof S.AddCounterIntent> = {
   executa(ctx, { entityId, name, amount }) {
     const c = carta(ctx.state, entityId);
     if (!c) return;
+    if (amount > 0 && !cabeContador(c, name)) {
+      recusarPorLimite(ctx, 'INTENT_ADD_COUNTER', MENSAGEM_DE_CONTADORES);
+      return;
+    }
     const total = (c.counters.get(name) ?? 0) + amount;
     // Contadores sao inteiros >= 0: restricao fisica, nao julgamento de regra.
     if (total <= 0) c.counters.delete(name);
@@ -940,6 +1061,7 @@ const INTENT_CREATE_TOKEN: IntentHandler<typeof S.CreateTokenIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, payload) {
     const fromSid = ctx.client.sessionId;
+    if (!cabemFichas(ctx, 'INTENT_CREATE_TOKEN', payload.amount)) return;
     for (let i = 0; i < payload.amount; i++) {
       const card = new Card();
       card.id = crypto.randomUUID();
@@ -957,8 +1079,10 @@ const INTENT_CREATE_TOKEN: IntentHandler<typeof S.CreateTokenIntent> = {
       if (payload.scryfallId) {
         card.scryfallId = payload.scryfallId;
       }
+      // O nome da ficha vira a anotação dela, que aparece na mesa de todos:
+      // passa pela mesma limpeza de `INTENT_SET_NOTE`.
       if (payload.name) {
-        card.note = payload.name;
+        card.note = sanitizarNota(payload.name);
       }
       // O schema aceitava `power` e `toughness` e o handler os jogava fora:
       // a ficha 3/3 nascia sem P/T nenhum.
@@ -1007,6 +1131,7 @@ const INTENT_COPY_CARD: IntentHandler<typeof S.CopyCardIntent> = {
     // E so de zona PUBLICA: uma carta da mao revelada so para quem copia
     // virava, pela copia, uma ficha de face para cima na frente da mesa toda.
     if (!PUBLIC_ZONES.has(original.zone as Zone) || !podeVer(original, sid)) return;
+    if (!cabemFichas(ctx, 'INTENT_COPY_CARD', 1)) return;
 
     const card = new Card();
     card.id = crypto.randomUUID();
@@ -1142,22 +1267,17 @@ const INTENT_MULLIGAN: IntentHandler<typeof S.MulliganIntent> = {
       }
     }
 
-    // 2. Embaralha o grimório (usa CSPRNG e limpa concessões)
-    const ids = embaralhar(Array.from(grimorio));
+    // 2. Embaralha o grimório com CSPRNG, e com ids novos ANTES de comprar: a
+    // mão que voltou foi vista indo para o grimório, e com os ids antigos a
+    // mesa saberia quais delas voltaram para a mão nova. A carta renovada já
+    // nasce sem concessão nenhuma.
+    const ids = renovarIds(ctx, embaralhar(Array.from(grimorio)));
     // Limpar o grimório
     while (grimorio.length > 0) grimorio.pop();
     // Repopular
     for (const id of ids) {
       grimorio.push(id);
     }
-    grimorio.forEach((id) => {
-      const c = carta(ctx.state, id);
-      if (c) {
-        limparConcessoes(c);
-        reaplicarPermissaoDeZona(ctx.state, c);
-        reconciliarCartaParaTodos(ctx.clients, c);
-      }
-    });
 
     // 3. Saca 7 cartas
     const compradas = Math.min(7, grimorio.length);
@@ -1250,6 +1370,10 @@ const INTENT_SET_COUNTER: IntentHandler<typeof S.SetCounterIntent> = {
   executa(ctx, { entityId, name, value }) {
     const c = carta(ctx.state, entityId);
     if (!c) return;
+    if (value !== 0 && !cabeContador(c, name)) {
+      recusarPorLimite(ctx, 'INTENT_SET_COUNTER', MENSAGEM_DE_CONTADORES);
+      return;
+    }
     if (value === 0) c.counters.delete(name);
     else c.counters.set(name, value);
   },
@@ -1272,8 +1396,7 @@ const INTENT_SET_NOTE: IntentHandler<typeof S.SetNoteIntent> = {
   executa(ctx, { entityId, text }) {
     const c = carta(ctx.state, entityId);
     if (!c) return;
-    // Sanitizacao minima: a anotacao e renderizada como texto na mesa de todos.
-    c.note = text.replace(/[<>]/g, '').slice(0, 120);
+    c.note = sanitizarNota(text);
   },
 };
 
@@ -1706,10 +1829,16 @@ const INTENT_RESET_MATCH: IntentHandler<typeof S.ResetMatchIntent> = {
     });
     for (const [chave, ids] of devolver) {
       const [dono, zona] = chave.split('|') as [string, Zone];
-      ordem(ctx.state, dono, zona)?.push(...(zona === 'LIBRARY' ? embaralhar(ids) : ids));
+      // A partida anterior mostrou quase todas estas cartas: sem ids novos, a
+      // mesa reiniciada começaria com o grimório de todo mundo já mapeado.
+      ordem(ctx.state, dono, zona)?.push(
+        ...(zona === 'LIBRARY' ? renovarIds(ctx, embaralhar(ids)) : ids),
+      );
     }
     ctx.state.players.forEach((p) => atualizarContagens(ctx.state, p.id));
     reconciliarTudo(ctx.clients, ctx.state);
+    // O "desfazer" de qualquer jogador agora restauraria ids que não existem.
+    ctx.invalidarDesfazer?.();
 
     ctx.log(logSistema(sid, `${nomeDe(ctx.state, sid)} reiniciou a partida`));
   },
@@ -1979,15 +2108,10 @@ const INTENT_RETURN_ZONE: IntentHandler<typeof S.ReturnZoneIntent> = {
     }
 
     if (shuffle) {
-      const ids = embaralhar([...destino]);
+      // O cemitério devolvido era PÚBLICO: cada id que entrou no grimório tinha
+      // identidade conhecida. Sem ids novos, o embaralhar não escondia nada.
+      const ids = renovarIds(ctx, embaralhar([...destino]));
       destino.splice(0, destino.length, ...ids);
-      destino.forEach((id) => {
-        const c = carta(ctx.state, id);
-        if (!c) return;
-        limparConcessoes(c);
-        reaplicarPermissaoDeZona(ctx.state, c);
-        reconciliarCartaParaTodos(ctx.clients, c);
-      });
     }
 
     atualizarContagens(ctx.state, sid);
@@ -2028,6 +2152,9 @@ const INTENT_REORDER: IntentHandler<typeof S.ReorderIntent> = {
     }
 
     lista.splice(0, lista.length, ...ids);
+    // Mexer na ordem de zona oculta era silencioso: o grimório mudava de ordem
+    // sem uma linha no log. A linha é neutra — conta que reordenou, não como.
+    if (HIDDEN_ZONES.has(zone)) ctx.log(logReordenar(sid, nomeDe(ctx.state, sid), zone));
   },
 };
 
@@ -2256,6 +2383,15 @@ const INTENT_REVEAL: IntentHandler<typeof S.RevealIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { ids, to }) {
     const sid = ctx.client.sessionId;
+    const alvos = to === 'ALL' ? 'ALL' : destinatariosDaMesa(ctx.state, to);
+    if (alvos.length === 0) {
+      ctx.send('error', {
+        code: 'INVALID_PAYLOAD',
+        message: 'Ninguém dessa lista está na mesa.',
+        intent: 'INTENT_REVEAL',
+      });
+      return;
+    }
     let reveladas = 0;
 
     for (const id of ids) {
@@ -2264,7 +2400,7 @@ const INTENT_REVEAL: IntentHandler<typeof S.RevealIntent> = {
       // oculta de outro jogador, exatamente o que RN02 proibe.
       if (c?.ownerId !== sid) continue;
       c.revealedTo =
-        to === 'ALL' ? 'ALL' : to.reduce((acc, alvo) => concede(acc, alvo), c.revealedTo);
+        alvos === 'ALL' ? 'ALL' : alvos.reduce((acc, alvo) => concede(acc, alvo), c.revealedTo);
       reconciliarCartaParaTodos(ctx.clients, c);
       reveladas += 1;
     }
@@ -2273,9 +2409,9 @@ const INTENT_REVEAL: IntentHandler<typeof S.RevealIntent> = {
     ctx.log(
       logSistema(
         sid,
-        to === 'ALL'
+        alvos === 'ALL'
           ? `${nomeDe(ctx.state, sid)} revelou ${reveladas} carta(s) para a mesa`
-          : `${nomeDe(ctx.state, sid)} revelou ${reveladas} carta(s) para ${to.length} jogador(es)`,
+          : `${nomeDe(ctx.state, sid)} revelou ${reveladas} carta(s) para ${alvos.length} jogador(es)`,
       ),
     );
   },
@@ -2288,12 +2424,14 @@ const INTENT_REVEAL_ZONE: IntentHandler<typeof S.RevealZoneIntent> = {
     const sid = ctx.client.sessionId;
     const lista = ordem(ctx.state, sid, zone);
     if (!lista) return;
+    const alvos = to === 'ALL' ? 'ALL' : destinatariosDaMesa(ctx.state, to);
+    if (alvos.length === 0) return;
 
     for (const id of Array.from(lista)) {
       const c = carta(ctx.state, id);
       if (!c) continue;
       c.revealedTo =
-        to === 'ALL' ? 'ALL' : to.reduce((acc, alvo) => concede(acc, alvo), c.revealedTo);
+        alvos === 'ALL' ? 'ALL' : alvos.reduce((acc, alvo) => concede(acc, alvo), c.revealedTo);
       reconciliarCartaParaTodos(ctx.clients, c);
     }
 
@@ -2432,11 +2570,17 @@ const INTENT_SET_ZONE_VISIBILITY: IntentHandler<typeof S.SetZoneVisibilityIntent
     const sid = ctx.client.sessionId;
     const lista = ordem(ctx.state, sid, zone);
     if (!lista) return;
+    // DEFINE a lista (não soma): `concede` a partir do vazio tira as repetições
+    // que o `join(',')` gravava como vieram.
+    const alvos =
+      to === 'ALL'
+        ? 'ALL'
+        : destinatariosDaMesa(ctx.state, to).reduce((acc, alvo) => concede(acc, alvo), '');
 
     for (const id of Array.from(lista)) {
       const c = carta(ctx.state, id);
       if (!c) continue;
-      c.revealedTo = to === 'ALL' ? 'ALL' : to.join(',');
+      c.revealedTo = alvos;
       reconciliarCartaParaTodos(ctx.clients, c);
     }
     ctx.log(
@@ -2590,9 +2734,14 @@ const INTENT_BATCH_COUNTER: IntentHandler<typeof S.BatchCounterIntent> = {
   autoriza: 'QUALQUER_JOGADOR',
   executa(ctx, { entityIds, name, amount }) {
     const sid = ctx.client.sessionId;
+    let barradas = 0;
     for (const id of entityIds) {
       const c = carta(ctx.state, id);
       if (c?.controllerId !== sid) continue;
+      if (amount > 0 && !cabeContador(c, name)) {
+        barradas += 1;
+        continue;
+      }
       const atual = c.counters.get(name) ?? 0;
       const novo = atual + amount;
       // `<= 0`, como no ADD_COUNTER: Shift+A ("tirar um +1/+1") numa carta
@@ -2607,6 +2756,8 @@ const INTENT_BATCH_COUNTER: IntentHandler<typeof S.BatchCounterIntent> = {
         `${nomeDe(ctx.state, sid)} ajustou ${name} em ${entityIds.length} permanente(s)`,
       ),
     );
+    // Um aviso só para o lote: as outras cartas da seleção foram ajustadas.
+    if (barradas > 0) recusarPorLimite(ctx, 'INTENT_BATCH_COUNTER', MENSAGEM_DE_CONTADORES);
   },
 };
 
@@ -2891,6 +3042,19 @@ const INTENT_ARROW: IntentHandler<typeof S.ArrowIntent> = {
       return;
     }
 
+    let minhas = 0;
+    ctx.state.arrows.forEach((a) => {
+      if (a.ownerId === sid) minhas += 1;
+    });
+    if (minhas >= LIMITES_DA_MESA.SETAS_POR_JOGADOR) {
+      recusarPorLimite(
+        ctx,
+        'INTENT_ARROW',
+        `Você já tem ${LIMITES_DA_MESA.SETAS_POR_JOGADOR} setas na mesa. Limpe algumas antes de desenhar outras.`,
+      );
+      return;
+    }
+
     const seta = new Arrow();
     seta.id = `${sid}:${fromId}:${toId}`;
     seta.ownerId = sid;
@@ -3147,13 +3311,23 @@ function encerrarVotacao(state: RoomState): void {
  *   - uma votacao por vez, com prazo: uma votacao esquecida aberta seria uma
  *     ameaca pendurada sobre a mesa pelo resto da partida.
  *
- * Numa mesa de dois, o unico votante e quem propos — e a votacao passa na
- * hora. E a leitura literal de "todos os outros concordam", e e a mesma coisa
- * que a mesa de dois ja podia fazer saindo da sala.
+ * ─── PRECISA DE PELO MENOS DOIS VOTANTES ────────────────────────────────────
+ *
+ * Numa mesa de dois, o unico votante era quem propunha — e a votacao passava
+ * na hora. Era a leitura literal de "todos os outros concordam", mas na pratica
+ * dava a QUALQUER convidado o poder do anfitriao: o segundo jogador de uma mesa
+ * de dois tirava o dono da sala com um clique, e a conta dele ficava
+ * bloqueada. Agora a votacao so abre (e so conclui) com dois votantes ou mais;
+ * com menos que isso, quem remove e o anfitriao (`INTENT_KICK_PLAYER`).
  *
  * Quem sai por votacao e expulso pelo mesmo caminho do anfitriao: a Room
  * guarda a CONTA dele, e um passe novo nao o traz de volta.
  */
+/** Quem vota numa remoção: os jogadores CONECTADOS, menos o alvo. */
+function votantesDaRemocao(state: RoomState, alvo: string) {
+  return Array.from(state.players.values()).filter((p) => p.connected && p.id !== alvo);
+}
+
 const INTENT_VOTE_KICK: IntentHandler<typeof S.VoteKickIntent> = {
   schema: S.VoteKickIntent,
   autoriza: 'QUALQUER_JOGADOR',
@@ -3172,6 +3346,11 @@ const INTENT_VOTE_KICK: IntentHandler<typeof S.VoteKickIntent> = {
       if (playerId === sid) return recusar('Para sair da mesa, use "Sair".');
       const alvo = st.players.get(playerId);
       if (!alvo) return recusar('Esse jogador não está mais na mesa.');
+      if (votantesDaRemocao(st, playerId).length < 2) {
+        return recusar(
+          'A votação precisa de pelo menos dois jogadores votando. Nesta mesa, quem remove alguém é o anfitrião.',
+        );
+      }
 
       st.votacaoAlvo = playerId;
       st.votacaoAutor = sid;
@@ -3193,9 +3372,10 @@ const INTENT_VOTE_KICK: IntentHandler<typeof S.VoteKickIntent> = {
       st.votacaoSim = concede(st.votacaoSim, sid);
     }
 
-    const votantes = Array.from(st.players.values()).filter(
-      (p) => p.connected && p.id !== st.votacaoAlvo,
-    );
+    // Conferido de novo aqui: alguém pode ter caído no meio da votação, e com um
+    // votante só ela voltaria a ser a decisão de uma pessoa.
+    const votantes = votantesDaRemocao(st, st.votacaoAlvo);
+    if (votantes.length < 2) return;
     if (!votantes.every((p) => contem(st.votacaoSim, p.id))) return;
 
     const alvoId = st.votacaoAlvo;

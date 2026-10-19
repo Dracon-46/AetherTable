@@ -172,4 +172,17 @@ export class HistoricoDeComandos {
   esquecer(sid: string): void {
     this.ultimo.delete(sid);
   }
+
+  /**
+   * Esquece o "desfazer" de TODO MUNDO — para quando a mesa inteira muda por
+   * baixo dos jogadores (`INTENT_RESET_MATCH`).
+   *
+   * O memento guarda ids de carta e as listas de zona de quem o tirou. Depois
+   * que o reset devolve tudo ao grimório e renova os ids (`renovarIds`), o
+   * "desfazer" de outro jogador restauraria listas cheias de ids que não
+   * existem mais: o grimório dele passaria a ter cartas fantasmas.
+   */
+  esquecerTodos(): void {
+    this.ultimo.clear();
+  }
 }
