@@ -161,3 +161,133 @@ describe('UsersService.updateUser — username disponível sem diferenciar maiú
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * ─── APARÊNCIA DO SITE E FICHAS RECENTES NA CONTA ───────────────────────────
+ *
+ * As duas viviam só no `localStorage`; trocar de PC zerava. Entram no mesmo
+ * `PATCH /users/me` das preferências de mesa, com a mesma tranca contra a
+ * coluna JSONB virar depósito livre.
+ */
+describe('preferenciasDeInterface no PATCH /users/me', () => {
+  it('aceita o objeto do contrato, inteiro ou em parte', () => {
+    expect(
+      AtualizarPerfilDto.safeParse({
+        preferenciasDeInterface: {
+          visaoDeDeck: 'galeria',
+          agrupamentoDeDeck: 'cor',
+          ordenacaoDeDeck: 'cmc',
+          tamanhoDeCarta: 'grande',
+          densidade: 'compacta',
+          animacoesReduzidas: true,
+          idiomaDasCartas: 'en',
+          idiomaDaInterface: 'en',
+        },
+      }).success,
+    ).toBe(true);
+    expect(AtualizarPerfilDto.safeParse({ preferenciasDeInterface: {} }).success).toBe(true);
+  });
+
+  it('recusa chave fora do contrato, valor aninhado e texto gigante', () => {
+    for (const ruim of [
+      { menuRecolhido: true },
+      { visaoDeDeck: { lista: true } },
+      { densidade: 'x'.repeat(5000) },
+      [1, 2],
+    ]) {
+      expect(AtualizarPerfilDto.safeParse({ preferenciasDeInterface: ruim }).success).toBe(false);
+    }
+  });
+});
+
+describe('fichasRecentes no PATCH /users/me', () => {
+  const SOLDADO = {
+    scryfallId: '0dd0f3e2-3e0a-4b41-9a10-2f83e4d3b3f6',
+    name: 'Soldier',
+    power: '1',
+    toughness: '1',
+  };
+
+  it('aceita o formato que o seletor de fichas guarda, com ou sem impressão', () => {
+    const r = AtualizarPerfilDto.parse({
+      fichasRecentes: [
+        SOLDADO,
+        { name: 'Treasure' },
+        { name: 'Elemental', power: '4', toughness: '4' },
+      ],
+    });
+    expect(r.fichasRecentes).toHaveLength(3);
+    expect(AtualizarPerfilDto.safeParse({ fichasRecentes: [] }).success).toBe(true);
+  });
+
+  it('no máximo 12', () => {
+    const doze = Array.from({ length: 12 }, (_, i) => ({ name: `Ficha ${i}` }));
+    expect(AtualizarPerfilDto.safeParse({ fichasRecentes: doze }).success).toBe(true);
+    expect(
+      AtualizarPerfilDto.safeParse({ fichasRecentes: [...doze, { name: 'Treze' }] }).success,
+    ).toBe(false);
+  });
+
+  it('os mesmos limites do CreateTokenIntent: uuid, nome até 120, P/R até 4', () => {
+    for (const ruim of [
+      { ...SOLDADO, scryfallId: 'https://x/y.png' },
+      { name: '' },
+      { name: '   ' },
+      { name: 'x'.repeat(121) },
+      { name: 'Soldier', power: '12345' },
+      { name: 'Soldier', toughness: 1 },
+      { scryfallId: SOLDADO.scryfallId },
+      'Soldier',
+    ]) {
+      expect(AtualizarPerfilDto.safeParse({ fichasRecentes: [ruim] }).success).toBe(false);
+    }
+  });
+
+  it('chave a mais num item é descartada, não gravada', () => {
+    const r = AtualizarPerfilDto.parse({ fichasRecentes: [{ ...SOLDADO, html: '<b>x</b>' }] });
+    expect(r.fichasRecentes).toEqual([SOLDADO]);
+  });
+});
+
+describe('UsersService — aparência e fichas vão para user_preferences', () => {
+  function montarServico() {
+    const prisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'u1' }),
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({ id: 'u1', username: 'gaspare' }),
+      },
+      userPreference: { upsert: jest.fn() },
+    };
+    return { prisma, svc: new UsersService(prisma as never) };
+  }
+
+  it('o PATCH grava os dois campos, substituindo o que havia', async () => {
+    const { prisma, svc } = montarServico();
+    await svc.updateUser(
+      'u1',
+      AtualizarPerfilDto.parse({
+        preferenciasDeInterface: { visaoDeDeck: 'galeria' },
+        fichasRecentes: [{ name: 'Treasure' }],
+      }),
+    );
+    expect(prisma.userPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: {
+          preferenciasDeInterface: { visaoDeDeck: 'galeria' },
+          fichasRecentes: [{ name: 'Treasure' }],
+        },
+      }),
+    );
+  });
+
+  it('o GET /users/me devolve os dois campos', async () => {
+    const { prisma, svc } = montarServico();
+    await svc.findById('u1');
+    const { select } = prisma.user.findFirst.mock.calls[0]![0];
+    expect(select.preference.select).toMatchObject({
+      preferenciasDeInterface: true,
+      fichasRecentes: true,
+    });
+  });
+});

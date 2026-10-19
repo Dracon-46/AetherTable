@@ -19,6 +19,20 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '0.10.0',
+    data: '2026-10-19',
+    titulo: 'Seu progresso segue a sua conta',
+    itens: [
+      'Desafios: o recorde e a sequência de cada desafio ficam na sua conta — trocar de computador ou de navegador não zera mais. O recorde que já estava neste navegador sobe para a conta sozinho.',
+      'Desafios: sair no meio de uma pergunta (recarregar a página, fechar a aba) conta como erro e zera a sequência.',
+      'Sino: o que você já viu nas notificações e nas novidades vale em qualquer aparelho.',
+      'A aparência do site (visão e ordenação dos decks, tamanho das cartas, densidade, animações e idiomas) segue a conta.',
+      'Mais preferências da mesa seguem a conta: log dividido, rastreador de mana, prévia ao lado, sons e tremor do comandante.',
+      'As fichas recentes da mesa seguem a conta.',
+      'Segurança: a voz de uma mesa só abre para quem está nela, ninguém cria ou trava salas sem convite, e a ordem do grimório não pode mais ser deduzida.',
+    ],
+  },
+  {
     versao: '0.9.0',
     data: '2026-10-14',
     titulo: 'Histórico, draft, desafios e decks prontos',

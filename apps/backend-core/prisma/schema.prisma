@@ -194,6 +194,7 @@ model User {
   reportsGot     Report[]             @relation("reported")
   cosmetics      UserCosmetic[]
   participions   MatchParticipant[]
+  desafios       ProgressoDeDesafio[]
 
   auditActions    AuditLog[] @relation("auditActor")
   reportsResolved Report[]   @relation("reportResolver")
@@ -240,6 +241,29 @@ model UserPreference {
   /// a sanitizacao estao em `shared-types/preferencias.ts`, que as duas pontas
   /// usam — o servidor valida na entrada, o cliente normaliza na saida.
   preferenciasDeMesa Json @default("{}") @map("preferencias_de_mesa")
+
+  /// ─── A APARENCIA DO SITE, PELO MESMO MOTIVO E NA MESMA FORMA ─────────────
+  ///
+  /// Visao, agrupamento e ordenacao da lista do grimorio, tamanho das artes,
+  /// densidade, animacoes reduzidas e os dois idiomas. Viviam so no
+  /// `localStorage` do `aparencia.store`. Contrato e normalizador em
+  /// `shared-types/preferencias-de-interface.ts`; `{}` e "nunca configurou".
+  preferenciasDeInterface Json @default("{}") @map("preferencias_de_interface")
+
+  /// As ultimas fichas criadas na mesa (o "Usadas recentemente" do seletor).
+  /// Uma LISTA, por isso o padrao e `[]` e nao `{}`. Formato e limites em
+  /// `shared-types/fichas-recentes.ts`, validados por zod no `PATCH`.
+  fichasRecentes Json @default("[]") @map("fichas_recentes")
+
+  /// ─── O "JA VI" DO SINO ───────────────────────────────────────────────────
+  ///
+  /// Duas colunas tipadas, e nao mais uma chave num JSONB: o `vistoEm` tem uma
+  /// regra que precisa valer no banco — so AVANCA —, e isso e um
+  /// `UPDATE ... WHERE notificacoes_vistas_em < :nova`, que um JSONB nao faz
+  /// sem ler e regravar. Nulas: o sino nunca foi aberto nesta conta.
+  notificacoesVistasEm DateTime? @map("notificacoes_vistas_em") @db.Timestamptz
+  /// A versao de Novidades lida por ultimo (`'0.9.6'`).
+  novidadeVista        String?   @map("novidade_vista") @db.VarChar(32)
 
   theme             Theme   @default(DARK)
   /// ─── FK PARA `CosmeticItem`. NAO E ONDE O EQUIPAMENTO VIVE. ──────────────
@@ -299,6 +323,40 @@ model UserPreference {
   activeNameplate CosmeticItem? @relation("nameplate", fields: [activeNameplateId], references: [id])
 
   @@map("user_preferences")
+}
+
+/// ─── O PROGRESSO DOS DESAFIOS (OS MINIGAMES) ─────────────────────────────────
+///
+/// Uma linha por conta e desafio. O recorde vivia no `localStorage` e a
+/// sequência num `useState`: trocar de PC zerava um, e um F5 zerava o outro.
+///
+/// Tabela, e não mais uma chave JSONB em `user_preferences`, porque isto muda
+/// a CADA PERGUNTA e o recorde tem uma regra que precisa valer no banco — só
+/// sobe. Com uma linha por desafio, "só sobe" é um `UPDATE ... WHERE recorde <
+/// :novo`, atômico; num JSONB seria ler, comparar e regravar o objeto inteiro,
+/// e duas abas respondendo ao mesmo tempo perderiam um recorde.
+///
+/// `chave` é texto e não enum: os desafios são definidos no site
+/// (`adivinhe`, `escada`, `grade`, `mais-jogada`, `mais-cara`), e um desafio
+/// novo não deve custar uma migração. O formato e o teto de 64 por conta estão
+/// em `shared-types/desafios.ts`.
+///
+/// A chave primária composta já começa por `user_id`, e é por ela que toda
+/// leitura procura: não precisa de índice à parte. Some com a conta (CASCADE):
+/// passatempo não é estatística que precise sobreviver a ninguém.
+model ProgressoDeDesafio {
+  userId       String   @map("user_id") @db.Uuid
+  chave        String   @db.VarChar(40)
+  recorde      Int      @default(0)
+  sequencia    Int      @default(0)
+  /// Há uma pergunta sorteada e sem resposta. Ver `DesafiosService`.
+  emJogo       Boolean  @default(false) @map("em_jogo")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, chave])
+  @@map("progresso_de_desafios")
 }
 
 // ─── Decks ────────────────────────────────────────────────────────────────────

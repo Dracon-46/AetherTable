@@ -22,13 +22,20 @@
  */
 
 import { useCallback, useEffect } from 'react';
+import type { CodigoDoIdiomaDaInterface } from '@aethertable/shared-types';
 import { useAparencia } from '../store/aparencia.store';
 import { EN } from './en';
 
+/**
+ * O `satisfies` amarra esta lista à do shared-types: o idioma da interface
+ * segue a conta, e a API só aceita os códigos de `IDIOMAS_ACEITOS_NA_INTERFACE`.
+ * Um idioma novo aqui que não estivesse lá seria salvo e voltaria como o padrão
+ * na próxima máquina — agora não compila.
+ */
 export const IDIOMAS_DA_INTERFACE = [
   { codigo: 'pt-BR', nome: 'Português (Brasil)' },
   { codigo: 'en', nome: 'English' },
-] as const;
+] as const satisfies readonly { codigo: CodigoDoIdiomaDaInterface; nome: string }[];
 export type IdiomaDaInterface = (typeof IDIOMAS_DA_INTERFACE)[number]['codigo'];
 
 const DICIONARIOS: Record<IdiomaDaInterface, Readonly<Record<string, string>>> = {

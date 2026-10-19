@@ -16,7 +16,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Eye, Loader2, RotateCcw } from 'lucide-react';
 import { cardImageUrl } from '@/canvas/textureCache';
 import { mensagemDaApi } from '../lib/fetcher';
-import { CampoDeNome, Placar, useRecorde } from './comum';
+import { CampoDeNome, Placar } from './comum';
+import { useProgressoDeDesafio } from './progresso';
 import {
   nomeConfere,
   paginaAoAcaso,
@@ -77,8 +78,14 @@ export function Adivinhacao({ modo }: { modo: 'arte' | 'escada' }) {
   const [reveladas, setReveladas] = useState(1);
   const [fim, setFim] = useState<'acertou' | 'errou' | null>(null);
   const [palpites, setPalpites] = useState<string[]>([]);
-  const [pontos, setPontos] = useState(0);
-  const [recorde, registrar] = useRecorde(modo === 'arte' ? 'adivinhe' : 'escada');
+  // Os pontos em curso e o recorde seguem a conta. Ver `progresso.ts`.
+  const {
+    sequencia: pontos,
+    recorde,
+    pronto,
+    comecarPergunta,
+    responder,
+  } = useProgressoDeDesafio(modo === 'arte' ? 'adivinhe' : 'escada');
   const [erro, setErro] = useState<string | null>(null);
 
   const pistas = carta ? (modo === 'arte' ? pistasDaArte(carta) : pistasDaEscada(carta)) : [];
@@ -106,9 +113,18 @@ export function Adivinhacao({ modo }: { modo: 'arte' | 'escada' }) {
     void nova();
   }, [nova]);
 
+  /**
+   * A carta na tela é uma pergunta aberta: a conta fica sabendo, e um F5
+   * agora conta como desistência (ver `progresso.ts`). Depois do `pronto`,
+   * para a regra da pergunta abandonada já ter rodado.
+   */
+  useEffect(() => {
+    if (carta && pronto) comecarPergunta();
+  }, [carta, pronto, comecarPergunta]);
+
   const perder = () => {
     setFim('errou');
-    setPontos(0);
+    responder(0);
     setReveladas(pistas.length);
   };
 
@@ -127,9 +143,7 @@ export function Adivinhacao({ modo }: { modo: 'arte' | 'escada' }) {
       setFim('acertou');
       // Arte: um ponto por carta. Escada: quanto menos degraus, mais pontos.
       const ganho = modo === 'arte' ? 1 : pistas.length + 1 - reveladas;
-      const total = pontos + ganho;
-      setPontos(total);
-      registrar(total);
+      responder(pontos + ganho);
       return;
     }
     setPalpites((p) => [...p, nome]);
@@ -153,7 +167,7 @@ export function Adivinhacao({ modo }: { modo: 'arte' | 'escada' }) {
 
       {erro ? (
         <p className="text-danger text-sm">{erro}</p>
-      ) : !carta ? (
+      ) : !carta || !pronto ? (
         <p className="text-text-muted flex items-center gap-2 text-sm">
           <Loader2 className="h-4 w-4 animate-spin" /> Escolhendo uma carta…
         </p>

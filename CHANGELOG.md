@@ -11,6 +11,33 @@ resumo.
 
 ## [Não lançado]
 
+## [0.10.0] — 2026-10-19
+
+### Adicionado
+
+- **Desafios na conta:** recorde e sequência atual de cada desafio ficam em
+  `progresso_de_desafios`. Trocar de computador não zera mais, e o recorde que
+  estava no navegador sobe para a conta na primeira visita. O recorde só sobe,
+  sem corrida entre abas ou aparelhos.
+- **Sino na conta:** o "já vi" das notificações e a última novidade lida
+  (`GET/PUT /notificacoes/leitura`); vale o mais recente entre o navegador e a
+  conta.
+- **Aparência do site na conta** (`preferenciasDeInterface`): visão,
+  agrupamento e ordenação dos decks, tamanho de carta, densidade, animações e
+  idiomas.
+- **Mais preferências de mesa na conta:** log dividido, rastreador de mana,
+  prévia ao lado, efeitos sonoros e tremor do comandante.
+- **Fichas recentes na conta** (`fichasRecentes`).
+
+### Alterado
+
+- Sair no meio de uma pergunta de desafio conta como erro e zera a sequência.
+  Sem isso, recarregar a página viraria um jeito de pular a pergunta difícil
+  sem perder a sequência.
+- Uma conta sem preferências salvas passa a enviar o que for ajustado; antes,
+  nada chegava à conta até a primeira gravação por outro caminho.
+- O release marcado como "Latest" no GitHub é sempre a maior versão estável.
+
 ## [0.9.6] — 2026-10-19
 
 ### Segurança
@@ -180,7 +207,8 @@ resumo.
   na sala de espera e modo espectador.
 - Processo documentado (DOC-091/092/093), `pnpm verificar` e hook de pre-push.
 
-[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.9.6...HEAD
+[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Dracon-46/AetherTable/compare/v0.9.6...v0.10.0
 [0.9.6]: https://github.com/Dracon-46/AetherTable/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/Dracon-46/AetherTable/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/Dracon-46/AetherTable/compare/v0.9.3...v0.9.4

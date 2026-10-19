@@ -3,7 +3,8 @@
 /**
  * IdiomaDasCartas.tsx — em que idioma você quer ver as cartas.
  *
- * É preferência deste navegador e vale como PADRÃO: o editor oferece "pôr o
+ * É preferência da conta (`PreferenciasDeInterface`, com o navegador como
+ * cache) e vale como PADRÃO: o editor oferece "pôr o
  * deck neste idioma" e o seletor de arte mostra as impressões nele. Nada muda
  * sozinho num deck — trocar a impressão é decisão de quem monta o deck, porque
  * muda o que os outros veem na mesa.
