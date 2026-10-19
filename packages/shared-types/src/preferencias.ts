@@ -101,6 +101,26 @@ export interface PreferenciasDeMesa {
   boardView: VisaoDaMesa;
   /** O arranjo do tabuleiro. Ver `EstiloDeMesa`. */
   estiloDeMesa: EstiloDeMesa;
+
+  // ─── AS CINCO QUE TINHAM FICADO SÓ NO NAVEGADOR ───────────────────────────
+  //
+  // Estavam no `partialize` do store da mesa — persistidas, mas só em
+  // `localStorage`. Eram exatamente o tipo de escolha que o relato "se eu troco
+  // de PC, zera" descreve: quem ligou o som ou dividiu o log quer o som e o log
+  // dividido em qualquer máquina. O que ficou de fora do contrato é estado de
+  // SESSÃO ou do APARELHO (câmera, `escalaDaMesa`), que não faz sentido levar
+  // de uma tela para outra.
+
+  /** Chat e ações em duas listas, uma sobre a outra, em vez de misturados. */
+  logDividido: boolean;
+  /** Rastreador de mana (W/U/B/R/G/C) aberto na tela. */
+  manaAberto: boolean;
+  /** A prévia da carta segue o cursor em vez de ficar fixa no canto. */
+  previaAoLado: boolean;
+  /** Sons curtos para dado, moeda, reação e "é a sua vez". */
+  efeitosSonoros: boolean;
+  /** A tela treme quando um comandante entra no campo. */
+  tremorDoComandante: boolean;
 }
 
 /**
@@ -122,6 +142,11 @@ export const PREFERENCIAS_DE_MESA_PADRAO: Readonly<PreferenciasDeMesa> = {
   vidaModo: 'minha',
   boardView: 'ALL',
   estiloDeMesa: 'focada',
+  logDividido: false,
+  manaAberto: false,
+  previaAoLado: false,
+  efeitosSonoros: false,
+  tremorDoComandante: false,
 };
 
 /** As chaves aceitas. Serve à validação e ao teto de tamanho do JSON. */
@@ -181,6 +206,11 @@ export function normalizarPreferenciasDeMesa(entrada: unknown): PreferenciasDeMe
     vidaModo,
     boardView,
     estiloDeMesa,
+    logDividido: booleano(e.logDividido, p.logDividido),
+    manaAberto: booleano(e.manaAberto, p.manaAberto),
+    previaAoLado: booleano(e.previaAoLado, p.previaAoLado),
+    efeitosSonoros: booleano(e.efeitosSonoros, p.efeitosSonoros),
+    tremorDoComandante: booleano(e.tremorDoComandante, p.tremorDoComandante),
   };
 }
 

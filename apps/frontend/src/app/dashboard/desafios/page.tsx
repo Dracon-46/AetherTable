@@ -4,8 +4,9 @@
  * Desafios — passatempos com cartas de verdade, entre uma partida e outra.
  *
  * Cinco jogos curtos, todos com as cartas mais jogadas em Commander (o topo do
- * EDHREC, pela busca da Scryfall da API). Nenhum guarda nada no servidor: o
- * recorde é deste navegador.
+ * EDHREC, pela busca da Scryfall da API). O recorde e a sequência em curso de
+ * cada um seguem a conta (`desafios/progresso.ts`): trocar de PC não zera, e
+ * recarregar no meio de uma pergunta conta como desistir dela.
  */
 
 import { useState } from 'react';
@@ -63,7 +64,7 @@ export default function DesafiosPage() {
         </h1>
         <p className="text-text-muted text-sm sm:text-base">
           {t(
-            'Passatempos com as cartas mais jogadas em Commander. O recorde fica neste navegador.',
+            'Passatempos com as cartas mais jogadas em Commander. O recorde e a sequência seguem a sua conta.',
           )}
         </p>
       </header>

@@ -2,36 +2,16 @@
 
 /**
  * comum.tsx — o que os cinco desafios dividem: o campo de nome com
- * autocompletar, o placar e o recorde.
+ * autocompletar e o placar.
  *
- * O recorde é deste navegador (`localStorage`): é passatempo, não ranking.
- * Se o armazenamento falhar, o desafio funciona igual — só não lembra.
+ * O recorde e a sequência saíram daqui: o `useRecorde` guardava só o
+ * recorde, e só neste navegador. Agora os dois seguem a conta — ver
+ * `progresso.ts`.
  */
 
 import { useEffect, useId, useState } from 'react';
 import { Flame, Trophy } from 'lucide-react';
 import { api } from '../lib/fetcher';
-
-export function useRecorde(chave: string): [number, (valor: number) => void] {
-  const [recorde, setRecorde] = useState(0);
-  useEffect(() => {
-    try {
-      setRecorde(Number(window.localStorage.getItem(`aethertable:desafio:${chave}`)) || 0);
-    } catch {
-      /* sem armazenamento, recorde da sessão */
-    }
-  }, [chave]);
-  const registrar = (valor: number) => {
-    if (valor <= recorde) return;
-    setRecorde(valor);
-    try {
-      window.localStorage.setItem(`aethertable:desafio:${chave}`, String(valor));
-    } catch {
-      /* idem */
-    }
-  };
-  return [recorde, registrar];
-}
 
 export function Placar({
   pontos,

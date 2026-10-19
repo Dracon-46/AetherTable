@@ -12,7 +12,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { cardImageUrl } from '@/canvas/textureCache';
 import { mensagemDaApi } from '../lib/fetcher';
-import { Placar, useRecorde } from './comum';
+import { Placar } from './comum';
+import { useProgressoDeDesafio } from './progresso';
 import { paginaAoAcaso, POPULARES, precoDe, sortearPar, type CartaDoDesafio } from './cartas';
 
 export interface RegraDeComparacao {
@@ -31,8 +32,10 @@ export interface RegraDeComparacao {
 export function Comparacao({ regra }: { regra: RegraDeComparacao }) {
   const [par, setPar] = useState<[CartaDoDesafio, CartaDoDesafio] | null>(null);
   const [escolha, setEscolha] = useState<0 | 1 | null>(null);
-  const [sequencia, setSequencia] = useState(0);
-  const [recorde, registrar] = useRecorde(regra.chave);
+  // A sequência e o recorde seguem a conta. Ver `progresso.ts`.
+  const { sequencia, recorde, pronto, comecarPergunta, responder } = useProgressoDeDesafio(
+    regra.chave,
+  );
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
@@ -56,6 +59,16 @@ export function Comparacao({ regra }: { regra: RegraDeComparacao }) {
     void novoPar();
   }, [novoPar]);
 
+  /**
+   * O par na tela é uma pergunta aberta: a conta fica sabendo, e um F5 agora
+   * conta como desistência (ver `progresso.ts`). Espera o `pronto` para a
+   * regra da pergunta abandonada já ter rodado — senão esta marcação seria
+   * lida como a pergunta abandonada.
+   */
+  useEffect(() => {
+    if (par && pronto) comecarPergunta();
+  }, [par, pronto, comecarPergunta]);
+
   const primeiraTemMais = par !== null && regra.valor(par[0])! > regra.valor(par[1])!;
   const vencedora = par ? (primeiraTemMais === regra.maiorVence ? 0 : 1) : null;
   const acertou = escolha !== null && escolha === vencedora;
@@ -63,13 +76,7 @@ export function Comparacao({ regra }: { regra: RegraDeComparacao }) {
   const escolher = (i: 0 | 1) => {
     if (escolha !== null || !par) return;
     setEscolha(i);
-    if (i === vencedora) {
-      const nova = sequencia + 1;
-      setSequencia(nova);
-      registrar(nova);
-    } else {
-      setSequencia(0);
-    }
+    responder(i === vencedora ? sequencia + 1 : 0);
   };
 
   return (
@@ -81,7 +88,7 @@ export function Comparacao({ regra }: { regra: RegraDeComparacao }) {
 
       {erro ? (
         <p className="text-danger text-sm">{erro}</p>
-      ) : !par || carregando ? (
+      ) : !par || carregando || !pronto ? (
         <p className="text-text-muted flex items-center gap-2 text-sm">
           <Loader2 className="h-4 w-4 animate-spin" /> Embaralhando…
         </p>

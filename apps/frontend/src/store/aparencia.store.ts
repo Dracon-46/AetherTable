@@ -3,10 +3,24 @@
 /**
  * aparencia.store.ts — como o jogador quer VER o aplicativo.
  *
- * Preferência puramente local: nada aqui trafega para o servidor nem para os
- * outros jogadores. Fica separada do `uiStore` da mesa de propósito — este
- * store vale nas telas de fora da partida (taverna, grimórios, perfil), e a
- * mesa tem o próprio, com estado efêmero que não faz sentido aqui.
+ * Nada aqui trafega para os outros jogadores. Fica separada do `uiStore` da
+ * mesa de propósito — este store vale nas telas de fora da partida (taverna,
+ * grimórios, perfil), e a mesa tem o próprio, com estado efêmero que não faz
+ * sentido aqui.
+ *
+ * ─── O QUE SEGUE A CONTA E O QUE FICA NESTE APARELHO ───────────────────────
+ *
+ * Era tudo só `localStorage`, e trocar de PC zerava. Agora as escolhas de
+ * GOSTO (visão, agrupamento e ordenação do grimório, tamanho das artes,
+ * densidade, animações, os dois idiomas) seguem a conta, pelo contrato
+ * `PreferenciasDeInterface` do shared-types — ver `preferencias-da-conta.ts`
+ * e `useHidratarPreferencias`. O `localStorage` continua sendo o cache que faz
+ * a tela abrir sem esperar rede.
+ *
+ * `menuRecolhido` e `painelDeBuscaRecolhido` ficam SÓ aqui, de propósito: são
+ * do aparelho, não da pessoa. O menu recolhido que ajuda no notebook atrapalha
+ * no monitor largo, e o painel de busca é recolhido no celular por falta de
+ * espaço.
  *
  * ─── POR QUE MINIMIZAR NÃO É "ESCONDER" ────────────────────────────────────
  *
@@ -23,22 +37,22 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type {
+  AgrupamentoDeDeck,
+  CodigoDoIdiomaDaInterface,
+  Densidade,
+  OrdenacaoDeDeck,
+  TamanhoDeCarta,
+  VisaoDeDeck,
+} from '@aethertable/shared-types';
 import { armazenamentoSeguro } from './storage';
 
-/** Como a lista de cartas do grimório é desenhada. */
-export type VisaoDeDeck = 'lista' | 'galeria' | 'compacta';
-
-/** Por qual critério as cartas são agrupadas. */
-export type AgrupamentoDeDeck = 'tipo' | 'cor' | 'cmc' | 'raridade' | 'nenhum';
-
-/** Em que ordem as cartas aparecem dentro de cada grupo. */
-export type OrdenacaoDeDeck = 'nome' | 'cmc' | 'preco' | 'tipo' | 'raridade' | 'cor';
-
-/** Tamanho das artes na galeria. Vira número de colunas na grade. */
-export type TamanhoDeCarta = 'pequeno' | 'medio' | 'grande';
-
-/** Densidade da interface fora da mesa. */
-export type Densidade = 'confortavel' | 'compacta';
+/**
+ * Os tipos moram no shared-types desde que a aparência foi para a conta: a API
+ * valida contra as MESMAS listas que este store aceita. Reexportados aqui para
+ * as telas continuarem importando de onde sempre importaram.
+ */
+export type { AgrupamentoDeDeck, Densidade, OrdenacaoDeDeck, TamanhoDeCarta, VisaoDeDeck };
 
 interface AparenciaState {
   /** Menu lateral em modo trilha de ícones (só desktop). */
@@ -59,7 +73,7 @@ interface AparenciaState {
    */
   idiomaDasCartas: string;
   /** Idioma da INTERFACE. Ver `i18n/i18n.ts`. */
-  idiomaDaInterface: 'pt-BR' | 'en';
+  idiomaDaInterface: CodigoDoIdiomaDaInterface;
 
   alternarMenu: () => void;
   setMenuRecolhido: (v: boolean) => void;
@@ -71,7 +85,7 @@ interface AparenciaState {
   setAnimacoesReduzidas: (v: boolean) => void;
   alternarPainelDeBusca: () => void;
   setIdiomaDasCartas: (v: string) => void;
-  setIdiomaDaInterface: (v: 'pt-BR' | 'en') => void;
+  setIdiomaDaInterface: (v: CodigoDoIdiomaDaInterface) => void;
 }
 
 export const useAparencia = create<AparenciaState>()(

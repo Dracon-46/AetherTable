@@ -411,14 +411,52 @@ uma segunda rota seria uma segunda requisição no caminho de entrada da Taverna
       "barraAberta": false,
       "logAberto": false,
       "vidaModo": "minha",
-      "boardView": "ALL"
-    }
+      "boardView": "ALL",
+      "estiloDeMesa": "focada",
+      "logDividido": false,
+      "manaAberto": false,
+      "previaAoLado": true,
+      "efeitosSonoros": false,
+      "tremorDoComandante": false
+    },
+    "preferenciasDeInterface": {
+      "visaoDeDeck": "galeria",
+      "agrupamentoDeDeck": "tipo",
+      "ordenacaoDeDeck": "cmc",
+      "tamanhoDeCarta": "medio",
+      "densidade": "confortavel",
+      "animacoesReduzidas": false,
+      "idiomaDasCartas": "pt",
+      "idiomaDaInterface": "pt-BR"
+    },
+    "fichasRecentes": [
+      { "scryfallId": "0dd0f3e2-…", "name": "Soldier", "power": "1", "toughness": "1" },
+      { "name": "Elemental", "power": "4", "toughness": "4" }
+    ]
   }
 }
 ```
 
-`PATCH /users/me` aceita qualquer subconjunto desses campos. Duas regras que valem para as duas
-colunas JSONB (`keybindings` e `preferenciasDeMesa`):
+`preferenciasDeMesa` ganhou cinco chaves (`logDividido`, `manaAberto`, `previaAoLado`,
+`efeitosSonoros`, `tremorDoComandante`), que viviam só no `localStorage` da mesa. Câmera e escala da
+mesa continuam fora: são da sessão e do aparelho.
+
+`preferenciasDeInterface` é a aparência do site fora da mesa (contrato em
+`shared-types/preferencias-de-interface.ts`). O menu recolhido e o painel de busca recolhido NÃO
+entram: são do aparelho. Além da regra das chaves, cada valor tem de ser um booleano ou um texto de
+até 32 caracteres.
+
+`fichasRecentes` é uma lista de até **12** fichas, a mais recente primeiro, validada item a item
+com os limites do `CreateTokenIntent` do game-server: `scryfallId` uuid (opcional), `name` de 1 a
+120, `power`/`toughness` até 4. Chave a mais num item é descartada.
+
+**Compatibilidade.** Os campos novos são opcionais na entrada, e um cliente que não os conhece os
+ignora na saída. O cliente novo trata campo ou chave ausente na resposta (API antiga, conta gravada
+por uma versão anterior, `{}` de fábrica) como "a conta ainda não tem isto": não apaga o
+`localStorage` e, se o navegador tem escolha fora do padrão, sobe o objeto completo.
+
+`PATCH /users/me` aceita qualquer subconjunto desses campos. Duas regras que valem para as colunas
+JSONB (`keybindings`, `preferenciasDeMesa`, `preferenciasDeInterface` e `fichasRecentes`):
 
 1. **o objeto é substituído inteiro, não mesclado.** O cliente sempre envia o conjunto completo, e
    um merge parcial criaria a dúvida de como voltar uma entrada ao padrão — chave ausente
@@ -460,8 +498,68 @@ Os avisos do sino, dos últimos 30 dias, mais recentes primeiro (até 30):
 Não há tabela de notificações: cada aviso é lido da fonte (`deck_likes`, `deck_comments`, `reports`) na hora, e por
 isso nunca diverge do fato. As curtidas vêm **agregadas por deck e sem nomes**, porque o Explorar só
 mostra quantas curtidas um deck tem, nunca quem curtiu. A própria curtida não conta. Da denúncia sai
-só o desfecho (`RESOLVED` houve medida, `DISMISSED` não houve), nunca a anotação do moderador. "Lido"
-é estado do cliente: o sino guarda a data da última vez que foi aberto.
+só o desfecho (`RESOLVED` houve medida, `DISMISSED` não houve), nunca a anotação do moderador. O que
+é "novo" é decidido pelo cliente, comparando cada aviso com a leitura de §2.17.
+
+### 2.17 `GET` e `PUT /notificacoes/leitura`
+
+O "já vi" do sino, na conta: a data da última abertura e a última versão de Novidades lida. Vivia só
+no `localStorage`, e em outra máquina tudo acendia como novo.
+
+`GET` responde:
+
+```json
+{ "vistoEm": "2026-10-14T11:30:00.000Z", "novidadeVista": "0.9.6" }
+```
+
+Conta que nunca abriu o sino: as duas `null`.
+
+`PUT` recebe `{ "vistoEm": "<ISO 8601 com fuso>", "novidadeVista": "<até 32>" }` e responde a
+leitura que ficou na conta. Regras:
+
+- **`vistoEm` só AVANÇA.** Fica o maior entre o gravado e o enviado — um `UPDATE` condicional na
+  mesma transação do `upsert`. Uma máquina com relógio atrasado não reacende o que já foi visto.
+- **Mais de 5 minutos no futuro do relógio do servidor é `400`.** Cinco minutos cobrem o relógio do
+  aparelho adiantado; uma data de amanhã faria tudo o que chegasse até lá nascer "visto".
+- `novidadeVista` é gravada como veio.
+
+O cliente guarda uma cópia no `localStorage` (cache), usa o MAIOR entre a cópia e a conta e sobe a
+cópia quando ela sabe mais. Uma busca por sessão, por mais sinos que estejam montados.
+
+### 2.18 O progresso dos desafios: `/users/me/desafios`
+
+O recorde e a sequência em curso de cada desafio (os minigames), por conta. Ver
+[modelo_de_dados.md](modelo_de_dados.md) §3.11. Todas autenticadas; a conta vem do token, nunca da
+URL. A `:chave` segue `^[a-z0-9-]{1,40}$` (`adivinhe`, `escada`, `grade`, `mais-jogada`,
+`mais-cara`).
+
+**`GET /users/me/desafios`** — um registro por desafio já jogado:
+
+```json
+{
+  "mais-jogada": { "recorde": 12, "sequencia": 4, "emJogo": false },
+  "grade": { "recorde": 9, "sequencia": 0, "emJogo": false }
+}
+```
+
+**`PUT /users/me/desafios/:chave`** — corpo `{ "sequencia": 0..100000 (inteiro), "emJogo": boolean }`,
+responde o progresso daquela chave. O recorde **não** vem no corpo (um `recorde` enviado é
+descartado): é consequência da sequência e **só sobe**, por um `UPDATE ... WHERE recorde <
+:sequencia` na mesma transação do `upsert`. A 65ª chave NOVA da conta é `400`; as existentes
+continuam gravando. Limite próprio, mais folgado que o global (30 em 5 s, 300 por minuto): a rota é
+chamada duas vezes por pergunta.
+
+**A regra da pergunta abandonada.** O cliente manda `{ sequencia: atual, emJogo: true }` quando uma
+pergunta aparece e `{ sequencia: nova, emJogo: false }` quando é respondida. Ao abrir um desafio cuja
+conta diz `emJogo: true`, a pergunta anterior ficou sem resposta (F5, troca de PC) e o cliente zera a
+sequência (`{ sequencia: 0, emJogo: false }`) antes de começar. Sem isso, recarregar seria um jeito
+de pular pergunta difícil sem perder a sequência.
+
+**`POST /users/me/desafios/importar`** — `{ "<chave>": recorde, … }` (1 a 64 chaves), o recorde que o
+navegador guardava antes de o progresso ir para a conta. Faz `recorde = max(atual, enviado)` e não
+mexe na sequência; responde `200` com o mapa inteiro, no formato do `GET`. O cliente chama uma vez
+por navegador e, só depois do `200`, apaga as chaves antigas do `localStorage`. Chamar de novo é
+inofensivo.
 
 ---
 

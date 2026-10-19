@@ -112,6 +112,16 @@ redistribuição de conteúdo protegido.
 │ resource_url       │        │ acquired_at          │
 │ min_tier           │        └──────────────────────┘
 └────────────────────┘
+
+┌──────────────────────────┐
+│   ProgressoDeDesafio     │   N:1 → User (CASCADE)
+│──────────────────────────│
+│ user_id (PK,FK)          │
+│ chave (PK)               │
+│ recorde · sequencia      │
+│ em_jogo                  │
+│ atualizado_em            │
+└──────────────────────────┘
 ```
 
 ---
@@ -218,22 +228,26 @@ transações críticas.
 
 ### 3.6 `UserPreference`
 
-| Coluna                 | Tipo          | Restrições                                    | Descrição                  |
-| ---------------------- | ------------- | --------------------------------------------- | -------------------------- |
-| `user_id`              | `UUID`        | PK e FK → `User`, `ON DELETE CASCADE`         | 1:1 com usuário            |
-| `keybindings`          | `JSONB`       | default `{}`                                  | Mapa ação → tecla (`F39`)  |
-| `preferencias_de_mesa` | `JSONB`       | default `{}`                                  | Preferências da mesa       |
-| `theme`                | `ENUM`        | `DARK` \| `LIGHT` \| `SYSTEM`, default `DARK` | Tema                       |
-| `active_playmat_id`    | `UUID`        | nullable, FK → `CosmeticItem`                 | Playmat equipado (`F40`)   |
-| `active_sleeve_id`     | `UUID`        | nullable, FK → `CosmeticItem`                 | Protetor de carta equipado |
-| `active_border_id`     | `UUID`        | nullable, FK → `CosmeticItem`                 | Borda de perfil equipada   |
-| `active_title_id`      | `UUID`        | nullable, FK → `CosmeticItem`                 | Título de chat equipado    |
-| `active_nameplate_id`  | `UUID`        | nullable, FK → `CosmeticItem`                 | Placa de nome (concedida)  |
-| `nameplate_id`         | `VARCHAR(48)` | nullable, id do catálogo (`NAMEPLATES`)       | Placa de nome equipada     |
-| `voice_mode`           | `ENUM`        | `VAD` \| `PTT`, default `VAD`                 | Modo de voz                |
-| `ptt_key`              | `VARCHAR(24)` | nullable                                      | Tecla de Push-to-Talk      |
-| `master_volume`        | `SMALLINT`    | default 100, `CHECK (0..100)`                 | Volume geral               |
-| `language`             | `VARCHAR(8)`  | default `pt-BR`                               | i18n (V2)                  |
+| Coluna                      | Tipo          | Restrições                                    | Descrição                  |
+| --------------------------- | ------------- | --------------------------------------------- | -------------------------- |
+| `user_id`                   | `UUID`        | PK e FK → `User`, `ON DELETE CASCADE`         | 1:1 com usuário            |
+| `keybindings`               | `JSONB`       | default `{}`                                  | Mapa ação → tecla (`F39`)  |
+| `preferencias_de_mesa`      | `JSONB`       | default `{}`                                  | Preferências da mesa       |
+| `preferencias_de_interface` | `JSONB`       | default `{}`                                  | Aparência do site          |
+| `fichas_recentes`           | `JSONB`       | default `[]`                                  | Fichas criadas por último  |
+| `notificacoes_vistas_em`    | `TIMESTAMPTZ` | nullable                                      | Última abertura do sino    |
+| `novidade_vista`            | `VARCHAR(32)` | nullable                                      | Última Novidade lida       |
+| `theme`                     | `ENUM`        | `DARK` \| `LIGHT` \| `SYSTEM`, default `DARK` | Tema                       |
+| `active_playmat_id`         | `UUID`        | nullable, FK → `CosmeticItem`                 | Playmat equipado (`F40`)   |
+| `active_sleeve_id`          | `UUID`        | nullable, FK → `CosmeticItem`                 | Protetor de carta equipado |
+| `active_border_id`          | `UUID`        | nullable, FK → `CosmeticItem`                 | Borda de perfil equipada   |
+| `active_title_id`           | `UUID`        | nullable, FK → `CosmeticItem`                 | Título de chat equipado    |
+| `active_nameplate_id`       | `UUID`        | nullable, FK → `CosmeticItem`                 | Placa de nome (concedida)  |
+| `nameplate_id`              | `VARCHAR(48)` | nullable, id do catálogo (`NAMEPLATES`)       | Placa de nome equipada     |
+| `voice_mode`                | `ENUM`        | `VAD` \| `PTT`, default `VAD`                 | Modo de voz                |
+| `ptt_key`                   | `VARCHAR(24)` | nullable                                      | Tecla de Push-to-Talk      |
+| `master_volume`             | `SMALLINT`    | default 100, `CHECK (0..100)`                 | Volume geral               |
+| `language`                  | `VARCHAR(8)`  | default `pt-BR`                               | i18n (V2)                  |
 
 **JSONB para `keybindings`:** o conjunto de ações mapeáveis muda a cada versão. Normalizar isso em
 tabela geraria migração a cada atalho novo, sem nenhum ganho de consulta — nunca filtramos por atalho.
@@ -246,9 +260,26 @@ por caixinha. O contrato (chaves, limites e sanitização) está em
 saída, e um valor fora da faixa cai no padrão em vez de derrubar o objeto inteiro — preferência é
 conforto, não autorização.
 
-**`{}` significa "nunca configurou", nas duas colunas.** O cliente NÃO sobrescreve o que tem em
-`localStorage` quando recebe o objeto vazio; do contrário, ajustar numa aba e recarregar outra
-devolveria tudo ao padrão.
+**JSONB para `preferencias_de_interface`:** a mesma forma, para a aparência do site fora da mesa —
+visão, agrupamento e ordenação da lista do grimório, tamanho das artes, densidade, animações
+reduzidas, idioma das cartas e idioma da interface. Contrato em
+`packages/shared-types/src/preferencias-de-interface.ts`. O menu recolhido e o painel de busca
+recolhido NÃO entram: são do aparelho, não da pessoa, e continuam só no `localStorage`.
+
+**`fichas_recentes` é uma LISTA** (padrão `[]`): as até 12 últimas fichas criadas na mesa, no
+formato exato do seletor (`{ scryfallId?, name, power?, toughness? }`), com os limites do
+`CreateTokenIntent` do game-server. Contrato em `packages/shared-types/src/fichas-recentes.ts`.
+
+**O "já vi" do sino é tipado, não JSONB.** `notificacoes_vistas_em` só AVANÇA — um `UPDATE`
+condicional (`WHERE notificacoes_vistas_em IS NULL OR notificacoes_vistas_em < :nova`), que um JSONB
+não faria sem ler e regravar o objeto. Nulas: o sino nunca foi aberto nesta conta.
+`novidade_vista` é gravada como veio.
+
+**`{}` significa "nunca configurou", em todas as colunas JSONB** — e chave AUSENTE também. O cliente
+NÃO sobrescreve o que tem em `localStorage` quando a conta não traz a chave (objeto vazio, conta
+gravada por uma versão anterior, API ainda na versão antiga); do contrário, ajustar numa aba e
+recarregar outra devolveria tudo ao padrão. Quando o navegador tem uma escolha fora do padrão que a
+conta não tem, ele a sobe.
 
 ### 3.7 `Block` e `Report` — moderação (`RF03`, `F36`)
 
@@ -356,6 +387,31 @@ Nenhuma das duas tem expurgo agendado — **não há scheduler neste projeto**, 
 expurgo LGPD de 30 dias (§7.1). A limpeza é oportunista: `deleteMany` das linhas vencidas roda no
 logout e em cada pedido/uso de redefinição, que é quando uma linha nova entra.
 
+### 3.11 `ProgressoDeDesafio` — o progresso dos minigames
+
+O recorde de cada desafio vivia no `localStorage` e a sequência em curso num `useState`: trocar de
+PC zerava o recorde, e um F5 zerava a sequência. Uma linha por conta e desafio.
+
+| Coluna          | Tipo          | Restrições                                    | Descrição                           |
+| --------------- | ------------- | --------------------------------------------- | ----------------------------------- |
+| `user_id`       | `UUID`        | PK composta, FK → `User`, `ON DELETE CASCADE` | Dono                                |
+| `chave`         | `VARCHAR(40)` | PK composta, `^[a-z0-9-]{1,40}$`              | `adivinhe`, `escada`, `grade`…      |
+| `recorde`       | `INTEGER`     | default 0                                     | Melhor placar — **só sobe**         |
+| `sequencia`     | `INTEGER`     | default 0                                     | Placar em curso                     |
+| `em_jogo`       | `BOOLEAN`     | default `false`                               | Há pergunta sorteada e sem resposta |
+| `atualizado_em` | `TIMESTAMPTZ` | `@updatedAt` (preenchido pelo Prisma)         | —                                   |
+
+- **Tabela, e não JSONB**, porque muda a cada pergunta e o recorde tem uma regra que precisa valer
+  no banco: só sobe. É um `UPDATE ... WHERE recorde < :sequencia` na mesma transação do `upsert` —
+  atômico, sem SQL cru, e duas abas respondendo juntas ficam com o maior.
+- **`chave` é texto, não enum:** os desafios são definidos no site, e um desafio novo não deve
+  custar migração. Teto de **64 chaves por conta** (a 65ª chave nova é `400`) para a tabela não
+  virar depósito.
+- **`em_jogo`** existe para a regra da pergunta abandonada: ao abrir um desafio com `em_jogo =
+true`, a pergunta anterior ficou sem resposta (F5, troca de PC) e o cliente zera a sequência.
+  Sem isso, recarregar seria um jeito de pular pergunta difícil sem perder a sequência.
+- A PK `(user_id, chave)` começa por `user_id` e atende a leitura por conta; não há índice à parte.
+
 ---
 
 ## 4. Schema Prisma (referência)
@@ -438,8 +494,8 @@ model DeckCard {
 }
 ```
 
-_(`Account`, `UserPreference`, `CardCache`, `Block`, `Report`, `MatchSummary`, `RevokedToken` e
-`PasswordResetToken` seguem o mesmo padrão de mapeamento `snake_case` no banco e `camelCase` no
+_(`Account`, `UserPreference`, `CardCache`, `Block`, `Report`, `MatchSummary`, `RevokedToken`,
+`PasswordResetToken` e `ProgressoDeDesafio` seguem o mesmo padrão de mapeamento `snake_case` no banco e `camelCase` no
 cliente. Este bloco é um recorte para leitura — a fonte é
 [`schema.prisma`](../apps/backend-core/prisma/schema.prisma).)_
 
@@ -447,15 +503,16 @@ cliente. Este bloco é um recorte para leitura — a fonte é
 
 ## 5. Consultas críticas e seus índices
 
-| Consulta                                        | Frequência     | Índice que a atende                  |
-| ----------------------------------------------- | -------------- | ------------------------------------ |
-| Listar decks do usuário, mais recentes primeiro | **Muito alta** | `decks (user_id, updated_at DESC)`   |
-| Carregar deck completo para a sala              | Alta           | `deck_cards (deck_id)`               |
-| Hidratar cartas de um deck a partir do cache    | Alta           | `card_cache (scryfall_id)` PK        |
-| Buscar carta por nome no cache local            | Média          | `card_cache (lower(name))`           |
-| Verificar bloqueio ao entrar em sala            | Média          | `blocks (blocker_id, blocked_id)` PK |
-| Login por e-mail                                | Média          | `users (email)` unique               |
-| Contar partidas do perfil                       | Baixa          | `match_participants (user_id)`       |
+| Consulta                                          | Frequência     | Índice que a atende                           |
+| ------------------------------------------------- | -------------- | --------------------------------------------- |
+| Listar decks do usuário, mais recentes primeiro   | **Muito alta** | `decks (user_id, updated_at DESC)`            |
+| Carregar deck completo para a sala                | Alta           | `deck_cards (deck_id)`                        |
+| Hidratar cartas de um deck a partir do cache      | Alta           | `card_cache (scryfall_id)` PK                 |
+| Buscar carta por nome no cache local              | Média          | `card_cache (lower(name))`                    |
+| Verificar bloqueio ao entrar em sala              | Média          | `blocks (blocker_id, blocked_id)` PK          |
+| Login por e-mail                                  | Média          | `users (email)` unique                        |
+| Contar partidas do perfil                         | Baixa          | `match_participants (user_id)`                |
+| Progresso dos desafios da conta (a cada pergunta) | Média          | `progresso_de_desafios` PK `(user_id, chave)` |
 
 **Antipadrão a evitar:** carregar `DeckCard` e depois consultar `CardCache` uma vez por carta (N+1).
 O correto é um `IN` único com todos os `scryfall_id` do deck.

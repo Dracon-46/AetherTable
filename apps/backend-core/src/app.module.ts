@@ -13,6 +13,7 @@ import { CardsModule } from './cards/cards.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { CosmeticosModule } from './cosmeticos/cosmeticos.module.js';
 import { NotificacoesModule } from './notificacoes/notificacoes.module.js';
+import { DesafiosModule } from './desafios/desafios.module.js';
 import { BALDES_GLOBAIS } from './common/limites.js';
 import { FiltroDeErrosDoPrisma } from './common/filtro-de-erros-do-prisma.js';
 import { opcoesDoRegistroHttp } from './common/registro-http.js';
@@ -71,6 +72,7 @@ import { opcoesDoRegistroHttp } from './common/registro-http.js';
     CardsModule,
     CosmeticosModule,
     NotificacoesModule,
+    DesafiosModule,
     AdminModule,
   ],
   providers: [

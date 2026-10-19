@@ -8,6 +8,11 @@
  * E a mesma guarda impedia o token NOVO da troca de senha de hidratar: o
  * observador das preferências de mesa ficava desligado e nada mais chegava à
  * conta.
+ *
+ * Depois, a aparência do site e as fichas recentes entraram na mesma
+ * hidratação: o que a conta tem é aplicado, o que falta nela não apaga o
+ * navegador (e sobe), e uma conta sem linha de preferências também liga os
+ * observadores.
  */
 
 import React from 'react';
@@ -16,7 +21,17 @@ import { useHidratarPreferencias } from './useHidratarPreferencias';
 import { useAuthStore } from './auth.store';
 import { useCosmeticos } from '../cosmetics/store';
 import { api } from '../lib/fetcher';
-import { observarPreferenciasDaMesa } from './preferencias-da-conta';
+import {
+  observarPreferenciasDaMesa,
+  observarPreferenciasDeInterface,
+} from './preferencias-da-conta';
+import {
+  observarFichasRecentes,
+  lerFichasRecentes,
+  reiniciarFichasRecentes,
+} from './fichas-recentes';
+import { useAparencia } from './aparencia.store';
+import { useUIStore } from './game.store';
 
 jest.mock('../lib/fetcher', () => ({
   ...jest.requireActual('../lib/fetcher'),
@@ -25,6 +40,11 @@ jest.mock('../lib/fetcher', () => ({
 jest.mock('./preferencias-da-conta', () => ({
   ...jest.requireActual('./preferencias-da-conta'),
   observarPreferenciasDaMesa: jest.fn(),
+  observarPreferenciasDeInterface: jest.fn(),
+}));
+jest.mock('./fichas-recentes', () => ({
+  ...jest.requireActual('./fichas-recentes'),
+  observarFichasRecentes: jest.fn(),
 }));
 // O catálogo autoral é outra busca (react-query); não participa da guarda.
 jest.mock('../cosmetics/useCatalogo', () => ({ useCatalogoDeCosmeticos: () => 0 }));
@@ -34,6 +54,14 @@ const observarMock = observarPreferenciasDaMesa as jest.MockedFunction<
   typeof observarPreferenciasDaMesa
 >;
 const pararDeObservar = jest.fn();
+const observarAparenciaMock = observarPreferenciasDeInterface as jest.MockedFunction<
+  typeof observarPreferenciasDeInterface
+>;
+const observarFichasMock = observarFichasRecentes as jest.MockedFunction<
+  typeof observarFichasRecentes
+>;
+const aparenciaInicial = useAparencia.getState();
+const mesaInicial = useUIStore.getState();
 
 function Casca() {
   useHidratarPreferencias();
@@ -45,8 +73,16 @@ beforeEach(() => {
   pararDeObservar.mockReset();
   observarMock.mockReset();
   observarMock.mockReturnValue(pararDeObservar);
+  observarAparenciaMock.mockReset();
+  observarAparenciaMock.mockReturnValue(jest.fn());
+  observarFichasMock.mockReset();
+  observarFichasMock.mockReturnValue(jest.fn());
   useAuthStore.setState({ accessToken: 'token', user: { id: 'u1', username: 'ana' } });
   useCosmeticos.setState({ tier: 'FREE' });
+  useAparencia.setState(aparenciaInicial, true);
+  useUIStore.setState(mesaInicial, true);
+  window.localStorage.removeItem('aether-fichas-recentes');
+  reiniciarFichasRecentes();
 });
 
 describe('useHidratarPreferencias', () => {
@@ -133,5 +169,66 @@ describe('useHidratarPreferencias', () => {
     await Promise.resolve();
 
     expect(useCosmeticos.getState().tier).toBe('FREE');
+  });
+
+  it('a aparência e as preferências de mesa novas da conta são aplicadas', async () => {
+    apiMock.mockResolvedValue({
+      supporterTier: 'FREE',
+      preference: {
+        preferenciasDeInterface: { visaoDeDeck: 'galeria', idiomaDaInterface: 'en' },
+        preferenciasDeMesa: { logDividido: true, efeitosSonoros: true },
+      },
+    });
+
+    const { unmount } = render(<Casca />);
+    await waitFor(() => expect(useAparencia.getState().visaoDeDeck).toBe('galeria'));
+    expect(useAparencia.getState().idiomaDaInterface).toBe('en');
+    expect(useUIStore.getState().logDividido).toBe(true);
+    expect(useUIStore.getState().efeitosSonoros).toBe(true);
+    // A conta tinha o que tinha; o navegador estava no padrão: nada a subir.
+    expect(observarAparenciaMock).toHaveBeenCalledWith({ enviarJa: false });
+    unmount();
+  });
+
+  it('campo ausente (API antiga) não apaga a aparência local — e ela sobe', async () => {
+    useAparencia.setState({ densidade: 'compacta', tamanhoDeCarta: 'grande' });
+    apiMock.mockResolvedValue({ supporterTier: 'FREE', preference: { keybindings: {} } });
+
+    const { unmount } = render(<Casca />);
+    await waitFor(() => expect(observarAparenciaMock).toHaveBeenCalledTimes(1));
+    expect(useAparencia.getState().densidade).toBe('compacta');
+    expect(useAparencia.getState().tamanhoDeCarta).toBe('grande');
+    expect(observarAparenciaMock).toHaveBeenCalledWith({ enviarJa: true });
+    unmount();
+  });
+
+  it('as fichas recentes da conta são mescladas com as deste navegador', async () => {
+    const SOLDADO = { scryfallId: '0dd0f3e2-3e0a-4b41-9a10-2f83e4d3b3f6', name: 'Soldier' };
+    const ELEMENTAL = { name: 'Elemental', power: '4', toughness: '4' };
+    window.localStorage.setItem('aether-fichas-recentes', JSON.stringify([ELEMENTAL]));
+    apiMock.mockResolvedValue({ supporterTier: 'FREE', preference: { fichasRecentes: [SOLDADO] } });
+
+    const { unmount } = render(<Casca />);
+    await waitFor(() => expect(observarFichasMock).toHaveBeenCalledTimes(1));
+    expect(lerFichasRecentes()).toEqual([SOLDADO, ELEMENTAL]);
+    // O Elemental só existia aqui: a lista mesclada sobe.
+    expect(observarFichasMock).toHaveBeenCalledWith({ enviarJa: true });
+    unmount();
+  });
+
+  it('conta sem linha de preferências também liga os observadores', async () => {
+    // Antes, `preference: null` encerrava a hidratação ali: numa conta nova,
+    // nada do que a pessoa ajustasse chegava à conta.
+    useUIStore.setState({ previaAoLado: true });
+    apiMock.mockResolvedValue({ supporterTier: 'FREE', preference: null });
+
+    const { unmount } = render(<Casca />);
+    await waitFor(() => expect(observarMock).toHaveBeenCalledTimes(1));
+    expect(observarAparenciaMock).toHaveBeenCalledTimes(1);
+    expect(observarFichasMock).toHaveBeenCalledTimes(1);
+    // E a escolha local que a conta não tem sobe.
+    expect(observarMock).toHaveBeenCalledWith({ enviarJa: true });
+    expect(useUIStore.getState().previaAoLado).toBe(true);
+    unmount();
   });
 });

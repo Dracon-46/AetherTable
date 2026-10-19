@@ -131,7 +131,7 @@ interface CardDataState {
 
 | Regra                                              | Motivo                                                 |
 | -------------------------------------------------- | ------------------------------------------------------ |
-| `uiStore` **nunca** vai para a rede                | Zoom e modais são preferência pessoal                  |
+| `uiStore` **nunca** vai para a MESA                | Modais e seleção são de quem olha (ver §3.1.1)         |
 | `gameStore` **nunca** é mutado pela UI diretamente | A UI envia intenção; o _patch_ muta o espelho (`RN07`) |
 | `audioStore` é local, com persistência opcional    | Volume de cada um é escolha individual                 |
 | `cardDataStore` é cache derivado                   | Reconstruível a qualquer momento                       |
@@ -141,6 +141,46 @@ interface CardDataState {
 menu da carta (`DOC-036` §6). A chave do `localStorage` subiu para `aether-card-catalog-v2`: com a
 antiga, as cartas já em cache chegariam sem o campo e nunca mais seriam pedidas de novo. Campo novo
 no metadado = versão nova na chave.
+
+### 3.1.1 O que segue a conta e o que fica no navegador
+
+"Se eu troco de PC, zera" foi o relato que levou, uma fatia por vez, as preferências do navegador
+para a conta. A regra hoje: **o que é escolha da PESSOA segue a conta; o que é do APARELHO ou da
+SESSÃO fica no `localStorage`**. Mesmo o que segue a conta mantém uma cópia local, como **cache** — a
+tela abre sem esperar rede —, e a conta é a fonte da verdade entre máquinas.
+
+| O quê                                                                                                                                                                | Onde mora                                               | Cache local                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------- |
+| Cosméticos, atalhos, tema                                                                                                                                            | `user_preferences` (`GET`/`PATCH /users/me`)            | sim                                                       |
+| Preferências da mesa (`PreferenciasDeMesa`), incluindo log dividido, rastreador de mana, prévia ao lado, sons e tremor do comandante                                 | `user_preferences.preferencias_de_mesa`                 | `aether-ui-store`                                         |
+| Aparência do site (`PreferenciasDeInterface`): visão, agrupamento e ordenação do grimório, tamanho das artes, densidade, animações, idioma das cartas e da interface | `user_preferences.preferencias_de_interface`            | `aether-aparencia`                                        |
+| Fichas recentes do seletor de fichas                                                                                                                                 | `user_preferences.fichas_recentes`                      | `aether-fichas-recentes`                                  |
+| "Já vi" do sino (última abertura e última Novidade lida)                                                                                                             | `user_preferences` (`/notificacoes/leitura`)            | `aethertable:sino-visto-em`, `aethertable:novidade-vista` |
+| Recorde e sequência dos desafios                                                                                                                                     | `progresso_de_desafios` (`/users/me/desafios`)          | **não** (ver abaixo)                                      |
+| Menu lateral recolhido, painel de busca recolhido                                                                                                                    | só `localStorage` — são do aparelho                     | —                                                         |
+| Câmera da mesa, escala da mesa, modais, seleção                                                                                                                      | só memória/`localStorage` — são da sessão e do aparelho | —                                                         |
+
+Três regras valem para todas:
+
+1. **Hidrata no login, e só DEPOIS liga o observador** (`useHidratarPreferencias`). Ligar antes faria
+   o próprio ato de aplicar a conta mandar um `PATCH` de volta — ou gravar o padrão por cima dela.
+2. **Chave ausente na conta não apaga o navegador.** Objeto vazio, conta gravada por uma versão
+   anterior ou API ainda na versão antiga são "a conta ainda não tem isto": o local fica e, se tem
+   escolha fora do padrão, sobe. Um navegador todo no padrão não sobe nada — senão o padrão viraria
+   escolha gravada e apagaria a de outra máquina.
+3. **Falha de rede não desfaz nada na tela.** O valor novo já está desenhado e no cache; a próxima
+   mudança (ou entrada) tenta de novo.
+
+As mudanças sobem por **uma assinatura com espera por store** (`observarComEspera`, 1,5 s): uma
+rajada de ajustes vira um `PATCH`, com o objeto completo. Ao desligar com envio pendente (sair da
+taverna para a mesa), o envio sai na hora em vez de se perder.
+
+**Os desafios não têm cache local.** O recorde antigo (`aethertable:desafio:<chave>`) sobe uma vez por
+navegador (`POST /users/me/desafios/importar`) e só então é apagado. A sequência em curso segue a
+conta com a **regra da pergunta abandonada**: cada pergunta na tela é marcada como aberta
+(`emJogo: true`) e a resposta a fecha; abrir um desafio com pergunta aberta na conta (F5, troca de
+PC) zera a sequência antes de começar — senão recarregar seria um jeito de pular pergunta difícil.
+O recorde só sobe, e quem garante é o banco.
 
 ### 3.2 Conectando o Colyseus ao `gameStore`
 
