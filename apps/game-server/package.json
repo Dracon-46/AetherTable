@@ -30,10 +30,10 @@
   "devDependencies": {
     "@colyseus/playground": "^0.16.4",
     "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.14",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.7",
-    "jest": "^29.7.0",
+    "jest": "^30.5.2",
     "ts-jest": "^29.2.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
