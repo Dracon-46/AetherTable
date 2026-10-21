@@ -27,9 +27,10 @@
  * historico (o `Invoker`) so conhece a interface: executar, e desfazer o
  * ultimo dentro da janela.
  *
- * O ESTADO ANTERIOR CONTINUA SENDO UM SNAPSHOT: `services/undo.ts` perdeu o
- * `JornalUndo` (que virou o historico daqui) e ficou sendo o MEMENTO do
- * comando — o recorte, a janela e a lista do que nao volta atras. Undo por
+ * O ESTADO ANTERIOR CONTINUA SENDO UMA FOTO: `services/undo.ts` perdeu o
+ * `JornalUndo` (que virou o historico daqui) e ficou sendo o padrao MEMENTO
+ * (DOC-098) — o originador `RecorteDoJogador`, a foto e a lista do que nao
+ * volta atras. O comando e o CARETAKER: guarda a foto sem abri-la. Undo por
  * memento e o que cabe aqui:
  * calcular a operacao inversa de "embaralhou e comprou tres" exigiria um
  * inverso por intencao, noventa e seis vezes, e cada um seria uma chance de
@@ -40,11 +41,10 @@ import type { z } from 'zod';
 
 import type { RoomState } from '../schema/RoomState';
 import {
-  capturar,
-  restaurar,
   JANELA_UNDO_MS,
   NAO_REVERSIVEIS,
-  type Snapshot,
+  RecorteDoJogador,
+  type MementoDoRecorte,
 } from '../services/undo';
 import type { IntentContext, IntentHandler } from './registry';
 
@@ -73,7 +73,13 @@ export interface ComandoDeMesa {
  * handler.
  */
 export class ComandoDeIntencao implements ComandoDeMesa {
-  private memento: Snapshot | null = null;
+  /**
+   * CARETAKER do Memento: so enxerga `autor`, `tipo` e `em`. O conteudo da foto
+   * (a ordem do grimorio e da mao, entre outras coisas) so o originador le.
+   */
+  private memento: MementoDoRecorte | null = null;
+  /** ORIGINATOR: o pedaco da mesa que e de quem mandou a intencao. */
+  private readonly recorte: RecorteDoJogador;
 
   constructor(
     readonly tipo: string,
@@ -81,7 +87,9 @@ export class ComandoDeIntencao implements ComandoDeMesa {
     private readonly ctx: IntentContext,
     private readonly dados: unknown,
     private readonly state: RoomState,
-  ) {}
+  ) {
+    this.recorte = new RecorteDoJogador(state, ctx.client.sessionId);
+  }
 
   get autor(): string {
     return this.ctx.client.sessionId;
@@ -96,7 +104,7 @@ export class ComandoDeIntencao implements ComandoDeMesa {
    * nenhum na tela.
    */
   executar(): void {
-    this.memento = this.reversivel() ? capturar(this.state, this.autor, this.tipo) : null;
+    this.memento = this.reversivel() ? this.recorte.salvar(this.tipo) : null;
     this.handler.executa(this.ctx, this.dados);
   }
 
@@ -121,7 +129,7 @@ export class ComandoDeIntencao implements ComandoDeMesa {
   }
 
   desfazer(): void {
-    if (this.memento) restaurar(this.state, this.memento);
+    if (this.memento) this.recorte.restaurar(this.memento);
   }
 }
 
