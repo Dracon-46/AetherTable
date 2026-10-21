@@ -62,7 +62,7 @@ classDiagram
     }
     class ComandoDeIntencao {
         -handler: IntentHandler
-        -memento: Snapshot
+        -memento: MementoDoRecorte
     }
     class HistoricoDeComandos {
         <<invoker>>
@@ -73,19 +73,20 @@ classDiagram
     HistoricoDeComandos o-- ComandoDeMesa : o ultimo por jogador
     AetherRoom ..> ComandoDeIntencao : cria
     ComandoDeIntencao --> IntentHandler : executa
-    ComandoDeIntencao --> Snapshot : memento
+    ComandoDeIntencao --> MementoDoRecorte : memento
+    ComandoDeIntencao --> RecorteDoJogador : salvar e restaurar
 ```
 
 ### 2.3 Os papéis do padrão
 
-| Papel GoF         | Neste código                                                       |
-| ----------------- | ------------------------------------------------------------------ |
-| `Command`         | `ComandoDeMesa`                                                    |
-| `ConcreteCommand` | `ComandoDeIntencao` — carrega handler, contexto, payload e memento |
-| `Invoker`         | `HistoricoDeComandos` — executa e guarda o último por jogador      |
-| `Receiver`        | o `IntentHandler` do `REGISTRY`                                    |
-| `Client`          | `AetherRoom`, que monta o comando no despacho                      |
-| `Memento`         | `Snapshot`, de `services/undo.ts`                                  |
+| Papel GoF         | Neste código                                                                   |
+| ----------------- | ------------------------------------------------------------------------------ |
+| `Command`         | `ComandoDeMesa`                                                                |
+| `ConcreteCommand` | `ComandoDeIntencao` — carrega handler, contexto, payload e memento             |
+| `Invoker`         | `HistoricoDeComandos` — executa e guarda o último por jogador                  |
+| `Receiver`        | o `IntentHandler` do `REGISTRY`                                                |
+| `Client`          | `AetherRoom`, que monta o comando no despacho                                  |
+| `Memento`         | `MementoDoRecorte`, de `services/undo.ts` — ver [`DOC-098`](padrao_memento.md) |
 
 O despacho ficou assim:
 
@@ -110,9 +111,11 @@ próprio `Player`. Restaurar mais que isso deixaria de ser "desfazer" e viraria
 
 ### 2.5 O que `services/undo.ts` é agora
 
-Só o memento: `capturar`, `restaurar`, `JANELA_UNDO_MS` e `NAO_REVERSIVEIS` —
-esta última com a explicação de cada entrada, que continua sendo o melhor lugar
-para ela. O `JornalUndo` saiu; quem faz aquele papel é o `HistoricoDeComandos`.
+Só o memento: o originador `RecorteDoJogador` (`salvar` e `restaurar`), a foto
+`MementoDoRecorte`, `JANELA_UNDO_MS` e `NAO_REVERSIVEIS` — esta última com a
+explicação de cada entrada, que continua sendo o melhor lugar para ela. O
+`JornalUndo` saiu; quem faz aquele papel é o `HistoricoDeComandos`. O desenho
+do Memento, com os três papéis, está no [`DOC-098`](padrao_memento.md).
 
 ---
 
