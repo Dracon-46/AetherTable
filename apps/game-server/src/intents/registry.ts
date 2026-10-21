@@ -77,7 +77,7 @@ export interface IntentContext {
   /**
    * Desfaz a ultima acao reversivel do remetente dentro da janela de 10 s.
    * Devolve o tipo desfeito, ou null quando nao ha nada elegivel.
-   * O jornal vive na Room — ver services/undo.ts.
+   * O historico vive na Room (`HistoricoDeComandos`); a foto, em services/undo.ts.
    */
   desfazer(): string | null;
   /**
