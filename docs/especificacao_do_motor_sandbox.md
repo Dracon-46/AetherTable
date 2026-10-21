@@ -374,6 +374,11 @@ dez segundos.
 perguntava pelo histórico já apagado e todo "desfazer" respondia "nada para desfazer". Os testes
 chamavam `desfazer()` direto e nunca passavam pela sala. Agora executa e **depois** apaga.
 
+**Desfazer quando uma zona encolheu.** As listas de ordem são `ArraySchema`, e o `splice` do Colyseus 3
+recusa inserir mais do que remove. Desfazer "joguei da mão" restaura uma mão **maior** que a atual: o
+undo lançava no meio — cartas já restauradas, listas não — e a carta ficava com `zone = 'HAND'` listada
+no campo. A lista agora cresce com `push` até a largura do recorte e é reescrita na mesma largura.
+
 **Irreversíveis novos** (`NAO_REVERSIVEIS`), além de aleatoriedade, olhadas e revelações:
 
 | Intenções                                                          | Por que não voltam                                                                                     |

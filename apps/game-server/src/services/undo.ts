@@ -176,6 +176,17 @@ export function restaurar(state: RoomState, snap: Snapshot): void {
   for (const [zona, ids] of snap.zonas) {
     const lista = state.zoneOrder.get(zoneOrderKey(snap.sid, zona))?.items;
     if (!lista) continue;
+    /**
+     * A LISTA QUE ENCOLHEU CRESCE ANTES DE SER REESCRITA.
+     *
+     * O `ArraySchema#splice` do Colyseus 3 recusa inserir mais do que remove — e
+     * lança (a mesma armadilha de `inserirNaZona`, no registry). Desfazer
+     * "joguei da mão" restaura uma mão MAIOR que a atual: o undo lançava aqui,
+     * com as cartas já restauradas e as listas não, e a carta ficava com
+     * `zone = 'HAND'` listada no campo. Cresce com `push` até a largura da foto
+     * e reescreve na mesma largura, que o `splice` aceita.
+     */
+    if (ids.length > lista.length) lista.push(...ids.slice(lista.length));
     lista.splice(0, lista.length, ...ids);
   }
 
