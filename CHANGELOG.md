@@ -11,6 +11,10 @@ resumo.
 
 ## [Não lançado]
 
+### Alterado
+
+- **Dependências:** dotenv 18, pino 10 e jest 30.
+
 ## [0.10.1] — 2026-10-21
 
 ### Corrigido
