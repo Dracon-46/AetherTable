@@ -60,11 +60,10 @@ i18n de verdade em vez de remover o seletor — o que o coloca na Fase F, item
 
 ---
 
-Documento de execução, escrito para ser colado no Claude Code rodando na máquina
-do Gaspare. Cobre o produto inteiro, não só configurações.
+Documento de execução. Cobre o produto inteiro, não só configurações.
 
 - **Lado EDHPlay:** levantamento de 08/09/2026, v0.4.17, sessão autenticada.
-  Detalhamento em `claude/referencia-edhplay-configuracoes.md` (projeto AetherTable).
+  Detalhamento na referência de configurações do EDHPlay (fora do repositório).
 - **Lado AetherTable:** auditoria de código do branch `feat/preferencias-de-mesa`
   (commits `9463c9c` e `ad37ed0`), feita arquivo por arquivo.
 - **Método:** para cada área, o que o EDHPlay tem, o que existe no AetherTable
@@ -342,7 +341,7 @@ privada (toda sala é privada por código), não há contador de online, não h�
 "voltar à partida", não há histórico. O placeholder do campo de código diz
 `EX: DRG-402` e o formato real é 6 hex maiúsculos — o exemplo está errado.
 
-**Plano:** é a **Fatia 3a** já especificada em `claude/fatia-3-configuracao-de-sala.md`.
+**Plano:** é a **Fatia 3a** já especificada na spec de configuração de sala.
 Resumo: `ConfigDeSala` em `shared-types` (nome, formato, visibilidade,
 comunicação, idioma, máx. jogadores, nível de poder declarado),
 `normalizarConfigDeSala` usada pelo cliente **e** pelo servidor,
@@ -634,7 +633,7 @@ servidor e não tem interface.
 `ctx.state.activePlayerId = eu.id` — **quem clica em iniciar começa a partida**.
 Como só o anfitrião pode iniciar, o anfitrião começa **todas** as partidas.
 
-**Plano:** é a **Fatia 3b** de `claude/fatia-3-configuracao-de-sala.md`, com uma
+**Plano:** é a **Fatia 3b** da spec de configuração de sala, com uma
 intenção só (`INTENT_SET_ROOM_CONFIG`, `exigirAnfitriao`, recusada fora de
 `WAITING`), campos novos no fim do `RoomState`, `pnpm schema:sync`, e o sorteio
 de quem começa via `services/rng.ts`. A ordem de assentos é dar UI ao
@@ -1080,7 +1079,7 @@ Cada fase é um commit (ou poucos). A ordem respeita dependências reais.
 ### Fase D — Salas
 
 18. **Fatia 3a** — `ConfigDeSala`, `setMetadata`, `GET /salas`, browser com
-    filtros. _(spec pronta em `claude/fatia-3-configuracao-de-sala.md`)_
+    filtros. _(spec de configuração de sala pronta)_
 19. **Fatia 3b** — lobby: mulligan, jogador inicial, ordem de assentos (dando UI
     ao `INTENT_SET_TURN_ORDER` órfão), sideboard, cronômetro, **e o sorteio de
     quem começa** (hoje o anfitrião começa sempre).
