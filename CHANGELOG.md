@@ -11,12 +11,20 @@ resumo.
 
 ## [Não lançado]
 
+## [0.10.1] — 2026-10-21
+
 ### Corrigido
 
 - **Desfazer depois de jogar uma carta da mão:** o undo lançava "Erro interno
   na mesa" sempre que uma zona do jogador tinha encolhido (o `splice` do
   Colyseus 3 não insere mais do que remove), e deixava a carta com a zona da
   mão listada no campo. A lista agora cresce antes de ser reescrita.
+
+### Alterado
+
+- **O desfazer da mesa segue o padrão Memento** (`DOC-098`): a foto do estado
+  só é lida por quem a tirou, e uma foto de outra mesa ou de outro jogador é
+  recusada. Sem mudança visível na mesa.
 
 ## [0.10.0] — 2026-10-19
 
@@ -214,7 +222,8 @@ resumo.
   na sala de espera e modo espectador.
 - Processo documentado (DOC-091/092/093), `pnpm verificar` e hook de pre-push.
 
-[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.10.0...HEAD
+[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/Dracon-46/AetherTable/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Dracon-46/AetherTable/compare/v0.9.6...v0.10.0
 [0.9.6]: https://github.com/Dracon-46/AetherTable/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/Dracon-46/AetherTable/compare/v0.9.4...v0.9.5
