@@ -138,6 +138,36 @@ describe('HistoricoDeComandos', () => {
     expect(mao.length).toBe(0);
   });
 
+  /**
+   * A ZONA QUE ENCOLHEU. Jogar uma carta da mão e desfazer é o "desfazer" mais
+   * comum da mesa, e era o que falhava: a mão restaurada é MAIOR que a atual, e
+   * o `ArraySchema#splice` do Colyseus 3 recusa inserir mais do que remove
+   * (a mesma armadilha de `inserirNaZona`, no registry). O undo lançava no meio
+   * — com as cartas já restauradas e as listas não — e a carta ficava com
+   * `zone = 'HAND'` listada no campo.
+   */
+  it('desfaz jogar uma carta da mão: a zona que encolheu volta a crescer', () => {
+    const { state, c } = mesa();
+    const historico = new HistoricoDeComandos();
+    const mao = state.zoneOrder.get(zoneOrderKey('p1', 'HAND'))!.items;
+    const campo = state.zoneOrder.get(zoneOrderKey('p1', 'BATTLEFIELD'))!.items;
+    c.zone = 'HAND';
+    mao.push('c1');
+
+    historico.executar(
+      comandoQue(state, 'INTENT_CHANGE_ZONE', () => {
+        mao.splice(0, 1);
+        campo.push('c1');
+        c.zone = 'BATTLEFIELD';
+      }),
+    );
+
+    expect(historico.desfazer('p1')).toBe('INTENT_CHANGE_ZONE');
+    expect(c.zone).toBe('HAND');
+    expect(Array.from(mao)).toEqual(['c1']);
+    expect(campo.length).toBe(0);
+  });
+
   it('o snapshot sai ANTES da mutação — é o comando que garante a ordem', () => {
     // A regressão que o padrão fecha: enquanto capturar e executar eram duas
     // chamadas na Room, inverter as linhas fazia o undo virar um no-op mudo.

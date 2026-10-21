@@ -103,5 +103,7 @@ O comportamento da mesa. Os 167 testes que já existiam continuam passando.
 ## Onde ver mais
 
 - [`DOC-097`](padroes_command_e_template_method.md) — a versão completa
-- `docs/diagramas/command.png` e `docs/diagramas/template_method.png` — os
-  diagramas de classe
+- [`DOC-098`](padrao_memento.md) — a "fotografia" do Command é o padrão
+  Memento: quem tira, quem guarda e quem pode abrir
+- `docs/diagramas/command.png`, `docs/diagramas/template_method.png` e
+  `docs/diagramas/memento.png` — os diagramas de classe

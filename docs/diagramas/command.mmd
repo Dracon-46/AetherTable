@@ -18,7 +18,8 @@ classDiagram
         -ctx: IntentContext
         -dados: unknown
         -state: RoomState
-        -memento: Snapshot
+        -memento: MementoDoRecorte
+        -recorte: RecorteDoJogador
         +executar() void
         +reversivel() boolean
         +desfazer() void
@@ -45,20 +46,17 @@ classDiagram
         +executa(ctx, payload) void
     }
 
-    class Snapshot {
-        <<memento>>
-        +cartas
-        +zonas
-        +jogador
+    class MementoDoRecorte {
+        <<memento - ver DOC-098>>
+        +autor: string
+        +tipo: string
         +em: number
     }
 
-    class undo_ts {
-        <<services/undo.ts>>
-        +capturar(state, sid, tipo) Snapshot
-        +restaurar(state, snap) void
-        +NAO_REVERSIVEIS: Set
-        +JANELA_UNDO_MS
+    class RecorteDoJogador {
+        <<originator - services/undo.ts>>
+        +salvar(tipo, agora) MementoDoRecorte
+        +restaurar(memento) void
     }
 
     ComandoDeMesa <|.. ComandoDeIntencao
@@ -66,6 +64,6 @@ classDiagram
     AetherRoom ..> ComandoDeIntencao : cria
     AetherRoom ..> HistoricoDeComandos : executar / desfazer
     ComandoDeIntencao --> IntentHandler : executa
-    ComandoDeIntencao --> Snapshot : guarda
-    ComandoDeIntencao ..> undo_ts : capturar e restaurar
-    undo_ts ..> Snapshot : produz
+    ComandoDeIntencao --> MementoDoRecorte : guarda sem abrir
+    ComandoDeIntencao --> RecorteDoJogador : salvar e restaurar
+    RecorteDoJogador ..> MementoDoRecorte : produz
