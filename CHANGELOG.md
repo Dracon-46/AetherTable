@@ -11,6 +11,13 @@ resumo.
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Desfazer depois de jogar uma carta da mão:** o undo lançava "Erro interno
+  na mesa" sempre que uma zona do jogador tinha encolhido (o `splice` do
+  Colyseus 3 não insere mais do que remove), e deixava a carta com a zona da
+  mão listada no campo. A lista agora cresce antes de ser reescrita.
+
 ## [0.10.0] — 2026-10-19
 
 ### Adicionado
