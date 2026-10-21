@@ -1,31 +1,57 @@
 /**
- * undo.ts — o MEMENTO do padrao Command: o recorte de estado que um comando
- * guarda para conseguir se desfazer (DOC-036 item 130, RN: DOC-031).
+ * undo.ts — o padrão MEMENTO (GoF) do desfazer da mesa: o recorte de estado
+ * que um comando guarda para conseguir se desfazer (DOC-036 item 130, RN:
+ * DOC-031; o desenho está no DOC-098).
  *
- * Quem decide QUANDO capturar e QUANDO restaurar e `intents/comandos.ts`; aqui
- * ficam o recorte, a janela e a lista do que nao volta atras.
+ * Quem decide QUANDO salvar e QUANDO restaurar é `intents/comandos.ts`; aqui
+ * ficam o recorte, a janela e a lista do que não volta atrás.
  *
- * O QUE ESTE MODULO NAO FAZ, E POR QUE
+ * ─── OS TRÊS PAPÉIS ─────────────────────────────────────────────────────────
  *
- * `INTENT_UNDO` desfaz a ULTIMA acao PROPRIA. Ele nao desfaz:
+ *   Originator  `RecorteDoJogador` — o pedaço da mesa que é de um jogador.
+ *               Só ele sabe tirar a foto e só ele sabe reaplicá-la.
+ *   Memento     `MementoDoRecorte` (o que o mundo vê) e `FotoDoRecorte` (o
+ *               conteúdo, que não sai deste módulo).
+ *   Caretaker   `ComandoDeIntencao` — guarda o memento sem abri-lo.
  *
- *   - acao aleatoria (embaralhar, sortear, dado, descarte aleatorio) — desfazer
- *     e refazer um sorteio e simplesmente uma segunda tentativa, o que e
- *     trapaca com passos extras;
- *   - revelacao e olhada — informacao vista nao volta a ser oculta; "desfazer"
- *     daria uma falsa sensacao de privacidade;
+ * ─── O QUE HAVIA ANTES, E POR QUE INCOMODAVA ────────────────────────────────
+ *
+ * O memento já existia, mas sem o padrão: `Snapshot` era uma interface pública
+ * com `cartas`, `zonas` e `jogador` à mostra, e `capturar`/`restaurar` eram
+ * duas funções soltas que precisavam concordar sobre o formato.
+ *
+ *   1. A FOTO ERA UM OBJETO ABERTO. Ela carrega a ordem do grimório e da mão —
+ *      informação oculta. Qualquer código que segurasse o snapshot (o comando,
+ *      um log de depuração, um teste) podia lê-la ou alterá-la; o padrão
+ *      reduz o que o guardião enxerga a `autor`, `tipo` e `em`.
+ *   2. `restaurar(state, snap)` APLICAVA QUALQUER COISA COM O FORMATO CERTO —
+ *      um literal montado à mão, ou a foto de outra mesa, que seria reaplicada
+ *      por id numa sala onde esses ids significam outras cartas. O originador
+ *      só aceita a foto que ele mesmo tirou: da mesma mesa e do mesmo jogador.
+ *   3. O recorte (que campos entram na foto) estava definido duas vezes, uma
+ *      em cada função. Agora salvar e restaurar são métodos da mesma classe.
+ *
+ * O QUE ESTE MÓDULO NÃO FAZ, E POR QUÊ
+ *
+ * `INTENT_UNDO` desfaz a ÚLTIMA ação PRÓPRIA. Ele não desfaz:
+ *
+ *   - ação aleatória (embaralhar, sortear, dado, descarte aleatório) — desfazer
+ *     e refazer um sorteio é simplesmente uma segunda tentativa, o que é
+ *     trapaça com passos extras;
+ *   - revelação e olhada — informação vista não volta a ser oculta; "desfazer"
+ *     daria uma falsa sensação de privacidade;
  *   - qualquer coisa que tenha tocado o estado de OUTRO jogador.
  *
- * Por isso o snapshot cobre exatamente o recorte que pertence ao jogador: as
- * cartas de que ele e dono, as listas de ordem das zonas dele e os marcadores
- * do proprio Player. Restaurar esse recorte e sempre seguro; restaurar mais que
+ * Por isso a foto cobre exatamente o recorte que pertence ao jogador: as
+ * cartas de que ele é dono, as listas de ordem das zonas dele e os marcadores
+ * do próprio Player. Restaurar esse recorte é sempre seguro; restaurar mais que
  * isso deixaria de ser "desfazer" e viraria "reescrever a mesa".
  */
 
 import type { RoomState } from '../schema/RoomState';
 import { zoneOrderKey, ZONES, type Zone } from '@aethertable/shared-types';
 
-/** Janela de arrependimento. Depois disto, a acao virou historia. */
+/** Janela de arrependimento. Depois disto, a ação virou história. */
 export const JANELA_UNDO_MS = 10_000;
 
 interface CartaSnapshot {
@@ -72,166 +98,236 @@ interface JogadorSnapshot {
   commanderDamage: [string, number][];
 }
 
-export interface Snapshot {
-  sid: string;
-  tipo: string;
-  em: number;
-  cartas: [string, CartaSnapshot][];
-  zonas: [Zone, string[]][];
-  jogador: JogadorSnapshot | null;
+/**
+ * MEMENTO — a interface ESTREITA: tudo o que o caretaker pode saber de uma
+ * foto. O conteúdo não aparece aqui de propósito; ver o item 1 do cabeçalho.
+ */
+export interface MementoDoRecorte {
+  /** sessionId de quem a foto pertence. */
+  readonly autor: string;
+  /** A intenção que estava para acontecer quando a foto foi tirada. */
+  readonly tipo: string;
+  readonly em: number;
 }
 
-export function capturar(state: RoomState, sid: string, tipo: string): Snapshot {
-  const cartas: [string, CartaSnapshot][] = [];
-  state.cards.forEach((c, id) => {
-    if (c.ownerId !== sid && c.controllerId !== sid) return;
-    cartas.push([
-      id,
-      {
-        zone: c.zone,
-        controllerId: c.controllerId,
-        x: c.x,
-        y: c.y,
-        rotation: c.rotation,
-        zIndex: c.zIndex,
-        isTapped: c.isTapped,
-        faceDown: c.faceDown,
-        phasedOut: c.phasedOut,
-        isFlipped: c.isFlipped,
-        attachedTo: c.attachedTo,
-        exiledBy: c.exiledBy,
-        goadedBy: c.goadedBy,
-        note: c.note,
-        highlight: c.highlight,
-        damage: c.damage,
-        powerOverride: c.powerOverride,
-        toughnessOverride: c.toughnessOverride,
-        hasPtOverride: c.hasPtOverride,
-        enteredThisTurn: c.enteredThisTurn,
-        counters: Array.from(c.counters.entries()),
-      },
-    ]);
-  });
-
-  const zonas: [Zone, string[]][] = [];
-  for (const zona of ZONES) {
-    const lista = state.zoneOrder.get(zoneOrderKey(sid, zona))?.items;
-    if (lista) zonas.push([zona, Array.from(lista)]);
-  }
-
-  const p = state.players.get(sid);
-  const jogador: JogadorSnapshot | null = p
-    ? {
-        life: p.life,
-        poison: p.poison,
-        energy: p.energy,
-        experience: p.experience,
-        rad: p.rad,
-        ticket: p.ticket,
-        commanderTax: p.commanderTax,
-        speed: p.speed,
-        ringLevel: p.ringLevel,
-        ringBearerId: p.ringBearerId,
-        maxHandSize: p.maxHandSize,
-        isMonarch: p.isMonarch,
-        hasInitiative: p.hasInitiative,
-        conceded: p.conceded,
-        decked: p.decked,
-        commanderDamage: Array.from(p.commanderDamage.entries()),
-      }
-    : null;
-
-  return { sid, tipo, em: Date.now(), cartas, zonas, jogador };
+/**
+ * MEMENTO — a interface LARGA. Não é exportada: fora deste módulo ninguém
+ * consegue nomear o tipo, e por isso só o `RecorteDoJogador` lê o conteúdo.
+ *
+ * `mesa` existe para o originador recusar a foto de outra sala; não é usada
+ * para mais nada.
+ */
+class FotoDoRecorte implements MementoDoRecorte {
+  constructor(
+    readonly autor: string,
+    readonly tipo: string,
+    readonly em: number,
+    readonly mesa: RoomState,
+    readonly cartas: readonly (readonly [string, CartaSnapshot])[],
+    readonly zonas: readonly (readonly [Zone, string[]])[],
+    readonly jogador: JogadorSnapshot | null,
+  ) {}
 }
 
-export function restaurar(state: RoomState, snap: Snapshot): void {
-  for (const [id, s] of snap.cartas) {
-    const c = state.cards.get(id);
-    // A carta pode ter deixado de existir (token destruido): nada a restaurar.
-    if (!c) continue;
-    c.zone = s.zone;
-    c.controllerId = s.controllerId;
-    c.x = s.x;
-    c.y = s.y;
-    c.rotation = s.rotation;
-    c.zIndex = s.zIndex;
-    c.isTapped = s.isTapped;
-    c.faceDown = s.faceDown;
-    c.phasedOut = s.phasedOut;
-    c.isFlipped = s.isFlipped;
-    c.attachedTo = s.attachedTo;
-    c.exiledBy = s.exiledBy;
-    c.goadedBy = s.goadedBy;
-    c.note = s.note;
-    c.highlight = s.highlight;
-    c.damage = s.damage;
-    c.powerOverride = s.powerOverride;
-    c.toughnessOverride = s.toughnessOverride;
-    c.hasPtOverride = s.hasPtOverride;
-    c.enteredThisTurn = s.enteredThisTurn;
-    c.counters.clear();
-    for (const [nome, valor] of s.counters) c.counters.set(nome, valor);
-  }
+/**
+ * ORIGINATOR — o recorte da mesa que pertence a um jogador.
+ *
+ * Não guarda estado próprio: o estado é o `RoomState`, que é um schema do
+ * Colyseus e serializa por índice — pôr `salvar`/`restaurar` dentro dele
+ * misturaria o padrão com o contrato de rede. O originador é a "janela" sobre
+ * a parte da mesa que é do jogador, e é ela que define o recorte.
+ */
+export class RecorteDoJogador {
+  constructor(
+    private readonly state: RoomState,
+    private readonly sid: string,
+  ) {}
 
-  for (const [zona, ids] of snap.zonas) {
-    const lista = state.zoneOrder.get(zoneOrderKey(snap.sid, zona))?.items;
-    if (!lista) continue;
-    lista.splice(0, lista.length, ...ids);
+  /** `createMemento` do GoF. Copia tudo: a foto não pode mudar junto com a mesa. */
+  salvar(tipo: string, agora = Date.now()): MementoDoRecorte {
+    const { state, sid } = this;
+    const cartas: [string, CartaSnapshot][] = [];
+    state.cards.forEach((c, id) => {
+      if (c.ownerId !== sid && c.controllerId !== sid) return;
+      cartas.push([
+        id,
+        {
+          zone: c.zone,
+          controllerId: c.controllerId,
+          x: c.x,
+          y: c.y,
+          rotation: c.rotation,
+          zIndex: c.zIndex,
+          isTapped: c.isTapped,
+          faceDown: c.faceDown,
+          phasedOut: c.phasedOut,
+          isFlipped: c.isFlipped,
+          attachedTo: c.attachedTo,
+          exiledBy: c.exiledBy,
+          goadedBy: c.goadedBy,
+          note: c.note,
+          highlight: c.highlight,
+          damage: c.damage,
+          powerOverride: c.powerOverride,
+          toughnessOverride: c.toughnessOverride,
+          hasPtOverride: c.hasPtOverride,
+          enteredThisTurn: c.enteredThisTurn,
+          counters: Array.from(c.counters.entries()),
+        },
+      ]);
+    });
+
+    const zonas: [Zone, string[]][] = [];
+    for (const zona of ZONES) {
+      const lista = state.zoneOrder.get(zoneOrderKey(sid, zona))?.items;
+      if (lista) zonas.push([zona, Array.from(lista)]);
+    }
+
+    const p = state.players.get(sid);
+    const jogador: JogadorSnapshot | null = p
+      ? {
+          life: p.life,
+          poison: p.poison,
+          energy: p.energy,
+          experience: p.experience,
+          rad: p.rad,
+          ticket: p.ticket,
+          commanderTax: p.commanderTax,
+          speed: p.speed,
+          ringLevel: p.ringLevel,
+          ringBearerId: p.ringBearerId,
+          maxHandSize: p.maxHandSize,
+          isMonarch: p.isMonarch,
+          hasInitiative: p.hasInitiative,
+          conceded: p.conceded,
+          decked: p.decked,
+          commanderDamage: Array.from(p.commanderDamage.entries()),
+        }
+      : null;
+
+    return new FotoDoRecorte(sid, tipo, agora, state, cartas, zonas, jogador);
   }
 
   /**
-   * CARTA DE OUTRO DONO: AS LISTAS DELE TAMBEM.
+   * `setMemento` do GoF.
    *
-   * O recorte só restaurava as listas de quem desfez. Quem controlava a carta
-   * de outra pessoa e a mandava para o grimório DELA, e depois desfazia, via a
-   * carta voltar ao campo com o id ainda no grimório do dono — a próxima compra
-   * dele puxava a carta do campo alheio para a mão. Restaurar a lista inteira
-   * do dono apagaria o que ELE fez nesses dez segundos; por isso o conserto é
-   * cirúrgico: o id sai de todas as listas do dono e volta só para a da zona
-   * restaurada.
+   * Lança para a foto que não é deste recorte, em vez de ignorá-la: o único
+   * caretaker (`ComandoDeIntencao`) monta o originador com a própria mesa e o
+   * próprio autor, então chegar aqui com outra foto é defeito de quem chamou —
+   * e um "desfazer" que responde "desfeito" sem mudar nada é exatamente o
+   * no-op mudo que o Command veio fechar.
    */
-  const donosAfetados = new Set<string>();
-  for (const [id, s] of snap.cartas) {
-    const c = state.cards.get(id);
-    if (!c || c.ownerId === snap.sid) continue;
-    for (const zona of ZONES) {
-      const lista = state.zoneOrder.get(zoneOrderKey(c.ownerId, zona))?.items;
-      const i = lista ? lista.indexOf(id) : -1;
-      if (lista && i !== -1) lista.splice(i, 1);
+  restaurar(memento: MementoDoRecorte): void {
+    if (
+      !(memento instanceof FotoDoRecorte) ||
+      memento.mesa !== this.state ||
+      memento.autor !== this.sid
+    ) {
+      throw new Error(
+        `Memento de "${memento.autor}" não é deste recorte (mesa errada, jogador errado ou foto forjada)`,
+      );
     }
-    state.zoneOrder.get(zoneOrderKey(c.ownerId, s.zone as Zone))?.items.push(id);
-    donosAfetados.add(c.ownerId);
-  }
-  for (const dono of donosAfetados) {
-    const outro = state.players.get(dono);
-    if (!outro) continue;
-    outro.handCount = state.zoneOrder.get(zoneOrderKey(dono, 'HAND'))?.items.length ?? 0;
-    outro.libraryCount = state.zoneOrder.get(zoneOrderKey(dono, 'LIBRARY'))?.items.length ?? 0;
-  }
+    const { state, sid } = this;
 
-  const p = state.players.get(snap.sid);
-  if (p && snap.jogador) {
-    const j = snap.jogador;
-    p.life = j.life;
-    p.poison = j.poison;
-    p.energy = j.energy;
-    p.experience = j.experience;
-    p.rad = j.rad;
-    p.ticket = j.ticket;
-    p.commanderTax = j.commanderTax;
-    p.speed = j.speed;
-    p.ringLevel = j.ringLevel;
-    p.ringBearerId = j.ringBearerId;
-    p.maxHandSize = j.maxHandSize;
-    p.isMonarch = j.isMonarch;
-    p.hasInitiative = j.hasInitiative;
-    p.conceded = j.conceded;
-    p.decked = j.decked;
-    p.commanderDamage.clear();
-    for (const [de, valor] of j.commanderDamage) p.commanderDamage.set(de, valor);
-    p.handCount = state.zoneOrder.get(zoneOrderKey(snap.sid, 'HAND'))?.items.length ?? p.handCount;
-    p.libraryCount =
-      state.zoneOrder.get(zoneOrderKey(snap.sid, 'LIBRARY'))?.items.length ?? p.libraryCount;
+    for (const [id, s] of memento.cartas) {
+      const c = state.cards.get(id);
+      // A carta pode ter deixado de existir (token destruido): nada a restaurar.
+      if (!c) continue;
+      c.zone = s.zone;
+      c.controllerId = s.controllerId;
+      c.x = s.x;
+      c.y = s.y;
+      c.rotation = s.rotation;
+      c.zIndex = s.zIndex;
+      c.isTapped = s.isTapped;
+      c.faceDown = s.faceDown;
+      c.phasedOut = s.phasedOut;
+      c.isFlipped = s.isFlipped;
+      c.attachedTo = s.attachedTo;
+      c.exiledBy = s.exiledBy;
+      c.goadedBy = s.goadedBy;
+      c.note = s.note;
+      c.highlight = s.highlight;
+      c.damage = s.damage;
+      c.powerOverride = s.powerOverride;
+      c.toughnessOverride = s.toughnessOverride;
+      c.hasPtOverride = s.hasPtOverride;
+      c.enteredThisTurn = s.enteredThisTurn;
+      c.counters.clear();
+      for (const [nome, valor] of s.counters) c.counters.set(nome, valor);
+    }
+
+    for (const [zona, ids] of memento.zonas) {
+      const lista = state.zoneOrder.get(zoneOrderKey(sid, zona))?.items;
+      if (!lista) continue;
+      /**
+       * A LISTA QUE ENCOLHEU CRESCE ANTES DE SER REESCRITA.
+       *
+       * O `ArraySchema#splice` do Colyseus 3 recusa inserir mais do que remove — e
+       * lança (a mesma armadilha de `inserirNaZona`, no registry). Desfazer
+       * "joguei da mão" restaura uma mão MAIOR que a atual: o undo lançava aqui,
+       * com as cartas já restauradas e as listas não, e a carta ficava com
+       * `zone = 'HAND'` listada no campo. Cresce com `push` até a largura da foto
+       * e reescreve na mesma largura, que o `splice` aceita.
+       */
+      if (ids.length > lista.length) lista.push(...ids.slice(lista.length));
+      lista.splice(0, lista.length, ...ids);
+    }
+
+    /**
+     * CARTA DE OUTRO DONO: AS LISTAS DELE TAMBEM.
+     *
+     * O recorte só restaurava as listas de quem desfez. Quem controlava a carta
+     * de outra pessoa e a mandava para o grimório DELA, e depois desfazia, via a
+     * carta voltar ao campo com o id ainda no grimório do dono — a próxima compra
+     * dele puxava a carta do campo alheio para a mão. Restaurar a lista inteira
+     * do dono apagaria o que ELE fez nesses dez segundos; por isso o conserto é
+     * cirúrgico: o id sai de todas as listas do dono e volta só para a da zona
+     * restaurada.
+     */
+    const donosAfetados = new Set<string>();
+    for (const [id, s] of memento.cartas) {
+      const c = state.cards.get(id);
+      if (!c || c.ownerId === sid) continue;
+      for (const zona of ZONES) {
+        const lista = state.zoneOrder.get(zoneOrderKey(c.ownerId, zona))?.items;
+        const i = lista ? lista.indexOf(id) : -1;
+        if (lista && i !== -1) lista.splice(i, 1);
+      }
+      state.zoneOrder.get(zoneOrderKey(c.ownerId, s.zone as Zone))?.items.push(id);
+      donosAfetados.add(c.ownerId);
+    }
+    for (const dono of donosAfetados) {
+      const outro = state.players.get(dono);
+      if (!outro) continue;
+      outro.handCount = state.zoneOrder.get(zoneOrderKey(dono, 'HAND'))?.items.length ?? 0;
+      outro.libraryCount = state.zoneOrder.get(zoneOrderKey(dono, 'LIBRARY'))?.items.length ?? 0;
+    }
+
+    const p = state.players.get(sid);
+    if (p && memento.jogador) {
+      const j = memento.jogador;
+      p.life = j.life;
+      p.poison = j.poison;
+      p.energy = j.energy;
+      p.experience = j.experience;
+      p.rad = j.rad;
+      p.ticket = j.ticket;
+      p.commanderTax = j.commanderTax;
+      p.speed = j.speed;
+      p.ringLevel = j.ringLevel;
+      p.ringBearerId = j.ringBearerId;
+      p.maxHandSize = j.maxHandSize;
+      p.isMonarch = j.isMonarch;
+      p.hasInitiative = j.hasInitiative;
+      p.conceded = j.conceded;
+      p.decked = j.decked;
+      p.commanderDamage.clear();
+      for (const [de, valor] of j.commanderDamage) p.commanderDamage.set(de, valor);
+      p.handCount = state.zoneOrder.get(zoneOrderKey(sid, 'HAND'))?.items.length ?? p.handCount;
+      p.libraryCount =
+        state.zoneOrder.get(zoneOrderKey(sid, 'LIBRARY'))?.items.length ?? p.libraryCount;
+    }
   }
 }
 

@@ -1,0 +1,76 @@
+%% AetherTable — DOC-098 — Padrao Memento no desfazer da mesa
+%% Fonte: apps/game-server/src/services/undo.ts e apps/game-server/src/intents/comandos.ts
+classDiagram
+    direction LR
+
+    class HistoricoDeComandos {
+        <<invoker do Command>>
+        -ultimo: Map~sid, comando+em~
+        +executar(comando, agora) void
+        +desfazer(sid, agora) string
+    }
+
+    class ComandoDeIntencao {
+        <<caretaker>>
+        -memento: MementoDoRecorte
+        -recorte: RecorteDoJogador
+        +executar() void
+        +reversivel() boolean
+        +desfazer() void
+    }
+
+    class MementoDoRecorte {
+        <<interface estreita>>
+        +autor: string
+        +tipo: string
+        +em: number
+    }
+
+    class FotoDoRecorte {
+        <<memento>>
+        +autor: string
+        +tipo: string
+        +em: number
+        ~mesa: RoomState
+        ~cartas: id, CartaSnapshot[]
+        ~zonas: Zone, ids[]
+        ~jogador: JogadorSnapshot
+    }
+
+    class RecorteDoJogador {
+        <<originator>>
+        -state: RoomState
+        -sid: string
+        +salvar(tipo, agora) MementoDoRecorte
+        +restaurar(memento) void
+    }
+
+    class RoomState {
+        <<schema Colyseus>>
+        +cards
+        +players
+        +zoneOrder
+    }
+
+    class CartaSnapshot {
+        <<dados>>
+        zone, x, y, isTapped
+        counters, damage, ...
+    }
+
+    class JogadorSnapshot {
+        <<dados>>
+        life, poison, decked
+        commanderDamage, ...
+    }
+
+    HistoricoDeComandos o-- ComandoDeIntencao : o ultimo por jogador
+    ComandoDeIntencao o-- MementoDoRecorte : guarda sem abrir
+    ComandoDeIntencao --> RecorteDoJogador : salvar antes / restaurar no undo
+    MementoDoRecorte <|.. FotoDoRecorte
+    RecorteDoJogador ..> FotoDoRecorte : cria e le
+    RecorteDoJogador --> RoomState : o pedaco de um jogador
+    FotoDoRecorte *-- CartaSnapshot
+    FotoDoRecorte *-- JogadorSnapshot
+
+    note for FotoDoRecorte "Nao exportada: fora de undo.ts<br>ninguem le cartas, zonas ou jogador"
