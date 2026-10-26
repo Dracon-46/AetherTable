@@ -17,7 +17,7 @@
 # sem commit nenhum: o mesmo Dockerfile construía imagens diferentes em dias
 # diferentes, e um build que passou ontem podia quebrar hoje sem diff. O
 # Dependabot (ecossistema docker) abre o PR quando sai patch novo.
-FROM node:22.23.3-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS builder
+FROM node:22.23.4-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS builder
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -63,7 +63,7 @@ WORKDIR /repo
 RUN pnpm --filter backend-core --prod deploy /out
 
 # ─── Estágio 2: runtime ─────────────────────────────────────────────────────
-FROM node:22.23.3-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runner
+FROM node:22.23.4-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS runner
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
