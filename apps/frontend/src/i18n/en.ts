@@ -63,6 +63,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Política de Privacidade': 'Privacy Policy',
   'Projeto de fã, sem vínculo com a Wizards of the Coast':
     'Fan project, not affiliated with Wizards of the Coast',
+  'Um produto Falkyria': 'A Falkyria product',
   'Acordando o servidor — isso leva até 1 minuto na primeira vez...':
     'Waking the server — this can take up to a minute the first time...',
   'O servidor não respondeu. Tente novamente em instantes.':

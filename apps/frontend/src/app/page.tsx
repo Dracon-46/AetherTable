@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Flame, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { CenaDoDragao, useDragao } from './CenaDoDragao';
 import { useAuthStore, type SessaoDaApi } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ import { API_URL } from '@/lib/api';
 import { api, mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
 import { OAuthTokenCapture } from '../components/OAuthTokenCapture';
+import { AssinaturaFalkyria } from '../components/AssinaturaFalkyria';
 import { iniciarOAuth } from '../lib/oauth';
 import { IDIOMAS_DA_INTERFACE, useLangDoDocumento, useT } from '../i18n/i18n';
 import { useAparencia } from '../store/aparencia.store';
@@ -188,9 +189,7 @@ export default function LoginPage() {
         {/* O cabeçalho encolhe em telas baixas: numa janela de 700px a
             saudação custava ~180px que o formulário precisava mais. */}
         <div className="mb-5 flex flex-col items-center text-center">
-          <div className="bg-table-deep border-panel-border mb-3 rounded-full border p-2.5 shadow-inner">
-            <Swords className="text-primary h-7 w-7" />
-          </div>
+          <img src="/icones/aethertable.svg" alt="" className="mb-3 h-12 w-12 drop-shadow-lg" />
           <h1 className="text-text text-xl font-bold sm:text-2xl">AetherTable</h1>
           <p className="text-text-muted mt-1 text-sm">
             {t('Prepare suas defesas, o embate vai começar.')}
@@ -382,6 +381,7 @@ export default function LoginPage() {
               </button>
             ))}
           </div>
+          <AssinaturaFalkyria className="mt-3" />
         </div>
       </div>
     </div>

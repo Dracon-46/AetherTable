@@ -116,6 +116,24 @@
   --color-speaking: #b45309;
 }
 
+/*
+ * ─── LOGO DA FALKYRIA NOS DOIS TEMAS ────────────────────────────────────────
+ *
+ * A assinatura (`components/AssinaturaFalkyria.tsx`) carrega as duas versões
+ * da logo e este par de regras mostra a do tema atual. Pelo `data-tema`, e não
+ * por `prefers-color-scheme`: quem escolheu claro num sistema escuro precisa da
+ * ave escura, e o atributo já é escrito antes da primeira pintura.
+ */
+.logo-falkyria-claro {
+  display: none;
+}
+:root[data-tema='claro'] .logo-falkyria-escuro {
+  display: none;
+}
+:root[data-tema='claro'] .logo-falkyria-claro {
+  display: inline;
+}
+
 @layer base {
   :root {
     color-scheme: dark;
