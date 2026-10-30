@@ -45,6 +45,7 @@ import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { OAuthTokenCapture } from '../../components/OAuthTokenCapture';
+import { AssinaturaFalkyria } from '../../components/AssinaturaFalkyria';
 import { useSouAdmin } from '../../admin/useAdmin';
 import { useHidratarPreferencias } from '../../store/useHidratarPreferencias';
 import { api } from '@/lib/fetcher';
@@ -162,7 +163,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="bg-table-deep text-text flex h-dvh w-full overflow-hidden font-sans">
         {/* ── Cabeçalho do celular ───────────────────────────────────────── */}
         <header className="border-panel-border bg-panel/95 absolute top-0 z-30 flex h-16 w-full items-center justify-between border-b px-4 backdrop-blur md:hidden">
-          <span className="text-text text-lg font-bold">AetherTable</span>
+          <span className="text-text flex items-center gap-2 text-lg font-bold">
+            <img src="/icones/aethertable.svg" alt="" className="h-7 w-7" />
+            AetherTable
+          </span>
           <Sino className="ml-auto mr-1" />
           <button
             onClick={() => setGavetaAberta((v) => !v)}
@@ -298,6 +302,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <LogOut className="h-5 w-5 shrink-0" />
               <span className={recolhido ? 'md:hidden' : ''}>{t('Sair da Mesa')}</span>
             </button>
+
+            <div className={`mt-2 flex px-4 ${recolhido ? 'md:justify-center md:px-0' : ''}`}>
+              <AssinaturaFalkyria compacta={recolhido} />
+            </div>
           </div>
         </aside>
 

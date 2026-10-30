@@ -2,6 +2,8 @@
   "name": "@aethertable/shared-types",
   "version": "0.1.0",
   "private": true,
+  "author": "Falkyria",
+  "license": "UNLICENSED",
   "description": "Tipos de dominio compartilhados entre frontend, backend-core e game-server (ADR-007).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

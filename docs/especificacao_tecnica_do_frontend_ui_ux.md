@@ -286,6 +286,22 @@ carta em texto**. Nunca um retângulo vazio — o jogador precisa saber o que es
 `layout` ∈ {`transform`, `modal_dfc`, `split`, `adventure`} não têm `image_uris` na raiz. O renderer
 **deve** cair para `card_faces[n].image_uris` e oferecer um botão de virar a face (`FR-14`).
 
+### 4.5 Identidade do produto
+
+O AetherTable é um produto da **Falkyria**. Os arquivos de identidade são servidos pelo próprio
+site, como os demais ícones (`public/icones`), sem depender de terceiros:
+
+| Arquivo                                                 | Papel                                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `app/icon.svg`, `app/favicon.ico`, `app/apple-icon.png` | ícone do produto (naipe de espadas roxo), pelas convenções do Next        |
+| `app/manifest.ts` + `public/icones/aethertable-*.png`   | manifesto do app web, com o ícone rasterizado em 192 e 512 px             |
+| `public/falkyria/falkyria*.svg`                         | logo da Falkyria, uma versão por tema                                     |
+| `public/icones/aethertable.svg`                         | o mesmo ícone, usado dentro da interface (entrada e cabeçalho do celular) |
+
+`components/AssinaturaFalkyria.tsx` desenha o selo "Um produto Falkyria" na entrada, no rodapé do
+menu do painel (só a logo quando o menu está recolhido) e na política de privacidade — **nunca na
+mesa**. A versão da logo segue o `data-tema` (regras `.logo-falkyria-*` em `globals.css`).
+
 ---
 
 ## 5. Orçamento de performance
