@@ -11,9 +11,17 @@ resumo.
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Identidade de produto Falkyria:** ícone próprio do AetherTable (aba,
+  atalho na tela inicial e manifesto do app web) e o selo "Um produto
+  Falkyria" na entrada, no menu do painel e na política de privacidade.
+
 ### Alterado
 
 - **Dependências:** dotenv 18, pino 10 e jest 30.
+- **Licença** no modelo dos produtos Falkyria, com a proteção explícita do
+  nome e das logos.
 
 ## [0.10.1] — 2026-10-21
 
