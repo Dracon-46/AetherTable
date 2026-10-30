@@ -30,6 +30,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, Shield } from 'lucide-react';
+import { AssinaturaFalkyria } from '../../components/AssinaturaFalkyria';
 
 export const metadata: Metadata = {
   title: 'Política de Privacidade — AetherTable',
@@ -260,7 +261,7 @@ export default function PrivacidadePage() {
           </p>
         </Secao>
 
-        <footer className="border-panel-border mt-10 border-t pt-6">
+        <footer className="border-panel-border mt-10 flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <Link
             href="/"
             className="text-text-muted hover:text-primary inline-flex items-center gap-1.5 text-sm transition-colors"
@@ -268,6 +269,12 @@ export default function PrivacidadePage() {
             <ArrowLeft className="h-4 w-4" />
             Voltar para a entrada
           </Link>
+          <div className="flex flex-col items-end gap-1">
+            <AssinaturaFalkyria />
+            <p className="text-text-faint text-xs">
+              © 2026 Falkyria. Todos os direitos reservados.
+            </p>
+          </div>
         </footer>
       </article>
     </div>

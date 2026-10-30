@@ -2,6 +2,8 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "author": "Falkyria",
+  "license": "UNLICENSED",
   "description": "Next.js: landing, deckbuilder e a mesa em Canvas (React Konva).",
   "scripts": {
     "dev": "next dev --port 3030",

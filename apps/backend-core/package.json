@@ -2,6 +2,8 @@
   "name": "backend-core",
   "version": "0.1.0",
   "private": true,
+  "author": "Falkyria",
+  "license": "UNLICENSED",
   "description": "API REST (NestJS): auth, users, decks, scryfall, rooms, moderation.",
   "scripts": {
     "dev": "nest start --watch",

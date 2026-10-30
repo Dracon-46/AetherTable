@@ -13,7 +13,30 @@ resumo.
 
 ### Alterado
 
+- **Telas de entrada no sistema visual da Falkyria:** login, cadastro e as
+  duas telas de senha agora usam os tokens, as fontes (Geist e Instrument
+  Serif), o cartão e o fundo do site e do painel do Nicx, nos dois temas.
+- **Dragão novo na entrada:** a imagem de fundo com fogo deu lugar a um
+  mascote vetorial no estilo do Nicx, que fecha os olhos enquanto a senha é
+  digitada, acende no envio e recusa quando dá erro.
+
+### Removido
+
+- A cena antiga do dragão (`dragon_bg.png`, 748 KB, e o fogo em canvas).
+
+## [0.11.0] — 2026-10-30
+
+### Adicionado
+
+- **Identidade de produto Falkyria:** ícone próprio do AetherTable (aba,
+  atalho na tela inicial e manifesto do app web) e o selo "Um produto
+  Falkyria" na entrada, no menu do painel e na política de privacidade.
+
+### Alterado
+
 - **Dependências:** dotenv 18, pino 10 e jest 30.
+- **Licença** no modelo dos produtos Falkyria, com a proteção explícita do
+  nome e das logos.
 
 ## [0.10.1] — 2026-10-21
 
@@ -226,7 +249,8 @@ resumo.
   na sala de espera e modo espectador.
 - Processo documentado (DOC-091/092/093), `pnpm verificar` e hook de pre-push.
 
-[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.10.1...HEAD
+[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Dracon-46/AetherTable/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/Dracon-46/AetherTable/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Dracon-46/AetherTable/compare/v0.9.6...v0.10.0
 [0.9.6]: https://github.com/Dracon-46/AetherTable/compare/v0.9.5...v0.9.6

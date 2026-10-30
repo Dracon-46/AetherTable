@@ -37,17 +37,6 @@ jest.mock(
   () => new Proxy({}, { get: (_alvo, nome) => (nome === '__esModule' ? true : () => null) }),
 );
 
-// A cena do dragão é decoração animada; nada nela participa do login.
-jest.mock('../app/CenaDoDragao', () => ({
-  CenaDoDragao: () => null,
-  useDragao: () => ({
-    fase: 'repouso',
-    carregar: jest.fn(),
-    relaxar: jest.fn(),
-    cuspir: jest.fn(),
-  }),
-}));
-
 const USUARIO = { id: 'u-oauth', username: 'viajante', email: 'v@exemplo.com' };
 
 function respostaJson(corpo: unknown, status = 200) {

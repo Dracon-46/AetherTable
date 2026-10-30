@@ -48,6 +48,10 @@ export const EN: Readonly<Record<string, string>> = {
   'Decks que outros jogadores deixaram públicos. Curta para guardar, copie para jogar.':
     'Decks other players made public. Like to save, copy to play.',
   // ─── Entrada ─────────────────────────────────────────────────────────────
+  'Mesa virtual de card games': 'Virtual card game table',
+  Entrar: 'Sign in',
+  'Mostrar a senha': 'Show password',
+  'Esconder a senha': 'Hide password',
   'Prepare suas defesas, o embate vai começar.':
     'Ready your defenses — the clash is about to begin.',
   'E-mail': 'Email',
@@ -63,6 +67,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Política de Privacidade': 'Privacy Policy',
   'Projeto de fã, sem vínculo com a Wizards of the Coast':
     'Fan project, not affiliated with Wizards of the Coast',
+  'Um produto Falkyria': 'A Falkyria product',
   'Acordando o servidor — isso leva até 1 minuto na primeira vez...':
     'Waking the server — this can take up to a minute the first time...',
   'O servidor não respondeu. Tente novamente em instantes.':
@@ -86,6 +91,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Senha (Criptografada)': 'Password (encrypted)',
   'Criando Perfil...': 'Creating profile...',
   'Criar Conta Grátis': 'Create free account',
+  'Já tem uma conta?': 'Already have an account?',
   'Voltar ao Login': 'Back to sign in',
   'Falha ao registrar': 'Sign-up failed',
 };

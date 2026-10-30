@@ -3,14 +3,26 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Flame, LogIn, Swords, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { CenaDoDragao, useDragao } from './CenaDoDragao';
+import { ArrowRight, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import {
+  AVISO_ALERTA,
+  AVISO_ERRO,
+  BOTAO_PRIMARIO,
+  BOTAO_SECUNDARIO,
+  CAMPO,
+  CabecalhoDoCartao,
+  LINK,
+  PortaFalkyria,
+  ROTULO,
+} from './PortaFalkyria';
+import type { HumorDoDragao } from '../components/DragaoAether';
 import { useAuthStore, type SessaoDaApi } from '../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { api, mensagemDoCorpoDeErro } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
 import { OAuthTokenCapture } from '../components/OAuthTokenCapture';
+import { AssinaturaFalkyria } from '../components/AssinaturaFalkyria';
 import { iniciarOAuth } from '../lib/oauth';
 import { IDIOMAS_DA_INTERFACE, useLangDoDocumento, useT } from '../i18n/i18n';
 import { useAparencia } from '../store/aparencia.store';
@@ -42,9 +54,6 @@ export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
-  // A cena do dragão (fundo, véu, brasas e sopro) vive em CenaDoDragao.
-  const { fase, carregar, relaxar, cuspir } = useDragao();
-
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -58,6 +67,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  /** Qual campo tem o foco: é o que o dragão olha (ver `humor`). */
+  const [campoEmFoco, setCampoEmFoco] = useState<'email' | 'senha' | null>(null);
 
   /**
    * Quais botões de OAuth desenhar.
@@ -122,9 +133,6 @@ export default function LoginPage() {
     // Tentar entrar por senha descarta o aviso do provedor: ele já foi lido, e
     // deixá-lo na tela ao lado de um erro novo confundiria os dois.
     setErroDeOAuth(null);
-    // Entrar É o sopro. No plano gratuito o login pode levar ~50 s acordando o
-    // container; a criatura cuspindo é o que preenche essa espera.
-    cuspir();
 
     try {
       // Acorda o serviço ANTES do POST: um login enviado contra um container
@@ -163,227 +171,224 @@ export default function LoginPage() {
   };
 
   /*
-   * `min-h-dvh`, não `min-h-screen`: `100vh` no celular é a altura da janela SEM
-   * a barra do navegador, então a tela "cabe" no CSS e sobra conteúdo embaixo da
-   * barra na vida real — o clássico "tem que rolar para ver o botão". `dvh`
-   * acompanha a barra que aparece e some.
-   *
-   * `py-4` para o painel nunca encostar na borda, e `overflow-y-auto` como
-   * válvula: numa janela realmente minúscula é melhor rolar dentro da tela do
-   * que ter o botão de entrar recortado e inalcançável.
+   * O dragão reage ao formulário, como o Nicx no painel: fecha os olhos quando
+   * a senha escondida está sendo digitada, acende enquanto o login sai (no plano
+   * gratuito a espera pode chegar a ~50 s acordando o container) e recusa
+   * quando dá erro. A ordem importa: o envio em curso vence o erro antigo.
    */
+  const humor: HumorDoDragao = isLoggingIn
+    ? 'invocando'
+    : error || erroDeOAuth
+      ? 'alerta'
+      : campoEmFoco === 'senha' && !showPassword
+        ? 'olhos-fechados'
+        : campoEmFoco
+          ? 'atento'
+          : 'repouso';
+
   return (
-    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-y-auto overflow-x-hidden px-3 py-4">
+    <PortaFalkyria
+      chamada={t('Prepare suas defesas, o embate vai começar.')}
+      humor={humor}
+      tremer={!!(error || erroDeOAuth)}
+    >
       {/* Quem volta do OAuth SEM sessão é desviado para cá pelo
           `ProtectedRoute`, com o `#token=` preservado. A captura só existia no
           layout do painel — atrás do mesmo porteiro que barrava a entrada —, e
           o token morria no desvio. */}
       <OAuthTokenCapture />
-      <CenaDoDragao fase={fase} carregar={carregar} relaxar={relaxar} cuspir={cuspir} />
 
-      {/* Painel de Login Glassmorphism */}
-      <div
-        className={`bg-panel/80 border-panel-border relative z-10 my-auto w-full max-w-md rounded-lg border p-5 shadow-2xl backdrop-blur-md transition-transform duration-300 sm:p-7 ${error || erroDeOAuth ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
-      >
-        {/* O cabeçalho encolhe em telas baixas: numa janela de 700px a
-            saudação custava ~180px que o formulário precisava mais. */}
-        <div className="mb-5 flex flex-col items-center text-center">
-          <div className="bg-table-deep border-panel-border mb-3 rounded-full border p-2.5 shadow-inner">
-            <Swords className="text-primary h-7 w-7" />
-          </div>
-          <h1 className="text-text text-xl font-bold sm:text-2xl">AetherTable</h1>
-          <p className="text-text-muted mt-1 text-sm">
-            {t('Prepare suas defesas, o embate vai começar.')}
-          </p>
-        </div>
+      <CabecalhoDoCartao
+        icone={<LogIn size={17} aria-hidden="true" />}
+        titulo={t('Entrar')}
+        subtitulo={t('Prepare suas defesas, o embate vai começar.')}
+      />
 
+      <div className="space-y-3 empty:hidden [&:not(:empty)]:mb-5">
         {estadoServidor === 'acordando' && (
-          <div className="border-warning/40 bg-warning/10 mb-4 flex items-start gap-3 rounded border p-3">
-            <AlertCircle className="text-warning mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-warning text-sm">{t(MENSAGEM_POR_ESTADO.acordando)}</p>
+          <div className={AVISO_ALERTA}>
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <p>{t(MENSAGEM_POR_ESTADO.acordando)}</p>
           </div>
         )}
 
         {erroDeOAuth && (
-          <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
-            <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-danger text-sm">{t(erroDeOAuth)}</p>
+          <div role="alert" className={AVISO_ERRO}>
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <p>{t(erroDeOAuth)}</p>
           </div>
         )}
 
         {error && (
-          <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
-            <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-danger text-sm">{t(error)}</p>
+          <div role="alert" className={AVISO_ERRO}>
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <p>{t(error)}</p>
           </div>
         )}
+      </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              {t('E-mail')}
+      <form onSubmit={handleLogin} className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="entrada-email" className={ROTULO}>
+            {t('E-mail')}
+          </label>
+          <input
+            id="entrada-email"
+            type="email"
+            autoComplete="username"
+            inputMode="email"
+            required
+            disabled={isLoggingIn}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onFocus={() => setCampoEmFoco('email')}
+            onBlur={() => setCampoEmFoco(null)}
+            className={CAMPO}
+            placeholder={t('seuemail@exemplo.com')}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <label htmlFor="entrada-senha" className={ROTULO}>
+              {t('Senha')}
             </label>
+            {/* Era `<a href="#">` — DOC-094 §I.8, "não há recuperação de
+                senha". Agora leva a /senha/esqueci. */}
+            <Link href="/senha/esqueci" className={`${LINK} text-xs`}>
+              {t('Esqueceu?')}
+            </Link>
+          </div>
+          <div className="relative">
             <input
-              type="email"
+              id="entrada-senha"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
               required
               disabled={isLoggingIn}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-primary focus:ring-primary w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-              placeholder={t('seuemail@exemplo.com')}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onFocus={() => setCampoEmFoco('senha')}
+              onBlur={() => setCampoEmFoco(null)}
+              className={`${CAMPO} pr-12`}
+              placeholder="••••••••••••"
             />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-                {t('Senha')}
-              </label>
-              {/* Era `<a href="#">` — DOC-094 §I.8, "não há recuperação de
-                  senha". Agora leva a /senha/esqueci. */}
-              <Link
-                href="/senha/esqueci"
-                className="text-primary hover:text-primary-hover text-xs transition-colors"
-              >
-                {t('Esqueceu?')}
-              </Link>
-            </div>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                disabled={isLoggingIn}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-table-deep border-panel-border text-text focus:border-primary focus:ring-primary w-full rounded-md border px-4 py-2.5 pr-12 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-                placeholder="••••••••••••"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-text-muted hover:text-primary absolute right-3 top-1/2 -translate-y-1/2 transition-colors focus:outline-none"
-              >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoggingIn}
-            // O botão também carrega o dragão: mirar em "Entrar" é mirar no
-            // bote. O sopro em si sai no `handleSubmit`, junto do login.
-            onMouseEnter={carregar}
-            onMouseLeave={relaxar}
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-150 ${
-              isLoggingIn
-                ? 'bg-danger cursor-wait text-white'
-                : 'bg-primary hover:bg-primary-hover text-white active:scale-95'
-            } `}
-          >
-            {isLoggingIn ? (
-              <>
-                <Flame className="h-4 w-4 animate-bounce" />
-                {estadoServidor === 'acordando' ? t('Acordando o servidor…') : t('Invocando...')}
-              </>
-            ) : (
-              <>
-                <LogIn className="h-4 w-4" />
-                {t('Entrar no Saguão')}
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* ─── SÓ APARECE O QUE FUNCIONA ────────────────────────────────────
-            O bloco inteiro era renderizado sempre, com os dois botões e um
-            aviso de "DUMMY KEYS" condicionado a `NODE_ENV`. Em produção o
-            aviso sumia e os botões ficavam — levando a uma página de erro do
-            próprio provedor, porque `render.yaml` nunca declarou as chaves.
-
-            Agora o servidor diz o que tem (`GET /auth/provedores`), e um botão
-            aqui é a promessa de que aquele caminho funciona. Sem provedor
-            nenhum, some também o separador: um "ou continue com" seguido de
-            nada é pior que nada. */}
-        {(!!provedores?.google || !!provedores?.discord) && (
-          <>
-            <div className="mt-4 flex items-center justify-between">
-              <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
-              <span className="text-text-muted text-center text-xs uppercase">
-                {t('ou continue com')}
-              </span>
-              <span className="border-panel-border w-1/5 border-b lg:w-1/4"></span>
-            </div>
-
-            {/* Ícones servidos pelo próprio site (public/icones). Vinham do
-                svgrepo.com: cada visita à tela de entrada entregava o IP do
-                visitante a um terceiro, e a CSP (img-src) os bloquearia. */}
-            <div className="mt-4 flex flex-col gap-2">
-              {provedores.google && (
-                <button
-                  onClick={() => iniciarOAuth(`${API_URL}/auth/google`)}
-                  className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
-                >
-                  <img src="/icones/google.svg" alt="" className="h-5 w-5" />
-                  Google
-                </button>
-              )}
-
-              {provedores.discord && (
-                <button
-                  onClick={() => iniciarOAuth(`${API_URL}/auth/discord`)}
-                  className="border-panel-border text-text hover:bg-panel-hover flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors"
-                >
-                  <img src="/icones/discord.svg" alt="" className="h-5 w-5" />
-                  Discord
-                </button>
-              )}
-            </div>
-          </>
-        )}
-
-        <div className="border-panel-border mt-5 border-t pt-4 text-center">
-          <p className="text-text-muted text-sm">
-            {t('Não tem uma conta?')}{' '}
-            <Link
-              href="/register"
-              className="text-primary hover:text-primary-hover font-medium transition-colors"
+            {/* O primeiro `type="button"` da página: o e2e de telas públicas
+                clica nele para conferir que o tipo do campo alterna. */}
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? t('Esconder a senha') : t('Mostrar a senha')}
+              aria-pressed={showPassword}
+              className="text-subtle hover:text-ink absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-lg transition-colors"
             >
-              {t('Aliste-se')}
-            </Link>
-          </p>
-
-          {/* A política precisa ser alcançável DA PÁGINA INICIAL, e não só pela
-              URL direta: é o que o console do Google confere ao publicar o app
-              OAuth, e é onde uma pessoa procura antes de entregar o e-mail. */}
-          <p className="text-text-muted/70 mt-3 text-xs">
-            <Link href="/privacidade" className="hover:text-primary transition-colors">
-              {t('Política de Privacidade')}
-            </Link>
-            <span className="mx-1.5">·</span>
-            <span>{t('Projeto de fã, sem vínculo com a Wizards of the Coast')}</span>
-          </p>
-          {/* Quem chega aqui ainda não entrou: a troca de idioma precisa estar
-              na porta, e não só nos Ajustes. */}
-          <div className="mt-3 flex justify-center gap-1 text-xs" role="group" aria-label="Idioma">
-            {IDIOMAS_DA_INTERFACE.map((i) => (
-              <button
-                key={i.codigo}
-                type="button"
-                onClick={() => setIdioma(i.codigo)}
-                aria-pressed={idioma === i.codigo}
-                className={`rounded px-2 py-0.5 transition-colors ${
-                  idioma === i.codigo
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-text-muted hover:text-text'
-                }`}
-              >
-                {i.codigo === 'en' ? 'EN' : 'PT'}
-              </button>
-            ))}
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
         </div>
+
+        <button type="submit" disabled={isLoggingIn} className={`${BOTAO_PRIMARIO} mt-1`}>
+          {isLoggingIn ? (
+            estadoServidor === 'acordando' ? (
+              t('Acordando o servidor…')
+            ) : (
+              t('Invocando...')
+            )
+          ) : (
+            <>
+              {t('Entrar no Saguão')}
+              <ArrowRight
+                size={16}
+                aria-hidden="true"
+                className="ease-out-expo transition-transform duration-300 group-hover:translate-x-1"
+              />
+            </>
+          )}
+        </button>
+      </form>
+
+      {/* ─── SÓ APARECE O QUE FUNCIONA ────────────────────────────────────
+          O bloco inteiro era renderizado sempre, com os dois botões e um
+          aviso de "DUMMY KEYS" condicionado a `NODE_ENV`. Em produção o
+          aviso sumia e os botões ficavam — levando a uma página de erro do
+          próprio provedor, porque `render.yaml` nunca declarou as chaves.
+
+          Agora o servidor diz o que tem (`GET /auth/provedores`), e um botão
+          aqui é a promessa de que aquele caminho funciona. Sem provedor
+          nenhum, some também o separador: um "ou continue com" seguido de
+          nada é pior que nada. */}
+      {(!!provedores?.google || !!provedores?.discord) && (
+        <>
+          <div className="text-subtle mt-6 flex items-center gap-3 text-xs">
+            <span className="bg-line h-px flex-1" />
+            {t('ou continue com')}
+            <span className="bg-line h-px flex-1" />
+          </div>
+
+          {/* Ícones servidos pelo próprio site (public/icones). Vinham do
+              svgrepo.com: cada visita à tela de entrada entregava o IP do
+              visitante a um terceiro, e a CSP (img-src) os bloquearia. */}
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {provedores.google && (
+              <button
+                onClick={() => iniciarOAuth(`${API_URL}/auth/google`)}
+                className={BOTAO_SECUNDARIO}
+              >
+                <img src="/icones/google.svg" alt="" className="h-4 w-4" />
+                Google
+              </button>
+            )}
+
+            {provedores.discord && (
+              <button
+                onClick={() => iniciarOAuth(`${API_URL}/auth/discord`)}
+                className={BOTAO_SECUNDARIO}
+              >
+                <img src="/icones/discord.svg" alt="" className="h-4 w-4" />
+                Discord
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      <div className="border-line mt-6 border-t pt-5 text-center">
+        <p className="text-muted text-sm">
+          {t('Não tem uma conta?')}{' '}
+          <Link href="/register" className={`${LINK} font-medium`}>
+            {t('Aliste-se')}
+          </Link>
+        </p>
+
+        {/* A política precisa ser alcançável DA PÁGINA INICIAL, e não só pela
+            URL direta: é o que o console do Google confere ao publicar o app
+            OAuth, e é onde uma pessoa procura antes de entregar o e-mail. */}
+        <p className="text-subtle mt-3 text-xs leading-relaxed">
+          <Link href="/privacidade" className="hover:text-ink transition-colors">
+            {t('Política de Privacidade')}
+          </Link>
+          <span className="mx-1.5">·</span>
+          <span>{t('Projeto de fã, sem vínculo com a Wizards of the Coast')}</span>
+        </p>
+        {/* Quem chega aqui ainda não entrou: a troca de idioma precisa estar
+            na porta, e não só nos Ajustes. */}
+        <div className="mt-3 flex justify-center gap-1 text-xs" role="group" aria-label="Idioma">
+          {IDIOMAS_DA_INTERFACE.map((i) => (
+            <button
+              key={i.codigo}
+              type="button"
+              onClick={() => setIdioma(i.codigo)}
+              aria-pressed={idioma === i.codigo}
+              className={`rounded-full px-2.5 py-0.5 transition-colors ${
+                idioma === i.codigo ? 'bg-accent-soft text-accent' : 'text-subtle hover:text-ink'
+              }`}
+            >
+              {i.codigo === 'en' ? 'EN' : 'PT'}
+            </button>
+          ))}
+        </div>
+        <AssinaturaFalkyria className="mt-3" />
       </div>
-    </div>
+    </PortaFalkyria>
   );
 }
