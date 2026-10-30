@@ -290,8 +290,8 @@ FAQ, tutorial, termos, privacidade ou contato existe (`grep` por `help`, `faq`,
 **Plano — e onde fazer melhor:**
 
 1. **Landing em `/`, login em `/login`.** Mover a tela atual e criar a landing.
-   A `CenaDoDragao` já é um ativo visual forte e está desperdiçada atrás de um
-   formulário de login.
+   O dragão da entrada (`DragaoAether`, no estilo do Nicx) pode ser o mascote
+   da landing, e não só o vizinho de um formulário de login.
 2. **Modo demo sem conta.** O AetherTable tem uma vantagem enorme e escondida
    aqui: o formato `solo` (`format.ts:id:'solo'`, `jogadores.min = 1`) e a mesa
    já funcionam com um assento. Um `/demo` que abre uma mesa de um jogador com

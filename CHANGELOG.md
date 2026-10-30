@@ -11,6 +11,19 @@ resumo.
 
 ## [Não lançado]
 
+### Alterado
+
+- **Telas de entrada no sistema visual da Falkyria:** login, cadastro e as
+  duas telas de senha agora usam os tokens, as fontes (Geist e Instrument
+  Serif), o cartão e o fundo do site e do painel do Nicx, nos dois temas.
+- **Dragão novo na entrada:** a imagem de fundo com fogo deu lugar a um
+  mascote vetorial no estilo do Nicx, que fecha os olhos enquanto a senha é
+  digitada, acende no envio e recusa quando dá erro.
+
+### Removido
+
+- A cena antiga do dragão (`dragon_bg.png`, 748 KB, e o fogo em canvas).
+
 ## [0.11.0] — 2026-10-30
 
 ### Adicionado

@@ -475,10 +475,12 @@ entrar termina embaixo dela.
 | `/senha/esqueci`   | `app/senha/esqueci/page.tsx`   | Pede o link de redefinição                                  |
 | `/senha/redefinir` | `app/senha/redefinir/page.tsx` | Escolhe a senha nova, com o token do e-mail                 |
 
-`app/senha/Moldura.tsx` é a casca compartilhada pelas duas telas de senha. Ela **não** foi aplicada
-retroativamente a `/` e `/register`: aquelas duas carregam a `CenaDoDragao` com o estado de sopro
-ligado ao envio do formulário, e migrá-las junto misturaria a recuperação de senha com uma mudança na
-porta de entrada do produto. Fica como o próximo passo de quem mexer nelas.
+As quatro telas usam a mesma casca, `app/PortaFalkyria.tsx`, no sistema visual dos outros
+produtos da Falkyria (site e painel do Nicx): tokens `canvas`/`surface`/`ink`/`accent`/`amber`/`cyan`
+em `globals.css` (bloco "Sistema Falkyria"), Geist e Instrument Serif via `app/fonte-falkyria.ts`, e o
+mascote `components/DragaoAether.tsx`, que reage ao formulário como o Nicx reage no painel (olhos
+fechados na senha, núcleo aceso no envio, recusa no erro). `app/senha/Moldura.tsx` virou uma camada
+fina sobre ela. A antiga `CenaDoDragao` (PNG de 748 KB com fogo em canvas) foi removida.
 
 **Três decisões que se repetem nessas telas, e o porquê:**
 
