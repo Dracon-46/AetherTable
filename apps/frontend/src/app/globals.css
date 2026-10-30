@@ -134,6 +134,185 @@
   display: inline;
 }
 
+/*
+ * ─── SISTEMA FALKYRIA ───────────────────────────────────────────────────────
+ *
+ * Os tokens e as peças visuais dos produtos da Falkyria, copiados do site e do
+ * painel do Nicx (`src/index.css` dos dois): neutros quentes, azul de destaque,
+ * o ponto âmbar como assinatura e o ciano do mascote. Hoje só as telas de
+ * entrada usam (`app/PortaFalkyria.tsx`); o resto do produto continua nos
+ * tokens da mesa, acima.
+ *
+ * Os nomes são os mesmos dos outros projetos (`bg-canvas`, `text-ink`,
+ * `border-line`…) para que uma tela possa ir de um repositório a outro sem
+ * tradução. Nenhum colide com os tokens da mesa (`panel`, `text`, `primary`).
+ *
+ * Escuro por padrão, como o resto do AetherTable; o claro segue o mesmo
+ * `data-tema` que troca os tokens da mesa, escrito antes da primeira pintura.
+ */
+:root {
+  --canvas: #121211;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --ink: #f4f4f1;
+  --muted: #a3a297;
+  --subtle: #8b8a80;
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.16);
+  --accent: #86b6ef;
+  --accent-hover: #a9cbf4;
+  --accent-ink: #0b0b0b;
+  --accent-soft: rgb(134 182 239 / 0.12);
+  --amber: #eda100;
+  --amber-soft: rgb(237 161 0 / 0.16);
+  --amber-ink: #f5b733;
+  --cyan: #46e3f5;
+  --cyan-soft: rgb(70 227 245 / 0.12);
+  --danger-soft: rgb(239 68 68 / 0.12);
+  --glow-a: rgb(70 227 245 / 0.16);
+  --glow-b: rgb(28 92 171 / 0.22);
+  --grid: rgb(255 255 255 / 0.04);
+  --grain-opacity: 0.07;
+  --card: rgb(26 26 25 / 0.82);
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 32px -18px rgb(0 0 0 / 0.6);
+  --shadow-float: 0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 24px 60px -24px rgb(0 0 0 / 0.7);
+}
+
+:root[data-tema='claro'] {
+  --canvas: #f6f6f4;
+  --surface: #fcfcfb;
+  --surface-2: #efeeea;
+  --ink: #0b0b0b;
+  --muted: #52514e;
+  --subtle: #6b6964;
+  --line: rgb(11 11 11 / 0.08);
+  --line-strong: rgb(11 11 11 / 0.16);
+  --accent: #1c5cab;
+  --accent-hover: #164a8a;
+  --accent-ink: #ffffff;
+  --accent-soft: rgb(28 92 171 / 0.08);
+  --amber-soft: rgb(237 161 0 / 0.14);
+  --amber-ink: #8a5a00;
+  --cyan: #0d8ea6;
+  --cyan-soft: rgb(47 195 217 / 0.14);
+  --danger-soft: rgb(220 38 38 / 0.08);
+  --glow-a: rgb(70 227 245 / 0.3);
+  --glow-b: rgb(28 92 171 / 0.14);
+  --grid: rgb(11 11 11 / 0.045);
+  --grain-opacity: 0.05;
+  --card: rgb(252 252 251 / 0.86);
+  --shadow-card:
+    0 1px 0 0 rgb(255 255 255 / 0.7) inset, 0 1px 2px rgb(11 11 11 / 0.04),
+    0 12px 32px -18px rgb(11 11 11 / 0.18);
+  --shadow-float:
+    0 1px 0 0 rgb(255 255 255 / 0.8) inset, 0 2px 4px rgb(11 11 11 / 0.04),
+    0 24px 60px -24px rgb(11 11 11 / 0.28);
+}
+
+/* `inline`: a utilidade escreve `var(--canvas)` no próprio elemento, e é ali
+   que o tema resolve o valor. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-amber-ink: var(--amber-ink);
+  --color-cyan: var(--cyan);
+  --color-cyan-soft: var(--cyan-soft);
+  --color-danger-soft: var(--danger-soft);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Fundo: brilho, papel quadriculado e grão (o mesmo `.backdrop` do painel). */
+.fundo-falkyria {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 38rem at 88% -12%, var(--glow-a), transparent 62%),
+    radial-gradient(52rem 40rem at -12% 18%, var(--glow-b), transparent 60%), var(--canvas);
+}
+.fundo-falkyria::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, black 25%, transparent 78%);
+}
+.fundo-falkyria::after {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Cartão de vidro com a borda acesa onde o ponteiro está. */
+.cartao-falkyria {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(12px);
+  isolation: isolate;
+}
+.cartao-falkyria::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    22rem circle at var(--mx, -100rem) var(--my, -100rem),
+    color-mix(in srgb, var(--cyan) 55%, transparent),
+    transparent 65%
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-out-expo);
+  pointer-events: none;
+}
+.cartao-falkyria:hover::before {
+  opacity: 1;
+}
+
+/* Rótulo técnico em mono, caixa alta. */
+.rotulo-falkyria {
+  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+/* O ponto âmbar, assinatura da Falkyria. */
+.ponto-falkyria {
+  display: inline-block;
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 999px;
+  background: var(--amber);
+  box-shadow: 0 0 0 0.18em var(--amber-soft);
+}
+
 @layer base {
   :root {
     color-scheme: dark;
@@ -325,24 +504,6 @@
  * `fadeIn`, `popIn` e `shake` eram usadas via `animate-[fadeIn_...]` em nove
  * componentes sem nunca terem sido declaradas: nada animava.
  */
-@keyframes fire-breathe {
-  0% {
-    opacity: 0;
-    transform: scale(0.9) translateY(0);
-    filter: hue-rotate(0deg) brightness(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.1) translateY(-10px);
-    filter: hue-rotate(-15deg) brightness(1.5);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.2) translateY(-20px);
-    filter: hue-rotate(0deg) brightness(1);
-  }
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -415,10 +576,6 @@
 
 .animate-terremoto {
   animation: terremoto 0.7s ease-out 1;
-}
-
-.animate-fire-breathe {
-  animation: fire-breathe 2s ease-out forwards;
 }
 
 /*
@@ -498,102 +655,127 @@
 }
 
 /*
- * ── O dragão da tela de login ───────────────────────────────────────────────
+ * ── O dragão da porta de entrada (`components/DragaoAether.tsx`) ────────────
  *
- * A arte é um PNG estático. O que anima é a CENA: ela respira parada, recua
- * para tomar fôlego quando o mouse chega, e dá o bote quando o usuário clica.
- * Não é a mesma coisa que um dragão articulado — para isso seria preciso um
- * sprite sheet ou vídeo — mas o conjunto (movimento da cena + brasas sugadas +
- * jato saindo da bocarra, tudo em FireCanvas.tsx) lê como criatura viva em vez
- * de papel de parede.
- *
- * Tudo por `transform` e `filter`: ambos compostos na GPU, sem relayout por
- * quadro. Animar `background-position` faria o navegador repintar a imagem de
- * 748 KB a cada quadro.
- *
- * A escala nunca desce abaixo de 1.02: a cena precisa de folga para se mexer
- * sem revelar a borda da imagem.
+ * Tudo por `transform`, `opacity` e `filter`. `transform-box: fill-box` faz
+ * cada peça girar e escalar em torno do próprio centro, e não da origem do
+ * `viewBox`.
  */
+.dragao-aether * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.dragao-cabeca {
+  animation: dragao-respira 6s ease-in-out infinite;
+}
 @keyframes dragao-respira {
   0%,
   100% {
-    transform: scale(1.025) translate3d(0, 0, 0);
-    filter: brightness(1) saturate(1);
+    transform: translateY(0) scale(1);
   }
   50% {
-    transform: scale(1.045) translate3d(0, -0.5%, 0);
-    filter: brightness(1.04) saturate(1.05);
+    transform: translateY(-1.5%) scale(1.012);
   }
 }
 
-/* Inspiração: recua e treme de leve, como quem enche o peito. */
-@keyframes dragao-inspira {
-  0% {
-    transform: scale(1.045) translate3d(0, 0, 0);
-    filter: brightness(1.04) saturate(1.05);
-  }
+/* Piscar: raro e rápido. Fechar os olhos é escalar o olho na vertical. */
+.dragao-olho {
+  animation: dragao-pisca 7s ease-in-out infinite;
+  transition: transform 0.25s var(--ease-out-expo);
+}
+@keyframes dragao-pisca {
+  0%,
+  93%,
   100% {
-    transform: scale(1.085) translate3d(-0.6%, 0.3%, 0);
-    filter: brightness(1.18) saturate(1.3) contrast(1.05);
+    transform: scaleY(1);
+  }
+  95.5% {
+    transform: scaleY(0.08);
   }
 }
 
-/* O bote: avança rápido, passa do ponto e assenta. */
-@keyframes dragao-cospe {
-  0% {
-    transform: scale(1.085) translate3d(-0.6%, 0.3%, 0);
-    filter: brightness(1.18) saturate(1.3);
-  }
-  12% {
-    transform: scale(1.16) translate3d(1.2%, -0.4%, 0);
-    filter: brightness(1.55) saturate(1.5) contrast(1.1);
-  }
-  30% {
-    transform: scale(1.13) translate3d(0.7%, -0.2%, 0);
-    filter: brightness(1.4) saturate(1.4);
-  }
-  100% {
-    transform: scale(1.05) translate3d(0, 0, 0);
-    filter: brightness(1.1) saturate(1.15);
-  }
+.dragao-olhar {
+  transform: translate(var(--olhar-x, 0), var(--olhar-y, 0));
+  transition: transform 0.18s ease-out;
+}
+.dragao-pupila {
+  transition: transform 0.3s var(--ease-out-expo);
+}
+.dragao-olho-alerta {
+  opacity: 0;
+  mix-blend-mode: multiply;
+  transition: opacity 0.3s ease;
 }
 
-/* Tremor do impacto, aplicado no container para sacudir a cena inteira. */
-@keyframes dragao-tremor {
+.dragao-aura {
+  animation: dragao-pulsa 3.4s ease-in-out infinite;
+}
+@keyframes dragao-pulsa {
   0%,
   100% {
-    transform: translate3d(0, 0, 0);
+    opacity: 0.45;
+    transform: scale(0.92);
   }
-  20% {
-    transform: translate3d(-4px, 2px, 0);
+  50% {
+    opacity: 0.75;
+    transform: scale(1.06);
   }
-  40% {
-    transform: translate3d(3px, -3px, 0);
-  }
-  60% {
-    transform: translate3d(-2px, -1px, 0);
-  }
-  80% {
-    transform: translate3d(2px, 1px, 0);
-  }
+}
+.dragao-nucleo {
+  transition: filter 0.4s ease;
+}
+.dragao-brasas {
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
 
-.dragao-cena {
-  will-change: transform, filter;
-  transform-origin: 47% 43%; /* a bocarra: é dela que a cena cresce */
+/* Atento: as pupilas abrem. */
+[data-humor='atento'] .dragao-pupila {
+  transform: scaleX(1.6) scaleY(1.08);
 }
-.dragao-respira {
-  animation: dragao-respira 9s ease-in-out infinite;
+
+/* Olhos fechados enquanto a senha escondida é digitada. */
+[data-humor='olhos-fechados'] .dragao-olho {
+  animation: none;
+  transform: scaleY(0.08);
 }
-.dragao-inspira {
-  /* `forwards` porque a carga é um ESTADO, não um pulso: enquanto o mouse
-     estiver ali, a criatura fica cheia de ar. */
-  animation: dragao-inspira 0.85s cubic-bezier(0.33, 0, 0.2, 1) forwards;
+
+/* Invocando: o núcleo acende, as narinas soltam brasa. */
+[data-humor='invocando'] .dragao-aura {
+  animation-duration: 1.1s;
 }
-.dragao-cospe {
+[data-humor='invocando'] .dragao-nucleo {
+  filter: drop-shadow(0 0 4px #46e3f5) brightness(1.3);
+}
+[data-humor='invocando'] .dragao-brasas {
+  opacity: 1;
+  animation: dragao-pulsa 0.9s ease-in-out infinite;
+}
+[data-humor='invocando'] .dragao-pupila {
+  transform: scaleX(0.7);
+}
+
+/* Alerta: olhos avermelham e a cabeça sacode uma vez. */
+[data-humor='alerta'] .dragao-olho-alerta {
+  opacity: 0.75;
+}
+[data-humor='alerta'] .dragao-cabeca {
   animation:
-    dragao-cospe 1.4s cubic-bezier(0.15, 0.9, 0.25, 1) forwards,
-    dragao-tremor 0.42s ease-out 2;
+    dragao-recusa 0.5s ease-out 1,
+    dragao-respira 6s ease-in-out 0.5s infinite;
+}
+@keyframes dragao-recusa {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3%) rotate(-2deg);
+  }
+  60% {
+    transform: translateX(2%) rotate(1.5deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

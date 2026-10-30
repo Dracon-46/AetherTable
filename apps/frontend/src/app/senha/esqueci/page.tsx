@@ -23,7 +23,7 @@ import Link from 'next/link';
 import { KeyRound, Loader2, Mail, AlertCircle, Check } from 'lucide-react';
 import { api, mensagemDaApi } from '@/lib/fetcher';
 import { acordarApi, MENSAGEM_POR_ESTADO, type EstadoAcordar } from '@/net/wake';
-import { ENTRADA, Moldura } from '../Moldura';
+import { BOTAO, ENTRADA, Moldura } from '../Moldura';
 
 export default function EsqueciSenhaPage() {
   const [email, setEmail] = useState('');
@@ -67,19 +67,19 @@ export default function EsqueciSenhaPage() {
   if (enviado) {
     return (
       <Moldura
-        icone={<Mail className="text-success h-7 w-7" />}
+        icone={<Mail className="text-success h-[17px] w-[17px]" />}
         titulo="Confira seu e-mail"
         subtitulo="O corvo já partiu."
       >
-        <div className="border-success/30 bg-success/10 text-success flex items-start gap-3 rounded border p-3 text-sm">
-          <Check className="mt-0.5 h-5 w-5 flex-shrink-0" />
+        <div className="bg-success/10 text-success flex items-start gap-3 rounded-xl px-4 py-3 text-sm">
+          <Check className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>
             Se houver uma conta com <strong>{email}</strong>, o link de redefinição chegará em
             instantes. Ele vale por 30 minutos e só pode ser usado uma vez.
           </p>
         </div>
 
-        <p className="text-text-muted mt-4 text-xs leading-relaxed">
+        <p className="text-muted mt-4 text-xs leading-relaxed">
           Não chegou? Veja a caixa de spam. Se a sua conta entra pelo Google ou pelo Discord, ela
           não tem senha — o e-mail que você recebeu explica isso, e o botão do provedor na tela de
           entrada resolve.
@@ -90,31 +90,28 @@ export default function EsqueciSenhaPage() {
 
   return (
     <Moldura
-      icone={<KeyRound className="text-primary h-7 w-7" />}
+      icone={<KeyRound className="text-accent h-[17px] w-[17px]" />}
       titulo="Esqueceu a senha?"
       subtitulo="Informe seu e-mail e enviaremos um link para escolher outra."
       tremer={Boolean(erro)}
     >
       {estadoServidor === 'acordando' && (
-        <div className="border-warning/40 bg-warning/10 mb-4 flex items-start gap-3 rounded border p-3">
-          <AlertCircle className="text-warning mt-0.5 h-5 w-5 flex-shrink-0" />
-          <p className="text-warning text-sm">{MENSAGEM_POR_ESTADO.acordando}</p>
+        <div className="bg-amber-soft text-amber-ink mb-4 flex items-start gap-3 rounded-xl px-4 py-3 text-[13px] leading-relaxed">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <p>{MENSAGEM_POR_ESTADO.acordando}</p>
         </div>
       )}
 
       {erro && (
-        <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
-          <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-          <p className="text-danger text-sm">{erro}</p>
+        <div className="bg-danger-soft text-danger mb-4 flex items-start gap-3 rounded-xl px-4 py-3 text-[13px] leading-relaxed">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <p>{erro}</p>
         </div>
       )}
 
-      <form onSubmit={enviar} className="space-y-4">
-        <div className="space-y-2">
-          <label
-            htmlFor="email"
-            className="text-text-muted block text-xs font-semibold uppercase tracking-wider"
-          >
+      <form onSubmit={enviar} className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="email" className="text-muted block text-xs font-medium">
             E-mail
           </label>
           <input
@@ -130,11 +127,7 @@ export default function EsqueciSenhaPage() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={enviando || email.trim().length === 0}
-          className="bg-primary hover:bg-primary-hover flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <button type="submit" disabled={enviando || email.trim().length === 0} className={BOTAO}>
           {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
           {enviando
             ? estadoServidor === 'acordando'
@@ -144,9 +137,12 @@ export default function EsqueciSenhaPage() {
         </button>
       </form>
 
-      <p className="text-text-muted mt-4 text-center text-sm">
+      <p className="text-muted mt-4 text-center text-sm">
         Lembrou?{' '}
-        <Link href="/" className="text-primary hover:text-primary-hover font-medium">
+        <Link
+          href="/"
+          className="text-accent hover:text-accent-hover font-medium transition-colors"
+        >
           Entrar
         </Link>
       </p>

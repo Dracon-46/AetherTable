@@ -25,16 +25,6 @@ jest.mock(
   () => new Proxy({}, { get: (_alvo, nome) => (nome === '__esModule' ? true : () => null) }),
 );
 
-jest.mock('./CenaDoDragao', () => ({
-  CenaDoDragao: () => null,
-  useDragao: () => ({
-    fase: 'repouso',
-    carregar: jest.fn(),
-    relaxar: jest.fn(),
-    cuspir: jest.fn(),
-  }),
-}));
-
 const FRASE_GENERICA = 'Não foi possível concluir o login pelo provedor. Tente de novo.';
 
 function respostaJson(corpo: unknown) {

@@ -2,8 +2,18 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { UserPlus, AlertCircle, ShieldCheck } from 'lucide-react';
-import { CenaDoDragao, useDragao } from '../CenaDoDragao';
+import { ArrowRight, UserPlus, AlertCircle } from 'lucide-react';
+import {
+  AVISO_ALERTA,
+  AVISO_ERRO,
+  BOTAO_PRIMARIO,
+  CAMPO,
+  CabecalhoDoCartao,
+  LINK,
+  PortaFalkyria,
+  ROTULO,
+} from '../PortaFalkyria';
+import type { HumorDoDragao } from '../../components/DragaoAether';
 import { useAuthStore, type SessaoDaApi } from '../../store/auth.store';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
@@ -15,8 +25,6 @@ export default function RegisterPage() {
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
-  // A cena do dragão é a mesma do login — ver CenaDoDragao.
-  const { fase, carregar, relaxar, cuspir } = useDragao();
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -30,13 +38,14 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  /** O dragão olha o formulário — ver o `humor` do login. */
+  const [campoEmFoco, setCampoEmFoco] = useState<'texto' | 'senha' | null>(null);
   const t = useT();
   useLangDoDocumento();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsRegistering(true);
-    cuspir();
     setError(null);
 
     try {
@@ -75,120 +84,129 @@ export default function RegisterPage() {
     }
   };
 
+  const humor: HumorDoDragao = isRegistering
+    ? 'invocando'
+    : error
+      ? 'alerta'
+      : campoEmFoco === 'senha'
+        ? 'olhos-fechados'
+        : campoEmFoco
+          ? 'atento'
+          : 'repouso';
+
+  const focar = (campo: 'texto' | 'senha') => ({
+    onFocus: () => setCampoEmFoco(campo),
+    onBlur: () => setCampoEmFoco(null),
+  });
+
   return (
-    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-y-auto overflow-x-hidden px-3 py-4">
-      <CenaDoDragao fase={fase} carregar={carregar} relaxar={relaxar} cuspir={cuspir} />
+    <PortaFalkyria
+      chamada={t('Junte-se à mesa e forje seu destino.')}
+      humor={humor}
+      tremer={!!error}
+    >
+      <CabecalhoDoCartao
+        icone={<UserPlus size={17} aria-hidden="true" />}
+        titulo={t('Alistar-se')}
+        subtitulo={t('Junte-se à mesa e forje seu destino.')}
+      />
 
-      <div
-        className={`bg-panel/80 border-panel-border relative z-10 my-auto w-full max-w-md rounded-lg border p-5 shadow-2xl backdrop-blur-md transition-transform duration-300 sm:p-7 ${error ? 'animate-[shake_0.2s_ease-in-out]' : ''}`}
-      >
-        <div className="mb-5 flex flex-col items-center text-center">
-          <div className="bg-table-deep border-panel-border mb-3 rounded-full border p-2.5 shadow-inner">
-            <ShieldCheck className="text-success h-7 w-7" />
-          </div>
-          <h1 className="text-text text-xl font-bold sm:text-2xl">{t('Alistar-se')}</h1>
-          <p className="text-text-muted mt-1 text-sm">
-            {t('Junte-se à mesa e forje seu destino.')}
-          </p>
-        </div>
-
+      <div className="space-y-3 empty:hidden [&:not(:empty)]:mb-5">
         {estadoServidor === 'acordando' && (
-          <div className="border-warning/40 bg-warning/10 mb-6 flex items-start gap-3 rounded border p-3">
-            <AlertCircle className="text-warning mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-warning text-sm">{t(MENSAGEM_POR_ESTADO.acordando)}</p>
+          <div className={AVISO_ALERTA}>
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <p>{t(MENSAGEM_POR_ESTADO.acordando)}</p>
           </div>
         )}
 
         {error && (
-          <div className="bg-danger/20 border-danger/50 mb-6 flex items-start gap-3 rounded border p-3">
-            <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-            <p className="text-danger text-sm">{t(error)}</p>
+          <div role="alert" className={AVISO_ERRO}>
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <p>{t(error)}</p>
           </div>
         )}
-
-        <form onSubmit={handleRegister} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              {t('Nome de Usuário')}
-            </label>
-            <input
-              type="text"
-              required
-              disabled={isRegistering}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-              placeholder="Jace Beleren"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              {t('E-mail')}
-            </label>
-            <input
-              type="email"
-              required
-              disabled={isRegistering}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-              placeholder={t('seuemail@exemplo.com')}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-text-muted text-xs font-semibold uppercase tracking-wider">
-              {t('Senha (Criptografada)')}
-            </label>
-            <input
-              type="password"
-              required
-              disabled={isRegistering}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="bg-table-deep border-panel-border text-text focus:border-success focus:ring-success w-full rounded-md border px-4 py-2.5 transition-colors focus:outline-none focus:ring-1 disabled:opacity-50"
-              placeholder="••••••••••••"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isRegistering}
-            onMouseEnter={carregar}
-            onMouseLeave={relaxar}
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-150 ${
-              isRegistering
-                ? 'bg-success cursor-wait text-white'
-                : 'bg-success text-white hover:brightness-110 active:scale-95'
-            } `}
-          >
-            {isRegistering ? (
-              <>
-                <UserPlus className="h-4 w-4 animate-bounce" />
-                {t('Criando Perfil...')}
-              </>
-            ) : (
-              <>
-                <UserPlus className="h-4 w-4" />
-                {t('Criar Conta Grátis')}
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="border-panel-border mt-5 border-t pt-4 text-center">
-          <p className="text-text-muted text-sm">
-            Já tem uma conta?{' '}
-            <Link
-              href="/"
-              className="text-success font-medium transition-colors hover:brightness-110"
-            >
-              {t('Voltar ao Login')}
-            </Link>
-          </p>
-        </div>
       </div>
-    </div>
+
+      <form onSubmit={handleRegister} className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="cadastro-nome" className={ROTULO}>
+            {t('Nome de Usuário')}
+          </label>
+          <input
+            id="cadastro-nome"
+            type="text"
+            autoComplete="username"
+            required
+            disabled={isRegistering}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            {...focar('texto')}
+            className={CAMPO}
+            placeholder="Jace Beleren"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="cadastro-email" className={ROTULO}>
+            {t('E-mail')}
+          </label>
+          <input
+            id="cadastro-email"
+            type="email"
+            autoComplete="email"
+            inputMode="email"
+            required
+            disabled={isRegistering}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            {...focar('texto')}
+            className={CAMPO}
+            placeholder={t('seuemail@exemplo.com')}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="cadastro-senha" className={ROTULO}>
+            {t('Senha (Criptografada)')}
+          </label>
+          <input
+            id="cadastro-senha"
+            type="password"
+            autoComplete="new-password"
+            required
+            disabled={isRegistering}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            {...focar('senha')}
+            className={CAMPO}
+            placeholder="••••••••••••"
+          />
+        </div>
+
+        <button type="submit" disabled={isRegistering} className={`${BOTAO_PRIMARIO} mt-1`}>
+          {isRegistering ? (
+            t('Criando Perfil...')
+          ) : (
+            <>
+              {t('Criar Conta Grátis')}
+              <ArrowRight
+                size={16}
+                aria-hidden="true"
+                className="ease-out-expo transition-transform duration-300 group-hover:translate-x-1"
+              />
+            </>
+          )}
+        </button>
+      </form>
+
+      <div className="border-line mt-6 border-t pt-5 text-center">
+        <p className="text-muted text-sm">
+          {t('Já tem uma conta?')}{' '}
+          <Link href="/" className={`${LINK} font-medium`}>
+            {t('Voltar ao Login')}
+          </Link>
+        </p>
+      </div>
+    </PortaFalkyria>
   );
 }

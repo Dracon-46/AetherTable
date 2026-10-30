@@ -17,15 +17,6 @@ jest.mock(
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn() }),
 }));
-jest.mock('../CenaDoDragao', () => ({
-  CenaDoDragao: () => null,
-  useDragao: () => ({
-    fase: 'repouso',
-    carregar: jest.fn(),
-    relaxar: jest.fn(),
-    cuspir: jest.fn(),
-  }),
-}));
 // O servidor "já está acordado": o teste é sobre a resposta do cadastro.
 jest.mock('../../net/wake', () => ({
   ...jest.requireActual('../../net/wake'),

@@ -32,7 +32,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { api, mensagemDaApi } from '@/lib/fetcher';
-import { ENTRADA, Moldura } from '../Moldura';
+import { BOTAO, ENTRADA, Moldura } from '../Moldura';
 
 export default function RedefinirSenhaPage() {
   const router = useRouter();
@@ -112,7 +112,7 @@ export default function RedefinirSenhaPage() {
   if (token === undefined) {
     return (
       <Moldura
-        icone={<Loader2 className="text-primary h-7 w-7 animate-spin" />}
+        icone={<Loader2 className="text-accent h-[17px] w-[17px] animate-spin" />}
         titulo="Um instante"
         subtitulo="Conferindo o link…"
       >
@@ -124,18 +124,15 @@ export default function RedefinirSenhaPage() {
   if (token === null) {
     return (
       <Moldura
-        icone={<AlertCircle className="text-danger h-7 w-7" />}
+        icone={<AlertCircle className="text-danger h-[17px] w-[17px]" />}
         titulo="Link incompleto"
         subtitulo="Este endereço chegou sem o código de redefinição."
       >
-        <p className="text-text-muted text-sm leading-relaxed">
+        <p className="text-muted text-sm leading-relaxed">
           Abra o link direto do e-mail que você recebeu, sem editar o endereço. Se ele já passou de
           30 minutos, peça outro.
         </p>
-        <Link
-          href="/senha/esqueci"
-          className="bg-primary hover:bg-primary-hover mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-        >
+        <Link href="/senha/esqueci" className={`${BOTAO} mt-4`}>
           <KeyRound className="h-4 w-4" />
           Pedir um link novo
         </Link>
@@ -146,12 +143,12 @@ export default function RedefinirSenhaPage() {
   if (pronto) {
     return (
       <Moldura
-        icone={<ShieldCheck className="text-success h-7 w-7" />}
+        icone={<ShieldCheck className="text-success h-[17px] w-[17px]" />}
         titulo="Senha redefinida"
         subtitulo="Agora entre com ela."
       >
-        <div className="border-success/30 bg-success/10 text-success flex items-start gap-3 rounded border p-3 text-sm">
-          <Check className="mt-0.5 h-5 w-5 flex-shrink-0" />
+        <div className="bg-success/10 text-success flex items-start gap-3 rounded-xl px-4 py-3 text-sm">
+          <Check className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>
             Pronto. <strong>Todas as sessões desta conta foram encerradas</strong> — outro
             navegador, outro computador, o celular. Se alguém tinha entrado na sua conta, essa
@@ -159,10 +156,7 @@ export default function RedefinirSenhaPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => router.push('/')}
-          className="bg-primary hover:bg-primary-hover mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-        >
+        <button onClick={() => router.push('/')} className={`${BOTAO} mt-4`}>
           Entrar no Saguão
         </button>
       </Moldura>
@@ -171,15 +165,15 @@ export default function RedefinirSenhaPage() {
 
   return (
     <Moldura
-      icone={<KeyRound className="text-primary h-7 w-7" />}
+      icone={<KeyRound className="text-accent h-[17px] w-[17px]" />}
       titulo="Escolha uma senha nova"
       subtitulo="Ela substitui a anterior imediatamente."
       tremer={Boolean(erro)}
     >
       {erro && (
-        <div className="bg-danger/20 border-danger/50 mb-4 flex items-start gap-3 rounded border p-3">
-          <AlertCircle className="text-danger mt-0.5 h-5 w-5 flex-shrink-0" />
-          <div className="text-danger text-sm">
+        <div className="bg-danger-soft text-danger mb-4 flex items-start gap-3 rounded-xl px-4 py-3 text-[13px] leading-relaxed">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <div>
             <p>{erro}</p>
             <Link href="/senha/esqueci" className="mt-1 inline-block font-semibold underline">
               Pedir um link novo
@@ -188,17 +182,14 @@ export default function RedefinirSenhaPage() {
         </div>
       )}
 
-      <p className="text-text-muted mb-4 text-sm leading-relaxed">
+      <p className="text-muted mb-4 text-sm leading-relaxed">
         Ao redefinir, <strong>todas as sessões desta conta são encerradas</strong>. É de propósito:
         quem redefine a senha em geral desconfia que outra pessoa entrou.
       </p>
 
-      <form onSubmit={enviar} className="space-y-4">
-        <div className="space-y-2">
-          <label
-            htmlFor="nova-senha"
-            className="text-text-muted block text-xs font-semibold uppercase tracking-wider"
-          >
+      <form onSubmit={enviar} className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="nova-senha" className="text-muted block text-xs font-medium">
             Senha nova
           </label>
           <input
@@ -215,11 +206,8 @@ export default function RedefinirSenhaPage() {
           {curta && <p className="text-danger mt-1.5 text-xs">Precisa de ao menos 8 caracteres.</p>}
         </div>
 
-        <div className="space-y-2">
-          <label
-            htmlFor="confirmacao"
-            className="text-text-muted block text-xs font-semibold uppercase tracking-wider"
-          >
+        <div className="flex flex-col gap-2">
+          <label htmlFor="confirmacao" className="text-muted block text-xs font-medium">
             Repita a senha nova
           </label>
           <input
@@ -236,11 +224,7 @@ export default function RedefinirSenhaPage() {
           {divergem && <p className="text-danger mt-1.5 text-xs">As duas não conferem.</p>}
         </div>
 
-        <button
-          type="submit"
-          disabled={!podeEnviar || enviando}
-          className="bg-primary hover:bg-primary-hover flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <button type="submit" disabled={!podeEnviar || enviando} className={BOTAO}>
           {enviando ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
