@@ -5,7 +5,12 @@ import { Providers } from './Providers';
 
 export const metadata: Metadata = {
   title: 'AetherTable - O Seu Novo Card Game',
-  description: 'Jogue seus formatos favoritos de card games de forma online, imersiva e gratuita.',
+  description:
+    'Jogue seus formatos favoritos de card games de forma online, imersiva e gratuita. Um produto Falkyria.',
+  applicationName: 'AetherTable',
+  authors: [{ name: 'Falkyria', url: 'https://dracon-46.github.io/Portifolio/#falkyria' }],
+  creator: 'Falkyria',
+  publisher: 'Falkyria',
 };
 
 export default function RootLayout({

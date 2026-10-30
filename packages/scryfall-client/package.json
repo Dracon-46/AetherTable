@@ -2,6 +2,8 @@
   "name": "@aethertable/scryfall-client",
   "version": "0.1.0",
   "private": true,
+  "author": "Falkyria",
+  "license": "UNLICENSED",
   "description": "Cliente unico da Scryfall: fila serializada de 100 ms, User-Agent obrigatorio e backoff. NUNCA chamar api.scryfall.com direto de um service.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/marca/falkyria-marca-branca.svg">
+    <img src=".github/marca/falkyria-marca.svg" alt="Falkyria" width="220">
+  </picture>
+</p>
+
 # AetherTable
 
 [![CI](https://github.com/Dracon-46/AetherTable/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dracon-46/AetherTable/actions/workflows/ci.yml)
@@ -122,9 +129,8 @@ Os mais consultados:
 
 ## Licença
 
-© 2026 **Falkyria**. Todos os direitos reservados. Software proprietário: o
-código é público só para consulta, e a visibilidade não concede licença de uso,
-cópia ou distribuição. Os termos estão em [`LICENSE`](LICENSE).
+AetherTable é software proprietário da Falkyria. Todos os direitos reservados.
+O código está visível apenas para consulta; veja [`LICENSE`](LICENSE).
 
 Magic: The Gathering é marca da Wizards of the Coast, que não patrocina nem
 endossa este projeto. Os dados de carta vêm da [Scryfall](https://scryfall.com);
