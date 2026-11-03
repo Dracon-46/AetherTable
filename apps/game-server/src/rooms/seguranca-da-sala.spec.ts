@@ -460,7 +460,9 @@ describe('fim da sala', () => {
   it('o onDispose só termina quando o resumo da partida foi enviado', async () => {
     const sala = montarSala(['a', 'b']);
     sala.state.turnoIniciadoEm = Date.now();
-    (sala as unknown as { registrarParticipantes(): void }).registrarParticipantes();
+    (
+      sala as unknown as { registro: { registrarParticipantes(): void } }
+    ).registro.registrarParticipantes();
     let liberar: () => void = () => {};
     const busca = jest
       .spyOn(global, 'fetch')

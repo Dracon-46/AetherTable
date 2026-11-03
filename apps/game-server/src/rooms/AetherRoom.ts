@@ -47,6 +47,14 @@ import {
   reconexoes,
   salasAtivas,
 } from '../metrics';
+import {
+  CentralDaSala,
+  DescarteDaSalaVazia,
+  PrazosDaMesa,
+  RegistroDaPartida,
+  Vitrine,
+  type MediadorDaSala,
+} from './mediador-da-sala';
 import { RecusaDeEntrada, emitirPasseDeVoz, validarPasse, type SeatTokenClaims } from './passes';
 
 /** Aceita a forma canonica de uuid v1-v5; e o formato do id no Postgres. */
@@ -247,41 +255,20 @@ export class AetherRoom extends Room<RoomState> {
    * para voltar a sentar.
    */
   private readonly contasBanidas = new Set<string>();
-  /** Descarte agendado da sala vazia — ver `agendarDescarteSeVazia`. */
-  private descarteDaSalaVazia: { clear(): void } | null = null;
-  /** Encerramento agendado da votação aberta — ver `agendarFimDaVotacao`. */
-  private fimDaVotacao: { clear(): void } | null = null;
-  private fimDaVotacaoAgendado = 0;
-  /** Fechamento agendado da janela de mulligan — ver `agendarFimDoMulligan`. */
-  private fimDoMulligan: { clear(): void } | null = null;
-  private fimDoMulliganAgendado = 0;
+  /**
+   * Quem reage a cada acontecimento da sala — a vitrine pública, o descarte da
+   * sala vazia, os prazos e o registro da partida (`mediador-da-sala.ts`). Nasce
+   * no `onCreate`, junto do estado que os colegas leem.
+   */
+  private mediador!: MediadorDaSala;
+  /** Colega do mediador. A Room só o LÊ: na foto de cada jogador e no resumo. */
+  private registro!: RegistroDaPartida;
   private proximoAssento = 0;
 
-  /**
-   * ─── O QUE O RESUMO POS-PARTIDA PRECISA, E O ESTADO NAO TEM MAIS ──────────
-   *
-   * `onDispose` roda DEPOIS de todo mundo sair: nesse momento `state.players`
-   * esta vazio e `clients` tambem. Perguntar ao estado quem jogou, ali, devolve
-   * "ninguem" — e era assim que qualquer tentativa de gravar o resumo a partir
-   * do estado registraria uma partida sem participantes.
-   *
-   * Por isso as duas coisas sao acumuladas ao longo da vida da sala.
-   */
-  /** Ids de CONTA (`sub` do seat token) que ocuparam assento. Nao inclui plateia. */
-  private readonly contasQueJogaram = new Set<string>();
-  /**
-   * Ocupacao no AUGE, e nao no fim. Uma mesa de quatro que termina com um
-   * jogador — porque tres sairam — foi uma partida de quatro.
-   */
-  private augeDeJogadores = 0;
-  /** Epoch ms do primeiro START_MATCH. A duração da partida não inclui o lobby. */
-  private inicioDaPartida = 0;
   /** Uma foto por CONTA (não por sessão: quem reconecta é a mesma pessoa). */
   private readonly participacoes = new Map<string, ParticipacaoNaPartida>();
   /** De qual deck saiu o grimório de cada sessão — o histórico abre o deck por ele. */
   private readonly deckIdPorSessao = new Map<string, string>();
-  /** Conta de quem estava na vez quando a partida começou. */
-  private quemComecou = '';
   /**
    * Conta de quem venceu. O fim de partida era só um aviso (`matchEnded`) para
    * a tela — anunciado em três lugares — e ninguém guardava o resultado.
@@ -305,6 +292,18 @@ export class AetherRoom extends Room<RoomState> {
     const opcoes = brutas.success ? brutas.data : {};
 
     this.setState(new RoomState());
+    this.registro = new RegistroDaPartida(this.state);
+    this.mediador = new CentralDaSala(
+      this.state,
+      new Vitrine(this.state, (metadado) => void this.setMetadata(metadado)),
+      new DescarteDaSalaVazia(this.state, this.clock, () => this.clients.length),
+      new PrazosDaMesa(this.state, this.clock),
+      this.registro,
+      {
+        encerrarMulliganPorTempo: () => this.encerrarMulliganPorTempo(),
+        descartar: () => void this.disconnect(),
+      },
+    );
     this.state.roomCode = opcoes.roomCode ?? this.roomId.slice(0, 6).toUpperCase();
     this.state.phase = 'WAITING';
     this.state.startedAt = Date.now();
@@ -320,105 +319,9 @@ export class AetherRoom extends Room<RoomState> {
     this.registrarIntencoesComIO();
     salasAtivas.inc();
 
-    // Quem descarta a sala vazia é `agendarDescarteSeVazia`, não o Colyseus.
-    // Agendar já aqui cobre a sala que ninguém chega a ocupar.
+    // Quem descarta a sala vazia é `DescarteDaSalaVazia`, não o Colyseus.
     this.autoDispose = false;
-    this.agendarDescarteSeVazia();
-  }
-
-  /**
-   * ─── A SALA PÚBLICA SUMIA DA VITRINE ───────────────────────────────────────
-   *
-   * Com o `autoDispose` padrão do Colyseus, a sala é destruída no instante em
-   * que o último cliente sai. O criador de uma mesa pública não consegue estar
-   * no lobby e na Taverna na mesma aba: bastava voltar para a lista para ver se
-   * a mesa aparecia, e ela já não existia mais — "as salas que eu crio não
-   * aparecem".
-   *
-   * Agora a sala vazia espera. Pública espera mais, porque é justamente quem
-   * está na vitrine que alguém pode chegar a encontrar; privada espera o
-   * bastante para um F5 ou um "voltar" acidental não custar a mesa e o convite.
-   *
-   * Vazia é sem clientes E sem jogador aguardando reconexão: quem caiu tem o
-   * assento guardado por `RECONNECTION_WINDOW_S`, e descartar a sala antes
-   * disso desfaria a reserva.
-   */
-  private agendarDescarteSeVazia(): void {
-    this.cancelarDescarte();
-    // Pelo ESTADO, e não por `this.clients`: dentro do `onLeave` o cliente que
-    // está saindo pode ainda constar da lista, e a sala que acabou de esvaziar
-    // nunca agendaria o próprio descarte — com o `autoDispose` desligado, ela
-    // ficaria aberta para sempre.
-    if (!this.salaVazia()) return;
-
-    const espera = this.state.visibilidade === 'PUBLICA' ? 180_000 : 30_000;
-    this.descarteDaSalaVazia = this.clock.setTimeout(() => {
-      if (this.salaVazia() && this.clients.length === 0) void this.disconnect();
-    }, espera);
-  }
-
-  private salaVazia(): boolean {
-    return this.state.players.size === 0 && this.state.espectadores.size === 0;
-  }
-
-  /**
-   * A votação vencida é ENCERRADA pelo servidor, no prazo.
-   *
-   * Antes ela só era varrida no voto seguinte, e o painel decidia sumir
-   * comparando `votacaoExpiraEm` (relógio do servidor) com o relógio do
-   * NAVEGADOR: com o relógio do jogador adiantado um minuto, a votação nunca
-   * aparecia para ele; atrasado, aparecia depois de vencida. Agora a votação
-   * aberta é `votacaoAlvo !== ''`, e quem a fecha é o servidor.
-   */
-  private agendarFimDaVotacao(): void {
-    const { votacaoAlvo, votacaoExpiraEm } = this.state;
-    if (!votacaoAlvo || this.fimDaVotacaoAgendado === votacaoExpiraEm) return;
-    this.fimDaVotacao?.clear();
-    this.fimDaVotacaoAgendado = votacaoExpiraEm;
-    this.fimDaVotacao = this.clock.setTimeout(
-      () => {
-        this.fimDaVotacao = null;
-        this.fimDaVotacaoAgendado = 0;
-        if (this.state.votacaoAlvo && this.state.votacaoExpiraEm <= Date.now()) {
-          this.state.votacaoAlvo = '';
-          this.state.votacaoAutor = '';
-          this.state.votacaoSim = '';
-          this.state.votacaoExpiraEm = 0;
-        }
-      },
-      Math.max(0, votacaoExpiraEm - Date.now()) + 50,
-    );
-  }
-
-  /**
-   * ─── O PRAZO DO MULLIGAN ─────────────────────────────────────────────────
-   *
-   * Mesmo desenho da votação: o estado diz QUANDO vence (`mulliganExpiraEm`)
-   * e quem fecha é o servidor, no relógio da sala — não o cliente, que pode
-   * estar com a aba em segundo plano, desconectado ou simplesmente mentindo.
-   * Chamado depois de cada intenção: é quando o prazo nasce (START_MATCH),
-   * morre (RESET_MATCH) ou deixa de importar (todo mundo decidiu).
-   */
-  private agendarFimDoMulligan(): void {
-    const { mulliganExpiraEm, phase } = this.state;
-    if (!mulliganExpiraEm) return;
-    // Todo mundo decidiu antes do prazo: o relógio some da tela de todos.
-    const faltaAlguem = Array.from(this.state.players.values()).some((p) => !p.keptHand);
-    if (phase !== 'PLAYING' || !faltaAlguem) {
-      this.state.mulliganExpiraEm = 0;
-      return;
-    }
-    if (this.fimDoMulliganAgendado === mulliganExpiraEm) return;
-    this.fimDoMulligan?.clear();
-    this.fimDoMulliganAgendado = mulliganExpiraEm;
-    this.fimDoMulligan = this.clock.setTimeout(
-      () => {
-        this.fimDoMulligan = null;
-        this.fimDoMulliganAgendado = 0;
-        this.encerrarMulliganPorTempo();
-      },
-      Math.max(0, mulliganExpiraEm - Date.now()) + 50,
-    );
+    this.mediador.notificar({ tipo: 'SALA_CRIADA' });
   }
 
   /**
@@ -463,11 +366,6 @@ export class AetherRoom extends Room<RoomState> {
         ),
       );
     });
-  }
-
-  private cancelarDescarte(): void {
-    this.descarteDaSalaVazia?.clear();
-    this.descarteDaSalaVazia = null;
   }
 
   /**
@@ -525,42 +423,7 @@ export class AetherRoom extends Room<RoomState> {
     // 0 = nao declarado. Ver o campo em `RoomState`.
     this.state.nivelDePoder = config.nivelDePoder ?? 0;
 
-    this.publicarMetadados();
-  }
-
-  /**
-   * Publica a sala no matchMaker — ou a esconde.
-   *
-   * METADADO, e nao estado: e o que `matchMaker.query` consulta SEM abrir a
-   * sala nem tocar no `RoomState`. Uma lista publica que precisasse instanciar
-   * cada sala para saber o nome dela nao escalaria alem de algumas dezenas.
-   *
-   * So sala PUBLICA e publicada. Privada significa nao listada (nao existe
-   * senha de sala — o `seatToken` ja governa a entrada), e a forma de honrar
-   * isso e nao ter nada para o `GET /salas` encontrar.
-   */
-  private publicarMetadados(): void {
-    if (this.state.visibilidade !== 'PUBLICA') {
-      void this.setMetadata({ visibilidade: 'PRIVADA' });
-      return;
-    }
-
-    void this.setMetadata({
-      visibilidade: 'PUBLICA',
-      roomCode: this.state.roomCode,
-      nome: this.state.nome,
-      gameType: this.state.gameType,
-      comunicacao: this.state.comunicacao,
-      idioma: this.state.idioma,
-      nivelDePoder: this.state.nivelDePoder,
-      // A ocupacao vive no metadado porque a lista precisa dela para decidir
-      // entre "Entrar" e "Assistir", e `clients.length` nao atravessa o
-      // matchMaker por conta propria.
-      ocupacao: this.state.players.size,
-      espectadores: this.state.espectadores.size,
-      maxSeats: this.state.maxSeats,
-      emPartida: this.state.phase === 'PLAYING',
-    });
+    this.mediador.notificar({ tipo: 'SALA_CONFIGURADA' });
   }
 
   /**
@@ -724,8 +587,6 @@ export class AetherRoom extends Room<RoomState> {
   }
 
   private entrarComoJogador(client: Client, auth: SeatTokenClaims): void {
-    this.cancelarDescarte();
-
     const player = new Player();
     player.id = client.sessionId;
     player.userId = auth.sub;
@@ -737,11 +598,6 @@ export class AetherRoom extends Room<RoomState> {
     this.proximoAssento += 1;
 
     this.state.players.set(client.sessionId, player);
-    // Para o resumo pos-partida — ver `contasQueJogaram`. So com a partida
-    // RODANDO: quem passou pela sala de espera e saiu antes do inicio nao jogou,
-    // e uma mesa publica com entra-e-sai passava de oito participantes — o
-    // backend recusa o resumo acima de MAX_PLAYERS e a partida nao era gravada.
-    if (this.state.phase === 'PLAYING') this.registrarParticipantes();
 
     // Toda zona do jogador nasce com sua lista de ordem.
     for (const zone of ZONES) {
@@ -769,10 +625,7 @@ export class AetherRoom extends Room<RoomState> {
 
     this.broadcast('playerJoined', { playerId: client.sessionId, name: player.name });
     this.publicarLog(logSistema(client.sessionId, `${player.name} entrou na mesa`));
-
-    // A ocupacao mudou: sem isto a lista publica mostraria "1/4" numa mesa que
-    // ja encheu, e o botao "Entrar" levaria a um ROOM_FULL.
-    this.publicarMetadados();
+    this.mediador.notificar({ tipo: 'ENTROU' });
   }
 
   /**
@@ -784,7 +637,6 @@ export class AetherRoom extends Room<RoomState> {
    * tambem nao precisa de `reconciliarTudo`.
    */
   private entrarComoEspectador(client: Client, auth: SeatTokenClaims): void {
-    this.cancelarDescarte();
     const espectador = new Espectador();
     espectador.id = client.sessionId;
     espectador.userId = auth.sub;
@@ -801,7 +653,7 @@ export class AetherRoom extends Room<RoomState> {
       name: espectador.name,
     });
     this.publicarLog(logSistema(client.sessionId, `${espectador.name} está assistindo`));
-    this.publicarMetadados();
+    this.mediador.notificar({ tipo: 'ENTROU' });
   }
 
   /**
@@ -862,8 +714,7 @@ export class AetherRoom extends Room<RoomState> {
         spectatorId: client.sessionId,
         name: espectador?.name ?? '',
       });
-      this.publicarMetadados();
-      this.agendarDescarteSeVazia();
+      this.mediador.notificar({ tipo: 'SAIU' });
       return;
     }
 
@@ -964,6 +815,44 @@ export class AetherRoom extends Room<RoomState> {
   }
 
   /**
+   * Toda transmissão de fim de partida passa por aqui: é onde o vencedor fica
+   * registrado e a mesa inteira é fotografada no instante do fim.
+   */
+  private transmitir(evento: string, payload?: unknown): void {
+    if (evento === 'matchEnded') {
+      const id = (payload as { winnerId?: string } | undefined)?.winnerId;
+      const vencedor = id ? this.state.players.get(id) : undefined;
+      if (vencedor?.userId) this.vencedorUserId = vencedor.userId;
+      this.state.players.forEach((p) => this.fotografar(p, false));
+    }
+    this.broadcast(evento, payload);
+  }
+
+  /** A foto de um jogador para o histórico. Só vale depois que a partida começou. */
+  private fotografar(p: Player, saiuAntes: boolean): void {
+    if (!p.userId || !this.registro.inicioDaPartida) return;
+    let comandanteId: string | undefined;
+    this.state.cards.forEach((c) => {
+      if (!comandanteId && c.ownerId === p.id && c.isCommander && c.scryfallId) {
+        comandanteId = c.scryfallId;
+      }
+    });
+    const anterior = this.participacoes.get(p.userId);
+    this.participacoes.set(p.userId, {
+      userId: p.userId,
+      assento: p.seat,
+      deckId: this.deckIdPorSessao.get(p.id) ?? anterior?.deckId,
+      // Os cortes casam com os limites do DTO da API: um campo comprido demais
+      // faria o resumo INTEIRO ser recusado, e a partida sumiria do histórico.
+      nomeDoDeck: p.deckName.slice(0, 80) || anterior?.nomeDoDeck,
+      comandanteId: comandanteId ?? anterior?.comandanteId,
+      vidaFinal: p.life,
+      motivoDaEliminacao: p.eliminated ? p.eliminationReason || undefined : undefined,
+      saiuAntes,
+    });
+  }
+
+  /**
    * ─── "PARTIDAS JOGADAS" ERA SEMPRE 0, EM TODO PERFIL ──────────────────────
    *
    * `prisma.matchSummary.create` nao existia em lugar nenhum do repositorio —
@@ -988,60 +877,15 @@ export class AetherRoom extends Room<RoomState> {
    * Falhar aqui NAO pode derrubar nada: a sala ja acabou e nao ha ninguem para
    * avisar. Vira log.
    */
-  private registrarParticipantes(): void {
-    this.state.players.forEach((p) => {
-      if (p.userId) this.contasQueJogaram.add(p.userId);
-    });
-    this.augeDeJogadores = Math.max(this.augeDeJogadores, this.state.players.size);
-  }
-
-  /**
-   * Toda transmissão de fim de partida passa por aqui: é onde o vencedor fica
-   * registrado e a mesa inteira é fotografada no instante do fim.
-   */
-  private transmitir(evento: string, payload?: unknown): void {
-    if (evento === 'matchEnded') {
-      const id = (payload as { winnerId?: string } | undefined)?.winnerId;
-      const vencedor = id ? this.state.players.get(id) : undefined;
-      if (vencedor?.userId) this.vencedorUserId = vencedor.userId;
-      this.state.players.forEach((p) => this.fotografar(p, false));
-    }
-    this.broadcast(evento, payload);
-  }
-
-  /** A foto de um jogador para o histórico. Só vale depois que a partida começou. */
-  private fotografar(p: Player, saiuAntes: boolean): void {
-    if (!p.userId || !this.inicioDaPartida) return;
-    let comandanteId: string | undefined;
-    this.state.cards.forEach((c) => {
-      if (!comandanteId && c.ownerId === p.id && c.isCommander && c.scryfallId) {
-        comandanteId = c.scryfallId;
-      }
-    });
-    const anterior = this.participacoes.get(p.userId);
-    this.participacoes.set(p.userId, {
-      userId: p.userId,
-      assento: p.seat,
-      deckId: this.deckIdPorSessao.get(p.id) ?? anterior?.deckId,
-      // Os cortes casam com os limites do DTO da API: um campo comprido demais
-      // faria o resumo INTEIRO ser recusado, e a partida sumiria do histórico.
-      nomeDoDeck: p.deckName.slice(0, 80) || anterior?.nomeDoDeck,
-      comandanteId: comandanteId ?? anterior?.comandanteId,
-      vidaFinal: p.life,
-      motivoDaEliminacao: p.eliminated ? p.eliminationReason || undefined : undefined,
-      saiuAntes,
-    });
-  }
-
   private async registrarResumoDaPartida(): Promise<void> {
     if (!this.state.turnoIniciadoEm) return;
-    if (this.contasQueJogaram.size === 0) return;
+    if (this.registro.contasQueJogaram.size === 0) return;
     // Quem continua na mesa até a sala fechar é fotografado agora.
     this.state.players.forEach((p) => this.fotografar(p, false));
 
     // Do START_MATCH, nao da criacao da sala: a duracao incluia o lobby e a
     // espera de descarte da sala vazia.
-    const inicio = this.inicioDaPartida || this.state.startedAt;
+    const inicio = this.registro.inicioDaPartida || this.state.startedAt;
     const duracao = Math.max(0, Math.round((Date.now() - inicio) / 1000));
 
     try {
@@ -1056,9 +900,12 @@ export class AetherRoom extends Room<RoomState> {
         },
         body: JSON.stringify({
           roomCode: this.state.roomCode,
-          playerCount: this.augeDeJogadores,
+          playerCount: this.registro.augeDeJogadores,
           durationSeconds: duracao,
-          participantes: Array.from(this.contasQueJogaram).slice(0, REALTIME_LIMITS.MAX_PLAYERS),
+          participantes: Array.from(this.registro.contasQueJogaram).slice(
+            0,
+            REALTIME_LIMITS.MAX_PLAYERS,
+          ),
           formato: this.state.gameType.slice(0, 32),
           turnos: this.state.turn,
           detalhes: Array.from(this.participacoes.values())
@@ -1066,7 +913,7 @@ export class AetherRoom extends Room<RoomState> {
             .map((p) => ({
               ...p,
               venceu: p.userId === this.vencedorUserId,
-              comecou: p.userId === this.quemComecou,
+              comecou: p.userId === this.registro.quemComecou,
             })),
         }),
       });
@@ -1182,9 +1029,7 @@ export class AetherRoom extends Room<RoomState> {
         }
 
         try {
-          // A fase e lida ANTES para saber se o handler a mudou. START_MATCH e
-          // RESET_MATCH viram `emPartida` na lista publica, e o REGISTRY nao
-          // tem — nem deve ter — acesso a Room para publicar isso sozinho.
+          // A fase e lida ANTES para a central saber se o handler a mudou.
           const faseAntes = this.state.phase;
           const contexto = this.montarContexto(client);
 
@@ -1200,18 +1045,7 @@ export class AetherRoom extends Room<RoomState> {
           this.historico.executar(
             new ComandoDeIntencao(tipo, handler, contexto, parsed.data, this.state),
           );
-          this.agendarFimDaVotacao();
-          this.agendarFimDoMulligan();
-          if (this.state.phase !== faseAntes) {
-            this.publicarMetadados();
-            if (this.state.phase === 'PLAYING') {
-              if (!this.inicioDaPartida) this.inicioDaPartida = Date.now();
-              this.registrarParticipantes();
-              if (!this.quemComecou) {
-                this.quemComecou = this.state.players.get(this.state.activePlayerId)?.userId ?? '';
-              }
-            }
-          }
+          this.mediador.notificar({ tipo: 'INTENCAO_APLICADA', faseAntes });
 
           /**
            * ─── O TOPO REVELADO SE REAPLICA AQUI, E SO AQUI ────────────────
@@ -1260,7 +1094,7 @@ export class AetherRoom extends Room<RoomState> {
       desfazer: () => this.historico.desfazer(client.sessionId),
       invalidarDesfazer: () => this.historico.esquecerTodos(),
       expulsar: (sessionId) => this.expulsar(sessionId),
-      aoMudarLotacao: () => this.publicarMetadados(),
+      aoMudarLotacao: () => this.mediador.notificar({ tipo: 'SALA_CONFIGURADA' }),
     };
   }
 
@@ -1513,10 +1347,6 @@ export class AetherRoom extends Room<RoomState> {
 
     this.broadcast('playerLeft', { playerId: sessionId, name: player?.name ?? '' });
 
-    // Uma vaga abriu: a mesa volta para a lista publica com "Entrar" em vez de
-    // "Assistir".
-    this.publicarMetadados();
-
     // Setas de quem saiu, ou que apontavam para ele ou para as cartas dele, nao
     // tem mais ponta: ficavam no estado e reapareciam se o id voltasse a valer.
     const existe = (id: string) => this.state.cards.has(id) || this.state.players.has(id);
@@ -1550,7 +1380,7 @@ export class AetherRoom extends Room<RoomState> {
     if (
       this.state.phase === 'PLAYING' &&
       this.state.players.size === 1 &&
-      this.augeDeJogadores >= 2
+      this.registro.augeDeJogadores >= 2
     ) {
       const vencedor = Array.from(this.state.players.values())[0]!;
       this.state.phase = 'CLOSING';
@@ -1558,7 +1388,9 @@ export class AetherRoom extends Room<RoomState> {
       this.publicarLog(logSistema(vencedor.id, `${vencedor.name} venceu a partida`));
     }
 
-    this.agendarDescarteSeVazia();
+    // No FIM, e não no meio: a vitrine publicava antes de o vencedor ser
+    // decidido, e a mesa encerrada ficava listada como "em partida".
+    this.mediador.notificar({ tipo: 'SAIU' });
   }
 
   // ─── Provisionamento de deck ───────────────────────────────────────────────

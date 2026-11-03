@@ -1,0 +1,96 @@
+%% AetherTable — DOC-100 — Padrao Mediator no ciclo de vida da sala
+%% Fonte: apps/game-server/src/rooms/mediador-da-sala.ts e apps/game-server/src/rooms/AetherRoom.ts
+classDiagram
+    direction LR
+
+    class AetherRoom {
+        <<cliente - pontos de entrada>>
+        -mediador: MediadorDaSala
+        -registro: RegistroDaPartida
+        +onCreate() void
+        +onJoin() void
+        +onLeave() void
+        -removerJogador(sid) void
+        -encerrarMulliganPorTempo() void
+    }
+
+    class MediadorDaSala {
+        <<interface - mediator>>
+        +notificar(acontecimento) void
+    }
+
+    class CentralDaSala {
+        <<mediator concreto>>
+        -vitrine: Vitrine
+        -descarte: DescarteDaSalaVazia
+        -prazos: PrazosDaMesa
+        -registro: RegistroDaPartida
+        -acoes: AcoesDaSala
+        +notificar(acontecimento) void
+    }
+
+    class AcontecimentoDaSala {
+        <<tipo>>
+        SALA_CRIADA
+        SALA_CONFIGURADA
+        ENTROU
+        SAIU
+        INTENCAO_APLICADA
+        PRAZO_DO_MULLIGAN_VENCEU
+        SALA_ABANDONADA
+    }
+
+    class AcoesDaSala {
+        <<interface>>
+        +encerrarMulliganPorTempo() void
+        +descartar() void
+    }
+
+    class ColegaDaSala {
+        <<abstract - colleague>>
+        #mediador: MediadorDaSala
+        +ligar(mediador) void
+    }
+
+    class Vitrine {
+        +publicar() void
+    }
+
+    class DescarteDaSalaVazia {
+        -agendado: timer
+        +agendarSeVazia() void
+        +cancelar() void
+    }
+
+    class PrazosDaMesa {
+        -fimDaVotacao: timer
+        -fimDoMulligan: timer
+        +reagendar() void
+    }
+
+    class RegistroDaPartida {
+        +contasQueJogaram: Set
+        +augeDeJogadores: number
+        +inicioDaPartida: number
+        +quemComecou: string
+        +registrarParticipantes() void
+        +marcarInicio() void
+    }
+
+    MediadorDaSala <|.. CentralDaSala
+    ColegaDaSala <|-- Vitrine
+    ColegaDaSala <|-- DescarteDaSalaVazia
+    ColegaDaSala <|-- PrazosDaMesa
+    ColegaDaSala <|-- RegistroDaPartida
+    ColegaDaSala --> MediadorDaSala : avisa
+    CentralDaSala o-- Vitrine
+    CentralDaSala o-- DescarteDaSalaVazia
+    CentralDaSala o-- PrazosDaMesa
+    CentralDaSala o-- RegistroDaPartida
+    CentralDaSala --> AcoesDaSala : pede em nome dos colegas
+    AetherRoom --> MediadorDaSala : notificar
+    AetherRoom ..|> AcoesDaSala : fornece
+    AetherRoom ..> RegistroDaPartida : le no resumo
+    CentralDaSala ..> AcontecimentoDaSala
+
+    note for CentralDaSala "Unica tabela de aconteceu X, reage Y.<br>A vitrine fala por ultimo: publica o retrato final."
