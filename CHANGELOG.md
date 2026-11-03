@@ -11,6 +11,20 @@ resumo.
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Mesa encerrada listada como "em partida":** quando o último oponente saía
+  e quem ficou vencia, a lista pública continuava mostrando a mesa como "em
+  partida". A sala publicava o metadado antes de decidir o vencedor; agora
+  publica depois.
+
+### Alterado
+
+- **O ciclo de vida da sala segue o padrão Mediator** (`DOC-100`): entrar,
+  sair e aplicar uma intenção só avisam uma central, e é ela que decide quem
+  reage — a vitrine pública, o descarte da sala vazia, os prazos e o registro
+  da partida.
+
 ## [0.12.0] — 2026-10-30
 
 ### Alterado
