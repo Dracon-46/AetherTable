@@ -11,6 +11,8 @@ resumo.
 
 ## [Não lançado]
 
+## [0.12.1] — 2026-11-03
+
 ### Corrigido
 
 - **Mesa encerrada listada como "em partida":** quando o último oponente saía
@@ -265,7 +267,8 @@ resumo.
   na sala de espera e modo espectador.
 - Processo documentado (DOC-091/092/093), `pnpm verificar` e hook de pre-push.
 
-[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.12.0...HEAD
+[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/Dracon-46/AetherTable/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/Dracon-46/AetherTable/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Dracon-46/AetherTable/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/Dracon-46/AetherTable/compare/v0.10.0...v0.10.1
