@@ -13,6 +13,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'segredo-de-teste-com-16+';
 
 import { ZONES, zoneOrderKey } from '@aethertable/shared-types';
 import type * as ModuloDaSala from './AetherRoom';
+import type { AcontecimentoDaSala, RegistroDaPartida } from './mediador-da-sala';
 import { Espectador } from '../schema/Espectador';
 import { Player } from '../schema/Player';
 import type { RoomState } from '../schema/RoomState';
@@ -34,7 +35,8 @@ interface Sala {
   onJoin(cliente: unknown, opcoes: unknown, auth: unknown): void;
   onLeave(cliente: unknown, consentido: boolean): Promise<void>;
   onDispose(): Promise<void> | void;
-  agendarFimDaVotacao(): void;
+  mediador: { notificar(acontecimento: AcontecimentoDaSala): void };
+  registro: RegistroDaPartida;
   clock: { setTimeout(cb: () => void, ms: number): { clear(): void } };
   onMessageHandlers: Record<string, { callback(cliente: unknown, payload: unknown): void }>;
 }
@@ -129,11 +131,32 @@ describe('quem sai da sala', () => {
   });
 });
 
+describe('a vitrine pública', () => {
+  /**
+   * `removerJogador` publicava o metadado no meio do caminho, ANTES de decidir
+   * que o último que ficou venceu: a mesa já em CLOSING continuava na lista
+   * pública como "em partida", até alguém mais entrar ou sair.
+   */
+  it('a mesa que acabou porque o último oponente saiu sai de "em partida"', () => {
+    const sala = montarSala(['a', 'b']);
+    sala.state.visibilidade = 'PUBLICA';
+    sala.state.phase = 'PLAYING';
+    sala.registro.augeDeJogadores = 2;
+
+    sala.removerJogador('b');
+
+    expect(sala.state.phase).toBe('CLOSING');
+    const listagem = (sala as unknown as { listing: { metadata: Record<string, unknown> } })
+      .listing;
+    expect(listagem.metadata).toMatchObject({ ocupacao: 1, emPartida: false });
+  });
+});
+
 describe('um contra um', () => {
   /** O oponente fechar a aba deixava a partida aberta para sempre, sem vencedor. */
   it('o único oponente saindo dá a vitória a quem ficou', () => {
     const sala = montarSala(['a', 'b']);
-    (sala as unknown as { augeDeJogadores: number }).augeDeJogadores = 2;
+    sala.registro.augeDeJogadores = 2;
     sala.state.phase = 'PLAYING';
     sala.removerJogador('b');
     expect(sala.state.phase).toBe('CLOSING');
@@ -141,7 +164,7 @@ describe('um contra um', () => {
 
   it('a mesa solo não termina sozinha', () => {
     const sala = montarSala(['a']);
-    (sala as unknown as { augeDeJogadores: number }).augeDeJogadores = 1;
+    sala.registro.augeDeJogadores = 1;
     sala.state.phase = 'PLAYING';
     sala.removerJogador('fantasma');
     expect(sala.state.phase).toBe('PLAYING');
@@ -231,7 +254,8 @@ describe('plateia e votação', () => {
     sala.state.votacaoSim = 'a';
     sala.state.votacaoExpiraEm = Date.now() - 1;
 
-    sala.agendarFimDaVotacao();
+    // O que o despacho conta à central depois do voto.
+    sala.mediador.notificar({ tipo: 'INTENCAO_APLICADA', faseAntes: sala.state.phase });
     disparar();
 
     expect(sala.state.votacaoAlvo).toBe('');
@@ -246,18 +270,13 @@ describe('histórico de partidas', () => {
    */
   it('o resumo leva vencedor, quem começou e a foto de quem saiu antes', async () => {
     const sala = montarSala(['a', 'b', 'c']);
-    const interna = sala as unknown as {
-      inicioDaPartida: number;
-      quemComecou: string;
-      registrarParticipantes(): void;
-      registrarResumoDaPartida(): Promise<void>;
-    };
+    const interna = sala as unknown as { registrarResumoDaPartida(): Promise<void> };
     sala.state.phase = 'PLAYING';
     sala.state.turnoIniciadoEm = Date.now();
     sala.state.turn = 7;
-    interna.inicioDaPartida = Date.now() - 60_000;
-    interna.quemComecou = 'conta-b';
-    interna.registrarParticipantes();
+    sala.registro.inicioDaPartida = Date.now() - 60_000;
+    sala.registro.quemComecou = 'conta-b';
+    sala.registro.registrarParticipantes();
 
     const comandante = new Card();
     comandante.id = 'cmd';
@@ -305,7 +324,6 @@ describe('histórico de partidas', () => {
 describe('prazo do mulligan', () => {
   type ComPrazo = Sala & {
     encerrarMulliganPorTempo(): void;
-    agendarFimDoMulligan(): void;
   };
 
   function comMao(sala: Sala, dono: string, n: number): string[] {
@@ -360,7 +378,7 @@ describe('prazo do mulligan', () => {
     sala.state.phase = 'PLAYING';
     sala.state.mulliganExpiraEm = Date.now() + 60_000;
     sala.state.players.forEach((p) => (p.keptHand = true));
-    sala.agendarFimDoMulligan();
+    sala.mediador.notificar({ tipo: 'INTENCAO_APLICADA', faseAntes: sala.state.phase });
     expect(sala.state.mulliganExpiraEm).toBe(0);
   });
 });
