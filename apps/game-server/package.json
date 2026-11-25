@@ -23,7 +23,7 @@
     "@colyseus/redis-presence": "^0.16.0",
     "@colyseus/schema": "^3.0.0",
     "@colyseus/ws-transport": "^0.16.5",
-    "dotenv": "^18.0.8",
+    "dotenv": "^18.0.10",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "prom-client": "^15.1.3",
