@@ -6,8 +6,14 @@
 # de patch publicada meses antes. Ninguém ficou sabendo porque nada avisava.
 #
 # Os PRs vão para a `develop` (DOC-091: a `main` só recebe release), uma vez
-# por semana e agrupados: um PR por ecossistema com tudo que é minor/patch, e
+# por MÊS e agrupados: um PR por ecossistema com tudo que é minor/patch, e
 # major sempre em PR próprio, porque major é a que quebra.
+#
+# Mensal, e não semanal: cada PR (e cada rebase dele) vira e-mail para o dono
+# do repositório via CODEOWNERS, e cada branch ainda dispara uma prévia na
+# Vercel. Toda semana era uma caixa de entrada cheia de avisos que ninguém lia — o
+# mesmo "nada avisava" de antes, por excesso. Vulnerabilidade conhecida não
+# espera o mês: o alerta de segurança do GitHub abre o PR na hora.
 # ─────────────────────────────────────────────────────────────────────────────
 version: 2
 
@@ -16,12 +22,21 @@ updates:
     directory: /
     target-branch: develop
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '06:00'
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 10
     versioning-strategy: increase
+    ignore:
+      # ─── COLYSEUS NÃO ENTRA NO GRUPO DE ROTINA ─────────────────────────────
+      #
+      # Em 0.x o SemVer trata a "minor" como major: 0.16 → 0.18 mudou a
+      # assinatura de `onLeave`, tirou `Protocol.WS_CLOSE_WITH_ERROR` e os
+      # tipos do schema. Dentro do grupo `producao`, a atualização quebrava o
+      # game-server e levava junto as outras quinze, que passavam sozinhas.
+      # Migrar o Colyseus é decisão de projeto, como trocar o major do Node.
+      - dependency-name: '@colyseus/*'
+        update-types: [version-update:semver-minor, version-update:semver-major]
     commit-message:
       prefix: 'build(deps)'
       prefix-development: 'build(deps-dev)'
@@ -38,8 +53,7 @@ updates:
     directories: ['/', '/.github/actions/*']
     target-branch: develop
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '06:00'
       timezone: America/Sao_Paulo
     commit-message:
@@ -52,12 +66,15 @@ updates:
     directories: ['/apps/backend-core', '/apps/game-server']
     target-branch: develop
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '06:00'
       timezone: America/Sao_Paulo
     commit-message:
       prefix: 'build(docker)'
+    # Uma imagem base só para os dois serviços: eram dois PRs com o mesmo bump.
+    groups:
+      node:
+        patterns: ['*']
     ignore:
       # A imagem acompanha o `engines` do package.json (Node 22). Trocar de
       # major é decisão de projeto, não atualização de rotina.
