@@ -30,7 +30,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.2.7",
-    "@nestjs/swagger": "^11.4.7",
+    "@nestjs/swagger": "^12.1.2",
     "@nestjs/terminus": "^11.1.1",
     "@nestjs/throttler": "^6.7.1",
     "@prisma/client": "^6.2.1",
