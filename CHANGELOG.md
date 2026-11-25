@@ -11,6 +11,18 @@ resumo.
 
 ## [Não lançado]
 
+## [0.12.2] — 2026-11-25
+
+### Alterado
+
+- **Menos e-mails automáticos:** o Dependabot passa a abrir os PRs de
+  atualização uma vez por mês em vez de toda semana, e a imagem base do Docker
+  dos dois serviços vem num PR só. Alertas de segurança continuam chegando na
+  hora.
+- **O Colyseus saiu do grupo de atualização automática:** a subida para a 0.18
+  muda a API da sala e quebrava o PR do grupo inteiro de produção, que falhava
+  no CI e na prévia da Vercel. A migração fica como decisão de projeto.
+
 ## [0.12.1] — 2026-11-03
 
 ### Corrigido
@@ -267,7 +279,8 @@ resumo.
   na sala de espera e modo espectador.
 - Processo documentado (DOC-091/092/093), `pnpm verificar` e hook de pre-push.
 
-[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.12.1...HEAD
+[Não lançado]: https://github.com/Dracon-46/AetherTable/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/Dracon-46/AetherTable/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/Dracon-46/AetherTable/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/Dracon-46/AetherTable/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Dracon-46/AetherTable/compare/v0.10.1...v0.11.0
