@@ -11,6 +11,16 @@ resumo.
 
 ## [Não lançado]
 
+### Alterado
+
+- **Menos e-mails automáticos:** o Dependabot passa a abrir os PRs de
+  atualização uma vez por mês em vez de toda semana, e a imagem base do Docker
+  dos dois serviços vem num PR só. Alertas de segurança continuam chegando na
+  hora.
+- **O Colyseus saiu do grupo de atualização automática:** a subida para a 0.18
+  muda a API da sala e quebrava o PR do grupo inteiro de produção, que falhava
+  no CI e na prévia da Vercel. A migração fica como decisão de projeto.
+
 ## [0.12.1] — 2026-11-03
 
 ### Corrigido

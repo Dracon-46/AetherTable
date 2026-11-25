@@ -605,7 +605,7 @@ export default function UsuariosPage() {
                   )}
                 </div>
 
-                <FichaExtra dados={ficha.data as Record<string, unknown>} />
+                <FichaExtra dados={alvo as unknown as Record<string, unknown>} />
               </>
             )}
           </div>
